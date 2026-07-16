@@ -631,6 +631,12 @@ Driftile must integrate with, not duplicate:
   automatic floating roles take priority. Toggling the resulting ordinary
   manual-floating window into tiling uses its application initial width and the
   existing persistence schema.
+- Floating-position rules map a bounded exact ID to one of eight work-area
+  anchors and signed logical-pixel offsets. They apply once when a fresh normal
+  window first enters manual floating, use output-pixel snapping and work-area
+  clamping, and then defer to the remembered manual frame. Existing, restored,
+  automatic, related, transferred, and already manually floating frames are
+  not rewritten; live edits perform no immediate geometry write.
 - Initial-full-width and initial-fullscreen rules use captured bounded exact-ID
   policies for genuinely new normal windows. The former retains the normal
   width as its full-width restore value; the latter reuses guarded native

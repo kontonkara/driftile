@@ -284,6 +284,15 @@ programs.driftile.settings = {
   };
   applicationFocusCentering = [ ];
   applicationInitialFloating = [ ];
+  applicationFloatingPositions = {
+    "org.kde.kcalc" = {
+      anchor = "bottom-right";
+      x = 24;
+      y = 24;
+    };
+  };
+  applicationInitialFullWidth = [ ];
+  applicationInitialFullscreen = [ ];
   applicationTilingExclusions = [ ];
   borderlessWindows = true;
   centerFocusedColumn = false;
@@ -308,6 +317,7 @@ keeps the exact built-in `1/3`, `1/2`, and `2/3` cycle. See
 [Application column presentation](configuration.md#application-column-presentation),
 [Horizontal focus centering](configuration.md#horizontal-focus-centering),
 [Applications initially floating](configuration.md#applications-initially-floating),
+[Application floating positions](configuration.md#application-floating-positions),
 [Window height presets](configuration.md#window-height-presets),
 and
 [Application borderless exclusions](configuration.md#application-borderless-exclusions)

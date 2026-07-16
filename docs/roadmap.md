@@ -1642,6 +1642,10 @@ taking over compositor mechanisms.
 
 - Add fresh-only exact application rules for initial full-width columns and
   native fullscreen requests.
+- Add an exact first-manual-floating position rule with eight work-area anchors,
+  signed logical-pixel offsets, output-pixel snapping, and bounded clamping.
+- Keep rapid transition retargeting continuous across workspace visibility
+  races and outputs with negative global coordinates.
 - Preserve the configured normal width beneath full width and the admitted
   tiled or floating state beneath fullscreen.
 - Keep startup, restored, transferred, re-admitted, and already tracked windows

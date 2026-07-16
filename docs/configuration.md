@@ -9,9 +9,9 @@ The settings page groups the existing controls into two tabs:
   presentation and width, default initial tiled client height, proportional or
   fixed column-width steps and presets, and proportional or fixed window-height
   steps and presets.
-- **Applications**: initial column widths, tiled client heights, and
-  presentation, focus centering, initial floating rules, tiling exclusions,
-  and decoration exclusions.
+- **Applications**: initial column widths, tiled client heights, presentation,
+  focus centering, initial floating state and position, native-state rules,
+  tiling exclusions, and decoration exclusions.
 
 Driftile validates the complete settings snapshot atomically. Applying an
 invalid value through an external configuration tool rejects the entire update
@@ -67,12 +67,11 @@ persistence.
 
 Launchers, switcher-hidden windows, OSDs, outlines, lock-screen and internal
 windows, popups, transient dialogs, frameless shell overlays, and other
-non-movable windows are outside the effect. Consecutive geometry updates at
-non-negative global positions retarget the active position and size
-transitions. Moves involving a negative global position use a relative
-translation, keeping off-screen columns and outputs with negative coordinates
-animated without writing geometry. Movement and size animation can be disabled
-independently.
+non-movable windows are outside the effect. Consecutive geometry updates
+retarget the active position and size transitions in place. Position animation
+uses a non-negative absolute base plus a signed translation, so rapid commands
+and outputs with negative global coordinates do not restart or accumulate
+transitions. Movement and size animation can be disabled independently.
 
 `WindowClassExclusions` accepts at most 128 exact, case-sensitive KWin
 `windowClass` values, one per line and at most 255 UTF-8 bytes each. Use KWin's
@@ -107,7 +106,7 @@ installed system-wide.
 The activation writes only `ApplicationBorderlessExclusions`,
 `ApplicationColumnPresentations`, `ApplicationColumnWidths`,
 `ApplicationWindowHeights`,
-`ApplicationFocusCentering`,
+`ApplicationFocusCentering`, `ApplicationFloatingPositions`,
 `ApplicationInitialFloating`, `ApplicationInitialFullWidth`,
 `ApplicationInitialFullscreen`, `ApplicationTilingExclusions`,
 `BorderlessWindows`, `CenterFocusedColumn`, `Gap`,
@@ -156,6 +155,14 @@ programs.driftile.settings.applicationFocusCentering = [
 programs.driftile.settings.applicationInitialFloating = [
   "org.kde.kcalc"
 ];
+
+programs.driftile.settings.applicationFloatingPositions = {
+  "org.kde.kcalc" = {
+    anchor = "bottom-right";
+    x = 24;
+    y = 24;
+  };
+};
 
 programs.driftile.settings.applicationInitialFullWidth = [
   "org.mozilla.firefox"
@@ -457,6 +464,34 @@ floating. Its application-specific initial column width applies at that point.
 The policy uses existing floating and layout persistence and adds no persistence
 schema field.
 
+## Application floating positions
+
+**Application floating positions** places an exact, case-sensitive
+`desktopFileName` when a genuinely new normal window first enters ordinary
+manual floating. Enter one `desktopFileName=anchor,x,y` rule per line. Anchors
+are `top-left`, `top`, `top-right`, `right`, `bottom-right`, `bottom`,
+`bottom-left`, and `left`; `x` and `y` are signed logical-pixel offsets from
+`-16384` through `16384`. Positive offsets point inward on an anchored edge;
+the centered axis keeps the normal right or down direction. At most 128 rules
+are accepted, and each ID is limited to 255 UTF-8 bytes.
+
+```text
+org.kde.kcalc=bottom-right,24,24
+org.mozilla.firefox=top-left,32,32
+```
+
+The position applies when a fresh match starts through **Applications
+initially floating**, or when a fresh tiled window first uses **Toggle
+floating**. Driftile snaps the frame to the output's physical-pixel grid and
+clamps its origin to the current work area without resizing it. Once that first
+manual position is accepted, later tiling toggles use the remembered frame
+instead of rereading the rule.
+
+Startup-existing, restored, already manually floating, automatic, dialog, and
+transient windows are not repositioned. Desktop and output transfers preserve
+the current frame. Live edits affect only future first manual-floating
+placements and add no persistence field.
+
 ## Applications initially full-width
 
 **Applications initially full-width** opens a freshly admitted matching normal
@@ -586,7 +621,7 @@ The KConfig decoder accepts at most 65,664 characters in the complete document,
 512 characters in each raw line, 128 nonblank unique IDs, and 255 UTF-8 bytes
 in each trimmed ID. It trims surrounding whitespace and ignores blank lines.
 Control characters, invalid UTF-16, an oversized value, or a duplicate after
-trimming rejects the complete 31-setting snapshot. Accepted IDs have a
+trimming rejects the complete 32-setting snapshot. Accepted IDs have a
 canonical sorted internal form. Home Manager exposes the same policy as
 `programs.driftile.settings.applicationBorderlessExclusions`, a list rendered
 as a sorted newline-delimited KConfig value.

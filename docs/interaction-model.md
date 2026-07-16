@@ -420,6 +420,15 @@ returns the window to tiling through the normal reinsertion path, using its
 configured application initial column width. No separate persisted state is
 introduced.
 
+An exact floating-position rule can place that fresh manual-floating window,
+or a fresh tiled window the first time it enters manual floating, at one of
+eight work-area anchors plus signed logical-pixel offsets. The accepted frame
+is snapped to the output pixel grid and its origin is clamped without resizing.
+Later floating toggles restore the remembered frame; startup-existing, restored,
+automatic, related, and already manually floating windows are not repositioned.
+Transfers preserve their current frame, and live rule changes affect only a
+future first manual-floating placement.
+
 Two other fresh-only exact application policies can admit a normal tiled window
 as a full-width singleton or request native fullscreen after its underlying
 tiled or floating state is established. Full-width admission retains the
