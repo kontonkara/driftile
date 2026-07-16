@@ -35,6 +35,8 @@ const configurationUi = readFileSync(
   new URL("../packaging/kwin-script/contents/ui/config.ui", import.meta.url),
   "utf8",
 );
+const applicationIdentifierDescription =
+  "Each application identifier is exact and case-sensitive: KWin desktopFileName when available, otherwise resourceClass.";
 const runtime = readFileSync(
   new URL("../src/runtime.ts", import.meta.url),
   "utf8",
@@ -970,6 +972,7 @@ describe("KWin shortcut handlers", () => {
     expect(applicationsTab).toMatch(
       /<attribute name="title">\s*<string>Applications<\/string>/,
     );
+    expect(applicationsTab).toContain(applicationIdentifierDescription);
     expect(controlNames(generalTab)).toEqual(generalControls);
     expect(controlNames(applicationsTab)).toEqual(applicationControls);
     expect(controlNames(configurationUi)).toEqual([
@@ -1059,7 +1062,7 @@ describe("KWin shortcut handlers", () => {
       'alwaysCenterSingleColumn: KWin.readConfig("AlwaysCenterSingleColumn", false)',
     );
     expect(applicationCenteringEntry).toContain(
-      "<label>Applications centered after horizontal focus navigation by KWin desktopFileName</label>",
+      "<label>Applications centered after horizontal focus navigation by application identifier</label>",
     );
     expect(applicationCenteringEntry).toContain("<default></default>");
     expect(applicationCenteringLabel).toContain(
@@ -1069,7 +1072,7 @@ describe("KWin shortcut handlers", () => {
       "<cstring>kcfg_ApplicationFocusCentering</cstring>",
     );
     expect(applicationCenteringWidget).toContain(
-      "Enter one exact, case-sensitive KWin desktopFileName per line. This affects horizontal focus centering only.",
+      "Enter one exact, case-sensitive application identifier per line.",
     );
     expect(qml).toContain(
       'applicationFocusCentering: KWin.readConfig("ApplicationFocusCentering", "")',
@@ -1438,7 +1441,7 @@ describe("KWin shortcut handlers", () => {
     )?.[1];
 
     expect(widthOverridesEntry).toContain(
-      "<label>Initial column widths in percent or pixels by desktop-file ID</label>",
+      "<label>Initial column widths in percent or pixels by application identifier</label>",
     );
     expect(widthOverridesEntry).toContain("<default></default>");
     expect(configurationUi).toContain(
@@ -1472,7 +1475,7 @@ describe("KWin shortcut handlers", () => {
     );
 
     expect(heightOverridesEntry).toContain(
-      "<label>Initial tiled client heights in percent or pixels by desktop-file ID</label>",
+      "<label>Initial tiled client heights in percent or pixels by application identifier</label>",
     );
     expect(heightOverridesEntry).toContain("<default></default>");
     expect(heightOverridesLabel).toContain(
@@ -1482,11 +1485,11 @@ describe("KWin shortcut handlers", () => {
       "<cstring>kcfg_ApplicationWindowHeights</cstring>",
     );
     expect(heightOverridesWidget).toContain(
-      "exact, case-sensitive KWin desktopFileName",
+      "exact, case-sensitive application identifier",
     );
     expect(heightOverridesWidget).toContain("org.kde.konsole=60");
     expect(heightOverridesWidget).toContain("org.mozilla.firefox=720px");
-    expect(heightOverridesWidget).toContain("desktopFileName=value");
+    expect(heightOverridesWidget).toContain("identifier=value");
     expect(heightOverridesWidget).toContain("bare 10 to 100 percentage");
     expect(heightOverridesWidget).toContain("explicit 10% to 100% percentage");
     expect(heightOverridesWidget).toContain(
@@ -1518,7 +1521,7 @@ describe("KWin shortcut handlers", () => {
     )?.[1];
 
     expect(presentationsEntry).toContain(
-      "<label>Column presentations by desktop-file ID</label>",
+      "<label>Column presentations by application identifier</label>",
     );
     expect(presentationsEntry).toContain("<default></default>");
     expect(configurationUi).toContain(
@@ -1526,7 +1529,7 @@ describe("KWin shortcut handlers", () => {
     );
     expect(presentationsWidget).toContain("org.gnome.Evince=tabbed");
     expect(presentationsWidget).toContain(
-      "Use desktop-file-id=stacked or desktop-file-id=tabbed.",
+      "Use identifier=stacked or identifier=tabbed.",
     );
     expect(qml).toContain(
       'applicationColumnPresentations: KWin.readConfig("ApplicationColumnPresentations", "")',
@@ -1612,7 +1615,7 @@ describe("KWin shortcut handlers", () => {
     )?.[1];
 
     expect(initialDestinationsEntry).toContain(
-      "<label>Initial application desktop and output destinations by KWin desktopFileName</label>",
+      "<label>Initial application desktop and output destinations by application identifier</label>",
     );
     expect(initialDestinationsEntry).toContain("<default></default>");
     expect(initialDestinationsLabel).toContain(
@@ -1622,7 +1625,7 @@ describe("KWin shortcut handlers", () => {
       "<cstring>kcfg_ApplicationInitialDestinations</cstring>",
     );
     expect(initialDestinationsWidget).toContain(
-      "Enter up to 128 exact, case-sensitive KWin desktopFileName=desktop-name:Work,output:DP-1 rules, one per line.",
+      "Enter up to 128 exact, case-sensitive identifier=desktop-name:Work,output:DP-1 rules, one per line.",
     );
     expect(initialDestinationsWidget).toContain(
       "Use desktop:2 or desktop-name:Work, optionally with an output.",
@@ -1649,7 +1652,7 @@ describe("KWin shortcut handlers", () => {
       'applicationInitialDestinations: KWin.readConfig("ApplicationInitialDestinations", "")',
     );
     expect(initialFloatingEntry).toContain(
-      "<label>Applications initially floating by desktop-file ID</label>",
+      "<label>Applications initially floating by application identifier</label>",
     );
     expect(initialFloatingEntry).toContain("<default></default>");
     expect(initialFloatingLabel).toContain(
@@ -1659,7 +1662,7 @@ describe("KWin shortcut handlers", () => {
       "<cstring>kcfg_ApplicationInitialFloating</cstring>",
     );
     expect(initialFloatingWidget).toContain(
-      "Enter one exact, case-sensitive desktop-file ID per line.",
+      "Enter one exact, case-sensitive application identifier per line.",
     );
     expect(initialFloatingWidget).toContain(
       "New exact matches start as manually floating windows.",
@@ -1668,7 +1671,7 @@ describe("KWin shortcut handlers", () => {
       'applicationInitialFloating: KWin.readConfig("ApplicationInitialFloating", "")',
     );
     expect(floatingPositionsEntry).toContain(
-      "<label>Application floating positions</label>",
+      "<label>Application floating positions by application identifier</label>",
     );
     expect(floatingPositionsEntry).toContain("<default></default>");
     expect(floatingPositionsLabel).toContain(
@@ -1678,7 +1681,7 @@ describe("KWin shortcut handlers", () => {
       "<cstring>kcfg_ApplicationFloatingPositions</cstring>",
     );
     expect(floatingPositionsWidget).toContain(
-      "Enter up to 128 exact, case-sensitive KWin desktopFileName=anchor,x,y rules, one per line.",
+      "Enter up to 128 exact, case-sensitive identifier=anchor,x,y rules, one per line.",
     );
     expect(floatingPositionsWidget).toContain(
       "Anchors are top-left, top, top-right, right, bottom-right, bottom, bottom-left, or left.",
@@ -1705,7 +1708,7 @@ describe("KWin shortcut handlers", () => {
       'applicationFloatingPositions: KWin.readConfig("ApplicationFloatingPositions", "")',
     );
     expect(initialFullWidthEntry).toContain(
-      "<label>Applications initially full-width by KWin desktopFileName</label>",
+      "<label>Applications initially full-width by application identifier</label>",
     );
     expect(initialFullWidthEntry).toContain("<default></default>");
     expect(initialFullWidthLabel).toContain(
@@ -1715,7 +1718,7 @@ describe("KWin shortcut handlers", () => {
       "<cstring>kcfg_ApplicationInitialFullWidth</cstring>",
     );
     expect(initialFullWidthWidget).toContain(
-      "Enter up to 128 exact, case-sensitive KWin desktopFileName values, one per line.",
+      "Enter up to 128 exact, case-sensitive application identifiers, one per line.",
     );
     expect(initialFullWidthWidget).toContain(
       "Genuinely new normal tiled matches open as full-width columns.",
@@ -1733,7 +1736,7 @@ describe("KWin shortcut handlers", () => {
       'applicationInitialFullWidth: KWin.readConfig("ApplicationInitialFullWidth", "")',
     );
     expect(initialMaximizedEntry).toContain(
-      "<label>Applications initially maximized by KWin desktopFileName</label>",
+      "<label>Applications initially maximized by application identifier</label>",
     );
     expect(initialMaximizedEntry).toContain("<default></default>");
     expect(initialMaximizedLabel).toContain(
@@ -1743,7 +1746,7 @@ describe("KWin shortcut handlers", () => {
       "<cstring>kcfg_ApplicationInitialMaximized</cstring>",
     );
     expect(initialMaximizedWidget).toContain(
-      "Enter up to 128 exact, case-sensitive KWin desktopFileName values, one per line.",
+      "Enter up to 128 exact, case-sensitive application identifiers, one per line.",
     );
     expect(initialMaximizedWidget).toContain(
       "Fresh normal matches request native maximize to the work-area edges after their underlying tiled or floating admission.",
@@ -1761,7 +1764,7 @@ describe("KWin shortcut handlers", () => {
       'applicationInitialMaximized: KWin.readConfig("ApplicationInitialMaximized", "")',
     );
     expect(initialFocusedEntry).toContain(
-      "<label>Applications initially focused by KWin desktopFileName</label>",
+      "<label>Applications initially focused by application identifier</label>",
     );
     expect(initialFocusedEntry).toContain("<default></default>");
     expect(initialFocusedLabel).toContain(
@@ -1771,7 +1774,7 @@ describe("KWin shortcut handlers", () => {
       "<cstring>kcfg_ApplicationInitialFocused</cstring>",
     );
     expect(initialFocusedWidget).toContain(
-      "Enter up to 128 exact, case-sensitive KWin desktopFileName values, one per line.",
+      "Enter up to 128 exact, case-sensitive application identifiers, one per line.",
     );
     expect(initialFocusedWidget).toContain(
       "Fresh normal matches request focus once after admission only when their desktop and output context is already visible.",
@@ -1789,7 +1792,7 @@ describe("KWin shortcut handlers", () => {
       'applicationInitialFocused: KWin.readConfig("ApplicationInitialFocused", "")',
     );
     expect(initialUnfocusedEntry).toContain(
-      "<label>Applications initially unfocused by KWin desktopFileName</label>",
+      "<label>Applications initially unfocused by application identifier</label>",
     );
     expect(initialUnfocusedEntry).toContain("<default></default>");
     expect(initialUnfocusedLabel).toContain(
@@ -1799,7 +1802,7 @@ describe("KWin shortcut handlers", () => {
       "<cstring>kcfg_ApplicationInitialUnfocused</cstring>",
     );
     expect(initialUnfocusedWidget).toContain(
-      "Enter up to 128 exact, case-sensitive KWin desktopFileName values, one per line.",
+      "Enter up to 128 exact, case-sensitive application identifiers, one per line.",
     );
     expect(initialUnfocusedWidget).toContain(
       "Fresh normal matches suppress or undo initial focus once after admission only when their desktop and output context is already visible.",
@@ -1817,7 +1820,7 @@ describe("KWin shortcut handlers", () => {
       'applicationInitialUnfocused: KWin.readConfig("ApplicationInitialUnfocused", "")',
     );
     expect(initialFullscreenEntry).toContain(
-      "<label>Applications initially fullscreen by KWin desktopFileName</label>",
+      "<label>Applications initially fullscreen by application identifier</label>",
     );
     expect(initialFullscreenEntry).toContain("<default></default>");
     expect(initialFullscreenLabel).toContain(
@@ -1827,7 +1830,7 @@ describe("KWin shortcut handlers", () => {
       "<cstring>kcfg_ApplicationInitialFullscreen</cstring>",
     );
     expect(initialFullscreenWidget).toContain(
-      "Enter up to 128 exact, case-sensitive KWin desktopFileName values, one per line.",
+      "Enter up to 128 exact, case-sensitive application identifiers, one per line.",
     );
     expect(initialFullscreenWidget).toContain(
       "Only genuinely new matching windows start fullscreen, and only when KWin reports that fullscreen is supported.",
@@ -1855,7 +1858,7 @@ describe("KWin shortcut handlers", () => {
     )?.[1];
 
     expect(exclusionsEntry).toContain(
-      "<label>Applications excluded from tiling by desktop-file ID</label>",
+      "<label>Applications excluded from tiling by application identifier</label>",
     );
     expect(exclusionsEntry).toContain("<default></default>");
     expect(exclusionsLabel).toContain(
@@ -1865,7 +1868,7 @@ describe("KWin shortcut handlers", () => {
       "<cstring>kcfg_ApplicationTilingExclusions</cstring>",
     );
     expect(exclusionsWidget).toContain(
-      "Enter one exact, case-sensitive desktop-file ID per line.",
+      "Enter one exact, case-sensitive application identifier per line.",
     );
     expect(exclusionsWidget).toContain("Blank lines are ignored.");
     expect(qml).toContain(
@@ -1885,7 +1888,7 @@ describe("KWin shortcut handlers", () => {
     )?.[1];
 
     expect(exclusionsEntry).toContain(
-      "<label>Applications keeping KWin borders and title bars by desktop-file ID</label>",
+      "<label>Applications keeping KWin borders and title bars by application identifier</label>",
     );
     expect(exclusionsEntry).toContain("<default></default>");
     expect(exclusionsLabel).toContain(
@@ -1895,7 +1898,7 @@ describe("KWin shortcut handlers", () => {
       "<cstring>kcfg_ApplicationBorderlessExclusions</cstring>",
     );
     expect(exclusionsWidget).toContain(
-      "Enter one exact, case-sensitive desktop-file ID per line.",
+      "Enter one exact, case-sensitive application identifier per line.",
     );
     expect(exclusionsWidget).toContain("Blank lines are ignored.");
     expect(qml).toContain(

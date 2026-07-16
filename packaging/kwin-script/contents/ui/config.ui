@@ -473,6 +473,16 @@
       </attribute>
       <layout class="QVBoxLayout" name="applicationsLayout">
        <item>
+        <widget class="QLabel" name="applicationIdentifierHint">
+         <property name="text">
+          <string>Each application identifier is exact and case-sensitive: KWin desktopFileName when available, otherwise resourceClass.</string>
+         </property>
+         <property name="wordWrap">
+          <bool>true</bool>
+         </property>
+        </widget>
+       </item>
+       <item>
         <widget class="QLabel" name="applicationColumnPresentationsLabel">
          <property name="text">
           <string>Application column presentations:</string>
@@ -485,10 +495,10 @@
        <item>
         <widget class="QPlainTextEdit" name="kcfg_ApplicationColumnPresentations">
          <property name="toolTip">
-          <string>Enter up to 128 exact desktop-file ID and presentation pairs, one per line, for example org.gnome.Evince=tabbed.</string>
+          <string>Enter up to 128 exact, case-sensitive application identifier and presentation pairs, one per line, for example org.gnome.Evince=tabbed.</string>
          </property>
          <property name="whatsThis">
-          <string>Each nonempty line selects stacked or tabbed presentation when a matching application creates a column. Use desktop-file-id=stacked or desktop-file-id=tabbed.</string>
+          <string>Each nonempty line selects stacked or tabbed presentation when a matching application creates a column. Use identifier=stacked or identifier=tabbed.</string>
          </property>
          <property name="minimumSize">
           <size>
@@ -511,7 +521,7 @@
        <item>
         <widget class="QPlainTextEdit" name="kcfg_ApplicationColumnWidths">
          <property name="toolTip">
-          <string>Enter up to 128 exact desktop-file ID and width pairs, one per line, for example org.kde.konsole=60 or org.mozilla.firefox=960px.</string>
+          <string>Enter up to 128 exact, case-sensitive application identifier and width pairs, one per line, for example org.kde.konsole=60 or org.mozilla.firefox=960px.</string>
          </property>
          <property name="whatsThis">
           <string>Each nonempty line affects only fresh singleton admission. After the equals sign, use a bare 10 to 100 percentage, an explicit 10% to 100% percentage, or a fixed 1px to 16384px logical width. Fixed widths are constrained by the admitted window and snapped to the assigned output pixel grid. Existing columns and reset behavior are unchanged.</string>
@@ -537,10 +547,10 @@
        <item>
         <widget class="QPlainTextEdit" name="kcfg_ApplicationWindowHeights">
          <property name="toolTip">
-          <string>Enter up to 128 exact, case-sensitive KWin desktopFileName and height pairs, one per line, for example org.kde.konsole=60 or org.mozilla.firefox=720px.</string>
+          <string>Enter up to 128 exact, case-sensitive application identifier and height pairs, one per line, for example org.kde.konsole=60 or org.mozilla.firefox=720px.</string>
          </property>
          <property name="whatsThis">
-          <string>Each nonempty desktopFileName=value line affects only fresh singleton tiled admission. After the equals sign, use a bare 10 to 100 percentage, an explicit 10% to 100% percentage, or a fixed 1px to 16384px logical client height. Existing, restored, and transferred geometry is unchanged. Solver constraints and output pixel-grid snapping remain authoritative.</string>
+          <string>Each nonempty identifier=value line affects only fresh singleton tiled admission. After the equals sign, use a bare 10 to 100 percentage, an explicit 10% to 100% percentage, or a fixed 1px to 16384px logical client height. Existing, restored, and transferred geometry is unchanged. Solver constraints and output pixel-grid snapping remain authoritative.</string>
          </property>
          <property name="minimumSize">
           <size>
@@ -563,7 +573,7 @@
        <item>
         <widget class="QPlainTextEdit" name="kcfg_ApplicationFocusCentering">
          <property name="toolTip">
-          <string>Enter one exact, case-sensitive KWin desktopFileName per line. This affects horizontal focus centering only.</string>
+          <string>Enter one exact, case-sensitive application identifier per line. This affects horizontal focus centering only.</string>
          </property>
          <property name="whatsThis">
           <string>Blank lines are ignored. Exact matches are centered after horizontal focus navigation.</string>
@@ -589,7 +599,7 @@
        <item>
         <widget class="QPlainTextEdit" name="kcfg_ApplicationInitialDestinations">
          <property name="toolTip">
-          <string>Enter up to 128 exact, case-sensitive KWin desktopFileName=desktop-name:Work,output:DP-1 rules, one per line. Use desktop:2 or desktop-name:Work, optionally with an output. Desktop numbers are 1 to 25; desktop and output names are exact and case-sensitive.</string>
+          <string>Enter up to 128 exact, case-sensitive identifier=desktop-name:Work,output:DP-1 rules, one per line. Use desktop:2 or desktop-name:Work, optionally with an output. Desktop numbers are 1 to 25; desktop and output names are exact and case-sensitive.</string>
          </property>
          <property name="whatsThis">
           <string>Rules apply once to genuinely new normal windows, before initial floating, full-width, and fullscreen rules. A named desktop must match exactly one current virtual desktop. Admission writes only the new window's desktop and output assignment; it never moves an already tracked window, changes focus, or switches the current desktop. Missing, ambiguous, or rejected destinations use a safe one-shot fallback. Live edits affect future windows only.</string>
@@ -615,7 +625,7 @@
        <item>
         <widget class="QPlainTextEdit" name="kcfg_ApplicationInitialFloating">
          <property name="toolTip">
-          <string>Enter one exact, case-sensitive desktop-file ID per line.</string>
+          <string>Enter one exact, case-sensitive application identifier per line.</string>
          </property>
          <property name="whatsThis">
           <string>Blank lines are ignored. New exact matches start as manually floating windows.</string>
@@ -641,7 +651,7 @@
        <item>
         <widget class="QPlainTextEdit" name="kcfg_ApplicationFloatingPositions">
          <property name="toolTip">
-          <string>Enter up to 128 exact, case-sensitive KWin desktopFileName=anchor,x,y rules, one per line. Anchors are top-left, top, top-right, right, bottom-right, bottom, bottom-left, or left. Offsets are signed integer logical pixels from -16384 to 16384. Rules apply when a genuinely new normal window starts manual floating or a tiled window first enters manual floating. A remembered manual position wins afterward. Startup-existing, restored, already manually floating, automatic, and dialog windows are not repositioned. Desktop and output transfers preserve the current frame. Live edits affect future first manual-floating placements only.</string>
+          <string>Enter up to 128 exact, case-sensitive identifier=anchor,x,y rules, one per line. Anchors are top-left, top, top-right, right, bottom-right, bottom, bottom-left, or left. Offsets are signed integer logical pixels from -16384 to 16384. Rules apply when a genuinely new normal window starts manual floating or a tiled window first enters manual floating. A remembered manual position wins afterward. Startup-existing, restored, already manually floating, automatic, and dialog windows are not repositioned. Desktop and output transfers preserve the current frame. Live edits affect future first manual-floating placements only.</string>
          </property>
          <property name="whatsThis">
           <string>Rules apply when a genuinely new normal window starts manual floating or a tiled window first enters manual floating. A remembered manual position wins afterward. Startup-existing, restored, already manually floating, automatic, and dialog windows are not repositioned. Desktop and output transfers preserve the current frame. Live edits affect future first manual-floating placements only.</string>
@@ -667,10 +677,10 @@
        <item>
         <widget class="QPlainTextEdit" name="kcfg_ApplicationInitialFullWidth">
          <property name="toolTip">
-          <string>Enter up to 128 exact, case-sensitive KWin desktopFileName values, one per line. Genuinely new normal tiled matches open as full-width columns. Their exact application or default width remains the Meta+F restore width. Existing, restored, transferred, and freshly re-tiled windows are unchanged. Live edits affect future tracked windows and do not move current ones.</string>
+          <string>Enter up to 128 exact, case-sensitive application identifiers, one per line. Genuinely new normal tiled matches open as full-width columns. Their exact application or default width remains the Meta+F restore width. Existing, restored, transferred, and freshly re-tiled windows are unchanged. Live edits affect future tracked windows and do not move current ones.</string>
          </property>
          <property name="whatsThis">
-          <string>Blank lines are ignored. Only genuinely new normal tiled windows matching an exact desktopFileName open as full-width columns; their configured application or default width remains the Meta+F restore width. Existing, restored, transferred, and freshly re-tiled windows are unchanged. Live edits affect future tracked windows and do not move current ones.</string>
+          <string>Blank lines are ignored. Only genuinely new normal tiled windows matching an exact application identifier open as full-width columns; their configured application or default width remains the Meta+F restore width. Existing, restored, transferred, and freshly re-tiled windows are unchanged. Live edits affect future tracked windows and do not move current ones.</string>
          </property>
          <property name="minimumSize">
           <size>
@@ -693,7 +703,7 @@
        <item>
         <widget class="QPlainTextEdit" name="kcfg_ApplicationInitialMaximized">
          <property name="toolTip">
-          <string>Enter up to 128 exact, case-sensitive KWin desktopFileName values, one per line. Fresh normal matches request native maximize to the work-area edges after their underlying tiled or floating admission. Startup-existing, restored, and already tracked windows remain unchanged. Unsupported or rejected maximize requests use a safe one-shot fallback. Live edits affect future tracked windows only.</string>
+          <string>Enter up to 128 exact, case-sensitive application identifiers, one per line. Fresh normal matches request native maximize to the work-area edges after their underlying tiled or floating admission. Startup-existing, restored, and already tracked windows remain unchanged. Unsupported or rejected maximize requests use a safe one-shot fallback. Live edits affect future tracked windows only.</string>
          </property>
          <property name="whatsThis">
           <string>Blank lines are ignored. Fresh normal exact matches request native maximize to the work-area edges after their underlying tiled or floating admission. Startup-existing, restored, and already tracked windows remain unchanged. Unsupported or rejected maximize requests fall back once without retrying. Live edits affect future tracked windows only.</string>
@@ -719,7 +729,7 @@
        <item>
         <widget class="QPlainTextEdit" name="kcfg_ApplicationInitialFocused">
          <property name="toolTip">
-          <string>Enter up to 128 exact, case-sensitive KWin desktopFileName values, one per line. Fresh normal matches request focus once after admission only when their desktop and output context is already visible. The rule never selects a desktop or output and does not suppress normal KWin focus for unlisted applications. Rejected or unavailable focus requests are not retried. Live edits affect future tracked windows only.</string>
+          <string>Enter up to 128 exact, case-sensitive application identifiers, one per line. Fresh normal matches request focus once after admission only when their desktop and output context is already visible. The rule never selects a desktop or output and does not suppress normal KWin focus for unlisted applications. Rejected or unavailable focus requests are not retried. Live edits affect future tracked windows only.</string>
          </property>
          <property name="whatsThis">
           <string>Blank lines are ignored. Fresh normal exact matches request focus once after admission only when their desktop and output context is already visible. The rule never selects a desktop or output, leaves normal KWin focus behavior unchanged for unlisted applications, and does not retry rejected or unavailable requests. Live edits affect future tracked windows only.</string>
@@ -745,7 +755,7 @@
        <item>
         <widget class="QPlainTextEdit" name="kcfg_ApplicationInitialUnfocused">
          <property name="toolTip">
-          <string>Enter up to 128 exact, case-sensitive KWin desktopFileName values, one per line. Fresh normal matches suppress or undo initial focus once after admission only when their desktop and output context is already visible. The rule never selects a desktop or output and wins when the same application is also listed as initially focused. Rejected or unavailable one-shot requests are not retried. Live edits affect future tracked windows only.</string>
+          <string>Enter up to 128 exact, case-sensitive application identifiers, one per line. Fresh normal matches suppress or undo initial focus once after admission only when their desktop and output context is already visible. The rule never selects a desktop or output and wins when the same application is also listed as initially focused. Rejected or unavailable one-shot requests are not retried. Live edits affect future tracked windows only.</string>
          </property>
          <property name="whatsThis">
           <string>Blank lines are ignored. Fresh normal exact matches suppress or undo initial focus once after admission only when their desktop and output context is already visible. The rule never selects a desktop or output, takes precedence over the initially focused rule, and does not retry rejected or unavailable requests. Live edits affect future tracked windows only.</string>
@@ -771,7 +781,7 @@
        <item>
         <widget class="QPlainTextEdit" name="kcfg_ApplicationInitialFullscreen">
          <property name="toolTip">
-          <string>Enter up to 128 exact, case-sensitive KWin desktopFileName values, one per line. Only genuinely new matching windows start fullscreen, and only when KWin reports that fullscreen is supported. Exiting fullscreen returns each window to its admitted tiled or floating state. Live edits affect future tracked windows only and do not rewrite existing windows.</string>
+          <string>Enter up to 128 exact, case-sensitive application identifiers, one per line. Only genuinely new matching windows start fullscreen, and only when KWin reports that fullscreen is supported. Exiting fullscreen returns each window to its admitted tiled or floating state. Live edits affect future tracked windows only and do not rewrite existing windows.</string>
          </property>
          <property name="whatsThis">
           <string>Blank lines are ignored. Only genuinely new exact matches start fullscreen when the window supports it. Exiting fullscreen restores the tiled or floating state established during admission. Existing windows are never rewritten, and live edits affect only windows tracked in the future.</string>
@@ -797,10 +807,10 @@
        <item>
         <widget class="QPlainTextEdit" name="kcfg_ApplicationTilingExclusions">
          <property name="toolTip">
-          <string>Enter one exact, case-sensitive desktop-file ID per line.</string>
+          <string>Enter one exact, case-sensitive application identifier per line.</string>
          </property>
          <property name="whatsThis">
-          <string>Blank lines are ignored. Windows matching an exact desktop-file ID stay outside the tiled layout.</string>
+          <string>Blank lines are ignored. Windows matching an exact application identifier stay outside the tiled layout.</string>
          </property>
          <property name="minimumSize">
           <size>
@@ -823,7 +833,7 @@
        <item>
         <widget class="QPlainTextEdit" name="kcfg_ApplicationBorderlessExclusions">
          <property name="toolTip">
-          <string>Enter one exact, case-sensitive desktop-file ID per line.</string>
+          <string>Enter one exact, case-sensitive application identifier per line.</string>
          </property>
          <property name="whatsThis">
           <string>Blank lines are ignored. Exact matches keep their KWin borders and title bars.</string>

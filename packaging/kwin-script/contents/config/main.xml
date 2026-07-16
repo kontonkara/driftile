@@ -113,59 +113,59 @@
       <default></default>
     </entry>
     <entry name="ApplicationColumnPresentations" type="String">
-      <label>Column presentations by desktop-file ID</label>
+      <label>Column presentations by application identifier</label>
       <default></default>
     </entry>
     <entry name="ApplicationColumnWidths" type="String">
-      <label>Initial column widths in percent or pixels by desktop-file ID</label>
+      <label>Initial column widths in percent or pixels by application identifier</label>
       <default></default>
     </entry>
     <entry name="ApplicationWindowHeights" type="String">
-      <label>Initial tiled client heights in percent or pixels by desktop-file ID</label>
+      <label>Initial tiled client heights in percent or pixels by application identifier</label>
       <default></default>
     </entry>
     <entry name="ApplicationFocusCentering" type="String">
-      <label>Applications centered after horizontal focus navigation by KWin desktopFileName</label>
+      <label>Applications centered after horizontal focus navigation by application identifier</label>
       <default></default>
     </entry>
     <entry name="ApplicationInitialDestinations" type="String">
-      <label>Initial application desktop and output destinations by KWin desktopFileName</label>
+      <label>Initial application desktop and output destinations by application identifier</label>
       <default></default>
     </entry>
     <entry name="ApplicationInitialFloating" type="String">
-      <label>Applications initially floating by desktop-file ID</label>
+      <label>Applications initially floating by application identifier</label>
       <default></default>
     </entry>
     <entry name="ApplicationFloatingPositions" type="String">
-      <label>Application floating positions</label>
+      <label>Application floating positions by application identifier</label>
       <default></default>
     </entry>
     <entry name="ApplicationInitialFullWidth" type="String">
-      <label>Applications initially full-width by KWin desktopFileName</label>
+      <label>Applications initially full-width by application identifier</label>
       <default></default>
     </entry>
     <entry name="ApplicationInitialMaximized" type="String">
-      <label>Applications initially maximized by KWin desktopFileName</label>
+      <label>Applications initially maximized by application identifier</label>
       <default></default>
     </entry>
     <entry name="ApplicationInitialFocused" type="String">
-      <label>Applications initially focused by KWin desktopFileName</label>
+      <label>Applications initially focused by application identifier</label>
       <default></default>
     </entry>
     <entry name="ApplicationInitialUnfocused" type="String">
-      <label>Applications initially unfocused by KWin desktopFileName</label>
+      <label>Applications initially unfocused by application identifier</label>
       <default></default>
     </entry>
     <entry name="ApplicationInitialFullscreen" type="String">
-      <label>Applications initially fullscreen by KWin desktopFileName</label>
+      <label>Applications initially fullscreen by application identifier</label>
       <default></default>
     </entry>
     <entry name="ApplicationTilingExclusions" type="String">
-      <label>Applications excluded from tiling by desktop-file ID</label>
+      <label>Applications excluded from tiling by application identifier</label>
       <default></default>
     </entry>
     <entry name="ApplicationBorderlessExclusions" type="String">
-      <label>Applications keeping KWin borders and title bars by desktop-file ID</label>
+      <label>Applications keeping KWin borders and title bars by application identifier</label>
       <default></default>
     </entry>
   </group>
