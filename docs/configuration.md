@@ -57,10 +57,12 @@ The effect animates automatic position and size changes without writing window
 geometry. Manual move or resize and fullscreen remain ineligible. Geometry
 changes received while another fullscreen or workspace transition owns
 presentation are coalesced per window and replayed once when that ownership
-ends. An active window already confirmed on the current desktop and activity
-may replay before its delayed visibility flag settles; other temporarily hidden
-windows keep the first captured frame until a public visibility, desktop,
-activity, or later geometry signal makes replay safe.
+ends. A rapid focus handoff retains a one-shot visibility lease for both the
+previous and new active window, so their first replay can start before delayed
+visibility flags settle. The lease expires when the animation, visibility, or
+desktop context settles. Other temporarily hidden windows keep the first
+captured frame until a public visibility, desktop, activity, or later geometry
+signal makes replay safe.
 Deletion, configuration reload, or true ineligibility discards the pending
 change. Replay uses no timer or private API and writes neither geometry nor
 persistence.

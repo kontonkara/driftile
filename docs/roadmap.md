@@ -1759,6 +1759,10 @@ No other feature belongs to 1.41.0.
   shortcut or persistence field.
 - Add a global `default`, `focused`, or `unfocused` fresh-window focus policy
   beneath exact application focus rules.
+- Recover close focus after delayed KWin removal settlement without accepting
+  an active window from another output, desktop, or activity as the result.
+- Preserve transition continuity when focus changes before a workspace
+  transition's visibility flags settle.
 
 Release criteria:
 
@@ -1770,5 +1774,9 @@ Release criteria:
   within public Plasma 6.7+ APIs.
 - Exact unfocused rules win over exact focused rules, exact rules win over the
   global focus policy, and `default` preserves ordinary KWin behavior.
+- A live same-context replacement remains focused after close; otherwise one
+  bounded follow-up probe restores the latest eligible same-context window.
+- Rapid desktop handoffs retain only one-shot, context-guarded visibility and
+  active-animation leases, with no timer or private API.
 
 No other feature currently belongs to 1.42.0.
