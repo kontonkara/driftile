@@ -1206,12 +1206,14 @@ export class RuntimeController {
     new PointerPreviewContextCache<PointerExternalPreviewContext | null>();
   private pointerExternalPreviewLease: PointerPreviewContextLease<PointerExternalPreviewContext | null> | null =
     null;
+  private pointerExternalPreviewPresentedContextKey: string | null = null;
   private pointerDropPreviewBlocked = false;
   private pointerDropPreviewCursorConnected = false;
   private pointerDropPreviewDestinationKey: string | null = null;
   private pointerDropPreviewFrame: Rect | null = null;
   private pointerDropPreviewOwnerSequence = 0;
   private pointerDropPreviewOwnerToken: string | null = null;
+  private pointerDropPreviewScopeToken: string | null = null;
   private pointerDropPreviewScheduleToken: object | null = null;
   private pointerDropPreviewUnavailable = false;
   private pointerResizeIntent: PointerResizeIntent | null = null;
@@ -4651,6 +4653,7 @@ export class RuntimeController {
   ): void => {
     this.pointerResizeIntent = null;
     this.cancelInvalidWindowRemovalFocusRecovery();
+    this.invalidatePointerExternalPreviewForDesktopSelection(output);
 
     if (this.windowTransferOperation) {
       if (
@@ -5296,6 +5299,7 @@ export class RuntimeController {
       return;
     }
 
+    this.pointerExternalPreviewPresentedContextKey = null;
     this.pointerMoveIntent = {
       before,
       contextFingerprint: contextGeometry.fingerprint,
@@ -5431,6 +5435,7 @@ export class RuntimeController {
       return;
     }
 
+    this.pointerExternalPreviewPresentedContextKey = null;
     this.pointerMoveIntent = {
       before,
       contextFingerprint: contextGeometry.fingerprint,
@@ -5641,7 +5646,9 @@ export class RuntimeController {
     }
 
     const point = { x: cursor.x, y: cursor.y };
-    const external = this.resolveExternalPointerDrop(intent, point);
+    const external = intent.floating
+      ? null
+      : this.resolveExternalPointerDrop(intent, point);
 
     if (external) {
       this.updateExternalPointerDropPreview(intent, point, external);
@@ -5704,26 +5711,31 @@ export class RuntimeController {
     cursor: Point,
     external: PointerExternalDropIntent,
   ): void {
-    const settled = this.settledExternalPointerContext(external);
+    let lease = this.reusableExternalPointerPreviewLease(external);
 
-    if (typeof settled === "string") {
-      this.clearPointerExternalPreviewContext();
-      this.clearPointerDropPreview();
-      return;
+    if (!lease) {
+      const settled = this.settledExternalPointerContext(external);
+
+      if (typeof settled === "string") {
+        this.clearPointerExternalPreviewContext();
+        this.clearPointerDropPreview();
+        return;
+      }
+
+      const { contextGeometry } = settled;
+      lease = this.pointerExternalPreviewContexts.acquire(
+        {
+          activityId: external.context.activityId,
+          desktopId: external.context.desktopId,
+          gap: this.gap,
+          geometryFingerprint: contextGeometry.fingerprint,
+          outputId: external.context.outputId,
+          topologyRevision: this.topologyRevision,
+        },
+        () => this.buildExternalPointerPreviewContext(external, settled),
+      );
     }
 
-    const { contextGeometry } = settled;
-    const lease = this.pointerExternalPreviewContexts.acquire(
-      {
-        activityId: external.context.activityId,
-        desktopId: external.context.desktopId,
-        gap: this.gap,
-        geometryFingerprint: contextGeometry.fingerprint,
-        outputId: external.context.outputId,
-        topologyRevision: this.topologyRevision,
-      },
-      () => this.buildExternalPointerPreviewContext(external, settled),
-    );
     this.pointerExternalPreviewLease = lease;
     const previewContext = lease.preview;
 
@@ -5739,7 +5751,7 @@ export class RuntimeController {
 
     if (
       capture?.lease !== lease ||
-      !rectContainsPoint(capture.preview.frame, cursor)
+      !this.pointerExternalPreviewContainsCursor(capture, cursor)
     ) {
       const preview = planPointerExternalDropPreview({
         context: previewContext.layout,
@@ -5758,11 +5770,15 @@ export class RuntimeController {
       return;
     }
 
-    this.showPointerDropPreviewFrame(
-      capture.preview.frame,
-      external.contextKey,
-      intent.previewOwnerToken,
-    );
+    if (
+      this.showPointerDropPreviewFrame(
+        capture.preview.frame,
+        external.contextKey,
+        intent.previewOwnerToken,
+      )
+    ) {
+      this.pointerExternalPreviewPresentedContextKey = external.contextKey;
+    }
   }
 
   private updateFloatingPointerDropPreview(
@@ -5810,6 +5826,54 @@ export class RuntimeController {
       preview.frame,
       intent.contextKey,
       intent.previewOwnerToken,
+    );
+  }
+
+  private reusableExternalPointerPreviewLease(
+    external: PointerExternalDropIntent,
+  ): PointerPreviewContextLease<PointerExternalPreviewContext | null> | null {
+    const lease = this.pointerExternalPreviewLease;
+    const preview = lease?.preview;
+    const key = external.contextKey;
+
+    if (
+      !lease ||
+      !preview ||
+      !this.pointerExternalPreviewContexts.owns(lease) ||
+      lease.key.outputId !== external.context.outputId ||
+      lease.key.desktopId !== external.context.desktopId ||
+      lease.key.activityId !== external.context.activityId ||
+      lease.key.topologyRevision !== this.topologyRevision ||
+      lease.key.gap !== this.gap ||
+      !this.pointerExternalDestinationIsSelected(external) ||
+      this.dirtyContexts.has(key) ||
+      this.pendingAdmissionContexts.has(key) ||
+      this.hasStructuralCapacityState(key) ||
+      this.waitingWindowIds.has(key) ||
+      this.toggleTransitionPending(key) ||
+      this.contexts.get(key) !== preview.runtimeContext ||
+      preview.runtimeContext.geometryFingerprint !==
+        lease.key.geometryFingerprint
+    ) {
+      return null;
+    }
+
+    return lease;
+  }
+
+  private pointerExternalPreviewContainsCursor(
+    capture: PointerExternalPreviewCapture,
+    cursor: Point,
+  ): boolean {
+    if (capture.preview.kind === "window") {
+      return rectContainsPoint(capture.preview.frame, cursor);
+    }
+
+    const frame = capture.preview.frame;
+    return (
+      rectContainsPoint(capture.context.visibleArea, cursor) &&
+      cursor.x >= frame.x &&
+      cursor.x < frame.x + frame.width
     );
   }
 
@@ -5948,41 +6012,45 @@ export class RuntimeController {
   private showPointerDropPreviewFrame(
     frame: Rect,
     destinationKey: string,
-    ownerToken: string,
-  ): void {
+    scopeToken: string,
+  ): boolean {
     if (
       this.pointerDropPreviewUnavailable ||
       this.pointerDropPreviewBlocked ||
       !this.showPointerDropPreview ||
       !this.hidePointerDropPreview
     ) {
-      return;
+      return false;
     }
 
     if (
       this.pointerDropPreviewFrame !== null &&
       rectsEqual(this.pointerDropPreviewFrame, frame) &&
       this.pointerDropPreviewDestinationKey === destinationKey &&
-      this.pointerDropPreviewOwnerToken === ownerToken
+      this.pointerDropPreviewScopeToken === scopeToken
     ) {
-      return;
+      return true;
     }
 
     if (this.pointerDropPreviewHasConflictingOutline()) {
       this.pointerDropPreviewBlocked = true;
       this.resetPointerDropPreviewState();
-      return;
+      return false;
     }
 
     const nextFrame = snapshotRect(frame);
+    const ownerToken = this.nextPointerDropPreviewOwnerToken();
     this.pointerDropPreviewFrame = nextFrame;
     this.pointerDropPreviewDestinationKey = destinationKey;
     this.pointerDropPreviewOwnerToken = ownerToken;
+    this.pointerDropPreviewScopeToken = scopeToken;
 
     try {
       this.showPointerDropPreview(nextFrame, destinationKey, ownerToken);
+      return true;
     } catch (error) {
       this.disablePointerDropPreview(error);
+      return false;
     }
   }
 
@@ -6056,6 +6124,7 @@ export class RuntimeController {
     this.pointerDropPreviewDestinationKey = null;
     this.pointerDropPreviewFrame = null;
     this.pointerDropPreviewOwnerToken = null;
+    this.pointerDropPreviewScopeToken = null;
   }
 
   private nextPointerDropPreviewOwnerToken(): string {
@@ -6070,6 +6139,105 @@ export class RuntimeController {
     this.pointerExternalPreviewCapture = null;
     this.pointerExternalPreviewLease = null;
     this.pointerExternalPreviewContexts.clear();
+  }
+
+  private invalidatePointerExternalPreviewContext(
+    key: string,
+    preserveExpectedSourceTransition = false,
+  ): void {
+    const lease = this.pointerExternalPreviewLease;
+    const leasedKey = lease ? contextKey(lease.key) : null;
+    const capturedKey =
+      this.pointerExternalPreviewCapture?.context.runtimeContext.key ?? null;
+
+    if (
+      leasedKey !== key &&
+      capturedKey !== key &&
+      this.pointerDropPreviewDestinationKey !== key
+    ) {
+      return;
+    }
+
+    if (
+      preserveExpectedSourceTransition &&
+      this.pointerExternalPreviewOwnsExpectedSourceTransition(key)
+    ) {
+      return;
+    }
+
+    this.clearPointerExternalPreviewContext();
+
+    if (this.pointerDropPreviewDestinationKey === key) {
+      this.clearPointerDropPreview();
+    }
+
+    this.schedulePointerDropPreview();
+  }
+
+  private pointerExternalPreviewOwnsExpectedSourceTransition(
+    key: string,
+  ): boolean {
+    const intent = this.pointerMoveIntent;
+    const capture = this.pointerExternalPreviewCapture;
+
+    if (
+      !intent ||
+      intent.phase !== "dragging" ||
+      intent.floating ||
+      !capture ||
+      capture.context.runtimeContext.key !== key ||
+      this.workspace.activeWindow !== intent.source ||
+      !intent.source.move
+    ) {
+      return false;
+    }
+
+    const observed = normalizeWindow(intent.source);
+    const liveContext = observed ? this.resolveManagedContext(observed) : null;
+
+    if (!liveContext || contextKey(liveContext) !== key) {
+      return false;
+    }
+
+    const participantIds = new Set(
+      capture.context.participants.map((participant) => participant.id),
+    );
+    const members = capture.context.runtimeContext.windowIds;
+
+    return (
+      capture.context.participants.every((participant) =>
+        members.has(participant.id),
+      ) &&
+      [...members].every(
+        (id) => id === intent.draggedWindowId || participantIds.has(id),
+      )
+    );
+  }
+
+  private invalidatePointerExternalPreviewForDesktopSelection(
+    output?: KWinOutput,
+  ): void {
+    const lease = this.pointerExternalPreviewLease;
+    const key = lease
+      ? contextKey(lease.key)
+      : (this.pointerExternalPreviewCapture?.context.runtimeContext.key ??
+        this.pointerExternalPreviewPresentedContextKey);
+
+    if (!key) {
+      return;
+    }
+
+    const destination = managedContextFromKey(key);
+
+    if (
+      output &&
+      destination &&
+      destination.outputId !== outputId(output.name)
+    ) {
+      return;
+    }
+
+    this.invalidatePointerExternalPreviewContext(key);
   }
 
   private startPointerDropPreviewTracking(): void {
@@ -6114,6 +6282,7 @@ export class RuntimeController {
 
     this.pointerMoveIntent = null;
     this.clearPointerExternalPreviewContext();
+    this.pointerExternalPreviewPresentedContextKey = null;
     this.stopPointerDropPreviewTracking();
     this.clearPointerDropPreview();
     this.pointerDropPreviewBlocked = false;
@@ -6130,21 +6299,27 @@ export class RuntimeController {
     }
 
     const settled = this.settledExternalPointerContext(external);
-    external.insertion =
-      typeof settled === "string"
-        ? { state: settled }
-        : (this.captureExternalPointerInsertionFromPreview(
+    if (typeof settled === "string") {
+      external.insertion = { state: settled };
+      return external;
+    }
+
+    const captured = this.captureExternalPointerInsertionFromPreview(
+      intent,
+      external,
+      cursor,
+      settled,
+    );
+    external.insertion = captured
+      ? captured
+      : this.pointerExternalPreviewPresentedContextKey === external.contextKey
+        ? { state: "unavailable" }
+        : this.captureExternalPointerInsertion(
             intent,
             external,
             cursor,
             settled,
-          ) ??
-          this.captureExternalPointerInsertion(
-            intent,
-            external,
-            cursor,
-            settled,
-          ));
+          );
     return external;
   }
 
@@ -6152,12 +6327,21 @@ export class RuntimeController {
     intent: PointerMoveIntent,
     cursor: Point,
   ): PointerExternalDropIntent | null {
-    const outputs = this.workspace.screens.filter((output) =>
-      rectContainsPoint(output.geometry, cursor),
-    );
-    const output = outputs[0];
+    let output: KWinOutput | null = null;
 
-    if (outputs.length !== 1 || !output) {
+    for (const candidate of this.workspace.screens) {
+      if (!rectContainsPoint(candidate.geometry, cursor)) {
+        continue;
+      }
+
+      if (output) {
+        return null;
+      }
+
+      output = candidate;
+    }
+
+    if (!output) {
       return null;
     }
 
@@ -6226,7 +6410,10 @@ export class RuntimeController {
         ),
         capture.context.layout,
       ) ||
-      !this.externalPointerPreviewParticipantsAreCurrent(capture.context)
+      !this.externalPointerPreviewParticipantsAreCurrent(
+        capture.context,
+        intent.draggedWindowId,
+      )
     ) {
       return null;
     }
@@ -6387,14 +6574,29 @@ export class RuntimeController {
 
   private externalPointerPreviewParticipantsAreCurrent(
     preview: PointerExternalPreviewContext,
+    draggedWindowId: WindowId,
   ): boolean {
     const context = preview.runtimeContext;
+    const participantIds = new Set(
+      preview.participants.map((participant) => participant.id),
+    );
+    const membersAreCurrent =
+      preview.participants.every((participant) =>
+        context.windowIds.has(participant.id),
+      ) &&
+      [...context.windowIds].every(
+        (id) => id === draggedWindowId || participantIds.has(id),
+      );
 
     if (
-      preview.participants.length !== context.windowIds.size ||
+      !membersAreCurrent ||
       this.contexts.get(context.key) !== context ||
       context.geometryFingerprint !== preview.contextFingerprint ||
-      this.pointerContextHasPendingSync(preview.participants, context)
+      this.pointerContextHasPendingSync(
+        preview.participants,
+        context,
+        draggedWindowId,
+      )
     ) {
       return false;
     }
@@ -6598,12 +6800,22 @@ export class RuntimeController {
       if (settled === "unavailable") {
         external.insertion = { state: "unavailable" };
       } else if (settled !== "pending" && intent.finalCursor) {
-        external.insertion = this.captureExternalPointerInsertion(
-          intent,
-          external,
-          intent.finalCursor,
-          settled,
-        );
+        external.insertion =
+          this.captureExternalPointerInsertionFromPreview(
+            intent,
+            external,
+            intent.finalCursor,
+            settled,
+          ) ??
+          (this.pointerExternalPreviewPresentedContextKey ===
+          external.contextKey
+            ? { state: "unavailable" }
+            : this.captureExternalPointerInsertion(
+                intent,
+                external,
+                intent.finalCursor,
+                settled,
+              ));
       }
     } else if (
       external.insertion.state === "ready" &&
@@ -6980,7 +7192,9 @@ export class RuntimeController {
         (participant) => participant.id === changedId,
       )
     ) {
-      this.clearPointerExternalPreviewContext();
+      this.invalidatePointerExternalPreviewContext(
+        previewContext.runtimeContext.key,
+      );
     }
 
     if (this.borderSynchronizationIds.has(changedId)) {
@@ -21954,6 +22168,7 @@ export class RuntimeController {
     }
 
     this.clearPointerExternalPreviewContext();
+    this.pointerExternalPreviewPresentedContextKey = null;
     this.stopPointerDropPreviewTracking();
     this.clearPointerDropPreview();
     this.pointerDropPreviewBlocked = false;
@@ -22235,6 +22450,7 @@ export class RuntimeController {
   private pointerContextHasPendingSync(
     participants: readonly PointerMoveParticipant[],
     context: RuntimeContext,
+    ignoredWindowId?: WindowId,
   ): boolean {
     if (this.pendingWindowSyncs.size === 0) {
       return false;
@@ -22245,6 +22461,10 @@ export class RuntimeController {
     );
 
     for (const id of this.pendingWindowSyncs) {
+      if (id === ignoredWindowId) {
+        continue;
+      }
+
       if (
         participantIds.has(id) ||
         this.managedWindows.get(id)?.contextKey === context.key ||
@@ -29701,17 +29921,8 @@ export class RuntimeController {
   }
 
   private markContextDirty(context: RuntimeContext): void {
-    const previewKey = this.pointerExternalPreviewLease?.key;
-
-    if (
-      previewKey?.outputId === context.outputId &&
-      previewKey.desktopId === context.desktopId &&
-      previewKey.activityId === context.activityId
-    ) {
-      this.clearPointerExternalPreviewContext();
-    }
-
     this.dirtyContexts.add(context.key);
+    this.invalidatePointerExternalPreviewContext(context.key, true);
   }
 
   private forgetCanceledCapacityPark(key: string): void {

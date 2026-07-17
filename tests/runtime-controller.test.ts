@@ -32926,6 +32926,34 @@ describe("RuntimeController", () => {
     expect(setup.previews[0]?.ownerToken).toMatch(/^\d+:\d+$/u);
   });
 
+  it("rotates the preview owner when the external target frame changes", () => {
+    const setup = createExternalPointerDropRuntimeFixture();
+    const targetFrame = { ...setup.target.window.frameGeometry };
+
+    beginExternalPointerDrop(setup, "after");
+    flushManualScheduler(setup.scheduler);
+    const afterPreview = setup.previews[setup.previews.length - 1];
+
+    setup.fixture.setCursorPosition(
+      targetFrame.x + targetFrame.width / 2,
+      targetFrame.y + targetFrame.height * 0.25,
+    );
+    flushManualScheduler(setup.scheduler);
+    const beforePreview = setup.previews[setup.previews.length - 1];
+
+    expect(afterPreview).toMatchObject({
+      frame: {
+        ...targetFrame,
+        height: targetFrame.height / 2,
+        y: targetFrame.y + targetFrame.height / 2,
+      },
+    });
+    expect(beforePreview).toMatchObject({
+      frame: { ...targetFrame, height: targetFrame.height / 2 },
+    });
+    expect(beforePreview?.ownerToken).not.toBe(afterPreview?.ownerToken);
+  });
+
   it("retargets the live preview after a same-output desktop switch", () => {
     const setup = createExternalPointerDropRuntimeFixture({
       sameOutputCrossDesktop: true,
@@ -32933,10 +32961,24 @@ describe("RuntimeController", () => {
     const targetFrame = { ...setup.target.window.frameGeometry };
 
     beginExternalPointerDrop(setup, "before");
+    flushManualScheduler(setup.scheduler);
+    const sourcePreview = setup.previews[setup.previews.length - 1];
     showExternalPointerTargetDesktop(setup);
+    setup.fixture.setCursorPosition(
+      targetFrame.x + targetFrame.width / 2,
+      targetFrame.y + targetFrame.height * 0.25,
+    );
+    flushManualScheduler(setup.scheduler);
 
     const preview = setup.previews[setup.previews.length - 1];
 
+    expect(sourcePreview?.destinationKey).toBe(
+      [
+        setup.sourceOutput.name,
+        setup.sourceDesktop.id,
+        String(FALLBACK_ACTIVITY_ID),
+      ].join("\u0000"),
+    );
     expect(preview).toMatchObject({
       destinationKey: [
         setup.targetOutput.name,
@@ -32949,6 +32991,67 @@ describe("RuntimeController", () => {
       },
     });
     expect(preview?.ownerToken).toMatch(/^\d+:\d+$/u);
+    expect(preview?.ownerToken).not.toBe(sourcePreview?.ownerToken);
+  });
+
+  it("requires a refreshed capture after an external preview is invalidated", () => {
+    const stale = createExternalPointerDropRuntimeFixture();
+    const staleTargetFrame = { ...stale.target.window.frameGeometry };
+
+    beginExternalPointerDrop(stale, "after");
+    flushManualScheduler(stale.scheduler);
+    const stalePreview = stale.previews[stale.previews.length - 1];
+    invalidateExternalPointerPreview(stale);
+
+    expect(stale.hiddenPreviewOwners).toContain(stalePreview?.ownerToken);
+
+    Object.defineProperty(stale.fixture.workspace, "cursorPos", {
+      configurable: true,
+      enumerable: true,
+      value: {
+        x: staleTargetFrame.x + staleTargetFrame.width / 2,
+        y: staleTargetFrame.y + staleTargetFrame.height * 0.25,
+      },
+    });
+    finishExternalPointerDrop(stale, "finish-before-output");
+
+    expect(
+      testLayoutColumns(
+        stale.controller,
+        stale.targetOutput,
+        stale.targetDesktop,
+      ).map((column) => column.windowIds),
+    ).toEqual([["target"], ["dragged"]]);
+
+    const refreshed = createExternalPointerDropRuntimeFixture();
+    const refreshedTargetFrame = { ...refreshed.target.window.frameGeometry };
+
+    beginExternalPointerDrop(refreshed, "after");
+    flushManualScheduler(refreshed.scheduler);
+    const originalPreview = refreshed.previews[refreshed.previews.length - 1];
+    invalidateExternalPointerPreview(refreshed);
+
+    expect(refreshed.hiddenPreviewOwners).toContain(
+      originalPreview?.ownerToken,
+    );
+
+    flushManualScheduler(refreshed.scheduler);
+    refreshed.fixture.setCursorPosition(
+      refreshedTargetFrame.x + refreshedTargetFrame.width / 2,
+      refreshedTargetFrame.y + refreshedTargetFrame.height * 0.25,
+    );
+    flushManualScheduler(refreshed.scheduler);
+    const refreshedPreview = refreshed.previews[refreshed.previews.length - 1];
+
+    expect(refreshedPreview?.ownerToken).not.toBe(originalPreview?.ownerToken);
+    finishExternalPointerDrop(refreshed, "finish-before-output");
+    expect(
+      testLayoutColumns(
+        refreshed.controller,
+        refreshed.targetOutput,
+        refreshed.targetDesktop,
+      ),
+    ).toEqual([{ id: "column:target", windowIds: ["dragged", "target"] }]);
   });
 
   it.each([
@@ -32964,6 +33067,8 @@ describe("RuntimeController", () => {
       const publicationCount = setup.published.length;
 
       beginExternalPointerDrop(setup, position);
+      flushManualScheduler(setup.scheduler);
+      expect(setup.previews).toHaveLength(1);
       finishExternalPointerDrop(setup, eventOrder);
 
       expect(
@@ -33015,6 +33120,8 @@ describe("RuntimeController", () => {
     const publicationCount = setup.published.length;
 
     beginExternalPointerGutterDrop(setup);
+    flushManualScheduler(setup.scheduler);
+    expect(setup.previews).toHaveLength(1);
     finishExternalPointerDrop(setup, "output-before-finish");
 
     expect(
@@ -35015,6 +35122,38 @@ describe("RuntimeController", () => {
       }
     },
   );
+
+  it("does not advertise a cross-context target for a manually floating window", () => {
+    const setup = createManualFloatingPointerDropRuntimeFixture({
+      externalDestination: true,
+    });
+    const externalTarget = setup.externalTarget;
+
+    if (!externalTarget) {
+      throw new Error("manual floating fixture needs an external target");
+    }
+
+    const targetFrame = externalTarget.window.frameGeometry;
+    const cursor = {
+      x: targetFrame.x + targetFrame.width / 2,
+      y: targetFrame.y + targetFrame.height / 2,
+    };
+    Object.defineProperty(setup.dragged.window, "move", {
+      configurable: true,
+      value: true,
+    });
+    setup.dragged.moveResizedChanged.emit();
+    setup.dragged.interactiveMoveResizeStarted.emit();
+    setup.dragged.setFrameGeometry({
+      ...setup.dragged.window.frameGeometry,
+      x: cursor.x - setup.dragged.window.frameGeometry.width / 2,
+      y: cursor.y - setup.dragged.window.frameGeometry.height / 2,
+    });
+    setup.fixture.setCursorPosition(cursor.x, cursor.y);
+    flushManualScheduler(setup.workScheduler);
+
+    expect(setup.previews).toEqual([]);
+  });
 
   it("commits a column-boundary drop only after two exact frame samples", () => {
     const setup = createPointerColumnDropRuntimeFixture(true);
@@ -46601,6 +46740,28 @@ function beginExternalPointerDrop(
   setup.fixture.setCursorPosition(cursor.x, cursor.y);
 }
 
+function invalidateExternalPointerPreview(
+  setup: ExternalPointerDropRuntimeFixture,
+): void {
+  const key = [
+    setup.targetOutput.name,
+    setup.targetDesktop.id,
+    String(FALLBACK_ACTIVITY_ID),
+  ].join("\u0000");
+  const runtime = setup.controller as unknown as {
+    readonly contexts: ReadonlyMap<string, unknown>;
+    markContextDirty(context: unknown): void;
+  };
+  const context = runtime.contexts.get(key);
+
+  if (!context) {
+    throw new Error("external pointer destination context is unavailable");
+  }
+
+  runtime.markContextDirty(context);
+  setup.controller.reconcile();
+}
+
 function beginExternalPointerGutterDrop(
   setup: ExternalPointerDropRuntimeFixture,
 ): void {
@@ -47171,6 +47332,7 @@ interface ManualFloatingPointerDropRuntimeFixture {
   readonly controller: RuntimeController;
   readonly desktop: KWinVirtualDesktop;
   readonly dragged: TrackedWindow;
+  readonly externalTarget: TrackedWindow | null;
   readonly fixture: WorkspaceFixture;
   readonly hiddenPreviewCount: number;
   readonly output: KWinOutput;
@@ -47179,17 +47341,29 @@ interface ManualFloatingPointerDropRuntimeFixture {
   readonly workScheduler: ManualScheduler;
 }
 
-function createManualFloatingPointerDropRuntimeFixture(): ManualFloatingPointerDropRuntimeFixture {
+function createManualFloatingPointerDropRuntimeFixture(
+  options: { readonly externalDestination?: boolean } = {},
+): ManualFloatingPointerDropRuntimeFixture {
   const output = createOutput("DP-1", 0);
+  const externalOutput = options.externalDestination
+    ? createOutput("HDMI-A-1", 1000)
+    : null;
   const desktop = { id: "desktop-1" };
   const target = createTrackedWindow("target", output, desktop);
+  const externalTarget = externalOutput
+    ? createTrackedWindow("external-target", externalOutput, desktop)
+    : null;
   const dragged = createTrackedWindow("dragged", output, desktop);
   const fixture = createWorkspace(
     output,
     desktop,
-    [output],
+    [output, ...(externalOutput ? [externalOutput] : [])],
     [desktop],
-    [target.window, dragged.window],
+    [
+      target.window,
+      ...(externalTarget ? [externalTarget.window] : []),
+      dragged.window,
+    ],
   );
   const workScheduler = new ManualScheduler();
   const resumeScheduler = new ManualScheduler();
@@ -47210,21 +47384,55 @@ function createManualFloatingPointerDropRuntimeFixture(): ManualFloatingPointerD
     throw new Error("could not start manual-floating pointer drop fixture");
   }
 
-  installTestLayout(controller, output, desktop, "column:dragged", [
-    {
-      id: "column:target",
-      presentation: "stacked",
-      width: { kind: "fixed", value: 420 },
-      windowHeights: [{ clientHeight: 240, kind: "fixed" }],
-      windowIds: ["target"],
-    },
-    {
-      id: "column:dragged",
-      presentation: "tabbed",
-      width: { kind: "fixed", value: 260 },
-      windowIds: ["dragged"],
-    },
-  ]);
+  const layout = installTestLayout(
+    controller,
+    output,
+    desktop,
+    "column:dragged",
+    [
+      {
+        id: "column:target",
+        presentation: "stacked",
+        width: { kind: "fixed", value: 420 },
+        windowHeights: [{ clientHeight: 240, kind: "fixed" }],
+        windowIds: ["target"],
+      },
+      {
+        id: "column:dragged",
+        presentation: "tabbed",
+        width: { kind: "fixed", value: 260 },
+        windowIds: ["dragged"],
+      },
+    ],
+  );
+
+  if (
+    externalOutput &&
+    externalTarget &&
+    !layout.restoreColumns({
+      activityId: FALLBACK_ACTIVITY_ID,
+      activeColumnId: columnId("column:external-target"),
+      columns: [
+        {
+          column: {
+            id: columnId("column:external-target"),
+            presentation: "stacked",
+            selectedWindowId: windowId("external-target"),
+            width: { kind: "fixed", value: 420 },
+            windowHeights: [{ clientHeight: 240, kind: "fixed" }],
+            windowIds: [windowId("external-target")],
+          },
+          index: 0,
+        },
+      ],
+      desktopId: desktopId(desktop.id),
+      outputId: outputId(externalOutput.name),
+    })
+  ) {
+    throw new Error("could not install external manual-floating target");
+  }
+
+  controller.reconcile();
   fixture.workspace.activeWindow = dragged.window;
   flushManualScheduler(workScheduler);
 
@@ -47249,6 +47457,7 @@ function createManualFloatingPointerDropRuntimeFixture(): ManualFloatingPointerD
     controller,
     desktop,
     dragged,
+    externalTarget,
     fixture,
     get hiddenPreviewCount() {
       return hiddenPreviewCount;
