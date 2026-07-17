@@ -41,6 +41,8 @@ Rectangle {
     readonly property bool showOutputNames: sceneEffect && typeof sceneEffect.showOutputNames === "boolean"
         ? sceneEffect.showOutputNames
         : true
+    readonly property var searchQueryPlan: planSearchQuery(searchQuery)
+    readonly property bool searchQueryValid: searchQueryPlan !== null
     readonly property bool outputLabelGeometryEligible: width >= 640 && height >= 360
         && searchQuery.length === 0
     readonly property int outputLabelLiveScreenCount: showOutputNames && outputLabelGeometryEligible
@@ -230,6 +232,7 @@ Rectangle {
             keyboardSelectionId: root.keyboardSelectionId
             outputName: root.outputName
             searchQuery: root.searchQuery
+            searchQueryPlan: root.searchQueryPlan
             searchResultCount: root.searchResultCountForDesktop(modelData)
             screen: root.targetScreen
             showApplicationIdentity: root.showApplicationIdentity
@@ -284,8 +287,10 @@ Rectangle {
             anchors.fill: parent
             anchors.leftMargin: 14
             anchors.rightMargin: 14
-            text: root.searchResultCount === 0
-                ? `No matching windows: ${root.searchQuery}`
+            text: !root.searchQueryValid
+                ? `Invalid search query: ${root.searchQuery}`
+                : root.searchResultCount === 0
+                  ? `No matching windows: ${root.searchQuery}`
                 : root.searchResultOrdinal > 0
                   ? `${root.searchResultOrdinal}/${root.searchResultCount} matching window${root.searchResultCount === 1 ? "" : "s"}: ${root.searchQuery}`
                   : `${root.searchResultCount} matching window${root.searchResultCount === 1 ? "" : "s"}: ${root.searchQuery}`
@@ -726,7 +731,7 @@ Rectangle {
         searchResultCount = 0;
         searchResultCountsByDesktop = Object.create(null);
         searchResultOrdinalsByTarget = Object.create(null);
-        if (searchQuery.length > 0) {
+        if (searchQuery.length > 0 && searchQueryValid) {
             const runtime = OverviewRuntime.DriftileOverview;
             if (runtime && typeof runtime.summarizeOverviewWindowNavigationTargets === "function") {
                 try {
@@ -793,6 +798,19 @@ Rectangle {
 
         const ordinal = ordinals[targetId];
         return Number.isInteger(ordinal) && ordinal > 0 && ordinal <= searchResultCount ? ordinal : 0;
+    }
+
+    function planSearchQuery(query) {
+        const runtime = OverviewRuntime.DriftileOverview;
+        if (!runtime || typeof runtime.planOverviewWindowSearchQuery !== "function") {
+            return null;
+        }
+
+        try {
+            return runtime.planOverviewWindowSearchQuery(query);
+        } catch (error) {
+            return null;
+        }
     }
 
     function preferredInitialNavigationTarget(targets) {

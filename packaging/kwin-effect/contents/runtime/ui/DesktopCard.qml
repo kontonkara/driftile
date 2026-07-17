@@ -15,6 +15,7 @@ Rectangle {
     required property string outputName
     required property var screen
     required property string searchQuery
+    required property var searchQueryPlan
     required property int searchResultCount
     required property bool showApplicationIcons
     required property bool showApplicationIdentity
@@ -1769,11 +1770,11 @@ Rectangle {
         const query = typeof searchQuery === "string" ? searchQuery : "";
         try {
             const runtime = OverviewRuntime.DriftileOverview;
-            if (!runtime || typeof runtime.matchesOverviewWindowSearch !== "function") {
-                return query.length === 0;
+            if (!runtime || typeof runtime.matchesOverviewWindowSearchPlan !== "function") {
+                return query.trim().length === 0;
             }
 
-            return runtime.matchesOverviewWindowSearch(query, {
+            return runtime.matchesOverviewWindowSearchPlan(searchQueryPlan, {
                 caption: candidate && candidate.caption !== undefined && candidate.caption !== null
                     ? String(candidate.caption) : "",
                 resourceClass: candidate && candidate.resourceClass !== undefined && candidate.resourceClass !== null

@@ -2317,6 +2317,13 @@ describe("overview effect package", () => {
 
     expect(scene).toContain('property string searchQuery: ""');
     expect(scene).toContain("searchQuery: root.searchQuery");
+    expect(scene).toContain("searchQueryPlan: root.searchQueryPlan");
+    expect(scene).toContain(
+      "readonly property var searchQueryPlan: planSearchQuery(searchQuery)",
+    );
+    expect(scene).toContain(
+      "readonly property bool searchQueryValid: searchQueryPlan !== null",
+    );
     expect(scene).toContain(
       "onSearchQueryChanged: Qt.callLater(root.repairKeyboardSelection)",
     );
@@ -2338,6 +2345,7 @@ describe("overview effect package", () => {
     expect(scene).toContain("function onActiveChanged()");
     expect(scene).toContain('root.searchQuery = ""');
     expect(scene).toContain("No matching windows: ${root.searchQuery}");
+    expect(scene).toContain("Invalid search query: ${root.searchQuery}");
     expect(scene).toContain("textFormat: Text.PlainText");
     expect(scene).not.toContain("TextInput");
     expect(searchFeedback).toContain(
@@ -2354,6 +2362,7 @@ describe("overview effect package", () => {
     expect(searchFeedback).not.toContain("collectNavigationTargets()");
 
     expect(desktopCard).toContain("required property string searchQuery");
+    expect(desktopCard).toContain("required property var searchQueryPlan");
     expect(desktopCard).toContain(
       "readonly property bool matchesSearch: card.windowMatchesSearch(candidate, windowState)",
     );
@@ -2390,8 +2399,21 @@ describe("overview effect package", () => {
     expect(matcher.match(/states\.push\(/gu)).toHaveLength(3);
     expect(matcher).toContain('return states.join(" ")');
     expect(matcher).toContain(
-      'typeof runtime.matchesOverviewWindowSearch !== "function"',
+      'typeof runtime.matchesOverviewWindowSearchPlan !== "function"',
     );
+    expect(matcher).toContain(
+      "runtime.matchesOverviewWindowSearchPlan(searchQueryPlan, {",
+    );
+    expect(matcher).not.toContain("runtime.matchesOverviewWindowSearch(");
+    expect(scene).toContain(
+      'typeof runtime.planOverviewWindowSearchQuery !== "function"',
+    );
+    expect(scene).toContain("runtime.planOverviewWindowSearchQuery(query)");
+    expect(desktopCard).not.toContain("planOverviewWindowSearchQuery");
+    expect(scene).toContain("if (searchQuery.length > 0 && searchQueryValid)");
+    expect(scene).toContain("visible: root.searchQuery.length > 0");
+    expect(overviewRuntimeIndex).toContain("matchesOverviewWindowSearchPlan");
+    expect(overviewRuntimeIndex).toContain("planOverviewWindowSearchQuery");
     expect(`${scene}\n${desktopCard}`).not.toMatch(
       /\b(?:Timer|TextInput)\s*\{|\.setValue\s*\(/u,
     );
@@ -2426,7 +2448,9 @@ describe("overview effect package", () => {
     expect(
       searchFeedback.match(/summarizeOverviewWindowNavigationTargets/gu),
     ).toHaveLength(2);
-    expect(searchFeedback).toContain("searchQuery.length > 0");
+    expect(searchFeedback).toContain(
+      "searchQuery.length > 0 && searchQueryValid",
+    );
     expect(searchFeedback).toContain(
       "searchResultCountsByDesktop = Object.create(null)",
     );

@@ -32,8 +32,15 @@ export type {
 } from "./window-state";
 export {
   appendOverviewSearchText,
+  matchesOverviewWindowSearchPlan,
   matchesOverviewWindowSearch,
+  planOverviewWindowSearchQuery,
   removeLastOverviewSearchCharacter,
+} from "./window-search";
+export type {
+  OverviewWindowSearchFieldName,
+  OverviewWindowSearchQueryClause,
+  OverviewWindowSearchQueryPlan,
 } from "./window-search";
 
 export type OverviewModelLoadResult =
