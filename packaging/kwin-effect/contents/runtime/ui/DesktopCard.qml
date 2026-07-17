@@ -250,6 +250,12 @@ Rectangle {
                 readonly property var frame: card.frameForWindow(model.window, windowId)
                 readonly property bool selectedThumbnail: !tiledPresentation || tiledPresentation.selected
                 readonly property bool minimizedWindow: model.window ? model.window.minimized : false
+                readonly property bool minimizedActivationEligible: minimizedWindow
+                    && card.windowSnapshotCanActivateMinimizedWindow(windowPresentation)
+                readonly property bool hasMinimizedTabFrame: tiledPresentation && tiledPresentation.tabFrame !== null
+                    && tiledPresentation.tabFrame !== undefined
+                readonly property var minimizedPlaceholderFrame: minimizedWindow
+                    ? card.planMinimizedPlaceholderFrame(frame, hasMinimizedTabFrame) : null
                 readonly property bool dragEligible: card.windowSnapshotCanDrag(windowPresentation)
                 readonly property bool closeEligible: card.windowSnapshotCanRequestClose(windowPresentation)
                 readonly property var sourceDesktop: card.desktop
@@ -257,6 +263,7 @@ Rectangle {
                 readonly property var sourceScreen: card.screen
                 readonly property var thumbnailTarget: thumbnailShell
                 readonly property var tabTarget: tabShell
+                readonly property var minimizedPlaceholderTarget: minimizedPlaceholderShell
 
                 width: viewport.width
                 height: viewport.height
@@ -268,6 +275,7 @@ Rectangle {
                     card.attentionRevision += 1;
                 }
                 onAttentionRequestedChanged: card.attentionRevision += 1
+                onMinimizedPlaceholderFrameChanged: card.navigationTargetsChanged()
 
                 Component.onCompleted: refreshActionSnapshot()
 
@@ -492,7 +500,7 @@ Rectangle {
                         ? windowPresentation.tiledPresentation.tabFrame : null
                     readonly property bool activationEligible: windowPresentation.tiledPresentation
                         && (windowPresentation.minimizedWindow
-                            ? card.windowSnapshotCanActivateMinimizedTab(windowPresentation)
+                            ? windowPresentation.minimizedActivationEligible
                             : !windowPresentation.tiledPresentation.selected)
                     readonly property bool keyboardTarget: activationEligible && windowPresentation.matchesSearch
                     readonly property bool keyboardSelected: keyboardTarget
@@ -635,6 +643,105 @@ Rectangle {
                         }
                     }
                 }
+
+                Rectangle {
+                    id: minimizedPlaceholderShell
+
+                    readonly property var frame: windowPresentation.minimizedPlaceholderFrame
+                    readonly property bool activationEligible: windowPresentation.minimizedActivationEligible
+                    readonly property bool keyboardTarget: activationEligible && windowPresentation.matchesSearch
+                    readonly property bool keyboardSelected: keyboardTarget
+                        && card.keyboardSelectionId === card.navigationTargetId(windowPresentation.windowId)
+
+                    x: frame ? frame.x : 0
+                    y: frame ? frame.y : 0
+                    width: frame ? frame.width : 0
+                    height: frame ? frame.height : 0
+                    visible: frame !== null && model.window && windowPresentation.minimizedWindow
+                             && windowPresentation.matchesSearch
+                    color: "#dc252e3d"
+                    border.width: 1
+                    border.color: "#66758b"
+                    radius: 3
+                    clip: true
+
+                    Text {
+                        anchors.fill: parent
+                        anchors.leftMargin: 7
+                        anchors.rightMargin: windowPresentation.attentionRequested
+                            ? Math.min(18, minimizedPlaceholderShell.width * 0.42) : 7
+                        text: card.minimizedPlaceholderLabel(windowPresentation.candidate)
+                        color: "#d9e2ef"
+                        font.pixelSize: Math.max(7, Math.min(11, minimizedPlaceholderShell.height * 0.48))
+                        font.bold: true
+                        verticalAlignment: Text.AlignVCenter
+                        elide: Text.ElideRight
+                        textFormat: Text.PlainText
+                    }
+
+                    Rectangle {
+                        anchors.left: parent.left
+                        anchors.top: parent.top
+                        anchors.bottom: parent.bottom
+                        width: 3
+                        visible: windowPresentation.attentionRequested
+                        color: "#e2556f"
+                        z: 1
+                    }
+
+                    Rectangle {
+                        id: minimizedPlaceholderAttentionBadge
+
+                        anchors.right: parent.right
+                        anchors.verticalCenter: parent.verticalCenter
+                        anchors.rightMargin: 4
+                        width: Math.max(8, Math.min(12, minimizedPlaceholderShell.height - 6))
+                        height: width
+                        visible: windowPresentation.attentionRequested
+                        color: "#e2556f"
+                        border.width: 1
+                        border.color: "#fff1f4"
+                        radius: width / 2
+                        z: 2
+
+                        Text {
+                            anchors.centerIn: parent
+                            text: "!"
+                            color: "#ffffff"
+                            font.bold: true
+                            font.pixelSize: Math.max(7, minimizedPlaceholderAttentionBadge.height * 0.72)
+                        }
+                    }
+
+                    Rectangle {
+                        anchors.fill: parent
+                        color: "transparent"
+                        border.width: minimizedPlaceholderShell.keyboardSelected ? 3 : 0
+                        border.color: "#ffd166"
+                        radius: minimizedPlaceholderShell.radius
+                        z: 3
+                    }
+
+                    TapHandler {
+                        acceptedButtons: Qt.LeftButton
+                        acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
+                        enabled: minimizedPlaceholderShell.visible && minimizedPlaceholderShell.activationEligible
+                                 && card.desktop && card.screen
+                        onTapped: card.windowTapped(model.window, windowPresentation.windowId, card.desktop,
+                                                    card.desktopId, card.screen)
+                    }
+
+                    TapHandler {
+                        acceptedButtons: Qt.MiddleButton
+                        acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
+                        enabled: minimizedPlaceholderShell.visible && windowPresentation.closeEligible
+                        onTapped: card.windowCloseRequested(windowPresentation.candidate,
+                                                           windowPresentation.windowId,
+                                                           windowPresentation.sourceDesktop,
+                                                           windowPresentation.sourceDesktopId,
+                                                           windowPresentation.sourceScreen)
+                    }
+                }
             }
         }
 
@@ -738,7 +845,8 @@ Rectangle {
                 continue;
             }
 
-            const visual = presentation.minimizedWindow ? presentation.tabTarget
+            const visual = presentation.minimizedWindow
+                ? presentation.hasMinimizedTabFrame ? presentation.tabTarget : presentation.minimizedPlaceholderTarget
                                                         : presentation.tiledPresentation
                                                           && !presentation.tiledPresentation.selected
                                                           ? presentation.tabTarget : presentation.thumbnailTarget;
@@ -770,7 +878,8 @@ Rectangle {
                 continue;
             }
             if (visualContainsViewportPoint(presentation.thumbnailTarget, point)
-                    || visualContainsViewportPoint(presentation.tabTarget, point)) {
+                    || visualContainsViewportPoint(presentation.tabTarget, point)
+                    || visualContainsViewportPoint(presentation.minimizedPlaceholderTarget, point)) {
                 return true;
             }
         }
@@ -981,19 +1090,18 @@ Rectangle {
 
     function windowCanNavigate(presentation) {
         return presentation && (windowIsActionable(presentation.candidate)
-                                || windowSnapshotCanActivateMinimizedTab(presentation));
+                                || windowSnapshotCanActivateMinimizedWindow(presentation));
     }
 
-    function windowSnapshotCanActivateMinimizedTab(presentation) {
+    function windowSnapshotCanActivateMinimizedWindow(presentation) {
         try {
             const snapshot = presentation ? presentation.actionSnapshot : null;
             const candidate = presentation ? presentation.candidate : null;
-            const tiled = presentation ? presentation.tiledPresentation : null;
             const expectedDesktop = presentation ? presentation.sourceDesktop : null;
             const expectedDesktopId = presentation ? presentation.sourceDesktopId : "";
             const expectedScreen = presentation ? presentation.sourceScreen : null;
             if (!snapshot || !candidate || presentation.matchesSearch !== true
-                    || presentation.minimizedWindow !== true || !tiled || !tiled.tabFrame
+                    || presentation.minimizedWindow !== true
                     || snapshot.deleted || snapshot.minimized !== true || snapshot.managed !== true
                     || snapshot.wantsInput !== true || snapshot.windowId.length === 0
                     || snapshot.windowId !== presentation.windowId
@@ -1023,6 +1131,74 @@ Rectangle {
         } catch (error) {
             return false;
         }
+    }
+
+    function planMinimizedPlaceholderFrame(frame, hasMinimizedTabFrame) {
+        if (hasMinimizedTabFrame === true || !frame || !viewport || viewport.width <= 0 || viewport.height <= 0) {
+            return null;
+        }
+
+        try {
+            const runtime = OverviewRuntime.DriftileOverview;
+            if (!runtime || typeof runtime.planOverviewMinimizedPlaceholder !== "function") {
+                return null;
+            }
+
+            const planned = runtime.planOverviewMinimizedPlaceholder(frame, {
+                height: viewport.height,
+                width: viewport.width,
+                x: 0,
+                y: 0
+            });
+            if (!planned || Array.isArray(planned) || typeof planned !== "object") {
+                return null;
+            }
+
+            const x = planned.x;
+            const y = planned.y;
+            const width = planned.width;
+            const height = planned.height;
+            if (typeof x !== "number" || typeof y !== "number" || typeof width !== "number"
+                    || typeof height !== "number" || !Number.isFinite(x) || !Number.isFinite(y)
+                    || !Number.isFinite(width) || !Number.isFinite(height) || width < 24 || height < 12
+                    || width > 180 || height > 28) {
+                return null;
+            }
+
+            const frameLeft = Math.max(0, frame.x);
+            const frameTop = Math.max(0, frame.y);
+            const frameRight = Math.min(viewport.width, frame.x + frame.width);
+            const frameBottom = Math.min(viewport.height, frame.y + frame.height);
+            if (!Number.isFinite(frameLeft) || !Number.isFinite(frameTop) || !Number.isFinite(frameRight)
+                    || !Number.isFinite(frameBottom) || x < frameLeft || y < frameTop
+                    || x + width > frameRight || y + height > frameBottom) {
+                return null;
+            }
+
+            return {
+                height,
+                width,
+                x,
+                y
+            };
+        } catch (error) {
+            return null;
+        }
+    }
+
+    function boundedWindowCaption(candidate) {
+        try {
+            const caption = candidate && candidate.caption !== undefined && candidate.caption !== null
+                ? String(candidate.caption) : "";
+            return caption.length > 160 ? caption.slice(0, 160) : caption;
+        } catch (error) {
+            return "";
+        }
+    }
+
+    function minimizedPlaceholderLabel(candidate) {
+        const caption = boundedWindowCaption(candidate);
+        return caption.length > 0 ? `Minimized · ${caption}` : "Minimized";
     }
 
     function anyWindowDemandsAttention(revision) {
