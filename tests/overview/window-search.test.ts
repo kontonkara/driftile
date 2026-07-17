@@ -186,6 +186,50 @@ describe("matchesOverviewWindowSearch", () => {
     ).toBe(false);
   });
 
+  it("matches the first complete alternative group", () => {
+    const query = 'app:firefox project | app:konsole "build log"';
+
+    expect(
+      matchesOverviewWindowSearch(query, {
+        caption: "Project Board",
+        resourceClass: "firefox",
+      }),
+    ).toBe(true);
+    expect(
+      matchesOverviewWindowSearch(query, {
+        caption: "Build Log",
+        resourceClass: "konsole",
+      }),
+    ).toBe(true);
+    expect(
+      matchesOverviewWindowSearch(query, {
+        caption: "Build Log",
+        resourceClass: "firefox",
+      }),
+    ).toBe(false);
+  });
+
+  it("keeps quoted and attached pipes as literal clause text", () => {
+    expect(
+      matchesOverviewWindowSearch('title:"release | notes"', {
+        caption: "Release | Notes",
+      }),
+    ).toBe(true);
+    expect(
+      matchesOverviewWindowSearch("title:foo|bar", {
+        caption: "foo|bar",
+      }),
+    ).toBe(true);
+    expect(
+      matchesOverviewWindowSearch("foo|bar", {
+        caption: "foo|bar",
+      }),
+    ).toBe(true);
+    expect(
+      planOverviewWindowSearchQuery("firefox |project")?.groups,
+    ).toHaveLength(1);
+  });
+
   it("allows negative-only queries when no excluded clause matches", () => {
     expect(
       matchesOverviewWindowSearch("-state:minimized -private", {
@@ -268,6 +312,18 @@ describe("matchesOverviewWindowSearch", () => {
     expect(planOverviewWindowSearchQuery(query)).toBeNull();
   });
 
+  it.each([
+    "| firefox",
+    "firefox |",
+    "firefox | | konsole",
+    "firefox | konsole | calculator | editor | browser",
+  ])("fails closed for malformed alternative query %j", (query) => {
+    expect(matchesOverviewWindowSearch(query, { caption: "firefox" })).toBe(
+      false,
+    );
+    expect(planOverviewWindowSearchQuery(query)).toBeNull();
+  });
+
   it("treats empty, whitespace-only, and non-string queries as unfiltered", () => {
     expect(matchesOverviewWindowSearch("", null)).toBe(true);
     expect(matchesOverviewWindowSearch("   \u00a0 ", null)).toBe(true);
@@ -292,6 +348,32 @@ describe("matchesOverviewWindowSearch", () => {
         { caption: "one two three four five six seven eight" },
       ),
     ).toBe(false);
+  });
+
+  it("shares the eight-clause bound across alternatives", () => {
+    const plan = planOverviewWindowSearchQuery(
+      "one two | three four | five six | seven eight nine",
+    );
+
+    expect(plan?.groups).toHaveLength(4);
+    expect(plan?.groups.map((group) => group.clauses.length)).toEqual([
+      2, 2, 2, 2,
+    ]);
+    expect(plan?.clauses.map((clause) => clause.value)).toEqual([
+      "one",
+      "two",
+      "three",
+      "four",
+      "five",
+      "six",
+      "seven",
+      "eight",
+    ]);
+    expect(
+      planOverviewWindowSearchQuery(
+        'one two | three four | five six | seven eight nine title:"unclosed',
+      ),
+    ).toBeNull();
   });
 
   it("scans each supported field through 512 Unicode code points", () => {
@@ -465,6 +547,76 @@ describe("matchesOverviewWindowSearch", () => {
     expect(captionReads).toBe(1);
     expect(matchesOverviewWindowSearch("project", scoped)).toBe(false);
   });
+
+  it("short-circuits alternative groups and failed clauses", () => {
+    let captionReads = 0;
+    let outputReads = 0;
+    let stateReads = 0;
+    const fields = Object.defineProperties(
+      {},
+      {
+        caption: {
+          get(): string {
+            captionReads += 1;
+            return "Project Notes";
+          },
+        },
+        outputName: {
+          get(): string {
+            outputReads += 1;
+            return "DP-2";
+          },
+        },
+        state: {
+          get(): string {
+            stateReads += 1;
+            return "urgent";
+          },
+        },
+      },
+    );
+
+    expect(
+      matchesOverviewWindowSearch(
+        "title:missing output:dp-2 | title:project | state:urgent",
+        fields,
+      ),
+    ).toBe(true);
+    expect(captionReads).toBe(1);
+    expect(outputReads).toBe(0);
+    expect(stateReads).toBe(0);
+  });
+
+  it("normalizes each requested field at most once across groups", () => {
+    let captionReads = 0;
+    let resourceNameReads = 0;
+    const fields = Object.defineProperties(
+      {},
+      {
+        caption: {
+          get(): string {
+            captionReads += 1;
+            return "Project Notes";
+          },
+        },
+        resourceName: {
+          get(): string {
+            resourceNameReads += 1;
+            return "firefox";
+          },
+        },
+      },
+    );
+
+    expect(
+      matchesOverviewWindowSearch(
+        "title:missing | title:project app:firefox",
+        fields,
+      ),
+    ).toBe(true);
+    expect(captionReads).toBe(1);
+    expect(resourceNameReads).toBe(1);
+  });
 });
 
 describe("planned overview window search", () => {
@@ -494,6 +646,38 @@ describe("planned overview window search", () => {
           value: "minimized",
         },
       ],
+      groups: [
+        {
+          clauses: [
+            {
+              bare: false,
+              excluded: false,
+              fields: ["caption"],
+              value: "project notes",
+            },
+            {
+              bare: false,
+              excluded: false,
+              fields: ["resourceClass", "resourceName", "desktopFileName"],
+              value: "firefox",
+            },
+            {
+              bare: false,
+              excluded: true,
+              fields: ["state"],
+              value: "minimized",
+            },
+          ],
+          requiredFields: [
+            "caption",
+            "resourceClass",
+            "resourceName",
+            "desktopFileName",
+            "state",
+          ],
+          requiresAllFields: false,
+        },
+      ],
       requiredFields: [
         "caption",
         "resourceClass",
@@ -505,10 +689,19 @@ describe("planned overview window search", () => {
     });
     expect(Object.isFrozen(plan)).toBe(true);
     expect(plan && Object.isFrozen(plan.clauses)).toBe(true);
+    expect(plan && Object.isFrozen(plan.groups)).toBe(true);
     expect(plan && Object.isFrozen(plan.requiredFields)).toBe(true);
     expect(
       plan?.clauses.every(
         (clause) => Object.isFrozen(clause) && Object.isFrozen(clause.fields),
+      ),
+    ).toBe(true);
+    expect(
+      plan?.groups.every(
+        (group) =>
+          Object.isFrozen(group) &&
+          Object.isFrozen(group.clauses) &&
+          Object.isFrozen(group.requiredFields),
       ),
     ).toBe(true);
   });
@@ -532,6 +725,32 @@ describe("planned overview window search", () => {
     ).toBe(false);
   });
 
+  it("keeps alternative groups independently immutable", () => {
+    const plan = planOverviewWindowSearchQuery(
+      'app:firefox project | app:konsole "build log"',
+    );
+
+    expect(plan?.groups).toHaveLength(2);
+    expect(
+      plan?.groups.map((group) => group.clauses.map((clause) => clause.value)),
+    ).toEqual([
+      ["firefox", "project"],
+      ["konsole", "build log"],
+    ]);
+    expect(plan?.groups[0]?.requiredFields).toEqual([
+      "caption",
+      "resourceClass",
+      "resourceName",
+      "desktopFileName",
+      "state",
+      "desktopName",
+      "outputName",
+    ]);
+    expect(plan?.groups[1]?.requiresAllFields).toBe(true);
+    expect(Object.isFrozen(plan?.groups[0])).toBe(true);
+    expect(Object.isFrozen(plan?.groups[1]?.clauses)).toBe(true);
+  });
+
   it("returns an immutable valid empty plan without inspecting fields", () => {
     const plan = planOverviewWindowSearchQuery(undefined);
     const hostile = Object.defineProperty({}, "caption", {
@@ -542,6 +761,7 @@ describe("planned overview window search", () => {
 
     expect(plan).toEqual({
       clauses: [],
+      groups: [],
       requiredFields: [],
       requiresAllFields: false,
     });
@@ -603,6 +823,68 @@ describe("planned overview window search", () => {
     ).toBe(false);
   });
 
+  it("decodes grouped external plans and validates their canonical metadata", () => {
+    const plan = planOverviewWindowSearchQuery(
+      "title:project | app:konsole -state:minimized",
+    );
+    const external = JSON.parse(JSON.stringify(plan)) as unknown;
+
+    expect(
+      matchesOverviewWindowSearchPlan(external, { caption: "Project Notes" }),
+    ).toBe(true);
+    expect(
+      matchesOverviewWindowSearchPlan(external, {
+        resourceName: "konsole",
+        state: "floating",
+      }),
+    ).toBe(true);
+
+    const serialized = JSON.parse(JSON.stringify(plan)) as {
+      clauses: Array<Record<string, unknown>>;
+      groups: Array<Record<string, unknown>>;
+      requiredFields: string[];
+      requiresAllFields: boolean;
+    };
+    const mismatchedFlatClause = structuredClone(serialized);
+    (mismatchedFlatClause.clauses[0] as Record<string, unknown>)["value"] =
+      "other";
+    expect(
+      matchesOverviewWindowSearchPlan(mismatchedFlatClause, {
+        caption: "Project Notes",
+      }),
+    ).toBe(false);
+
+    const mismatchedGroupMetadata = structuredClone(serialized);
+    (mismatchedGroupMetadata.groups[0] as Record<string, unknown>)[
+      "requiredFields"
+    ] = ["outputName"];
+    expect(
+      matchesOverviewWindowSearchPlan(mismatchedGroupMetadata, {
+        caption: "Project Notes",
+      }),
+    ).toBe(false);
+
+    const emptyGroup = structuredClone(serialized);
+    emptyGroup.groups.push({
+      clauses: [],
+      requiredFields: [],
+      requiresAllFields: false,
+    });
+    expect(
+      matchesOverviewWindowSearchPlan(emptyGroup, { caption: "Project Notes" }),
+    ).toBe(false);
+
+    const tooManyGroups = structuredClone(serialized);
+    tooManyGroups.groups = Array.from({ length: 5 }, () =>
+      structuredClone(serialized.groups[0] as Record<string, unknown>),
+    );
+    expect(
+      matchesOverviewWindowSearchPlan(tooManyGroups, {
+        caption: "Project Notes",
+      }),
+    ).toBe(false);
+  });
+
   it("fails closed for hostile external plan accessors", () => {
     const hostile = Object.freeze(
       Object.defineProperty({}, "clauses", {
@@ -614,6 +896,20 @@ describe("planned overview window search", () => {
 
     expect(matchesOverviewWindowSearchPlan(hostile, {})).toBe(false);
     expect(matchesOverviewWindowSearchPlan(null, {})).toBe(false);
+
+    const hostileGroup = {
+      clauses: [],
+      groups: [
+        Object.defineProperty({}, "clauses", {
+          get(): never {
+            throw new Error("unavailable");
+          },
+        }),
+      ],
+      requiredFields: [],
+      requiresAllFields: false,
+    };
+    expect(matchesOverviewWindowSearchPlan(hostileGroup, {})).toBe(false);
   });
 
   it("stores only the first eight clauses in the bounded plan", () => {

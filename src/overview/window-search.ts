@@ -1,6 +1,7 @@
 const MAX_QUERY_CODE_POINTS = 128;
 const MAX_QUERY_SCAN_CODE_POINTS = MAX_QUERY_CODE_POINTS * 4;
 const MAX_QUERY_CLAUSES = 8;
+const MAX_QUERY_GROUPS = 4;
 const MAX_SEARCH_FIELD_CODE_POINTS = 512;
 const MAX_DESKTOP_NAME_SEARCH_FIELD_CODE_POINTS = 64;
 const MAX_OUTPUT_NAME_SEARCH_FIELD_CODE_POINTS = 64;
@@ -35,8 +36,15 @@ export interface OverviewWindowSearchQueryClause {
   readonly value: string;
 }
 
+export interface OverviewWindowSearchQueryGroup {
+  readonly clauses: readonly OverviewWindowSearchQueryClause[];
+  readonly requiredFields: readonly OverviewWindowSearchFieldName[];
+  readonly requiresAllFields: boolean;
+}
+
 export interface OverviewWindowSearchQueryPlan {
   readonly clauses: readonly OverviewWindowSearchQueryClause[];
+  readonly groups: readonly OverviewWindowSearchQueryGroup[];
   readonly requiredFields: readonly OverviewWindowSearchFieldName[];
   readonly requiresAllFields: boolean;
 }
@@ -55,7 +63,7 @@ interface ParsedQuotedValue {
 }
 
 const trustedQueryPlans = new WeakSet<OverviewWindowSearchQueryPlan>();
-const EMPTY_QUERY_PLAN = createQueryPlan([], 0, false);
+const EMPTY_QUERY_PLAN = createQueryPlan([]);
 
 export function appendOverviewSearchText(
   current: unknown,
@@ -118,19 +126,33 @@ export function planOverviewWindowSearchQuery(
 ): OverviewWindowSearchQueryPlan | null {
   try {
     const normalizedQuery = readQueryCharacters(query).join("");
-    const clauses: OverviewWindowSearchQueryClause[] = [];
-    let requiredFieldMask = 0;
-    let requiresAllFields = false;
+    const groups: OverviewWindowSearchQueryClause[][] = [];
+    let retainedClauseCount = 0;
+    let parsedGroupCount = 1;
+    let currentGroupHasClause = false;
     let offset = skipWhiteSpace(normalizedQuery, 0);
 
     while (offset < normalizedQuery.length) {
+      if (isAlternativeSeparatorAt(normalizedQuery, offset)) {
+        if (!currentGroupHasClause || parsedGroupCount >= MAX_QUERY_GROUPS) {
+          return null;
+        }
+
+        parsedGroupCount += 1;
+        currentGroupHasClause = false;
+        offset = skipWhiteSpace(normalizedQuery, offset + 1);
+        continue;
+      }
+
       const parsed = parseSearchClause(normalizedQuery, offset);
 
       if (parsed === null) {
         return null;
       }
 
-      if (clauses.length < MAX_QUERY_CLAUSES) {
+      currentGroupHasClause = true;
+
+      if (retainedClauseCount < MAX_QUERY_CLAUSES) {
         const clause = Object.freeze({
           bare: parsed.bare,
           excluded: parsed.excluded,
@@ -138,17 +160,26 @@ export function planOverviewWindowSearchQuery(
           value: normalizeClauseValue(parsed.value),
         });
 
-        clauses.push(clause);
-        requiredFieldMask |= fieldMask(parsed.fields);
-        requiresAllFields ||= parsed.bare;
+        while (groups.length < parsedGroupCount) {
+          groups.push([]);
+        }
+
+        (
+          groups[parsedGroupCount - 1] as OverviewWindowSearchQueryClause[]
+        ).push(clause);
+        retainedClauseCount += 1;
       }
 
       offset = skipWhiteSpace(normalizedQuery, parsed.nextOffset);
     }
 
-    return clauses.length === 0
+    if (!currentGroupHasClause && parsedGroupCount > 1) {
+      return null;
+    }
+
+    return retainedClauseCount === 0
       ? EMPTY_QUERY_PLAN
-      : createQueryPlan(clauses, requiredFieldMask, requiresAllFields);
+      : createQueryPlan(groups);
   } catch {
     return null;
   }
@@ -173,7 +204,7 @@ export function matchesOverviewWindowSearchPlan(
       return false;
     }
 
-    if (searchPlan.clauses.length === 0) {
+    if (searchPlan.groups.length === 0) {
       return true;
     }
 
@@ -184,71 +215,138 @@ export function matchesOverviewWindowSearchPlan(
     const normalizedFields = new Array<string | undefined>(
       SEARCH_FIELD_NAMES.length,
     );
-    let availableFields = 0;
+    const fieldReadStates = new Array<number>(SEARCH_FIELD_NAMES.length).fill(
+      0,
+    );
+    let hasAvailableField = false;
 
-    for (const name of searchPlan.requiredFields) {
-      const value = fields[name];
+    for (const group of searchPlan.groups) {
+      if (group.requiresAllFields) {
+        for (const name of group.requiredFields) {
+          const index = fieldIndex(name);
 
-      if (value === undefined) {
-        continue;
+          if (fieldReadStates[index] !== 0) {
+            continue;
+          }
+
+          const value = fields[name];
+          fieldReadStates[index] = 1;
+
+          if (value !== undefined) {
+            if (typeof value !== "string") {
+              return false;
+            }
+
+            normalizedFields[index] = codePointPrefix(
+              value,
+              fieldCodePointLimit(name),
+            ).toLowerCase();
+            hasAvailableField = true;
+          }
+        }
       }
 
-      if (typeof value !== "string") {
-        return false;
-      }
+      let groupMatches = true;
 
-      normalizedFields[fieldIndex(name)] = codePointPrefix(
-        value,
-        fieldCodePointLimit(name),
-      ).toLowerCase();
-      availableFields += 1;
-    }
+      for (const clause of group.clauses) {
+        let clauseMatches = false;
 
-    if (searchPlan.requiresAllFields && availableFields === 0) {
-      return false;
-    }
+        for (const name of clause.fields) {
+          const index = fieldIndex(name);
 
-    for (const clause of searchPlan.clauses) {
-      let clauseMatches = false;
+          if (fieldReadStates[index] === 0) {
+            const value = fields[name];
+            fieldReadStates[index] = 1;
 
-      for (const name of clause.fields) {
-        const field = normalizedFields[fieldIndex(name)];
+            if (value !== undefined) {
+              if (typeof value !== "string") {
+                return false;
+              }
 
-        if (field !== undefined && field.includes(clause.value)) {
-          clauseMatches = true;
+              normalizedFields[index] = codePointPrefix(
+                value,
+                fieldCodePointLimit(name),
+              ).toLowerCase();
+              hasAvailableField = true;
+            }
+          }
+
+          const field = normalizedFields[index];
+
+          if (field !== undefined && field.includes(clause.value)) {
+            clauseMatches = true;
+            break;
+          }
+        }
+
+        if (clause.excluded ? clauseMatches : !clauseMatches) {
+          groupMatches = false;
           break;
         }
       }
 
-      if (clause.excluded ? clauseMatches : !clauseMatches) {
-        return false;
+      if (groupMatches && (!group.requiresAllFields || hasAvailableField)) {
+        return true;
       }
     }
 
-    return true;
+    return false;
   } catch {
     return false;
   }
 }
 
 function createQueryPlan(
-  clauses: readonly OverviewWindowSearchQueryClause[],
-  requiredFieldMask: number,
-  requiresAllFields: boolean,
+  clauseGroups: readonly (readonly OverviewWindowSearchQueryClause[])[],
 ): OverviewWindowSearchQueryPlan {
+  const groups: OverviewWindowSearchQueryGroup[] = [];
+  const clauses: OverviewWindowSearchQueryClause[] = [];
+  let requiredFieldMask = 0;
+  let requiresAllFields = false;
+
+  for (const clauseGroup of clauseGroups) {
+    let groupRequiredFieldMask = 0;
+    let groupRequiresAllFields = false;
+
+    for (const clause of clauseGroup) {
+      clauses.push(clause);
+      groupRequiredFieldMask |= fieldMask(clause.fields);
+      groupRequiresAllFields ||= clause.bare;
+    }
+
+    const group = Object.freeze({
+      clauses: Object.freeze([...clauseGroup]),
+      requiredFields: requiredFieldsForMask(groupRequiredFieldMask),
+      requiresAllFields: groupRequiresAllFields,
+    });
+
+    groups.push(group);
+    requiredFieldMask |= groupRequiredFieldMask;
+    requiresAllFields ||= groupRequiresAllFields;
+  }
+
   const requiredFields = Object.freeze(
-    SEARCH_FIELD_NAMES.filter(
-      (name) => (requiredFieldMask & (1 << fieldIndex(name))) !== 0,
-    ),
+    requiredFieldsForMask(requiredFieldMask),
   );
   const plan = Object.freeze({
     clauses: Object.freeze([...clauses]),
+    groups: Object.freeze(groups),
     requiredFields,
     requiresAllFields,
   });
 
   trustedQueryPlans.add(plan);
   return plan;
+}
+
+function requiredFieldsForMask(
+  requiredFieldMask: number,
+): readonly OverviewWindowSearchFieldName[] {
+  return Object.freeze(
+    SEARCH_FIELD_NAMES.filter(
+      (name) => (requiredFieldMask & (1 << fieldIndex(name))) !== 0,
+    ),
+  );
 }
 
 function parseSearchClause(
@@ -349,6 +447,13 @@ function parseSearchClause(
         nextOffset,
         value,
       };
+}
+
+function isAlternativeSeparatorAt(query: string, offset: number): boolean {
+  return (
+    query[offset] === "|" &&
+    (offset + 1 === query.length || isWhiteSpaceAt(query, offset + 1))
+  );
 }
 
 function parseQuotedValue(
@@ -490,6 +595,7 @@ function decodeExternalQueryPlan(
   value: Record<string, unknown>,
 ): OverviewWindowSearchQueryPlan | null {
   const clauses = value["clauses"];
+  const groups = value["groups"];
   const requiredFields = value["requiredFields"];
   const requiresAllFields = value["requiresAllFields"];
 
@@ -503,47 +609,164 @@ function decodeExternalQueryPlan(
     return null;
   }
 
+  const decodedFlatClauses = decodeExternalQueryClauses(clauses);
+
+  if (decodedFlatClauses === null) {
+    return null;
+  }
+
+  if (groups === undefined) {
+    return decodeLegacyExternalQueryPlan(
+      decodedFlatClauses,
+      requiredFields,
+      requiresAllFields,
+    );
+  }
+
+  if (!Array.isArray(groups) || groups.length > MAX_QUERY_GROUPS) {
+    return null;
+  }
+
+  const decodedGroups: OverviewWindowSearchQueryClause[][] = [];
+  const flattenedGroupClauses: OverviewWindowSearchQueryClause[] = [];
+
+  for (let index = 0; index < groups.length; index += 1) {
+    const group = decodeExternalQueryGroup(groups[index] as unknown);
+
+    if (group === null) {
+      return null;
+    }
+
+    if (flattenedGroupClauses.length + group.length > MAX_QUERY_CLAUSES) {
+      return null;
+    }
+
+    decodedGroups.push(group);
+    flattenedGroupClauses.push(...group);
+  }
+
+  if (
+    flattenedGroupClauses.length !== decodedFlatClauses.length ||
+    !sameClauses(flattenedGroupClauses, decodedFlatClauses)
+  ) {
+    return null;
+  }
+
+  const plan = createQueryPlan(decodedGroups);
+
+  return samePlanMetadata(plan, requiredFields, requiresAllFields)
+    ? plan
+    : null;
+}
+
+function decodeLegacyExternalQueryPlan(
+  clauses: readonly OverviewWindowSearchQueryClause[],
+  requiredFields: readonly unknown[],
+  requiresAllFields: boolean,
+): OverviewWindowSearchQueryPlan | null {
+  const plan = createQueryPlan(clauses.length === 0 ? [] : [clauses]);
+
+  return samePlanMetadata(plan, requiredFields, requiresAllFields)
+    ? plan
+    : null;
+}
+
+function decodeExternalQueryGroup(
+  value: unknown,
+): OverviewWindowSearchQueryClause[] | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  const clauses = value["clauses"];
+  const requiredFields = value["requiredFields"];
+  const requiresAllFields = value["requiresAllFields"];
+
+  if (
+    !Array.isArray(clauses) ||
+    clauses.length === 0 ||
+    clauses.length > MAX_QUERY_CLAUSES ||
+    !Array.isArray(requiredFields) ||
+    requiredFields.length > SEARCH_FIELD_NAMES.length ||
+    typeof requiresAllFields !== "boolean"
+  ) {
+    return null;
+  }
+
+  const decodedClauses = decodeExternalQueryClauses(clauses);
+
+  if (decodedClauses === null) {
+    return null;
+  }
+
+  const canonicalGroupPlan = createQueryPlan([decodedClauses]);
+  const canonicalGroup = canonicalGroupPlan.groups[0];
+
+  return canonicalGroup !== undefined &&
+    sameGroupMetadata(canonicalGroup, requiredFields, requiresAllFields)
+    ? decodedClauses
+    : null;
+}
+
+function decodeExternalQueryClauses(
+  clauses: readonly unknown[],
+): OverviewWindowSearchQueryClause[] | null {
   const decodedClauses: OverviewWindowSearchQueryClause[] = [];
-  let expectedRequiredFieldMask = 0;
-  let expectedRequiresAllFields = false;
 
   for (let index = 0; index < clauses.length; index += 1) {
-    const clause = decodeExternalQueryClause(clauses[index] as unknown);
+    const clause = decodeExternalQueryClause(clauses[index]);
 
     if (clause === null) {
       return null;
     }
 
     decodedClauses.push(clause);
-    expectedRequiredFieldMask |= fieldMask(clause.fields);
-    expectedRequiresAllFields ||= clause.bare;
   }
 
-  if (requiresAllFields !== expectedRequiresAllFields) {
-    return null;
-  }
+  return decodedClauses;
+}
 
-  let requiredFieldOffset = 0;
+function samePlanMetadata(
+  plan: OverviewWindowSearchQueryPlan,
+  requiredFields: readonly unknown[],
+  requiresAllFields: boolean,
+): boolean {
+  return (
+    plan.requiresAllFields === requiresAllFields &&
+    sameFields(requiredFields, plan.requiredFields)
+  );
+}
 
-  for (const name of SEARCH_FIELD_NAMES) {
-    if ((expectedRequiredFieldMask & (1 << fieldIndex(name))) === 0) {
-      continue;
+function sameGroupMetadata(
+  group: OverviewWindowSearchQueryGroup,
+  requiredFields: readonly unknown[],
+  requiresAllFields: boolean,
+): boolean {
+  return (
+    group.requiresAllFields === requiresAllFields &&
+    sameFields(requiredFields, group.requiredFields)
+  );
+}
+
+function sameClauses(
+  left: readonly OverviewWindowSearchQueryClause[],
+  right: readonly OverviewWindowSearchQueryClause[],
+): boolean {
+  for (let index = 0; index < left.length; index += 1) {
+    const leftClause = left[index] as OverviewWindowSearchQueryClause;
+    const rightClause = right[index] as OverviewWindowSearchQueryClause;
+
+    if (
+      leftClause.bare !== rightClause.bare ||
+      leftClause.excluded !== rightClause.excluded ||
+      leftClause.value !== rightClause.value ||
+      !sameFields(leftClause.fields, rightClause.fields)
+    ) {
+      return false;
     }
-
-    if (requiredFields[requiredFieldOffset] !== name) {
-      return null;
-    }
-
-    requiredFieldOffset += 1;
   }
 
-  return requiredFieldOffset === requiredFields.length
-    ? createQueryPlan(
-        decodedClauses,
-        expectedRequiredFieldMask,
-        expectedRequiresAllFields,
-      )
-    : null;
+  return true;
 }
 
 function decodeExternalQueryClause(
