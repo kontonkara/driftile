@@ -8,6 +8,10 @@ Stable 1.58.0 adds guarded close buttons to eligible Overview thumbnails, tabs,
 and minimized placeholders, with a live presentation preference. Logical
 persistence remains v4.
 
+The 1.59.0 development baseline adds read-only window-state badges and state
+search terms to the optional Overview. Its scope is limited to the milestone
+below.
+
 ## Foundation (delivered)
 
 - Build and package a declarative KWin script with a TypeScript runtime.
@@ -132,6 +136,10 @@ The current runtime already:
   remains explicit.
 - Leaves dialogs, modal or transient windows, non-resizable normal windows, and fixed-size normal windows outside layout ownership, separate from manual floating.
 - Translates client minimum and maximum sizes to decorated frame bounds for layout validation and column resizing.
+- Projects fullscreen, full-maximize, and tracked-floating state into the
+  optional Overview as one bounded static badge on a sufficiently large
+  selected ordinary thumbnail, while every true state remains available to
+  all-term search.
 - Reinserts an active tiled window before or after a visible same-context target
   or empty horizontal gutter on mouse release. After a completed KWin-owned
   output or desktop move, resolves one exact destination window first and then
@@ -2161,3 +2169,27 @@ Release criteria (met):
 
 The batch adds no KWin action, binding, layout or persistence write, timer,
 animation, private API, or compositor fork.
+
+### 1.59.0 (in development)
+
+- Show one static `Fullscreen`, `Maximized`, or `Floating` badge on a
+  sufficiently large selected ordinary thumbnail.
+- Treat only full two-axis maximize as `Maximized`; partial maximize states
+  alone remain unbadged.
+- Prefer the fullscreen badge over maximized, and maximized over floating,
+  while retaining every true lowercase state term in all-term search.
+- Keep tabs and minimized placeholders free of state badges.
+- Add a default-enabled live KConfig setting and nullable per-user Home Manager
+  option. Malformed values retain the enabled presentation.
+
+Completion criteria:
+
+- Badge visibility changes no window target, state, input path, layout, or
+  persistence data.
+- Disabling badges hides only their presentation; state search remains
+  available and composes with existing title, application, attention, and
+  minimized terms.
+- Missing, stale, malformed, small, unselected, or non-normal targets expose no
+  badge.
+
+No other feature belongs to 1.59.0.

@@ -105,6 +105,9 @@ Version 1.58.0 adds an optional close button to eligible thumbnails, tabs, and
 minimized placeholders. The button is shown only on hover or keyboard
 selection and reuses the existing exact close path.
 
+Version 1.59.0 adds static window-state badges to sufficiently large selected
+ordinary thumbnails. State terms also join the existing all-term search.
+
 The companion is disabled by default. When enabled with a fresh shortcut
 record, `Meta+O` toggles it. KGlobalAccel preserves an existing assignment
 across upgrades, including an explicitly unbound action, so review it in
@@ -246,6 +249,25 @@ Manager can manage the same value with
 untouched. Buttons add no action, binding, timer, animation, layout or
 persistence write, private API, or KWin fork.
 
+## Window state badges
+
+A sufficiently large selected ordinary thumbnail shows one static badge when
+its live normal window is fullscreen, fully maximized on both axes, or tracked
+as floating. The badge reads `Fullscreen`, `Maximized`, or `Floating` in
+that precedence order. A partial horizontal or vertical maximize state does
+not produce a `Maximized` badge; an independent floating state can still
+produce `Floating`. Tabs and minimized placeholders never show a badge.
+
+Search includes every true lowercase state term, so combined queries such as
+`fullscreen floating` remain exact even though only the highest-priority badge
+is visible. Hiding badges does not remove state terms from search.
+
+`ShowWindowStateBadges` is enabled by default and updates live. A malformed or
+non-boolean value falls back to enabled. Home Manager can manage it with the
+nullable `programs.driftile.overview.showWindowStateBadges`; `null` leaves the
+existing KConfig value untouched. Badges are read-only and add no input,
+animation, timer, action, layout or persistence write.
+
 ## Minimized placeholders
 
 A minimized stacked tiled member uses the visible intersection of its projected
@@ -380,6 +402,7 @@ programs.driftile.overview.backdropColor = "#E60B0F17";
 programs.driftile.overview.showWindowLabels = true;
 programs.driftile.overview.showApplicationIdentity = true;
 programs.driftile.overview.showWindowCloseButtons = true;
+programs.driftile.overview.showWindowStateBadges = true;
 programs.driftile.overview.touchpadGesture = {
   enable = true;
   fingerCount = 4;
