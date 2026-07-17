@@ -18,6 +18,7 @@ export interface OverviewWheelNavigationPlan {
 
 export interface OverviewWindowNavigationTargetSummary {
   readonly byDesktop: Readonly<Record<string, number>>;
+  readonly ordinalByTargetId: Readonly<Record<string, number>>;
   readonly total: number;
 }
 
@@ -100,9 +101,15 @@ function scanOverviewWindowNavigationTargets(
       return null;
     }
 
-    const windowIds = new Set<string>();
+    const windowIds = includeDesktopCounts ? null : new Set<string>();
+    const windowOrdinals = includeDesktopCounts
+      ? new Map<string, number>()
+      : null;
     const desktopWindowIds = includeDesktopCounts
       ? new Map<string, Set<string>>()
+      : null;
+    const ordinalByTargetId = includeDesktopCounts
+      ? (Object.create(null) as Record<string, number>)
       : null;
     for (const target of targets) {
       if (!isRecord(target) || target["kind"] !== "window") {
@@ -111,7 +118,23 @@ function scanOverviewWindowNavigationTargets(
 
       const windowId = target["windowId"];
       if (validIdentifier(windowId)) {
-        windowIds.add(windowId);
+        windowIds?.add(windowId);
+        if (windowOrdinals && ordinalByTargetId) {
+          let ordinal = windowOrdinals.get(windowId);
+          if (ordinal === undefined) {
+            ordinal = windowOrdinals.size + 1;
+            windowOrdinals.set(windowId, ordinal);
+          }
+
+          const targetId = target["id"];
+          if (validIdentifier(targetId)) {
+            const existingOrdinal = ordinalByTargetId[targetId];
+            if (existingOrdinal !== undefined && existingOrdinal !== ordinal) {
+              return null;
+            }
+            ordinalByTargetId[targetId] = ordinal;
+          }
+        }
         if (desktopWindowIds) {
           const desktopId = target["desktopId"];
           if (validIdentifier(desktopId)) {
@@ -126,8 +149,8 @@ function scanOverviewWindowNavigationTargets(
       }
     }
 
-    if (!desktopWindowIds) {
-      return windowIds.size;
+    if (!desktopWindowIds || !ordinalByTargetId || !windowOrdinals) {
+      return windowIds?.size ?? null;
     }
 
     const byDesktop = Object.create(null) as Record<string, number>;
@@ -137,7 +160,8 @@ function scanOverviewWindowNavigationTargets(
 
     return Object.freeze({
       byDesktop: Object.freeze(byDesktop),
-      total: windowIds.size,
+      ordinalByTargetId: Object.freeze(ordinalByTargetId),
+      total: windowOrdinals.size,
     });
   } catch {
     return null;

@@ -81,12 +81,18 @@ describe("countOverviewWindowNavigationTargets", () => {
   });
 
   it("preserves counting when unrelated target fields are hostile", () => {
-    const target = Object.defineProperty(
+    const target = Object.defineProperties(
       { kind: "window", windowId: "window-a" },
-      "desktopId",
       {
-        get(): never {
-          throw new Error("unavailable");
+        desktopId: {
+          get(): never {
+            throw new Error("unavailable");
+          },
+        },
+        id: {
+          get(): never {
+            throw new Error("unavailable");
+          },
         },
       },
     );
@@ -98,14 +104,49 @@ describe("countOverviewWindowNavigationTargets", () => {
 describe("summarizeOverviewWindowNavigationTargets", () => {
   it("counts unique windows globally and for each exact desktop id", () => {
     const summary = summarizeOverviewWindowNavigationTargets([
-      { desktopId: "desktop-a", kind: "window", windowId: "window-a" },
-      { desktopId: "desktop-a", kind: "window", windowId: "window-a" },
-      { desktopId: "desktop-a", kind: "window", windowId: "window-b" },
-      { desktopId: "desktop-b", kind: "window", windowId: "window-a" },
-      { desktopId: " desktop-b ", kind: "window", windowId: "window-c" },
+      {
+        desktopId: "desktop-a",
+        id: "target-a-on-a",
+        kind: "window",
+        windowId: "window-a",
+      },
+      {
+        desktopId: "desktop-a",
+        id: "target-a-on-a",
+        kind: "window",
+        windowId: "window-a",
+      },
+      {
+        desktopId: "desktop-a",
+        id: "target-b-on-a",
+        kind: "window",
+        windowId: "window-b",
+      },
+      {
+        desktopId: "desktop-b",
+        id: "target-a-on-b",
+        kind: "window",
+        windowId: "window-a",
+      },
+      {
+        desktopId: " desktop-b ",
+        id: "target-c-on-b",
+        kind: "window",
+        windowId: "window-c",
+      },
       { desktopId: "desktop-a", kind: "desktop", windowId: "window-d" },
-      { desktopId: "", kind: "window", windowId: "window-e" },
-      { desktopId: 1, kind: "window", windowId: "window-f" },
+      {
+        desktopId: "",
+        id: "target-e",
+        kind: "window",
+        windowId: "window-e",
+      },
+      {
+        desktopId: 1,
+        id: "target-f",
+        kind: "window",
+        windowId: "window-f",
+      },
       { desktopId: "desktop-a", kind: "window", windowId: "" },
       null,
     ]);
@@ -117,8 +158,18 @@ describe("summarizeOverviewWindowNavigationTargets", () => {
       "desktop-a": 2,
       "desktop-b": 1,
     });
+    expect(summary?.ordinalByTargetId).toEqual({
+      "target-a-on-a": 1,
+      "target-a-on-b": 1,
+      "target-b-on-a": 2,
+      "target-c-on-b": 3,
+      "target-e": 4,
+      "target-f": 5,
+    });
     expect(Object.getPrototypeOf(summary?.byDesktop)).toBeNull();
+    expect(Object.getPrototypeOf(summary?.ordinalByTargetId)).toBeNull();
     expect(Object.isFrozen(summary?.byDesktop)).toBe(true);
+    expect(Object.isFrozen(summary?.ordinalByTargetId)).toBe(true);
     expect(Object.isFrozen(summary)).toBe(true);
   });
 
@@ -130,16 +181,31 @@ describe("summarizeOverviewWindowNavigationTargets", () => {
 
     expect(summary?.total).toBe(0);
     expect(summary?.byDesktop).toEqual({});
+    expect(summary?.ordinalByTargetId).toEqual({});
     expect(Object.isFrozen(summary?.byDesktop)).toBe(true);
+    expect(Object.isFrozen(summary?.ordinalByTargetId)).toBe(true);
     expect(Object.isFrozen(summary)).toBe(true);
   });
 
-  it("bounds the scan and fails closed on hostile valid window targets", () => {
+  it("bounds the scan and fails closed on hostile or ambiguous targets", () => {
     const limit =
       LAYOUT_PERSISTENCE_LIMITS.windows + LAYOUT_PERSISTENCE_LIMITS.contexts;
     const hostile = Object.defineProperty(
       { kind: "window", windowId: "window-a" },
       "desktopId",
+      {
+        get(): never {
+          throw new Error("unavailable");
+        },
+      },
+    );
+    const hostileTargetId = Object.defineProperty(
+      {
+        desktopId: "desktop-a",
+        kind: "window",
+        windowId: "window-a",
+      },
+      "id",
       {
         get(): never {
           throw new Error("unavailable");
@@ -153,6 +219,25 @@ describe("summarizeOverviewWindowNavigationTargets", () => {
       ),
     ).toBeNull();
     expect(summarizeOverviewWindowNavigationTargets([hostile])).toBeNull();
+    expect(
+      summarizeOverviewWindowNavigationTargets([hostileTargetId]),
+    ).toBeNull();
+    expect(
+      summarizeOverviewWindowNavigationTargets([
+        {
+          desktopId: "desktop-a",
+          id: "duplicate-target",
+          kind: "window",
+          windowId: "window-a",
+        },
+        {
+          desktopId: "desktop-b",
+          id: "duplicate-target",
+          kind: "window",
+          windowId: "window-b",
+        },
+      ]),
+    ).toBeNull();
   });
 });
 

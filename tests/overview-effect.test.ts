@@ -2348,6 +2348,9 @@ describe("overview effect package", () => {
     expect(searchFeedback).toContain(
       "searchResultCountsByDesktop = summary.byDesktop",
     );
+    expect(searchFeedback).toContain(
+      "searchResultOrdinalsByTarget = summary.ordinalByTargetId",
+    );
     expect(searchFeedback).not.toContain("collectNavigationTargets()");
 
     expect(desktopCard).toContain("required property string searchQuery");
@@ -2394,7 +2397,7 @@ describe("overview effect package", () => {
     );
   });
 
-  it("shows passive per-desktop search result counts from one navigation summary", () => {
+  it("shows passive search navigation context from one navigation summary", () => {
     const searchFeedback = scene.slice(
       scene.indexOf("function repairKeyboardSelectionFrom("),
       scene.indexOf("function preferredInitialNavigationTarget("),
@@ -2403,9 +2406,19 @@ describe("overview effect package", () => {
       desktopCard.indexOf("id: numberGutter"),
       desktopCard.indexOf("id: viewport"),
     );
+    const searchPresentation = desktopCard.slice(
+      desktopCard.indexOf("readonly property bool searchDeemphasized"),
+      desktopCard.indexOf("id: numberGutter"),
+    );
 
     expect(scene).toContain(
       "property var searchResultCountsByDesktop: Object.create(null)",
+    );
+    expect(scene).toContain(
+      "property var searchResultOrdinalsByTarget: Object.create(null)",
+    );
+    expect(scene).toContain(
+      "readonly property int searchResultOrdinal: searchResultOrdinalForTarget(keyboardSelectionId)",
     );
     expect(scene).toContain(
       "searchResultCount: root.searchResultCountForDesktop(modelData)",
@@ -2417,11 +2430,35 @@ describe("overview effect package", () => {
     expect(searchFeedback).toContain(
       "searchResultCountsByDesktop = Object.create(null)",
     );
+    expect(searchFeedback).toContain(
+      "searchResultOrdinalsByTarget = Object.create(null)",
+    );
+    expect(searchFeedback).toContain(
+      "searchResultOrdinalsByTarget = summary.ordinalByTargetId",
+    );
+    expect(searchFeedback).toContain(
+      "function searchResultOrdinalForTarget(targetId)",
+    );
+    expect(searchFeedback).toContain("Object.keys(summary.ordinalByTargetId)");
+    expect(scene).toContain("root.searchResultOrdinal > 0");
+    expect(scene).toContain(
+      '`${root.searchResultOrdinal}/${root.searchResultCount} matching window${root.searchResultCount === 1 ? "" : "s"}: ${root.searchQuery}`',
+    );
+    expect(scene).toContain(
+      '`${root.searchResultCount} matching window${root.searchResultCount === 1 ? "" : "s"}: ${root.searchQuery}`',
+    );
     expect(searchFeedback).not.toMatch(
       /desktopRepeater|windowRepeater|collectNavigationTargets\(\)|overviewModel\.outputs/u,
     );
 
     expect(desktopCard).toContain("required property int searchResultCount");
+    expect(desktopCard).toContain(
+      "readonly property bool searchDeemphasized: searchQuery.trim().length > 0 && searchResultCount === 0",
+    );
+    expect(desktopCard).toContain("opacity: searchDeemphasized ? 0.42 : 1");
+    expect(searchPresentation).not.toMatch(
+      /visible:\s*searchDeemphasized|\b(?:Animation|Behavior|Timer)\s*\{/u,
+    );
     expect(numberGutter).toMatch(
       /active: card\.searchQuery\.trim\(\)\.length > 0 && card\.searchResultCount > 0/u,
     );

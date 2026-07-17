@@ -62,6 +62,8 @@ Rectangle {
     property string searchQuery: ""
     property int searchResultCount: 0
     property var searchResultCountsByDesktop: Object.create(null)
+    property var searchResultOrdinalsByTarget: Object.create(null)
+    readonly property int searchResultOrdinal: searchResultOrdinalForTarget(keyboardSelectionId)
     property bool desktopReorderActive: false
     property real desktopReorderCardGap: 0
     property real desktopReorderCardHeight: 0
@@ -284,7 +286,9 @@ Rectangle {
             anchors.rightMargin: 14
             text: root.searchResultCount === 0
                 ? `No matching windows: ${root.searchQuery}`
-                : `${root.searchResultCount} matching window${root.searchResultCount === 1 ? "" : "s"}: ${root.searchQuery}`
+                : root.searchResultOrdinal > 0
+                  ? `${root.searchResultOrdinal}/${root.searchResultCount} matching window${root.searchResultCount === 1 ? "" : "s"}: ${root.searchQuery}`
+                  : `${root.searchResultCount} matching window${root.searchResultCount === 1 ? "" : "s"}: ${root.searchQuery}`
             textFormat: Text.PlainText
             color: "#f3f7ff"
             font.pixelSize: 14
@@ -721,6 +725,7 @@ Rectangle {
     function repairKeyboardSelectionFrom(targets) {
         searchResultCount = 0;
         searchResultCountsByDesktop = Object.create(null);
+        searchResultOrdinalsByTarget = Object.create(null);
         if (searchQuery.length > 0) {
             const runtime = OverviewRuntime.DriftileOverview;
             if (runtime && typeof runtime.summarizeOverviewWindowNavigationTargets === "function") {
@@ -729,10 +734,12 @@ Rectangle {
                     if (searchSummaryIsValid(summary, targets.length)) {
                         searchResultCount = summary.total;
                         searchResultCountsByDesktop = summary.byDesktop;
+                        searchResultOrdinalsByTarget = summary.ordinalByTargetId;
                     }
                 } catch (error) {
                     searchResultCount = 0;
                     searchResultCountsByDesktop = Object.create(null);
+                    searchResultOrdinalsByTarget = Object.create(null);
                 }
             }
         }
@@ -748,13 +755,20 @@ Rectangle {
     function searchSummaryIsValid(summary, targetCount) {
         if (!summary || !Number.isInteger(summary.total) || summary.total < 0 || summary.total > targetCount
                 || !summary.byDesktop || typeof summary.byDesktop !== "object"
-                || Array.isArray(summary.byDesktop)) {
+                || Array.isArray(summary.byDesktop) || !summary.ordinalByTargetId
+                || typeof summary.ordinalByTargetId !== "object" || Array.isArray(summary.ordinalByTargetId)) {
             return false;
         }
 
         for (const desktopId of Object.keys(summary.byDesktop)) {
             const count = summary.byDesktop[desktopId];
             if (desktopId.length === 0 || !Number.isInteger(count) || count <= 0 || count > summary.total) {
+                return false;
+            }
+        }
+        for (const targetId of Object.keys(summary.ordinalByTargetId)) {
+            const ordinal = summary.ordinalByTargetId[targetId];
+            if (targetId.length === 0 || !Number.isInteger(ordinal) || ordinal <= 0 || ordinal > summary.total) {
                 return false;
             }
         }
@@ -769,6 +783,16 @@ Rectangle {
 
         const count = counts[desktopId];
         return Number.isInteger(count) && count > 0 ? count : 0;
+    }
+
+    function searchResultOrdinalForTarget(targetId) {
+        const ordinals = searchResultOrdinalsByTarget;
+        if (!ordinals || typeof targetId !== "string" || targetId.length === 0) {
+            return 0;
+        }
+
+        const ordinal = ordinals[targetId];
+        return Number.isInteger(ordinal) && ordinal > 0 && ordinal <= searchResultCount ? ordinal : 0;
     }
 
     function preferredInitialNavigationTarget(targets) {

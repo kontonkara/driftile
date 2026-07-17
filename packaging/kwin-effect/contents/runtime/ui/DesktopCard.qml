@@ -47,6 +47,7 @@ Rectangle {
     readonly property real contentTop: 10
     readonly property real contentWidth: Math.max(1, width - contentLeft - 10)
     readonly property real contentHeight: Math.max(1, height - contentTop * 2)
+    readonly property bool searchDeemphasized: searchQuery.trim().length > 0 && searchResultCount === 0
     readonly property real horizontalScale: screen && screen.geometry.width > 0 ? contentWidth / screen.geometry.width :
                                                                                   1
     readonly property real verticalScale: screen && screen.geometry.height > 0 ? contentHeight / screen.geometry.height :
@@ -62,6 +63,7 @@ Rectangle {
     border.color: windowDropArea.validTarget ? "#86aee8" : current ? "#a8c7ff" : "#526179"
     radius: 8
     clip: true
+    opacity: searchDeemphasized ? 0.42 : 1
 
     Item {
         id: numberGutter
