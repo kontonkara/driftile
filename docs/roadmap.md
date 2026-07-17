@@ -1,12 +1,12 @@
 # Roadmap
 
-Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.57.0 are
+Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.58.0 are
 released. The delivered milestones and release criteria below are a historical
 record. Later direction is not a committed release schedule.
 
-Stable 1.57.0 adds live Overview preferences for large-thumbnail label
-visibility and application identity while retaining bounded caption planning.
-Logical persistence remains v4.
+Stable 1.58.0 adds guarded close buttons to eligible Overview thumbnails, tabs,
+and minimized placeholders, with a live presentation preference. Logical
+persistence remains v4.
 
 ## Foundation (delivered)
 
@@ -2134,7 +2134,7 @@ Release criteria (met):
 The batch adds no action, binding, input handler, geometry or layout write,
 persistence field, animation, timer, private API, or KWin fork.
 
-### 1.58.0 (in development)
+### 1.58.0 (released)
 
 - Show one compact close button on an eligible thumbnail, tab, or minimized
   placeholder while that exact surface is hovered or keyboard-selected.
@@ -2148,7 +2148,7 @@ persistence field, animation, timer, private API, or KWin fork.
   Manager option without changing the NixOS option surface.
 - Include the new QML component in deterministic package-content validation.
 
-Release criteria:
+Release criteria (met):
 
 - Ordinary, tabbed, and minimized previews expose at most one close button for
   a live closeable window, and stale or ineligible windows expose none.
