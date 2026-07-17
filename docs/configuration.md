@@ -134,7 +134,8 @@ The activation writes only `ApplicationBorderlessExclusions`,
 `ApplicationTilingExclusions`,
 `BorderlessWindows`, `CenterFocusedColumn`, `Gap`,
 `DefaultColumnPresentation`, `DefaultColumnWidthPercent`,
-`DefaultColumnWidthPixels`, `DefaultFloatingPosition`, `DefaultWindowHeight`,
+`DefaultColumnWidthPixels`, `UseInitialWindowWidth`,
+`DefaultFloatingPosition`, `DefaultWindowHeight`,
 `ColumnWidthPresets`,
 `ColumnWidthStepPercent`, `ColumnWidthStepPixels`,
 `ShowTabIndicator`, `TouchpadNavigation`,
@@ -229,6 +230,7 @@ programs.driftile.settings.columnWidthPresets = [ 20 50 80 ];
 programs.driftile.settings.columnWidthStepPixels = 0;
 programs.driftile.settings.defaultColumnPresentation = "stacked";
 programs.driftile.settings.defaultColumnWidthPixels = 0;
+programs.driftile.settings.useInitialWindowWidth = false;
 programs.driftile.settings.defaultFloatingPosition = {
   anchor = "bottom-right";
   x = 24;
@@ -446,6 +448,19 @@ percentage fallback when fixed width is `0`, to the active tiled column or one
 relation-free manually floating window; application-specific initial widths do
 not override that reset. Newly admitted and reset widths remain subject to live
 constraints and the assigned output's physical-pixel grid.
+
+**Use the initial window frame width for new singleton tiled columns** is an
+opt-in admission policy and defaults to off. When enabled, a new singleton tiled
+column without an exact application-width rule captures its member's live frame
+width as a fixed logical width. Exact application rules still win. The captured width
+is clamped to the window's live decorated minimum and maximum and snapped to the
+assigned output's physical-pixel grid.
+
+The option affects future singleton admissions only. It does not resize
+existing columns, replace the public `33%` default, change reset or width
+actions, add bindings, or add a persistence field. It is available in the
+KConfig page for ordinary and NixOS installations; Home Manager exposes the
+typed `programs.driftile.settings.useInitialWindowWidth` option.
 
 ## Default window height
 

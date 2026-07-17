@@ -8,6 +8,10 @@ Stable 1.49.0 restores eligible same-context focus after more close paths and
 retains immediate transition presentation after workspace handoffs. Logical
 persistence remains v4.
 
+Version 1.50.0 is in development. Its current slice adds an opt-in,
+future-admission policy that can preserve a new singleton window's live frame
+width without changing the public `33%` default.
+
 ## Foundation (delivered)
 
 - Build and package a declarative KWin script with a TypeScript runtime.
@@ -92,6 +96,10 @@ The current runtime already:
 - Configures a 10%–100% default-width fallback and an optional fixed
   `1px`–`16384px` logical width for newly admitted columns, fresh cross-context
   retiles, and contextual reset without changing existing widths.
+- Optionally derives a newly admitted singleton member's fixed logical width
+  from its live frame when no exact application-width rule matches. The policy defaults
+  off, remains constrained and pixel-snapped, and never rewrites existing
+  columns.
 - Configures up to 128 exact application-ID proportional or fixed
   logical-pixel initial singleton widths, with a constant-time admission
   lookup, global-default fallback, live constraints, and output-pixel snapping.
@@ -1927,3 +1935,22 @@ The batch changes no setting, action, schema, default binding, or private API.
   it.
 
 The batch changes no setting, action, schema, binding, or private API.
+
+### 1.50.0 (in development)
+
+- Add `useInitialWindowWidth`, disabled by default, for newly admitted singleton
+  tiled columns without an exact application-width rule.
+- Capture the live frame width as a fixed logical policy, then apply the existing
+  decorated minimum, maximum, and physical-pixel constraints.
+- Preserve the public `33%` default and leave existing columns, reset behavior,
+  persistence schemas, actions, and bindings unchanged.
+- Expose the option through KConfig and the typed Home Manager settings profile;
+  NixOS-installed packages use the same per-user KConfig control.
+
+Release criteria:
+
+- Exact application-width rules remain higher priority than frame capture.
+- Enabling or disabling the option schedules no geometry write and affects only
+  future singleton admissions.
+- Focused settings, runtime, KConfig, NixOS-module, and Home Manager checks pass
+  before the batch-wide release gate.

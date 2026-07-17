@@ -61,6 +61,9 @@ Events travel from KWin through the bridge into the runtime. Commands and result
 - Maps an optional complete Home Manager settings profile to KDE's native
   KConfig module. Settings and shortcut-profile generation remain available
   without a second package installation.
+- Keeps `useInitialWindowWidth` disabled by default. NixOS-installed packages
+  expose it through the same per-user KConfig page, while Home Manager can own
+  the typed boolean in its complete settings profile.
 
 ### Overview companion
 
@@ -260,6 +263,11 @@ Events travel from KWin through the bridge into the runtime. Commands and result
   cross-context retiles, and later contextual resets read that current policy
   through the normal constraint and output-pixel snapping path. A pointer gutter
   extraction instead preserves its source width.
+- Optionally captures a newly admitted singleton member's live frame width as a
+  fixed logical policy when no exact application-width rule matches. The exact map
+  remains authoritative; capture passes through decorated minimum and maximum
+  bounds plus output-pixel snapping. Existing columns and reset paths never
+  read the option.
 - Parses at most 128 application-width entries into an exact application-ID
   lookup. A newly created or freshly admitted singleton resolves the KWin ID,
   reads that map in constant time, falls back to the global default, and remains
@@ -664,6 +672,10 @@ inspected safely within the codec bound.
   positive fixed value wins while zero preserves the percentage fallback.
   Retrying a waiting admission may add a constrained, pixel-snapped column and
   update that viewport and its frames.
+- Treat initial-frame width capture as future singleton-admission policy only.
+  Reconfiguration performs no geometry write, and the captured fixed width uses
+  the existing model and persistence field without changing schemas, actions,
+  or bindings.
 - Replace the bounded application-width lookup atomically on reconfiguration.
   Do not revisit existing columns; schedule only contexts with waiting windows
   that may create a fresh singleton.
