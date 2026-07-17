@@ -1,13 +1,13 @@
 # Roadmap
 
-Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.46.0 are
+Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.47.0 are
 released. The delivered milestones and release criteria below are a historical
 record. Later direction is not a committed release schedule.
 
-Stable 1.46.0 restores focus after eligible automatic-floating windows close,
-retains small settling corrections in active transitions, presents a selected
-column before the remaining geometry writes, and bounds repeated helper-border
-requests. Logical persistence remains v4.
+Stable 1.47.0 previews exact-window and empty-gutter destinations while dragging
+between visible outputs or virtual desktops. Preview and commit share one
+guarded target plan, and stale cleanup cannot hide newer feedback. Logical
+persistence remains v4.
 
 ## Foundation (delivered)
 
@@ -1886,7 +1886,7 @@ Release criteria (met):
 
 No unrelated feature belongs to 1.46.0.
 
-### 1.47.0 (in development)
+### 1.47.0 (released)
 
 - Preview settled cross-output and same-output cross-desktop pointer targets
   before release.
