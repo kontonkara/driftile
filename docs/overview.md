@@ -481,8 +481,8 @@ activation, and normal close remain silent.
 
 ## Install a release
 
-Download `driftile-overview-1.64.0.kwineffect` and `SHA256SUMS` from the stable
-[1.64.0 release](https://github.com/kontonkara/driftile/releases/tag/v1.64.0),
+Download `driftile-overview-1.65.0.kwineffect` and `SHA256SUMS` from the stable
+[1.65.0 release](https://github.com/kontonkara/driftile/releases/tag/v1.65.0),
 then verify the archive:
 
 ```console
@@ -493,7 +493,7 @@ Install the overview package as the desktop user:
 
 ```bash
 kpackagetool6 --type=KWin/Effect \
-  --install ./driftile-overview-1.64.0.kwineffect
+  --install ./driftile-overview-1.65.0.kwineffect
 ```
 
 To build the same versioned archive from source, run `npm ci` followed by
@@ -518,7 +518,7 @@ uninstalling the package.
 
 ## NixOS and Home Manager
 
-The 1.64.0 flake exposes the effect separately as
+The 1.65.0 flake exposes the effect separately as
 `packages.<system>.driftile-overview`. The NixOS and Home Manager modules keep
 it opt-in:
 

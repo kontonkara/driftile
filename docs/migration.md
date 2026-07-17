@@ -1,7 +1,30 @@
 # Migration
 
-The latest stable release is 1.64.0. Use the steps below when changing release
+The latest stable release is 1.65.0. Use the steps below when changing release
 generations, and never combine files from different releases.
+
+## Upgrade from 1.64.0 to 1.65.0
+
+1. Release a helper-owned shortcut profile with the installed helper.
+2. Disable Driftile and both optional effects in System Settings.
+3. Install matching 1.65.0 artifacts, or pin the Nix input to `v1.65.0` and
+   rebuild.
+4. Re-enable Driftile and only the optional effects you use, then reclaim the
+   helper profile if needed.
+
+Logical layout state remains v4. The optional Overview adds up to four bounded
+search alternatives separated by a standalone unquoted `|`. `Ctrl+Backspace`
+removes the trailing structured clause and `Ctrl+U` clears a non-empty query.
+These shortcuts are active only while the Overview is open. No setting or
+schema migration is required.
+
+## Roll back from 1.65.0 to 1.64.0
+
+Release a helper-owned profile, disable Driftile and both optional effects,
+then restore matching verified 1.64.0 artifacts or pin the Nix input to
+`v1.64.0` and rebuild. No option deletion or schema migration is required; the
+alternative-group syntax and search-editing shortcuts simply become
+unavailable.
 
 ## Upgrade from 1.63.0 to 1.64.0
 
