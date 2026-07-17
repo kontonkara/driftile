@@ -326,10 +326,10 @@ describe("solveStripGeometry", () => {
     expect(successor?.frame.x).toBeLessThan(2020);
   });
 
-  it("keeps outer gaps when a new column follows a full-width column", () => {
+  it("minimally reveals an ordinary column after a full-width column", () => {
     const context = createContext([
       { kind: "proportion", value: 1 },
-      { kind: "proportion", value: 0.5 },
+      { kind: "proportion", value: 1 / 3 },
     ]);
     const result = solveStripGeometry({
       context: {
@@ -342,13 +342,47 @@ describe("solveStripGeometry", () => {
       workArea: { height: 1080, width: 1920, x: 100, y: 50 },
     });
     const [previous, active] = result.windows;
+    const previousEnd = (previous?.frame.x ?? 0) + (previous?.frame.width ?? 0);
+    const activeEnd = (active?.frame.x ?? 0) + (active?.frame.width ?? 0);
 
-    expect(result.maxViewportOffset).toBe(1904);
-    expect(result.viewportOffset).toBe(1904);
-    expect(previous?.frame).toMatchObject({ width: 1888, x: -1804 });
-    expect((previous?.frame.x ?? 0) + (previous?.frame.width ?? 0)).toBe(84);
-    expect(active?.frame).toMatchObject({ width: 936, x: 116 });
-    expect((active?.frame.x ?? 0) + (active?.frame.width ?? 0)).toBe(1052);
+    expect(result.viewportOffset).toBe(result.maxViewportOffset);
+    expect(previous?.frame.width).toBe(1888);
+    expect(previousEnd).toBeGreaterThan(100);
+    expect(active?.frame.width).toBeCloseTo(619, 0);
+    expect(active?.frame.x).toBeGreaterThan(previousEnd);
+    expect(activeEnd).toBe(2004);
+  });
+
+  it("reveals only the adjacent ordinary column after a full-width column", () => {
+    const gap = 17;
+    const workArea = { height: 900, width: 1366, x: 23, y: 31 };
+    const context = createContext([
+      { kind: "proportion", value: 1 },
+      { kind: "proportion", value: 1 / 3 },
+      { kind: "proportion", value: 1 / 3 },
+      { kind: "proportion", value: 1 / 3 },
+    ]);
+    const result = solveStripGeometry({
+      context: {
+        ...context,
+        activeColumnId: columnId("column-2"),
+        viewportOffset: 0,
+      },
+      devicePixelRatio: 1,
+      gap,
+      pixelGridOrigin: { x: 0, y: 0 },
+      workArea,
+    });
+    const [previous, active, next, terminal] = result.windows;
+    const viewportEnd = workArea.x + workArea.width;
+    const previousEnd = (previous?.frame.x ?? 0) + (previous?.frame.width ?? 0);
+    const activeEnd = (active?.frame.x ?? 0) + (active?.frame.width ?? 0);
+
+    expect(previousEnd).toBeGreaterThan(workArea.x);
+    expect(active?.frame.x).toBeGreaterThan(previousEnd);
+    expect(activeEnd).toBe(viewportEnd - gap);
+    expect(next?.frame.x).toBeGreaterThanOrEqual(viewportEnd);
+    expect(terminal?.frame.x).toBeGreaterThan(next?.frame.x ?? 0);
   });
 
   it.each([1.25, 1.5, 1.75, 2.5])(

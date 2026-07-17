@@ -72,8 +72,6 @@ export function solveStripGeometry(input: StripGeometryInput): StripGeometry {
     };
   }
 
-  let activeColumnIndex = -1;
-  let activeColumnOffset = 0;
   let fullWidthActiveColumnIndex = -1;
   let fullWidthActiveColumnOffset = 0;
   let resolvedColumnOffset = input.gap;
@@ -85,9 +83,6 @@ export function solveStripGeometry(input: StripGeometryInput): StripGeometry {
     );
 
     if (column.id === input.context.activeColumnId) {
-      activeColumnIndex = columnIndex;
-      activeColumnOffset = resolvedColumnOffset;
-
       if (column.width.kind === "proportion" && column.width.value === 1) {
         fullWidthActiveColumnIndex = columnIndex;
         fullWidthActiveColumnOffset = resolvedColumnOffset;
@@ -109,21 +104,10 @@ export function solveStripGeometry(input: StripGeometryInput): StripGeometry {
     stripOverflow <= stripOverflowTolerance
       ? 0
       : snapUpToPixelGrid(stripOverflow, input.devicePixelRatio);
-  const fullWidthSuccessorAnchor = immediateFullWidthSuccessorAnchor(
-    input.context,
-    activeColumnIndex,
-    activeColumnOffset,
-    input.gap,
-    input.devicePixelRatio,
-  );
-  const extendedMaxViewportOffset = extendMaxViewportOffset(
+  const maxViewportOffset = extendMaxViewportOffset(
     columnWidths,
     initialMaxViewportOffset,
     input,
-  );
-  const maxViewportOffset = Math.max(
-    extendedMaxViewportOffset,
-    fullWidthSuccessorAnchor ?? 0,
   );
   const viewportOffset = snapToPixelGrid(
     input.context.viewportOffset,
@@ -132,18 +116,16 @@ export function solveStripGeometry(input: StripGeometryInput): StripGeometry {
   const revealedViewportOffset =
     input.centerSingleColumn === true && columnWidths.length === 1
       ? centerSingleColumnViewportOffset(columnWidths[0], input)
-      : fullWidthSuccessorAnchor === null
-        ? revealActiveColumn(
-            input.context,
-            columnWidths,
-            viewportOffset,
-            maxViewportOffset,
-            input.workArea,
-            input.pixelGridOrigin.x,
-            input.gap,
-            input.devicePixelRatio,
-          )
-        : clamp(fullWidthSuccessorAnchor, 0, maxViewportOffset);
+      : revealActiveColumn(
+          input.context,
+          columnWidths,
+          viewportOffset,
+          maxViewportOffset,
+          input.workArea,
+          input.pixelGridOrigin.x,
+          input.gap,
+          input.devicePixelRatio,
+        );
   let fullWidthLeftNeighborShift = 0;
   let fullWidthRightNeighborShift = 0;
   const clearance = snapUpToPixelGrid(input.gap, input.devicePixelRatio);
@@ -211,18 +193,11 @@ export function solveStripGeometry(input: StripGeometryInput): StripGeometry {
           ? fullWidthRightNeighborShift
           : 0;
     const shiftedLeft = horizontalSpan.start + fullWidthNeighborShift;
-    const shiftedRight = shiftedLeft + horizontalSpan.length;
-    const inactiveFullWidthPredecessorShift =
-      activeColumnIndex >= 0 &&
-      columnIndex < activeColumnIndex &&
-      isSemanticFullWidth(column)
-        ? Math.min(0, leftNeighborLimit - shiftedRight)
-        : 0;
 
     appendColumnWindows(
       windows,
       column,
-      shiftedLeft + inactiveFullWidthPredecessorShift,
+      shiftedLeft,
       horizontalSpan.length,
       input,
     );
@@ -249,32 +224,6 @@ function centerSingleColumnViewportOffset(
     input.gap + width / 2 - input.workArea.width / 2,
     input.devicePixelRatio,
   );
-}
-
-function immediateFullWidthSuccessorAnchor(
-  context: LayoutContextSnapshot,
-  activeColumnIndex: number,
-  activeColumnOffset: number,
-  gap: number,
-  devicePixelRatio: number,
-): number | null {
-  const activeColumn = context.columns[activeColumnIndex];
-  const predecessor = context.columns[activeColumnIndex - 1];
-
-  if (
-    !activeColumn ||
-    !predecessor ||
-    isSemanticFullWidth(activeColumn) ||
-    !isSemanticFullWidth(predecessor)
-  ) {
-    return null;
-  }
-
-  return snapToPixelGrid(activeColumnOffset - gap, devicePixelRatio);
-}
-
-function isSemanticFullWidth(column: LayoutColumnSnapshot): boolean {
-  return column.width.kind === "proportion" && column.width.value === 1;
 }
 
 function extendMaxViewportOffset(
