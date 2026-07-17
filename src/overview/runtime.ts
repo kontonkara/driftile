@@ -41,6 +41,7 @@ export {
 export type {
   OverviewWindowSearchFieldName,
   OverviewWindowSearchQueryClause,
+  OverviewWindowSearchQueryGroup,
   OverviewWindowSearchQueryPlan,
 } from "./window-search";
 
