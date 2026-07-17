@@ -108,8 +108,11 @@ selection and reuses the existing exact close path.
 Version 1.59.0 adds static window-state badges to sufficiently large selected
 ordinary thumbnails. State terms also join the existing all-term search.
 
-Version 1.60.0 is in development. It adds bounded desktop names to sufficiently
-large cards and makes each owning desktop name available to window search.
+Version 1.60.0 adds bounded desktop names to sufficiently large cards and makes
+each owning desktop name available to window search.
+
+Version 1.61.0 is in development. It adds optional application icons to
+eligible window labels without changing their actions or search behavior.
 
 The companion is disabled by default. When enabled with a fresh shortcut
 record, `Meta+O` toggles it. KGlobalAccel preserves an existing assignment
@@ -251,6 +254,24 @@ labels needed by tabs and minimized placeholders. Application identity can be
 disabled independently; captions remain normalized, and a missing caption then
 uses the existing tab or placeholder fallback. Both settings update live and
 do not alter search matching.
+
+## Application icons
+
+Sufficiently large ordinary label footers, tabs, and minimized placeholders
+can show the owning application's public KWin window icon. Icons are loaded
+lazily and rendered through Kirigami only after the complete surface is
+eligible. A missing or inaccessible icon leaves the existing text alignment in
+place.
+
+`ShowApplicationIcons` is enabled by default and updates live. A malformed or
+non-boolean KConfig value falls back to enabled. Home Manager can manage it
+with nullable `programs.driftile.overview.showApplicationIcons`; `null` leaves
+the existing KConfig value untouched. The NixOS option surface is unchanged.
+
+Disabling icons, or projecting an ineligible surface, prevents the Loader
+payload and its Kirigami icon from being instantiated and prevents an icon
+read. Icons add no input, focus, search, timer, animation, layout or persistence
+behavior.
 
 ## Window close buttons
 
@@ -431,10 +452,11 @@ programs.driftile.overview.touchpadGesture = {
 };
 ```
 
-The 1.60.0 development source additionally accepts:
+The 1.61.0 development source additionally accepts:
 
 ```nix
 programs.driftile.overview.showDesktopNames = true;
+programs.driftile.overview.showApplicationIcons = true;
 ```
 
 The main script and overview can be installed independently. For example, a
@@ -444,7 +466,7 @@ Neither module enables the effect in KWin; enable it in Desktop Effects and
 adjust its shortcut, screen edge, backdrop, or touchpad gesture only if needed.
 The Home Manager-only nullable overview options can manage an effect installed
 in another scope; `null` leaves their KConfig values untouched. Desktop-name
-presentation does not add a corresponding NixOS option.
+and application-icon presentation do not add corresponding NixOS options.
 
 ## Validation
 
@@ -485,6 +507,11 @@ the effect closed.
 Desktop names are a bounded read-only projection of each direct public desktop
 object. Missing, malformed, empty, hostile, or inaccessible names fail closed
 without changing selection, geometry, focus, input, layout, or persistence.
+
+Application icons are a lazy read-only presentation of each direct public
+window icon. Missing or inaccessible icons fail closed, while disabled and
+ineligible surfaces do not instantiate the Kirigami icon or read the KWin
+property.
 
 Current-card thumbnail focus is unchanged: the effect revalidates the direct
 live window object, exact internal ID, output, desktop and activity memberships,

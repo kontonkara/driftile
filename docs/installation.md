@@ -321,10 +321,11 @@ programs.driftile.overview.touchpadGesture = {
 };
 ```
 
-The 1.60.0 development source additionally accepts:
+The 1.61.0 development source additionally accepts:
 
 ```nix
 programs.driftile.overview.showDesktopNames = true;
+programs.driftile.overview.showApplicationIcons = true;
 ```
 
 `overview.screenEdge`, `overview.backdropColor`,
@@ -332,12 +333,12 @@ programs.driftile.overview.showDesktopNames = true;
 `overview.showWindowCloseButtons`, `overview.showWindowStateBadges`, and
 `overview.touchpadGesture` are Home Manager-only nullable options. Their
 defaults are `null`, which leaves the effect's existing values untouched; they
-can manage an overview installed in another scope. In 1.60.0 development,
-`overview.showDesktopNames` follows the same nullable semantics. The effect
-enables window labels, application identity, close buttons, state badges, and
-desktop names by default, and disables screen-edge activation by default. The
-NixOS option surface is unchanged; a system-wide installation uses the effect's
-per-user KConfig value for desktop names.
+can manage an overview installed in another scope. In 1.61.0 development,
+`overview.showDesktopNames` and `overview.showApplicationIcons` follow the same
+nullable semantics. The effect enables window labels, application identity,
+close buttons, state badges, desktop names, and application icons by default,
+and disables screen-edge activation by default. The NixOS option surface is
+unchanged; a system-wide installation uses the effect's per-user KConfig values.
 
 The modules also expose the optional transition effect as an independent
 package:

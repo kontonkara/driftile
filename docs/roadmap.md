@@ -8,6 +8,9 @@ Stable 1.60.0 adds bounded adaptive virtual-desktop names and owning-desktop
 search to the optional Overview, with a live presentation preference. Logical
 persistence remains v4.
 
+Version 1.61.0 is in development. It adds lazy application icons to eligible
+Overview window labels without changing input, search, focus, or layout.
+
 ## Foundation (delivered)
 
 - Build and package a declarative KWin script with a TypeScript runtime.
@@ -2218,3 +2221,28 @@ Release criteria (met):
 The batch adds no pointer or keyboard input, action, binding, timer, animation,
 desktop selection, focus, geometry, layout or persistence write, private API,
 or KWin fork.
+
+### 1.61.0 (in development)
+
+- Show the public KWin application icon on sufficiently large ordinary label
+  footers, tabs, and minimized placeholders.
+- Load Kirigami icon presentation lazily only after a surface is eligible.
+  Missing icons fail closed, while disabled and ineligible surfaces do not
+  instantiate the Loader payload or its Kirigami icon and do not read the
+  window property.
+- Add default-enabled live `ShowApplicationIcons` KConfig and a nullable Home
+  Manager option. Malformed values retain enabled presentation, and `null`
+  leaves KConfig unmanaged.
+- Keep the NixOS option surface unchanged; system installations use the same
+  per-user effect setting.
+
+Release criteria:
+
+- Icons reserve label space only when a valid icon is available.
+- Disabling icons restores the existing text-only presentation without reading
+  an icon.
+- Icons add no input, search, focus, timer, animation, geometry, layout or
+  persistence behavior.
+
+The batch uses public `Window.icon` and Kirigami presentation and adds no
+private API or KWin fork.
