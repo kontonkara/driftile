@@ -8049,7 +8049,7 @@ export class RuntimeController {
     }
 
     if (this.activeWindowResolvesRemovalFocus(id, focus)) {
-      return false;
+      return this.removedWindowWasPreviousActivation(id);
     }
 
     const remembered =
@@ -8162,6 +8162,11 @@ export class RuntimeController {
         return;
       }
 
+      if (active && recovery.phase === "settling") {
+        recovery.requestedWindowId = windowId(String(active.internalId));
+        return;
+      }
+
       this.pendingWindowRemovalFocusRecovery = null;
       return;
     }
@@ -8266,6 +8271,16 @@ export class RuntimeController {
     return (
       this.activeWindowLegitimateRemovalFocusCandidateContext(removedId) !==
       null
+    );
+  }
+
+  private removedWindowWasPreviousActivation(id: WindowId): boolean {
+    const active = this.workspace.activeWindow;
+    return Boolean(
+      active &&
+      this.lastActivatedWindow === active &&
+      this.previousActivatedWindow &&
+      String(this.previousActivatedWindow.internalId) === String(id),
     );
   }
 
