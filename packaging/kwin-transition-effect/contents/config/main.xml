@@ -31,5 +31,13 @@
       <label>KWin window classes excluded from transitions</label>
       <default></default>
     </entry>
+    <entry name="WindowCaptionExclusions" type="String">
+      <label>KWin window captions excluded from transitions</label>
+      <default></default>
+    </entry>
+    <entry name="WindowRoleExclusions" type="String">
+      <label>KWin window roles excluded from transitions</label>
+      <default></default>
+    </entry>
   </group>
 </kcfg>
