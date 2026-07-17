@@ -270,6 +270,14 @@ Open **System Settings > Keyboard > Shortcuts** and search for **Driftile** to
 change any registered action. KGlobalAccel stores and applies assignments live;
 the KWin-script settings page does not maintain a second copy.
 
+The 1.50 development line also offers an optional native **Driftile Shortcuts**
+editor. Driftile must be active before it opens. Edits remain pending until
+**Apply** validates the complete assignment against KGlobalAccel; conflicts,
+stale external changes, and failed writes are rejected. Applied changes are
+verified, and a failed transaction attempts exact rollback and reports any
+rollback error. See [Optional native shortcut editor](installation.md#optional-native-shortcut-editor)
+for distribution and Nix installation.
+
 ## Tab indicator
 
 **Show a transient OSD for tabbed-window selection** is enabled by default.

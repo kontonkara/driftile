@@ -43,6 +43,21 @@ existing stack, one-way tiled/floating layer focus, contextual width reset, and
 reverse height preset cycling are registered without default keys.
 Assign them in **System Settings > Keyboard > Shortcuts** if needed.
 
+## Editing shortcuts
+
+The optional native **Driftile Shortcuts** editor on the 1.50 development line
+shows the active extension's registered actions. Nothing is written until
+**Apply** validates the complete pending assignment. Internal or global
+conflicts, unavailable KGlobalAccel, and assignments changed elsewhere fail
+safely; writes are verified and exact rollback is attempted on failure.
+Driftile must be active before the editor starts.
+
+The editor is a separate package and does not add Qt Widgets or KDE GUI
+dependencies to the main KWin package. See
+[Optional native shortcut editor](installation.md#optional-native-shortcut-editor)
+for CMake, Nix, NixOS, and Home Manager installation. Use the existing helper
+instead when a reversible claim/release transaction or JSON profile is needed.
+
 Explicit state actions are also unbound. `driftile_move_window_to_floating`
 and `driftile_move_window_to_tiling` move only when the active window is in the
 other managed layer. Repeating either action is a no-op. Automatically excluded

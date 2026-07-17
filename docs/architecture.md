@@ -50,10 +50,22 @@ Events travel from KWin through the bridge into the runtime. Commands and result
 - Does not watch JSON files. A Home Manager profile is portable input to an
   explicit `claim --profile`, not a second live source of shortcut state.
 
+### Native shortcut editor
+
+- Runs as an optional Qt 6/KDE Frameworks 6 application outside KWin and loads
+  only registered Driftile actions from the active KWin KGlobalAccel component.
+- Keeps edits in memory until Apply validates the complete pending assignment,
+  global owners, and unchanged baselines. Conflicts cause no write.
+- Clears, writes, and verifies only changed actions through public KGlobalAccel
+  interfaces. Any failure attempts exact rollback of the captured baselines and
+  reports a rollback failure explicitly.
+- Stores no profile or layout state and does not replace the reversible helper.
+
 ### Nix integration
 
-- Exposes disjoint main, overview, and transition outputs from one build. The
-  default output remains the main KWin script and shortcut helper.
+- Exposes disjoint main, overview, transition, and native shortcut-editor
+  outputs. The default output remains the lightweight main KWin script and
+  shortcut helper.
 - Keeps metadata, configuration, and required KPackage entrypoints at stable
   paths while generated selectors choose content-addressed runtime paths.
 - Installs each package through NixOS or Home Manager and rejects duplicate

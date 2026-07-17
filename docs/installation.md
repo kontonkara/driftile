@@ -110,6 +110,49 @@ assign the actions you want. Resolve each reported conflict in System Settings.
 This path needs no helper and allows a partial shortcut profile, but it cannot
 restore displaced assignments automatically.
 
+### Optional native shortcut editor
+
+The 1.50 development line provides **Driftile Shortcuts**, an optional Qt/KDE
+editor for the active extension's primary and alternate assignments. Enable
+Driftile before starting it; an inactive extension has no registered actions to
+edit. Changes remain local to the window until **Apply** is pressed. Apply
+checks the complete pending assignment and current KGlobalAccel owners, rejects
+conflicts or external changes, then writes and verifies the changed actions as
+one rollback-capable transaction.
+
+The editor is separate from the KWin package, so ordinary installations remain
+lightweight. To build it from a 1.50 development checkout, install CMake 3.22 or
+newer, a C++20 compiler, Qt 6.7 development files for Core, DBus, and Widgets,
+and KDE Frameworks 6 development files for GlobalAccel and XmlGui. Then run:
+
+```bash
+cmake -S native/shortcut-editor -B build/shortcut-editor \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DDRIFTILE_VERSION=1.50.0-dev.0 \
+  -DCMAKE_INSTALL_PREFIX="$HOME/.local"
+cmake --build build/shortcut-editor --parallel
+cmake --install build/shortcut-editor
+"$HOME/.local/bin/driftile-shortcut-editor"
+```
+
+The current development flake exposes the separate
+`driftile-shortcut-editor` package:
+
+```bash
+nix build .#driftile-shortcut-editor
+./result/bin/driftile-shortcut-editor
+```
+
+After importing the current NixOS or Home Manager module, install it without
+adding the GUI dependencies to the main package:
+
+```nix
+programs.driftile.shortcutEditor.enable = true;
+```
+
+The editor changes live assignments only. Keep using the reversible helper for
+saved claim/release transactions or JSON profiles.
+
 ## Upgrade
 
 1. If the helper owns the profile, release it with the helper from the

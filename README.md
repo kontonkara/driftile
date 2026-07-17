@@ -16,7 +16,8 @@ compositor and window manager.
 - Full-width columns, floating windows, native fullscreen and maximize, and
   stable minimized-window slots.
 - Configurable gaps, sizing presets, application rules, borders, overview,
-  transitions, shortcuts, and layout restoration.
+  transitions, shortcuts, and layout restoration. An optional native KDE
+  shortcut editor is available on the 1.50 development line.
 
 ## Installation
 
@@ -41,13 +42,15 @@ kpackagetool6 --type=KWin/Script --install ./driftile-*.kwinscript
 
 Enable **Driftile** in **System Settings > Window Management > KWin Scripts**.
 The [installation guide](docs/installation.md) also covers upgrades, removal,
-the optional overview and transition effects, and shortcut setup.
+the optional overview, transition effect, native shortcut editor, and shortcut
+setup.
 
 ## Configuration
 
 Open Driftile's entry under **System Settings > Window Management > KWin
 Scripts** for layout and application settings. Manage key bindings under
-**System Settings > Keyboard > Shortcuts** by searching for **Driftile**.
+**System Settings > Keyboard > Shortcuts** by searching for **Driftile**, or
+use the optional [native shortcut editor](docs/installation.md#optional-native-shortcut-editor).
 
 Nix users can declare the same settings through `programs.driftile.settings`.
 See [Configuration](docs/configuration.md), [Shortcuts](docs/shortcuts.md), and

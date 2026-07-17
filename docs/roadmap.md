@@ -10,7 +10,8 @@ persistence remains v4.
 
 Version 1.50.0 is in development. Its current slice adds an opt-in,
 future-admission policy that can preserve a new singleton window's live frame
-width without changing the public `33%` default.
+width without changing the public `33%` default, plus a separately installed
+native shortcut editor.
 
 ## Foundation (delivered)
 
@@ -127,7 +128,10 @@ The current runtime already:
   presets. Reverse height remains unbound; existing action IDs and KGlobalAccel
   assignments remain unchanged.
 - Provides a reversible shortcut helper for the bundled defaults and explicit
-  JSON v1 profiles; a UI without a Node.js dependency remains future work.
+  JSON v1 profiles.
+- Provides an optional native Qt/KDE shortcut editor for active registered
+  actions. Edits remain pending until one conflict-checked, rollback-capable
+  Apply transaction; the main package remains unchanged.
 - Lets Home Manager write typed settings or generate a portable
   shortcut profile without installing a second KWin package; shortcut claiming
   remains explicit.
@@ -1946,6 +1950,14 @@ The batch changes no setting, action, schema, binding, or private API.
   persistence schemas, actions, and bindings unchanged.
 - Expose the option through KConfig and the typed Home Manager settings profile;
   NixOS-installed packages use the same per-user KConfig control.
+- Add a separately packaged native Qt/KDE shortcut editor for the active
+  extension's primary and alternate KGlobalAccel assignments.
+- Keep edits pending until Apply validates internal and global conflicts plus
+  unchanged baselines, then verify each write and roll back the batch on
+  failure.
+- Expose `driftile-shortcut-editor` through the flake and the opt-in NixOS and
+  Home Manager `programs.driftile.shortcutEditor.enable` option without adding
+  GUI dependencies to the main package.
 
 Release criteria:
 
@@ -1954,3 +1966,7 @@ Release criteria:
   future singleton admissions.
 - Focused settings, runtime, KConfig, NixOS-module, and Home Manager checks pass
   before the batch-wide release gate.
+- The editor requires an active extension, writes nothing before Apply, and
+  leaves conflicting assignments unchanged.
+- Ordinary CMake installation and both declarative module scopes install the
+  editor independently of the main KWin package.

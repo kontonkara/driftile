@@ -9,7 +9,8 @@ do.
   Manager setup, upgrades, and removal.
 - [Configuration](configuration.md): settings, application rules, and
   declarative Home Manager options.
-- [Shortcuts](shortcuts.md): default actions and custom shortcut profiles.
+- [Shortcuts](shortcuts.md): default actions, the optional native editor, and
+  custom shortcut profiles.
 
 ## Use Driftile
 
