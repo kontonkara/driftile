@@ -152,6 +152,12 @@ programs.driftile.shortcutEditor.enable = true;
 The editor changes live assignments only. Keep using the reversible helper for
 saved claim/release transactions or JSON profiles.
 
+Development builds after 1.50.0 also install a freedesktop launcher and
+AppStream metadata, expose `--help` and `--version`, display registered
+defaults, and restore either the selected default or the complete default set
+as unapplied changes. The same conflict checks and rollback-capable Apply
+transaction remain authoritative.
+
 ## Upgrade
 
 1. If the helper owns the profile, release it with the helper from the

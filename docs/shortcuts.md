@@ -46,11 +46,18 @@ Assign them in **System Settings > Keyboard > Shortcuts** if needed.
 ## Editing shortcuts
 
 The optional native **Driftile Shortcuts** editor shows the active extension's
-registered actions. Nothing is written until
-**Apply** validates the complete pending assignment. Internal or global
-conflicts, unavailable KGlobalAccel, and assignments changed elsewhere fail
-safely; writes are verified and exact rollback is attempted on failure.
-Driftile must be active before the editor starts.
+registered actions, current assignments, and registered defaults. **Restore
+Default** changes the selected action and **Restore All Defaults** changes the
+complete pending set; neither writes before **Apply** validates the result.
+Internal or global conflicts, unavailable KGlobalAccel, and assignments changed
+elsewhere fail safely; writes are verified and exact rollback is attempted on
+failure. Bold rows have unapplied changes. Driftile must be active before the
+editor starts.
+
+The table can be operated without a pointer: Enter edits the selected action,
+and the platform's standard Find, Save, Refresh, and Close shortcuts search,
+apply, reload, and close. `driftile-shortcut-editor --help` and `--version`
+report the installed command interface without loading shortcut data.
 
 The editor is a separate package and does not add Qt Widgets or KDE GUI
 dependencies to the main KWin package. See

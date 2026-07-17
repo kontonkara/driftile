@@ -1965,3 +1965,28 @@ Release criteria:
   leaves conflicting assignments unchanged.
 - Ordinary CMake installation and both declarative module scopes install the
   editor independently of the main KWin package.
+
+### 1.51.0 (in development)
+
+- Show every active action's registered KGlobalAccel defaults alongside its
+  current primary and alternate assignments.
+- Restore the selected action or all actions to their registered defaults as a
+  pending edit, preserving full multi-assignment lists.
+- Keep default restoration inside the existing stale-baseline, conflict,
+  verified-write, and rollback transaction.
+- Mark pending rows, include defaults in search and tooltips, and support the
+  platform's standard Find, Save, Refresh, and Close shortcuts plus Enter for
+  editing.
+- Provide `--help` and `--version`, a searchable desktop launcher, and valid
+  AppStream metadata for ordinary distribution packaging.
+
+Release criteria:
+
+- Restoring defaults writes nothing before Apply and a rejected batch leaves
+  every active assignment unchanged.
+- Empty and duplicate registered defaults display and restore deterministically.
+- The standalone CMake and Nix packages install the binary, launcher, and
+  metadata without adding GUI dependencies to the main KWin package.
+
+The batch changes no KWin action, default binding, setting, layout schema, or
+private API.
