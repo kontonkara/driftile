@@ -1,7 +1,28 @@
 # Migration
 
-The latest stable release is 1.69.0. Use the steps below when changing release
+The latest stable release is 1.70.0. Use the steps below when changing release
 generations, and never combine files from different releases.
+
+## Upgrade from 1.69.0 to 1.70.0
+
+1. Release a helper-owned shortcut profile with the installed helper.
+2. Disable Driftile and both optional effects in System Settings.
+3. Install matching 1.70.0 artifacts, or pin the Nix input to `v1.70.0` and
+   rebuild.
+4. Re-enable Driftile and only the optional effects you use, then reclaim the
+   helper profile if needed.
+
+Exact application rules now accept an optional `application-id|windowRole`
+selector. Existing plain application IDs remain compatible. No settings or
+schema migration is required, and logical layout state remains v4.
+
+## Roll back from 1.70.0 to 1.69.0
+
+Release a helper-owned profile, disable Driftile and both optional effects,
+then restore matching verified 1.69.0 artifacts or pin the Nix input to
+`v1.69.0` and rebuild. Plain application IDs continue to work. Replace any
+role-qualified selectors before using rules that must also match in 1.69.0.
+No settings, layout, or schema migration is required.
 
 ## Upgrade from 1.68.0 to 1.69.0
 
