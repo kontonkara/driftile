@@ -142,7 +142,39 @@
      </property>
     </widget>
    </item>
-   <item row="4" column="0" colspan="2">
+   <item row="4" column="0">
+    <widget class="QLabel" name="label_OverviewZoom">
+     <property name="text">
+      <string>Spatial zoom:</string>
+     </property>
+     <property name="buddy">
+      <cstring>kcfg_OverviewZoom</cstring>
+     </property>
+    </widget>
+   </item>
+   <item row="4" column="1">
+    <widget class="QDoubleSpinBox" name="kcfg_OverviewZoom">
+     <property name="toolTip">
+      <string>Scale the spatial overview while preserving its relative layout.</string>
+     </property>
+     <property name="decimals">
+      <number>2</number>
+     </property>
+     <property name="minimum">
+      <double>0.200000000000000</double>
+     </property>
+     <property name="maximum">
+      <double>0.750000000000000</double>
+     </property>
+     <property name="singleStep">
+      <double>0.050000000000000</double>
+     </property>
+     <property name="value">
+      <double>0.500000000000000</double>
+     </property>
+    </widget>
+   </item>
+   <item row="5" column="0" colspan="2">
     <widget class="QCheckBox" name="kcfg_ShowWindowLabels">
      <property name="text">
       <string>Show labels on large window thumbnails</string>
@@ -155,7 +187,7 @@
      </property>
     </widget>
    </item>
-   <item row="5" column="0" colspan="2">
+   <item row="6" column="0" colspan="2">
     <widget class="QCheckBox" name="kcfg_ShowApplicationIdentity">
      <property name="text">
       <string>Include application identity in window labels</string>
@@ -168,7 +200,7 @@
      </property>
     </widget>
    </item>
-   <item row="6" column="0" colspan="2">
+   <item row="7" column="0" colspan="2">
     <widget class="QCheckBox" name="kcfg_ShowWindowCloseButtons">
      <property name="text">
       <string>Show close buttons on window previews</string>
@@ -181,7 +213,7 @@
      </property>
     </widget>
    </item>
-   <item row="7" column="0" colspan="2">
+   <item row="8" column="0" colspan="2">
     <widget class="QCheckBox" name="kcfg_ShowWindowStateBadges">
      <property name="text">
       <string>Show window state badges</string>
@@ -194,7 +226,7 @@
      </property>
     </widget>
    </item>
-   <item row="8" column="0" colspan="2">
+   <item row="9" column="0" colspan="2">
     <widget class="QCheckBox" name="kcfg_ShowDesktopNames">
      <property name="text">
       <string>Show desktop names</string>
@@ -207,7 +239,7 @@
      </property>
     </widget>
    </item>
-   <item row="9" column="0" colspan="2">
+   <item row="10" column="0" colspan="2">
     <widget class="QCheckBox" name="kcfg_ShowApplicationIcons">
      <property name="text">
       <string>Show application icons on window previews</string>
@@ -220,7 +252,7 @@
      </property>
     </widget>
    </item>
-   <item row="10" column="0" colspan="2">
+   <item row="11" column="0" colspan="2">
     <widget class="QCheckBox" name="kcfg_ShowOutputNames">
      <property name="text">
       <string>Show output names</string>

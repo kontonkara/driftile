@@ -15,6 +15,7 @@ KWin.SceneEffect {
     readonly property int configuredTouchpadGestureFingerCount: touchpadGestureFingerCountFromConfig()
     readonly property int configuredScreenEdge: screenEdgeFromConfig()
     readonly property color backdropColor: backdropColorFromConfig()
+    readonly property real overviewZoom: overviewZoomFromConfig()
     readonly property bool showWindowLabels: showWindowLabelsFromConfig()
     readonly property bool showApplicationIdentity: showApplicationIdentityFromConfig()
     readonly property bool showWindowCloseButtons: showWindowCloseButtonsFromConfig()
@@ -117,6 +118,12 @@ KWin.SceneEffect {
         }
 
         return value;
+    }
+
+    function overviewZoomFromConfig() {
+        const fallback = 0.5;
+        const value = configuration ? Number(configuration.OverviewZoom) : fallback;
+        return Number.isFinite(value) && value >= 0.2 && value <= 0.75 ? value : fallback;
     }
 
     function showWindowLabelsFromConfig() {

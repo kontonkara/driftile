@@ -491,6 +491,12 @@ in
           description = "Overview backdrop color in strict #AARRGGBB form; null leaves the KConfig value unmanaged.";
         };
 
+        zoom = lib.mkOption {
+          type = lib.types.nullOr (lib.types.numbers.between 0.2 0.75);
+          default = null;
+          description = "Spatial overview zoom factor from 0.2 to 0.75; null leaves the KConfig value unmanaged.";
+        };
+
         showWindowLabels = lib.mkOption {
           type = lib.types.nullOr lib.types.bool;
           default = null;
@@ -1052,6 +1058,7 @@ in
         (
           cfg.overview.screenEdge != null
           || cfg.overview.backdropColor != null
+          || cfg.overview.zoom != null
           || cfg.overview.showWindowLabels != null
           || cfg.overview.showApplicationIdentity != null
           || cfg.overview.showWindowCloseButtons != null
@@ -1068,6 +1075,9 @@ in
             }
             // lib.optionalAttrs (cfg.overview.backdropColor != null) {
               BackdropColor = cfg.overview.backdropColor;
+            }
+            // lib.optionalAttrs (cfg.overview.zoom != null) {
+              OverviewZoom = cfg.overview.zoom;
             }
             // lib.optionalAttrs (cfg.overview.showWindowLabels != null) {
               ShowWindowLabels = cfg.overview.showWindowLabels;

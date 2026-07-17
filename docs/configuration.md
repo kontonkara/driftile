@@ -32,6 +32,7 @@ them independently of package installation:
 ```nix
 programs.driftile.overview.screenEdge = "top-left";
 programs.driftile.overview.backdropColor = "#E60B0F17";
+programs.driftile.overview.zoom = 0.5;
 programs.driftile.overview.showWindowLabels = true;
 programs.driftile.overview.showApplicationIdentity = true;
 programs.driftile.overview.showWindowCloseButtons = true;
@@ -48,7 +49,10 @@ programs.driftile.overview.touchpadGesture = {
 `screenEdge` accepts `none` or one of the eight named edges and corners.
 `backdropColor` uses strict `#AARRGGBB` form. Set either option to `null` to
 leave its existing KConfig value untouched; use `none` to manage and disable
-screen-edge activation. `showWindowLabels` controls the ordinary large
+screen-edge activation. `zoom` accepts `0.2` through `0.75`, defaults to `0.5`
+in the effect, and updates the spatial Overview live without changing its
+relative layout. Set it to `null` to leave the existing KConfig value
+untouched. `showWindowLabels` controls the ordinary large
 thumbnail footer, while `showApplicationIdentity` controls the application
 line or fallback. `showWindowCloseButtons` controls the hover and
 keyboard-selection close affordance for eligible Overview window previews.
@@ -66,9 +70,8 @@ multi-output scenes; search by output name remains available while the label is
 hidden. All seven boolean settings update live and default to enabled in the
 effect. Malformed values fall back to enabled, while their nullable Home
 Manager options leave existing KConfig values untouched when set to `null`.
-Desktop names, application icons, and output names do not expand the NixOS
-option surface; a system-installed effect uses the same per-user KConfig
-values.
+The zoom and presentation options do not expand the NixOS option surface; a
+system-installed effect uses the same per-user KConfig values.
 
 Use a different count from vertical desktop navigation and Plasma's built-in
 Overview, or disable the overlapping gesture, so each global direction has one

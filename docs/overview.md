@@ -186,6 +186,18 @@ window itself is outside the current card.
 The cues follow public KWin events and are read-only. They do not request focus,
 change layout, add a setting or action, or write persistent state.
 
+## Spatial zoom
+
+The spatial Overview uses a `0.5` zoom factor by default. Its effect settings
+accept values from `0.2` through `0.75` and apply valid changes live. Invalid,
+non-finite, or out-of-range values fall back to `0.5`.
+
+Home Manager can manage the value with nullable
+`programs.driftile.overview.zoom`; `null` leaves the existing KConfig value
+untouched. The NixOS option surface is unchanged. Zoom changes presentation
+only: they do not alter the authoritative layout, persistence, actions, or
+bindings.
+
 ## Desktop names
 
 A sufficiently large desktop card can show its normalized virtual-desktop name

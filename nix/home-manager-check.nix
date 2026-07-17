@@ -233,6 +233,7 @@ let
     programs.driftile.overview = {
       screenEdge = "bottom-right";
       backdropColor = "#CC112233";
+      zoom = 0.2;
       showWindowLabels = false;
       showApplicationIdentity = true;
       showWindowCloseButtons = false;
@@ -246,6 +247,7 @@ let
     programs.driftile.overview = {
       screenEdge = null;
       backdropColor = null;
+      zoom = null;
       showWindowLabels = null;
       showApplicationIdentity = null;
       showWindowCloseButtons = null;
@@ -259,6 +261,7 @@ let
     programs.driftile.overview = {
       screenEdge = "top-left";
       backdropColor = "#80aBcD01";
+      zoom = 0.75;
       showWindowLabels = true;
       showApplicationIdentity = false;
       showWindowCloseButtons = true;
@@ -712,6 +715,7 @@ assert
     kwinrc."Effect-io.github.kontonkara.driftile.overview" = {
       ScreenEdge = "bottom-right";
       BackdropColor = "#CC112233";
+      OverviewZoom = 0.2;
       ShowWindowLabels = false;
       ShowApplicationIdentity = true;
       ShowWindowCloseButtons = false;
@@ -727,6 +731,7 @@ assert
     kwinrc."Effect-io.github.kontonkara.driftile.overview" = {
       ScreenEdge = "top-left";
       BackdropColor = "#80aBcD01";
+      OverviewZoom = 0.75;
       ShowWindowLabels = true;
       ShowApplicationIdentity = false;
       ShowWindowCloseButtons = true;
@@ -744,6 +749,9 @@ assert invalidOverviewSettingRejected { backdropColor = "#FF11223"; };
 assert invalidOverviewSettingRejected { backdropColor = "#FF1122334"; };
 assert invalidOverviewSettingRejected { backdropColor = "#GG112233"; };
 assert invalidOverviewSettingRejected { backdropColor = 4279312947; };
+assert invalidOverviewSettingRejected { zoom = 0.19; };
+assert invalidOverviewSettingRejected { zoom = 0.76; };
+assert invalidOverviewSettingRejected { zoom = "0.5"; };
 assert invalidOverviewSettingRejected { showWindowLabels = "true"; };
 assert invalidOverviewSettingRejected { showApplicationIdentity = 1; };
 assert invalidOverviewSettingRejected { showWindowCloseButtons = "true"; };

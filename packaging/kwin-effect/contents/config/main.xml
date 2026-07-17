@@ -23,6 +23,12 @@
       <label>Overview backdrop color</label>
       <default>#e60b0f17</default>
     </entry>
+    <entry name="OverviewZoom" type="Double">
+      <label>Spatial overview zoom</label>
+      <min>0.2</min>
+      <max>0.75</max>
+      <default>0.5</default>
+    </entry>
     <entry name="ShowWindowLabels" type="Bool">
       <label>Show window labels</label>
       <default>true</default>
