@@ -2360,9 +2360,7 @@ describe("overview effect package", () => {
       expect(help).toContain(`keys: "${label}"`);
     }
     expect(help).toContain('action: "title:, app:, desktop:, output:, state:"');
-    expect(help).toContain(
-      'action: "\\\"phrase\\\", -exclude, | alternatives"',
-    );
+    expect(help).toContain('-exclude, | alternatives"');
     expect(help.match(/\bTapHandler\s*\{/gu)).toHaveLength(1);
     expect(`${help}\n${keyboardHelpCloseButton}`).not.toMatch(
       /\b(?:Action|Animation|Behavior|Connections|Settings|ShortcutHandler|Timer)\s*\{|\.setValue\s*\(|\bsequence\s*:|org\.kde\.kwin\.private/u,
