@@ -1,11 +1,12 @@
 # Roadmap
 
-Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.54.0 are
+Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.55.0 are
 released. The delivered milestones and release criteria below are a historical
 record. Later direction is not a committed release schedule.
 
-Stable 1.54.0 restores, focuses, closes, navigates, and searches minimized
-member tabs in the optional Overview. Logical persistence remains v4.
+Stable 1.55.0 adds compact actionable placeholders for eligible minimized
+stacked tiled members and tracked floating windows in the optional Overview.
+Logical persistence remains v4.
 
 ## Foundation (delivered)
 
@@ -2060,7 +2061,7 @@ The batch uses only public KWin state and keeps the Overview read-only with
 respect to layout ownership. It adds no setting, action, binding, persistence
 field, layout write, or private API.
 
-### 1.55.0 (in development)
+### 1.55.0 (released)
 
 - Give eligible minimized stacked tiled members and tracked floating windows
   without a tab one compact caption placeholder inside the visible intersection
@@ -2074,7 +2075,7 @@ field, layout write, or private API.
 - Keep existing minimized tab behavior unchanged and exclude every minimized
   target from drag and drop.
 
-Release criteria:
+Release criteria (met):
 
 - Malformed, tiny, fully clipped, offscreen, stale, or ineligible projections
   fail closed without exposing an actionable placeholder.
