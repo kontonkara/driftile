@@ -254,7 +254,7 @@ Rectangle {
                     && card.windowSnapshotCanActivateMinimizedWindow(windowPresentation)
                 readonly property bool hasMinimizedTabFrame: tiledPresentation && tiledPresentation.tabFrame !== null
                     && tiledPresentation.tabFrame !== undefined
-                readonly property var minimizedPlaceholderFrame: minimizedWindow
+                readonly property var minimizedPlaceholderFrame: minimizedActivationEligible
                     ? card.planMinimizedPlaceholderFrame(frame, hasMinimizedTabFrame) : null
                 readonly property bool dragEligible: card.windowSnapshotCanDrag(windowPresentation)
                 readonly property bool closeEligible: card.windowSnapshotCanRequestClose(windowPresentation)
