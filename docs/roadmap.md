@@ -7,6 +7,10 @@ record. Later direction is not a committed release schedule.
 Stable 1.63.0 adds per-desktop search counts, selected-result position, and
 zero-result card emphasis to the Overview. Logical persistence remains v4.
 
+Prepared 1.64.0 adds structured Overview search with quoted phrases,
+exclusions, and explicit title, application, desktop, output, and state scopes.
+Logical persistence remains v4.
+
 ## Foundation (delivered)
 
 - Build and package a declarative KWin script with a TypeScript runtime.
@@ -2295,3 +2299,23 @@ Release criteria (met):
 
 The batch adds no timer, animation, KWin request, geometry or layout write,
 persistence field, private API, or KWin fork.
+
+### 1.64.0 (prepared)
+
+- Preserve case-insensitive whitespace-separated AND terms for unscoped
+  Overview search.
+- Add double-quoted phrases and leading `-` exclusions.
+- Add `title:`, `app:`, `desktop:`, `output:`, and `state:` scopes, including
+  quoted scoped values.
+- Keep unknown prefixes as ordinary search text.
+- Reject malformed recognized scopes and quoted phrases without exposing
+  partial results, and report the invalid query in the Overview.
+
+Compatibility target:
+
+- Existing unscoped queries retain their matching behavior.
+- Structured search remains session-only and read-only toward KWin, layout,
+  and persistence state.
+- The slice uses public Plasma 6.7+ state and adds no action, binding, setting,
+  timer, animation, geometry write, persistence field, private API, or KWin
+  fork.

@@ -120,6 +120,10 @@ multi-output scenes and makes each owning output name available to search.
 Version 1.63.0 adds exact per-desktop search counts and selected-result
 position feedback without changing Overview input or layout ownership.
 
+Version 1.64.0 adds quoted phrases, exclusions, and field scopes to window
+search. Invalid structured queries fail closed and are reported in the
+Overview instead of being interpreted partially.
+
 The companion is disabled by default. When enabled with a fresh shortcut
 record, `Meta+O` toggles it. KGlobalAccel preserves an existing assignment
 across upgrades, including an explicitly unbound action, so review it in
@@ -184,12 +188,36 @@ removes the window, so an application prompt remains usable. A middle click on
 a visible thumbnail, closeable tab, or closeable placeholder uses the same
 guarded path without restoring a minimized window.
 
-Typing filters visible windows by title and application identity. Matching is
-case-insensitive and every typed term must match. Arrow navigation immediately
-repairs its selection within the filtered results; `Backspace` removes one
-Unicode code point and `Escape` clears a non-empty query before it can close the
-effect. Desktop-gutter targets stay hidden while a search query is active. The
-query is session-only and is discarded when the effect closes.
+Typing filters visible windows with a case-insensitive query. Whitespace-
+separated terms use AND matching across the window title, application identity,
+desktop name, output name, and state. Double quotes require a contiguous phrase
+within one searchable field, and a leading `-` excludes windows that match the
+following term or phrase.
+
+Five field scopes narrow a term to one source:
+
+- `title:` matches the window title.
+- `app:` matches the application identity.
+- `desktop:` matches the owning desktop name.
+- `output:` matches the owning output name.
+- `state:` matches current state terms such as `minimized`, `urgent`, or
+  `fullscreen`.
+
+For example, `app:firefox project` requires a Firefox window with `project` in
+any searchable field. `title:"build log" -state:minimized` requires that title
+phrase and excludes minimized windows. `desktop:"Web 2" output:HDMI` searches
+one named desktop on a matching output. Scopes and matching are
+case-insensitive.
+
+Unknown prefixes remain ordinary search text. A malformed recognized scope or
+quoted phrase, such as `title:` or `app:"firefox`, matches no windows and the
+Overview reports an invalid query instead of applying a partial filter.
+
+Arrow navigation immediately repairs its selection within the filtered
+results; `Backspace` removes one Unicode code point and `Escape` clears a
+non-empty query before it can close the effect. Desktop-gutter targets stay
+hidden while a search query is active. The query is session-only and is
+discarded when the effect closes.
 
 One bounded pass over the current navigation targets supplies the unique global
 window total, the exact count for each desktop, and one visual-order ordinal for
@@ -205,10 +233,10 @@ never hidden or reflowed, and the presentation adds no input target. A
 whitespace-only query retains the previous global feedback semantics without
 per-desktop badges or deemphasis.
 
-The special search terms `urgent` and `attention` match windows with a current
-public KWin attention request. `minimized` matches an exact minimized member tab
-or placeholder. These terms combine with title and application terms under the
-same every-term rule.
+The state terms `urgent` and `attention` match windows with a current public
+KWin attention request. `minimized` matches an exact minimized member tab or
+placeholder. They work as ordinary terms or through `state:` and combine with
+the rest of the query under the same AND rule.
 
 An unmodified vertical mouse wheel cycles the current actionable targets in
 visual order. An active search limits the cycle to matching windows; otherwise
