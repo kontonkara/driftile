@@ -1,7 +1,28 @@
 # Migration
 
-The latest stable release is 1.68.0. Use the steps below when changing release
+The latest stable release is 1.69.0. Use the steps below when changing release
 generations, and never combine files from different releases.
+
+## Upgrade from 1.68.0 to 1.69.0
+
+1. Release a helper-owned shortcut profile with the installed helper.
+2. Disable Driftile and both optional effects in System Settings.
+3. Install matching 1.69.0 artifacts, or pin the Nix input to `v1.69.0` and
+   rebuild.
+4. Re-enable Driftile and only the optional effects you use, then reclaim the
+   helper profile if needed.
+
+The optional transition effect can now exclude one exact caption or
+`windowRole` without excluding its complete application class. Home Manager
+can manage both lists independently. No setting migration is required; empty
+defaults preserve existing behavior, and logical layout state remains v4.
+
+## Roll back from 1.69.0 to 1.68.0
+
+Release a helper-owned profile, disable Driftile and both optional effects,
+then restore matching verified 1.68.0 artifacts or pin the Nix input to
+`v1.68.0` and rebuild. Remove or leave the new KConfig keys unused; older
+effects ignore them. No layout or schema migration is required.
 
 ## Upgrade from 1.67.0 to 1.68.0
 

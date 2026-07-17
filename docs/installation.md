@@ -1,6 +1,6 @@
 # Installation
 
-Driftile 1.68.0 is the latest stable release. It requires KDE Plasma with KWin
+Driftile 1.69.0 is the latest stable release. It requires KDE Plasma with KWin
 6.7 or newer and `kpackagetool6`, and targets Wayland, XWayland, and a
 single-output native X11 session.
 Touchpad navigation is available only on native Wayland. Run all commands as
@@ -18,15 +18,15 @@ the desktop user, not with `sudo`.
 ## Install a release
 
 Download these files from the
-[`v1.68.0` release](https://github.com/kontonkara/driftile/releases/tag/v1.68.0):
+[`v1.69.0` release](https://github.com/kontonkara/driftile/releases/tag/v1.69.0):
 
-- `driftile-1.68.0.kwinscript`
-- `driftile-overview-1.68.0.kwineffect` if using the optional overview
-- `driftile-transitions-1.68.0.kwineffect` if using optional geometry
+- `driftile-1.69.0.kwinscript`
+- `driftile-overview-1.69.0.kwineffect` if using the optional overview
+- `driftile-transitions-1.69.0.kwineffect` if using optional geometry
   transitions
 - `SHA256SUMS`
 - `LICENSE`
-- `driftile-shortcuts-1.68.0.mjs` if using the optional shortcut helper
+- `driftile-shortcuts-1.69.0.mjs` if using the optional shortcut helper
 
 Verify every downloaded release asset before installing it:
 
@@ -38,7 +38,7 @@ Install the KWin package:
 
 ```bash
 kpackagetool6 --type=KWin/Script \
-  --install ./driftile-1.68.0.kwinscript
+  --install ./driftile-1.69.0.kwinscript
 ```
 
 Open **System Settings > Window Management > KWin Scripts**, enable
@@ -52,7 +52,7 @@ Install the optional overview effect separately:
 
 ```bash
 kpackagetool6 --type=KWin/Effect \
-  --install ./driftile-overview-1.68.0.kwineffect
+  --install ./driftile-overview-1.69.0.kwineffect
 ```
 
 Enable **Driftile Overview** under **System Settings > Window Management >
@@ -65,7 +65,7 @@ Install the optional transition effect separately:
 
 ```bash
 kpackagetool6 --type=KWin/Effect \
-  --install ./driftile-transitions-1.68.0.kwineffect
+  --install ./driftile-transitions-1.69.0.kwineffect
 ```
 
 Enable **Driftile Transitions** under **System Settings > Window Management >
@@ -77,7 +77,7 @@ default.
 
 ## Configure shortcuts
 
-Driftile works without the companion helper. The 1.68.0 helper claims the
+Driftile works without the companion helper. The 1.69.0 helper claims the
 bundled defaults and accepts custom profiles. Any action can instead be
 assigned manually.
 
@@ -88,8 +88,8 @@ Driftile before running it, and keep the helper until its saved claim has been
 released.
 
 ```bash
-node ./driftile-shortcuts-1.68.0.mjs claim
-node ./driftile-shortcuts-1.68.0.mjs check
+node ./driftile-shortcuts-1.69.0.mjs claim
+node ./driftile-shortcuts-1.69.0.mjs check
 ```
 
 `claim` transactionally saves and replaces active conflicting assignments.
@@ -97,7 +97,7 @@ node ./driftile-shortcuts-1.68.0.mjs check
 after the claim:
 
 ```bash
-node ./driftile-shortcuts-1.68.0.mjs release
+node ./driftile-shortcuts-1.69.0.mjs release
 ```
 
 If `release` reports assignments edited after the claim, stop and resolve them
@@ -109,9 +109,9 @@ Pass the same custom file to `claim` and `check`. `release` reads the saved
 transaction and rejects `--profile`:
 
 ```bash
-node ./driftile-shortcuts-1.68.0.mjs claim --profile ./shortcuts.json
-node ./driftile-shortcuts-1.68.0.mjs check --profile ./shortcuts.json
-node ./driftile-shortcuts-1.68.0.mjs release
+node ./driftile-shortcuts-1.69.0.mjs claim --profile ./shortcuts.json
+node ./driftile-shortcuts-1.69.0.mjs check --profile ./shortcuts.json
+node ./driftile-shortcuts-1.69.0.mjs release
 ```
 
 Release the current claim before claiming a changed profile.
@@ -134,14 +134,14 @@ conflicts or external changes, then writes and verifies the changed actions as
 one rollback-capable transaction.
 
 The editor is separate from the KWin package, so ordinary installations remain
-lightweight. To build it from a 1.68.0 checkout, install CMake 3.22 or
+lightweight. To build it from a 1.69.0 checkout, install CMake 3.22 or
 newer, a C++20 compiler, Qt 6.7 development files for Core, DBus, and Widgets,
 and KDE Frameworks 6 development files for GlobalAccel and XmlGui. Then run:
 
 ```bash
 cmake -S native/shortcut-editor -B build/shortcut-editor \
   -DCMAKE_BUILD_TYPE=Release \
-  -DDRIFTILE_VERSION=1.68.0 \
+  -DDRIFTILE_VERSION=1.69.0 \
   -DCMAKE_INSTALL_PREFIX="$HOME/.local"
 cmake --build build/shortcut-editor --parallel
 cmake --install build/shortcut-editor
@@ -287,7 +287,7 @@ The flake exposes packages and installation modules for `x86_64-linux` and
 `aarch64-linux`. Add Driftile as an input:
 
 ```nix
-inputs.driftile.url = "github:kontonkara/driftile/v1.68.0";
+inputs.driftile.url = "github:kontonkara/driftile/v1.69.0";
 ```
 
 ### NixOS
