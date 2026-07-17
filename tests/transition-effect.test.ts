@@ -690,8 +690,18 @@ describe("transition effect package", () => {
         duration: 180,
       },
       {
+        animationId: 2,
+        target: { value1: 0, value2: 0 },
+        duration: 180,
+      },
+      {
         animationId: 1,
         target: { value1: 450, value2: 170 },
+        duration: 180,
+      },
+      {
+        animationId: 2,
+        target: { value1: 0, value2: 0 },
         duration: 180,
       },
     ]);
@@ -743,7 +753,7 @@ describe("transition effect package", () => {
       },
     ]);
     expect(harness.retargetCalls.map(({ animationId }) => animationId)).toEqual(
-      [1, 2, 1, 2, 1],
+      [1, 1, 2, 1, 2, 1, 2],
     );
     expect(harness.cancelledAnimations).toHaveLength(0);
   });
