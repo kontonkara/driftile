@@ -44,6 +44,11 @@ export type {
   OverviewWindowSearchQueryGroup,
   OverviewWindowSearchQueryPlan,
 } from "./window-search";
+export { planOverviewSpatialLayout } from "./spatial-layout";
+export type {
+  OverviewSpatialLayoutInput,
+  OverviewSpatialLayoutPlan,
+} from "./spatial-layout";
 
 export type OverviewModelLoadResult =
   | OverviewLayoutProjectionResult
