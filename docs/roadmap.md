@@ -1,12 +1,11 @@
 # Roadmap
 
-Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.70.0 are
+Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.71.0 are
 released. The delivered milestones and release criteria below are a historical
 record. Later direction is not a committed release schedule.
 
-Stable 1.70.0 lets every exact application rule prefer one role-qualified
-window selector while preserving the ordinary application fallback. Logical
-persistence remains v4.
+Stable 1.71.0 adds an adaptive in-Overview keyboard and search reference with
+keyboard and pointer dismissal. Logical persistence remains v4.
 
 ## Foundation (delivered)
 
@@ -2465,3 +2464,24 @@ Release criteria (met):
   to the existing application-only identity.
 - Role lookup is skipped when the relevant rule collection is empty, and the
   batch adds no binding, persistence field, private API, or KWin fork.
+
+### 1.71.0 (released)
+
+- Open a bounded keyboard reference inside the optional Overview with `F1`.
+- Keep the reference usable on small scenes through bounded scrolling and
+  isolate all background keyboard, pointer, wheel, search, and desktop input
+  while it is open.
+- Close it with `F1`, `Escape`, or a compact pointer button, and reset it when
+  the Overview closes.
+- Summarize the existing structured-search fields and operators in the same
+  panel, and expose the F1 shortcut through a passive hint on sufficiently
+  large idle scenes.
+
+Release criteria (met):
+
+- The modal panel never dispatches a background Overview action, KWin request,
+  layout mutation, or persistence write.
+- The hint remains passive, hides during search and while help is open, and
+  cannot change desktop-card geometry.
+- The batch adds no global binding, setting, timer, animation, persistence
+  field, private API, or KWin fork.
