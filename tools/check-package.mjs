@@ -45,6 +45,7 @@ const expectedOverviewRuntimeEntries = [
   "ui/OutputIdentityBadge.qml",
   "ui/OverviewScene.qml",
   "ui/OverviewTouchpadGesture.qml",
+  "ui/SearchMatchBadge.qml",
   "ui/WindowApplicationIcon.qml",
   "ui/WindowCloseButton.qml",
   "ui/main.qml",
