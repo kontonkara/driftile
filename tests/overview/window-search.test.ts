@@ -7,6 +7,7 @@ import {
 import {
   matchesOverviewWindowSearchPlan,
   planOverviewWindowSearchQuery,
+  removeLastOverviewSearchClause,
 } from "../../src/overview/window-search";
 
 describe("overview window search text editing", () => {
@@ -37,6 +38,64 @@ describe("overview window search text editing", () => {
     expect(removeLastOverviewSearchCharacter("a😀")).toBe("a");
     expect(removeLastOverviewSearchCharacter("😀")).toBe("");
     expect(removeLastOverviewSearchCharacter(42)).toBe("");
+  });
+
+  it("removes one trailing bare, scoped, or excluded clause", () => {
+    expect(removeLastOverviewSearchClause("firefox nightly")).toBe("firefox ");
+    expect(removeLastOverviewSearchClause("firefox  app:nightly\t ")).toBe(
+      "firefox  ",
+    );
+    expect(removeLastOverviewSearchClause("firefox -state:minimized")).toBe(
+      "firefox ",
+    );
+    expect(removeLastOverviewSearchClause("firefox -private")).toBe("firefox ");
+  });
+
+  it("treats quoted values and their modifiers as complete clauses", () => {
+    expect(removeLastOverviewSearchClause('firefox "project notes"')).toBe(
+      "firefox ",
+    );
+    expect(
+      removeLastOverviewSearchClause('firefox title:"project notes"  '),
+    ).toBe("firefox ");
+    expect(
+      removeLastOverviewSearchClause('firefox -title:"project notes"'),
+    ).toBe("firefox ");
+    expect(removeLastOverviewSearchClause('firefox -"project notes"')).toBe(
+      "firefox ",
+    );
+    expect(
+      removeLastOverviewSearchClause('firefox "project notes" nightly'),
+    ).toBe('firefox "project notes" ');
+  });
+
+  it("removes a useful clause from malformed quoted input", () => {
+    expect(removeLastOverviewSearchClause('firefox title:"project notes')).toBe(
+      "firefox ",
+    );
+    expect(removeLastOverviewSearchClause('firefox broken"project notes')).toBe(
+      "firefox ",
+    );
+    expect(
+      removeLastOverviewSearchClause('firefox "project notes"suffix'),
+    ).toBe("firefox ");
+  });
+
+  it("preserves the untouched prefix and handles bounded Unicode input", () => {
+    expect(removeLastOverviewSearchClause("  firefox  😀window   ")).toBe(
+      "  firefox  ",
+    );
+    expect(
+      removeLastOverviewSearchClause(`${"a".repeat(126)} 😀 ignored`),
+    ).toBe(`${"a".repeat(126)} `);
+  });
+
+  it("returns empty for missing or whitespace-only input", () => {
+    expect(removeLastOverviewSearchClause(undefined)).toBe("");
+    expect(removeLastOverviewSearchClause(42)).toBe("");
+    expect(removeLastOverviewSearchClause("")).toBe("");
+    expect(removeLastOverviewSearchClause(" \t\u00a0 ")).toBe("");
+    expect(removeLastOverviewSearchClause("  firefox  ")).toBe("");
   });
 });
 

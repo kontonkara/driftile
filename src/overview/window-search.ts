@@ -70,6 +70,49 @@ export function removeLastOverviewSearchCharacter(current: unknown): string {
   return characters.join("");
 }
 
+export function removeLastOverviewSearchClause(current: unknown): string {
+  const characters = readQueryCharacters(current);
+
+  while (
+    characters.length > 0 &&
+    WHITE_SPACE_PATTERN.test(characters[characters.length - 1] as string)
+  ) {
+    characters.pop();
+  }
+
+  if (characters.length === 0) {
+    return "";
+  }
+
+  let clauseStart = 0;
+  let inClause = false;
+  let inQuotedValue = false;
+  let sawEarlierClause = false;
+  let sawClause = false;
+
+  for (let index = 0; index < characters.length; index += 1) {
+    const character = characters[index] as string;
+
+    if (!inQuotedValue && WHITE_SPACE_PATTERN.test(character)) {
+      inClause = false;
+      continue;
+    }
+
+    if (!inClause) {
+      clauseStart = index;
+      inClause = true;
+      sawEarlierClause = sawClause;
+      sawClause = true;
+    }
+
+    if (character === '"') {
+      inQuotedValue = !inQuotedValue;
+    }
+  }
+
+  return sawEarlierClause ? characters.slice(0, clauseStart).join("") : "";
+}
+
 export function planOverviewWindowSearchQuery(
   query: unknown,
 ): OverviewWindowSearchQueryPlan | null {
