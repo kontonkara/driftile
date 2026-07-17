@@ -445,6 +445,7 @@ interface TransferSelection {
 
 interface DesktopTransferCommand
   extends ActiveWindowCommand, TransferSelection {
+  readonly follow: boolean;
   readonly output: KWinOutput;
   readonly sourceDesktop: KWinVirtualDesktop;
   readonly sourceRuntimeContext: RuntimeContext;
@@ -475,7 +476,14 @@ interface FloatingTransferCommand {
 }
 
 interface FloatingDesktopTransferCommand extends FloatingTransferCommand {
+  readonly follow: boolean;
   readonly output: KWinOutput;
+}
+
+interface DesktopSendFocusTarget {
+  readonly id: WindowId;
+  readonly layer: WindowLayer;
+  readonly window: KWinWindow;
 }
 
 interface FloatingOutputTransferCommand extends FloatingTransferCommand {
@@ -3734,6 +3742,62 @@ export class RuntimeController {
     return this.moveActiveWindowToDesktop(
       { kind: "numbered", slot: index },
       true,
+    );
+  }
+
+  sendWindowToPreviousDesktop(): boolean {
+    return this.moveActiveWindowToDesktop(
+      { direction: -1, kind: "adjacent" },
+      false,
+      false,
+    );
+  }
+
+  sendWindowToNextDesktop(): boolean {
+    return this.moveActiveWindowToDesktop(
+      { direction: 1, kind: "adjacent" },
+      false,
+      false,
+    );
+  }
+
+  sendWindowToDesktop(index: number): boolean {
+    if (!validDesktopIndex(index)) {
+      return false;
+    }
+
+    return this.moveActiveWindowToDesktop(
+      { kind: "numbered", slot: index },
+      false,
+      false,
+    );
+  }
+
+  sendColumnToPreviousDesktop(): boolean {
+    return this.moveActiveWindowToDesktop(
+      { direction: -1, kind: "adjacent" },
+      true,
+      false,
+    );
+  }
+
+  sendColumnToNextDesktop(): boolean {
+    return this.moveActiveWindowToDesktop(
+      { direction: 1, kind: "adjacent" },
+      true,
+      false,
+    );
+  }
+
+  sendColumnToDesktop(index: number): boolean {
+    if (!validDesktopIndex(index)) {
+      return false;
+    }
+
+    return this.moveActiveWindowToDesktop(
+      { kind: "numbered", slot: index },
+      true,
+      false,
     );
   }
 
@@ -8386,6 +8450,149 @@ export class RuntimeController {
     );
   }
 
+  private desktopSendFocusTarget(
+    key: string,
+    sourceLayout: LayoutContextSnapshot,
+    movingIds: ReadonlySet<WindowId>,
+  ): DesktopSendFocusTarget | null {
+    const activeIndex = sourceLayout.columns.findIndex(
+      (column) => column.id === sourceLayout.activeColumnId,
+    );
+    const orderedColumns =
+      activeIndex < 0
+        ? sourceLayout.columns
+        : [
+            sourceLayout.columns[activeIndex],
+            ...sourceLayout.columns.slice(0, activeIndex),
+            ...sourceLayout.columns.slice(activeIndex + 1),
+          ];
+
+    for (const column of orderedColumns) {
+      if (!column) {
+        continue;
+      }
+
+      for (const id of [
+        column.selectedWindowId,
+        ...column.windowIds.filter((id) => id !== column.selectedWindowId),
+      ]) {
+        const candidate = this.desktopSendFocusCandidate(id, key, movingIds);
+
+        if (candidate?.layer === "tiling") {
+          return candidate;
+        }
+      }
+    }
+
+    let floating: DesktopSendFocusTarget | null = null;
+
+    for (const id of this.windowRemovalFocusHistory) {
+      const candidate = this.desktopSendFocusCandidate(id, key, movingIds);
+
+      if (candidate?.layer === "floating") {
+        floating = candidate;
+      }
+    }
+
+    if (floating) {
+      return floating;
+    }
+
+    for (const id of this.contexts.get(key)?.windowIds ?? []) {
+      const candidate = this.desktopSendFocusCandidate(id, key, movingIds);
+
+      if (candidate?.layer === "floating") {
+        return candidate;
+      }
+    }
+
+    return null;
+  }
+
+  private desktopSendFocusCandidate(
+    id: WindowId,
+    key: string,
+    movingIds: ReadonlySet<WindowId>,
+  ): DesktopSendFocusTarget | null {
+    const window = movingIds.has(id) ? undefined : this.observer.source(id);
+    const layer = window
+      ? this.windowRemovalFocusCandidateLayer(id, window, key)
+      : null;
+
+    return window && layer ? { id, layer, window } : null;
+  }
+
+  private focusDesktopSendSource(
+    sourceContextKey: string,
+    movingIds: ReadonlySet<WindowId>,
+    target: DesktopSendFocusTarget | null,
+  ): boolean {
+    const active = this.workspace.activeWindow;
+
+    if (active) {
+      const activeId = windowId(String(active.internalId));
+      const layer = movingIds.has(activeId)
+        ? null
+        : this.windowRemovalFocusCandidateLayer(
+            activeId,
+            active,
+            sourceContextKey,
+          );
+
+      if (layer) {
+        this.rememberLayerFocus(activeId, active);
+        return true;
+      }
+
+      if (!movingIds.has(activeId)) {
+        return false;
+      }
+    }
+
+    if (target) {
+      let focusRequestFailed = false;
+
+      this.focusRequestDepth += 1;
+
+      try {
+        this.workspace.activeWindow = target.window;
+      } catch {
+        focusRequestFailed = true;
+      } finally {
+        this.focusRequestDepth -= 1;
+      }
+
+      if (
+        focusRequestFailed ||
+        this.workspace.activeWindow !== target.window ||
+        this.observer.source(target.id) !== target.window ||
+        this.windowRemovalFocusCandidateLayer(
+          target.id,
+          target.window,
+          sourceContextKey,
+        ) !== target.layer
+      ) {
+        return false;
+      }
+
+      this.rememberLayerFocus(target.id, target.window);
+      return true;
+    }
+
+    let focusRequestFailed = false;
+    this.focusRequestDepth += 1;
+
+    try {
+      this.workspace.activeWindow = null;
+    } catch {
+      focusRequestFailed = true;
+    } finally {
+      this.focusRequestDepth -= 1;
+    }
+
+    return !focusRequestFailed && this.workspace.activeWindow === null;
+  }
+
   private previousWindowRemovalFocusTargetId(key: string): WindowId | null {
     let previous: WindowId | null = null;
 
@@ -12996,6 +13203,8 @@ export class RuntimeController {
 
   private moveActiveFloatingWindowToDesktop(
     target: DesktopTransferTarget,
+    follow = true,
+    wholeColumn = false,
   ): boolean | null {
     const activeWindow = this.workspace.activeWindow;
 
@@ -13013,6 +13222,10 @@ export class RuntimeController {
 
     if (!manualFloating && !automaticFloating) {
       return null;
+    }
+
+    if (!follow && (wholeColumn || !manualFloating)) {
+      return false;
     }
 
     if (
@@ -13092,6 +13305,7 @@ export class RuntimeController {
         ? { floating: manualFloating, kind: "manual" }
         : { kind: "automatic" },
       frame: { ...activeWindow.frameGeometry },
+      follow,
       output,
       sourceContext,
       sourceContextKey,
@@ -13131,7 +13345,7 @@ export class RuntimeController {
         this.windowTransferOperation = null;
       }
 
-      if (transferred) {
+      if (transferred && command.follow) {
         this.recordDesktopSelection(
           command.sourceDesktop,
           command.targetDesktop,
@@ -13174,6 +13388,13 @@ export class RuntimeController {
     let mechanismFrame = { ...command.activeWindow.frameGeometry };
     let frameWrites = 0;
     let failure: string;
+    const sourceFocus = command.follow
+      ? null
+      : this.desktopSendFocusTarget(
+          command.sourceContextKey,
+          command.sourceLayout,
+          new Set([command.activeId]),
+        );
 
     try {
       if (
@@ -13204,6 +13425,44 @@ export class RuntimeController {
         )
       ) {
         throw new Error("floating desktop assignment was rejected");
+      }
+
+      if (!command.follow) {
+        if (
+          !rectsEqual(command.activeWindow.frameGeometry, command.frame) ||
+          !this.focusDesktopSendSource(
+            command.sourceContextKey,
+            new Set([command.activeId]),
+            sourceFocus,
+          ) ||
+          !this.floatingDesktopTransferOperationIsCurrent(
+            command,
+            operation,
+            topologyRevision,
+            command.targetDesktop,
+            command.sourceDesktop,
+          )
+        ) {
+          throw new Error("floating desktop send was not accepted");
+        }
+
+        if (
+          this.lastFloatingFocus.get(command.sourceContextKey) ===
+          command.activeId
+        ) {
+          this.lastFloatingFocus.delete(command.sourceContextKey);
+        }
+
+        if (command.classification.kind === "manual") {
+          this.floatingWindows.set(command.activeId, {
+            ...command.classification.floating,
+            currentContextKey: command.targetContextKey,
+          });
+        }
+
+        this.lastFloatingFocus.set(command.targetContextKey, command.activeId);
+        this.lastWrites = 0;
+        return true;
       }
 
       this.switchDesktop(command.targetDesktop, command.output);
@@ -13370,7 +13629,14 @@ export class RuntimeController {
 
       if (
         this.workspace.activeWindow === command.activeWindow ||
-        this.workspace.activeWindow === null
+        this.workspace.activeWindow === null ||
+        (!command.follow &&
+          this.workspace.activeWindow !== null &&
+          this.windowRemovalFocusCandidateLayer(
+            windowId(String(this.workspace.activeWindow.internalId)),
+            this.workspace.activeWindow,
+            command.sourceContextKey,
+          ) !== null)
       ) {
         try {
           this.workspace.activeWindow = originalActiveWindow;
@@ -13600,12 +13866,17 @@ export class RuntimeController {
   private moveActiveWindowToDesktop(
     target: DesktopTransferTarget,
     wholeColumn = false,
+    follow = true,
   ): boolean {
     if (this.stackEditOperation) {
       return false;
     }
 
-    const floatingResult = this.moveActiveFloatingWindowToDesktop(target);
+    const floatingResult = this.moveActiveFloatingWindowToDesktop(
+      target,
+      follow,
+      wholeColumn,
+    );
 
     if (floatingResult !== null) {
       return floatingResult;
@@ -13774,6 +14045,7 @@ export class RuntimeController {
     const command: DesktopTransferCommand = {
       ...active,
       ...selection,
+      follow,
       output,
       sourceDesktop,
       sourceRuntimeContext,
@@ -13827,13 +14099,21 @@ export class RuntimeController {
     let transferred = false;
 
     try {
-      transferred = this.applyDesktopTransfer(
-        command,
-        preview,
-        sourceLayout,
-        targetLayout,
-        operation,
-      );
+      transferred = command.follow
+        ? this.applyDesktopTransfer(
+            command,
+            preview,
+            sourceLayout,
+            targetLayout,
+            operation,
+          )
+        : this.applyDesktopSend(
+            command,
+            preview,
+            sourceLayout,
+            targetLayout,
+            operation,
+          );
 
       if (transferred) {
         this.reconcileTransferredColumnFullWidthRestore(
@@ -13857,7 +14137,7 @@ export class RuntimeController {
         this.windowTransferOperation = null;
       }
 
-      if (transferred) {
+      if (transferred && command.follow) {
         this.recordDesktopSelection(
           command.sourceDesktop,
           command.targetDesktop,
@@ -13951,6 +14231,7 @@ export class RuntimeController {
     movingLiveContextKey = movingOwnerContextKey,
     allowedTransitionContextKey?: string,
     geometryPassiveIds?: ReadonlySet<WindowId>,
+    hiddenGeometryIds?: ReadonlySet<WindowId>,
   ): boolean {
     if (!this.canApplyLayout(layout.maxViewportOffset)) {
       return false;
@@ -13986,6 +14267,10 @@ export class RuntimeController {
         !respectsSizeConstraints(window.frame, source)
       ) {
         return false;
+      }
+
+      if (hiddenGeometryIds?.has(window.windowId) === true) {
+        return true;
       }
 
       if (geometryPassiveIds?.has(window.windowId) === true) {
@@ -14183,6 +14468,304 @@ export class RuntimeController {
           !this.automaticallyFloats(member.window),
       )
     );
+  }
+
+  private desktopSendActiveStateIsSafe(
+    command: DesktopTransferCommand,
+  ): boolean {
+    const active = this.workspace.activeWindow;
+
+    if (!active) {
+      return true;
+    }
+
+    const activeId = windowId(String(active.internalId));
+
+    if (command.memberIds.has(activeId)) {
+      return this.observer.source(activeId) === active;
+    }
+
+    return (
+      this.windowRemovalFocusCandidateLayer(
+        activeId,
+        active,
+        command.contextKey,
+      ) !== null
+    );
+  }
+
+  private desktopSendOperationIsCurrent(
+    command: DesktopTransferCommand,
+    operation: WindowTransferOperation,
+    topologyRevision: number,
+  ): boolean {
+    return (
+      this.transferOperationIdentityIsCurrent(
+        command,
+        operation,
+        topologyRevision,
+      ) &&
+      this.transferMemberStatesAreCurrent(command, operation) &&
+      this.desktopTransferMechanismAtTarget(command) &&
+      this.desktopSendActiveStateIsSafe(command)
+    );
+  }
+
+  private applyDesktopSend(
+    command: DesktopTransferCommand,
+    preview: ContextTransferPreview,
+    sourceLayout: ReturnType<typeof solveStripGeometry>,
+    targetLayout: ReturnType<typeof solveStripGeometry>,
+    operation: WindowTransferOperation,
+  ): boolean {
+    const topologyRevision = this.topologyRevision;
+    const originalActiveWindow = this.workspace.activeWindow;
+    const sourceWasDirty = this.dirtyContexts.has(command.contextKey);
+    const targetWasDirty = this.dirtyContexts.has(command.targetContextKey);
+    const sourceFocus = this.desktopSendFocusTarget(
+      command.contextKey,
+      preview.value.sourceLayout,
+      command.memberIds,
+    );
+    const sourceGeometryLayout = sourceLayout.windows.filter(
+      (window) => !command.retainedSourceIds.has(window.windowId),
+    );
+    const sourceWindowIds = sourceGeometryLayout.map(
+      (window) => window.windowId,
+    );
+    const sourceFrames = this.geometry.observedFrames(
+      sourceWindowIds,
+      command.context,
+    );
+    const memberSourceFrames = new Map(
+      command.members.map((member) => [
+        member.id,
+        { ...member.window.frameGeometry },
+      ]),
+    );
+    const targetFrames = new Map<WindowId, Rect>();
+
+    for (const window of targetLayout.windows) {
+      if (command.memberIds.has(window.windowId)) {
+        continue;
+      }
+
+      const source = this.observer.source(window.windowId);
+
+      if (!source) {
+        return false;
+      }
+
+      targetFrames.set(window.windowId, { ...source.frameGeometry });
+    }
+
+    if (
+      sourceFrames.size !== sourceWindowIds.length ||
+      sourceGeometryLayout.some(
+        (window) =>
+          !this.geometry.canApplyFrame(
+            window.windowId,
+            window.frame,
+            command.context,
+          ),
+      )
+    ) {
+      return false;
+    }
+
+    const changes = diffWindowGeometries(sourceGeometryLayout, sourceFrames);
+    const changedWindowIds = new Set(changes.map((change) => change.windowId));
+    const rollbackTargets = changes.map((change) => ({
+      frame: { ...(sourceFrames.get(change.windowId) ?? change.frame) },
+      windowId: change.windowId,
+    }));
+    const destinationBaselines = new Map<WindowId, RestoreBaseline>();
+    const mechanismFrames = new Map<WindowId, Rect>();
+    const attemptedChanges: Array<{ frame: Rect; windowId: WindowId }> = [];
+    const appliedChanges: Array<{ frame: Rect; windowId: WindowId }> = [];
+    let forwardWrites = 0;
+    let failure: string;
+
+    try {
+      if (
+        !this.transferMemberStatesAreCurrent(command, operation) ||
+        !this.transferLayoutsOwnershipIsCurrent(sourceLayout, targetLayout)
+      ) {
+        throw new Error("desktop send ownership changed");
+      }
+
+      for (const member of this.transferMembersActiveLast(command)) {
+        if (
+          !this.transferOperationIdentityIsCurrent(
+            command,
+            operation,
+            topologyRevision,
+          ) ||
+          !this.transferMemberStatesAreCurrent(command, operation)
+        ) {
+          throw new Error("desktop send context changed");
+        }
+
+        try {
+          member.window.desktops = [command.targetDesktop];
+        } finally {
+          mechanismFrames.set(member.id, { ...member.window.frameGeometry });
+        }
+
+        if (
+          !windowIsOnDesktop(member.window, command.targetDesktop) ||
+          !this.transferOperationIdentityIsCurrent(
+            command,
+            operation,
+            topologyRevision,
+          ) ||
+          !this.transferMemberStatesAreCurrent(command, operation)
+        ) {
+          throw new Error("desktop send assignment was rejected");
+        }
+      }
+
+      for (const member of command.members) {
+        destinationBaselines.set(
+          member.id,
+          this.captureRestoreBaseline(
+            member.window,
+            command.targetContextGeometry.fingerprint,
+          ),
+        );
+      }
+
+      for (const change of changes) {
+        this.toggleGeometryTransitions.set(change.windowId, {
+          contextKey: command.contextKey,
+          expectedFrame: { ...change.frame },
+          settlementArmed: true,
+        });
+      }
+
+      this.dirtyContexts.delete(command.contextKey);
+
+      for (const change of changes) {
+        if (
+          !this.desktopSendOperationIsCurrent(
+            command,
+            operation,
+            topologyRevision,
+          ) ||
+          !this.windowOwnershipClassificationIsCurrent(change.windowId)
+        ) {
+          break;
+        }
+
+        attemptedChanges.push(change);
+        const applied = this.geometry.apply(
+          [change],
+          command.context,
+          (current) =>
+            this.desktopSendOperationIsCurrent(
+              command,
+              operation,
+              topologyRevision,
+            ) && this.windowOwnershipClassificationIsCurrent(current.windowId),
+        );
+
+        if (applied !== 1) {
+          break;
+        }
+
+        appliedChanges.push(change);
+        forwardWrites += 1;
+      }
+
+      if (
+        !this.focusDesktopSendSource(
+          command.contextKey,
+          command.memberIds,
+          sourceFocus,
+        )
+      ) {
+        throw new Error("desktop send source focus was rejected");
+      }
+
+      if (
+        destinationBaselines.size !== command.members.length ||
+        appliedChanges.length !== changes.length ||
+        !this.transferChangedFramesAreOwned(changes, rollbackTargets) ||
+        !this.transferUnchangedFramesMatch(
+          sourceLayout,
+          changedWindowIds,
+          command.retainedSourceIds,
+        ) ||
+        !this.transferPassiveFramesMatch(command, destinationBaselines) ||
+        [...targetFrames].some(([id, frame]) => {
+          const source = this.observer.source(id);
+          return !source || !rectsEqual(source.frameGeometry, frame);
+        }) ||
+        !this.desktopSendOperationIsCurrent(
+          command,
+          operation,
+          topologyRevision,
+        ) ||
+        !this.transferLayoutsOwnershipIsCurrent(sourceLayout, targetLayout) ||
+        !this.desktopTransferFingerprintsMatch(command) ||
+        !this.desktopTransferFinalStateIsSafe(
+          command,
+          sourceLayout,
+          targetLayout,
+        ) ||
+        !this.commitContextTransferPreview(preview)
+      ) {
+        throw new Error("desktop send transaction was not accepted");
+      }
+
+      this.layout.setViewportOffset(
+        command.context.outputId,
+        command.context.desktopId,
+        command.context.activityId,
+        sourceLayout.viewportOffset,
+      );
+      this.layout.setViewportOffset(
+        command.targetContext.outputId,
+        command.targetContext.desktopId,
+        command.targetContext.activityId,
+        targetLayout.viewportOffset,
+      );
+      this.commitDesktopTransferRuntime(command, destinationBaselines);
+      this.lastWrites = forwardWrites;
+
+      if (
+        changes.length > 0 &&
+        this.toggleTransitionPending(command.contextKey)
+      ) {
+        this.scheduleToggleTransitionProbe(command.contextKey);
+      }
+
+      return true;
+    } catch (error) {
+      failure = String(error);
+    }
+
+    for (const change of changes) {
+      this.toggleGeometryTransitions.delete(change.windowId);
+    }
+
+    const compensationWrites = this.rollbackDesktopSend(
+      command,
+      attemptedChanges,
+      rollbackTargets,
+      memberSourceFrames,
+      mechanismFrames,
+      originalActiveWindow,
+      operation,
+      topologyRevision,
+      sourceWasDirty,
+      targetWasDirty,
+    );
+    this.lastWrites = forwardWrites + compensationWrites;
+    console.warn(
+      `[driftile] desktop send rolled back window=${String(command.activeId)} error=${failure}`,
+    );
+    return false;
   }
 
   private applyDesktopTransfer(
@@ -14488,7 +15071,7 @@ export class RuntimeController {
           windowIsOnDesktop(member.window, command.targetDesktop),
       ) &&
       currentDesktopForOutput(this.workspace, command.output)?.id ===
-        command.targetDesktop.id
+        (command.follow ? command.targetDesktop.id : command.sourceDesktop.id)
     );
   }
 
@@ -14528,7 +15111,7 @@ export class RuntimeController {
         command.memberIds,
         command.contextKey,
         command.contextKey,
-        undefined,
+        command.follow ? undefined : command.contextKey,
         command.retainedSourceIds,
       ) &&
       this.transferLayoutIsSafe(
@@ -14540,6 +15123,7 @@ export class RuntimeController {
         command.targetContextKey,
         command.targetContextKey,
         command.geometryPassiveIds,
+        command.follow ? undefined : command.memberIds,
       )
     );
   }
@@ -14752,6 +15336,201 @@ export class RuntimeController {
     return compensationWrites;
   }
 
+  private rollbackDesktopSend(
+    command: DesktopTransferCommand,
+    forwardChanges: readonly { frame: Rect; windowId: WindowId }[],
+    rollbackTargets: readonly { frame: Rect; windowId: WindowId }[],
+    memberSourceFrames: ReadonlyMap<WindowId, Rect>,
+    mechanismFrames: ReadonlyMap<WindowId, Rect>,
+    originalActiveWindow: KWinWindow | null,
+    operation: WindowTransferOperation,
+    topologyRevision: number,
+    sourceWasDirty: boolean,
+    targetWasDirty: boolean,
+  ): number {
+    const attemptedIds = new Set(
+      forwardChanges.map((change) => change.windowId),
+    );
+    const forwardFrames = new Map(
+      forwardChanges.map((change) => [change.windowId, change.frame]),
+    );
+    let compensationWrites = 0;
+    let sourceRestored = true;
+
+    const compensationSafe =
+      this.transferOperationIdentityIsCurrent(
+        command,
+        operation,
+        topologyRevision,
+      ) && this.desktopTransferFingerprintsMatch(command);
+
+    if (compensationSafe) {
+      for (const target of [...rollbackTargets].reverse()) {
+        if (!attemptedIds.has(target.windowId)) {
+          continue;
+        }
+
+        const source = this.observer.source(target.windowId);
+        const forwardFrame = forwardFrames.get(target.windowId);
+
+        if (
+          !source ||
+          !forwardFrame ||
+          (!rectsEqual(source.frameGeometry, forwardFrame) &&
+            !rectsEqual(source.frameGeometry, target.frame))
+        ) {
+          sourceRestored = false;
+          continue;
+        }
+
+        const applied = this.geometry.apply(
+          [target],
+          command.context,
+          () =>
+            this.transferOperationIdentityIsCurrent(
+              command,
+              operation,
+              topologyRevision,
+            ) && this.windowOwnershipClassificationIsCurrent(target.windowId),
+        );
+        compensationWrites += applied;
+
+        if (applied !== 1) {
+          sourceRestored = false;
+        } else {
+          this.toggleGeometryTransitions.set(target.windowId, {
+            contextKey: command.contextKey,
+            expectedFrame: { ...target.frame },
+            settlementArmed: false,
+          });
+        }
+      }
+
+      for (const member of [...command.members].reverse()) {
+        if (this.observer.source(member.id) !== member.window) {
+          sourceRestored = false;
+          this.pendingWindowSyncs.add(member.id);
+          continue;
+        }
+
+        let restoreMechanismFrame = { ...member.window.frameGeometry };
+
+        if (windowIsOnDesktop(member.window, command.targetDesktop)) {
+          try {
+            member.window.desktops = [command.sourceDesktop];
+          } catch (error) {
+            console.warn(
+              `[driftile] desktop send restore failed window=${String(member.id)} error=${String(error)}`,
+            );
+          } finally {
+            restoreMechanismFrame = { ...member.window.frameGeometry };
+          }
+        }
+
+        const sourceFrame = memberSourceFrames.get(member.id);
+        const liveFrame = member.window.frameGeometry;
+        const frameOwned = [
+          sourceFrame,
+          mechanismFrames.get(member.id),
+          restoreMechanismFrame,
+        ].some((frame) => frame && rectsEqual(liveFrame, frame));
+
+        if (
+          sourceFrame &&
+          windowIsOnDesktop(member.window, command.sourceDesktop) &&
+          frameOwned &&
+          !rectsEqual(liveFrame, sourceFrame) &&
+          this.geometry.canApplyFrame(member.id, sourceFrame, command.context)
+        ) {
+          const applied = this.geometry.apply(
+            [{ frame: sourceFrame, windowId: member.id }],
+            command.context,
+          );
+          compensationWrites += applied;
+
+          if (applied === 1) {
+            this.toggleGeometryTransitions.set(member.id, {
+              contextKey: command.contextKey,
+              expectedFrame: { ...sourceFrame },
+              settlementArmed: false,
+            });
+          } else {
+            sourceRestored = false;
+          }
+        }
+
+        const observed = normalizeWindow(member.window);
+        const liveContext = observed
+          ? this.resolveManagedContext(observed)
+          : null;
+
+        if (
+          !sourceFrame ||
+          !windowIsOnDesktop(member.window, command.sourceDesktop) ||
+          !frameOwned ||
+          !liveContext ||
+          contextKey(liveContext) !== command.contextKey
+        ) {
+          sourceRestored = false;
+          this.pendingWindowSyncs.add(member.id);
+        }
+      }
+    } else {
+      sourceRestored = false;
+
+      for (const member of command.members) {
+        this.pendingWindowSyncs.add(member.id);
+      }
+    }
+
+    const active = this.workspace.activeWindow;
+    const activeId = active ? windowId(String(active.internalId)) : null;
+    const activeOwnedBySend =
+      !active ||
+      (activeId !== null &&
+        (command.memberIds.has(activeId) ||
+          this.windowRemovalFocusCandidateLayer(
+            activeId,
+            active,
+            command.contextKey,
+          ) !== null));
+
+    if (
+      activeOwnedBySend &&
+      originalActiveWindow &&
+      this.observer.source(command.activeId) === originalActiveWindow &&
+      windowIsOnDesktop(originalActiveWindow, command.sourceDesktop)
+    ) {
+      try {
+        this.workspace.activeWindow = originalActiveWindow;
+      } catch (error) {
+        console.warn(
+          `[driftile] desktop send focus restore failed window=${String(command.activeId)} error=${String(error)}`,
+        );
+      }
+    }
+
+    if (sourceWasDirty || !sourceRestored) {
+      this.markContextDirty(command.sourceRuntimeContext);
+    } else {
+      this.dirtyContexts.delete(command.contextKey);
+    }
+
+    if (targetWasDirty || !sourceRestored) {
+      const target = this.contexts.get(command.targetContextKey);
+
+      if (target) {
+        this.markContextDirty(target);
+      }
+    }
+
+    if (this.toggleTransitionPending(command.contextKey)) {
+      this.scheduleToggleTransitionProbe(command.contextKey);
+    }
+
+    return compensationWrites;
+  }
+
   private canRestoreDesktopTransferMechanism(
     command: DesktopTransferCommand,
     operation: WindowTransferOperation,
@@ -14834,8 +15613,10 @@ export class RuntimeController {
     if (source.windowIds.size === 0) {
       this.contexts.delete(source.key);
       this.dirtyContexts.delete(source.key);
-    } else {
+    } else if (command.follow) {
       this.markContextDirty(source);
+    } else {
+      this.dirtyContexts.delete(source.key);
     }
 
     let target = command.targetRuntimeContext;
@@ -14867,7 +15648,11 @@ export class RuntimeController {
       this.forgetWaitingWindow(member.id);
     }
 
-    this.dirtyContexts.delete(command.targetContextKey);
+    if (command.follow) {
+      this.dirtyContexts.delete(command.targetContextKey);
+    } else {
+      this.markContextDirty(target);
+    }
     this.capacityParkBackoffs.delete(command.contextKey);
     this.capacityParkBackoffs.delete(command.targetContextKey);
   }
@@ -20237,6 +21022,7 @@ export class RuntimeController {
       external.kind === "desktop"
         ? {
             ...commonCommand,
+            follow: true,
             output: intent.sourceOutput,
           }
         : {
