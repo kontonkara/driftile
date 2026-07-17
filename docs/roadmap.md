@@ -2426,3 +2426,23 @@ Release criteria (met):
   not poll, cross contexts, or add a timer.
 - Settings, shortcuts, schemas, logical persistence v4, and public Plasma 6.7+
   API use remain unchanged.
+
+### 1.69.0 (in development)
+
+- Exclude individual windows from optional geometry transitions by exact,
+  case-sensitive KWin caption or window role without excluding their complete
+  application class.
+- Reclassify a window when its live caption or role changes, while avoiding
+  those property reads when the corresponding exclusion set is empty.
+- Expose both bounded lists through the transition KCM and nullable Home
+  Manager options. Keep system-wide NixOS package installation independent of
+  per-user effect settings.
+
+Release criteria:
+
+- Class, caption, and role exclusions share the existing 128-entry,
+  255-UTF-8-byte validation and fail closed as one transition policy.
+- Configuration reload clears active visual transforms and applies the new
+  policy without restarting KWin.
+- The batch adds no action, binding, geometry write, layout or persistence
+  field, private API, or KWin fork.

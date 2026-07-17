@@ -124,11 +124,13 @@ the replacement starts independently. The late end notification cannot clear
 that replacement or leave a stale transform. Movement and size animation can
 be disabled independently.
 
-`WindowClassExclusions` accepts at most 128 exact, case-sensitive KWin
-`windowClass` values, one per line and at most 255 UTF-8 bytes each. Use KWin's
-debug console to copy the complete value; partial matching is not performed.
-Blank lines are ignored. A duplicate, malformed, or oversized document disables
-the effect until a valid value is loaded.
+`WindowClassExclusions`, `WindowCaptionExclusions`, and
+`WindowRoleExclusions` each accept at most 128 exact, case-sensitive KWin
+values, one per line and at most 255 UTF-8 bytes each. Use KWin's debug console
+to copy the complete `windowClass`, caption, or `windowRole`; partial matching
+is not performed. Caption matching follows the current caption when an
+application changes it. Blank lines are ignored. A duplicate, malformed, or
+oversized document disables the effect until valid values are loaded.
 
 Home Manager can own these values independently of package installation. Each
 nullable option leaves its existing KConfig value untouched when set to `null`:
@@ -141,6 +143,8 @@ programs.driftile.transitions = {
   animateSize = true;
   resizeAnimationThreshold = 10;
   windowClassExclusions = [ "firefox firefox" ];
+  windowCaptionExclusions = [ "Search" ];
+  windowRoleExclusions = [ "popup" ];
 };
 ```
 
