@@ -43,6 +43,7 @@ Rectangle {
     readonly property var tiledPresentations: buildTiledPresentations()
     readonly property var floatingWindowIds: buildFloatingWindowIds()
     property int columnDelegateRevision: 0
+    property int attentionRevision: 0
 
     color: windowDropArea.validTarget ? "#ee2f4057"
                                       : desktopReorderSource ? "#f050607a" : current ? "#f02b3548" : "#dc171e2a"
@@ -56,6 +57,7 @@ Rectangle {
 
         readonly property bool keyboardSelected: !card.current && card.searchQuery.trim().length === 0
             && card.keyboardSelectionId === card.desktopNavigationTargetId()
+        readonly property bool attentionRequested: card.anyWindowDemandsAttention(card.attentionRevision)
 
         width: card.contentLeft
         height: card.height
@@ -73,6 +75,22 @@ Rectangle {
         }
 
         Rectangle {
+            id: desktopAttentionBadge
+
+            anchors.top: parent.top
+            anchors.right: parent.right
+            anchors.margins: 7
+            width: 10
+            height: width
+            visible: numberGutter.attentionRequested
+            color: "#e2556f"
+            border.width: 1
+            border.color: "#fff1f4"
+            radius: width / 2
+            z: 1
+        }
+
+        Rectangle {
             anchors.fill: parent
             anchors.margins: 3
             visible: numberGutter.keyboardSelected
@@ -80,6 +98,7 @@ Rectangle {
             border.width: 3
             border.color: "#ffd166"
             radius: 4
+            z: 2
         }
 
         TapHandler {
@@ -210,14 +229,21 @@ Rectangle {
                             ~KWin.WindowFilterModel.Notification & ~KWin.WindowFilterModel.CriticalNotification
             }
 
-            onItemAdded: card.navigationTargetsChanged()
-            onItemRemoved: card.navigationTargetsChanged()
+            onItemAdded: {
+                card.navigationTargetsChanged();
+                card.attentionRevision += 1;
+            }
+            onItemRemoved: {
+                card.navigationTargetsChanged();
+                card.attentionRevision += 1;
+            }
 
             Item {
                 id: windowPresentation
 
                 readonly property var candidate: model.window
                 property var actionSnapshot: null
+                readonly property bool attentionRequested: card.windowDemandsAttention(candidate)
                 readonly property bool matchesSearch: card.windowMatchesSearch(candidate)
                 readonly property string windowId: model.window ? String(model.window.internalId) : ""
                 readonly property var tiledPresentation: card.tiledPresentations[windowId]
@@ -237,7 +263,11 @@ Rectangle {
                 opacity: thumbnailShell.Drag.active || tabShell.Drag.active ? 0.72 : 1
                 z: frame && frame.floating ? 1000 + index : 100 + index
 
-                onCandidateChanged: refreshActionSnapshot()
+                onCandidateChanged: {
+                    refreshActionSnapshot();
+                    card.attentionRevision += 1;
+                }
+                onAttentionRequestedChanged: card.attentionRevision += 1
 
                 Component.onCompleted: refreshActionSnapshot()
 
@@ -360,11 +390,45 @@ Rectangle {
                     }
 
                     Rectangle {
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        anchors.bottom: parent.bottom
+                        height: 3
+                        visible: windowPresentation.attentionRequested
+                        color: "#e2556f"
+                        z: 1
+                    }
+
+                    Rectangle {
+                        id: thumbnailAttentionBadge
+
+                        anchors.top: parent.top
+                        anchors.right: parent.right
+                        anchors.margins: 4
+                        width: Math.max(8, Math.min(16, Math.min(thumbnailShell.width, thumbnailShell.height) * 0.22))
+                        height: width
+                        visible: windowPresentation.attentionRequested
+                        color: "#e2556f"
+                        border.width: 1
+                        border.color: "#fff1f4"
+                        radius: width / 2
+                        z: 2
+
+                        Text {
+                            anchors.centerIn: parent
+                            text: "!"
+                            color: "#ffffff"
+                            font.bold: true
+                            font.pixelSize: Math.max(7, thumbnailAttentionBadge.height * 0.7)
+                        }
+                    }
+
+                    Rectangle {
                         anchors.fill: parent
                         color: "transparent"
                         border.width: thumbnailShell.keyboardSelected ? 3 : 0
                         border.color: "#ffd166"
-                        z: 1
+                        z: 3
                     }
 
                     TapHandler {
@@ -459,7 +523,7 @@ Rectangle {
                     Text {
                         anchors.fill: parent
                         anchors.leftMargin: 4
-                        anchors.rightMargin: 4
+                        anchors.rightMargin: windowPresentation.attentionRequested ? 18 : 4
                         text: model.window && model.window.caption ? String(model.window.caption)
                                                                    : windowPresentation.tiledPresentation
                                                                      ? String(windowPresentation.tiledPresentation.memberIndex + 1)
@@ -472,12 +536,46 @@ Rectangle {
                     }
 
                     Rectangle {
+                        anchors.left: parent.left
+                        anchors.top: parent.top
+                        anchors.bottom: parent.bottom
+                        width: 3
+                        visible: windowPresentation.attentionRequested
+                        color: "#e2556f"
+                        z: 1
+                    }
+
+                    Rectangle {
+                        id: tabAttentionBadge
+
+                        anchors.right: parent.right
+                        anchors.verticalCenter: parent.verticalCenter
+                        anchors.rightMargin: 3
+                        width: Math.max(8, Math.min(12, tabShell.height - 4))
+                        height: width
+                        visible: windowPresentation.attentionRequested
+                        color: "#e2556f"
+                        border.width: 1
+                        border.color: "#fff1f4"
+                        radius: width / 2
+                        z: 2
+
+                        Text {
+                            anchors.centerIn: parent
+                            text: "!"
+                            color: "#ffffff"
+                            font.bold: true
+                            font.pixelSize: Math.max(7, tabAttentionBadge.height * 0.72)
+                        }
+                    }
+
+                    Rectangle {
                         anchors.fill: parent
                         color: "transparent"
                         border.width: tabShell.keyboardSelected ? 3 : 0
                         border.color: "#ffd166"
                         radius: tabShell.radius
-                        z: 1
+                        z: 3
                     }
 
                     TapHandler {
@@ -870,6 +968,30 @@ Rectangle {
         return candidate && !candidate.deleted && !candidate.minimized && candidate.wantsInput === true
                 && candidate.output === screen && candidate.internalId !== undefined && candidate.internalId !== null
                 && String(candidate.internalId).length > 0;
+    }
+
+    function anyWindowDemandsAttention(revision) {
+        if (!Number.isInteger(revision) || revision < 0) {
+            return false;
+        }
+
+        for (let index = 0; index < windowRepeater.count; index += 1) {
+            const presentation = windowRepeater.itemAt(index);
+            if (presentation && presentation.candidate && presentation.attentionRequested === true) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    function windowDemandsAttention(candidate) {
+        try {
+            return candidate !== null && candidate !== undefined && candidate.deleted !== true
+                    && candidate.demandsAttention === true;
+        } catch (error) {
+            return false;
+        }
     }
 
     function windowMatchesSearch(candidate) {

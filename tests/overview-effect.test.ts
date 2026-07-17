@@ -731,8 +731,8 @@ describe("overview effect package", () => {
     expect(presentation).toContain(
       "Component.onCompleted: refreshActionSnapshot()",
     );
-    expect(presentation).toContain(
-      "onCandidateChanged: refreshActionSnapshot()",
+    expect(presentation).toMatch(
+      /onCandidateChanged: \{\s*refreshActionSnapshot\(\);\s*card\.attentionRevision \+= 1;\s*\}/u,
     );
     for (const signal of [
       "Closeable",
@@ -1234,6 +1234,14 @@ describe("overview effect package", () => {
       desktopCard.indexOf("function collectNavigationTargets("),
       desktopCard.indexOf("function indexOfDesktop("),
     );
+    const windowRepeaterHeader = desktopCard.slice(
+      desktopCard.indexOf("id: windowRepeater"),
+      desktopCard.indexOf("id: windowPresentation"),
+    );
+    const windowPresentation = desktopCard.slice(
+      desktopCard.indexOf("id: windowPresentation"),
+      desktopCard.indexOf("id: thumbnailShell"),
+    );
     const thumbnail = desktopCard.slice(
       desktopCard.indexOf("id: thumbnailShell"),
       desktopCard.indexOf("id: tabShell"),
@@ -1241,6 +1249,10 @@ describe("overview effect package", () => {
     const tab = desktopCard.slice(
       desktopCard.indexOf("id: tabShell"),
       desktopCard.indexOf("function collectNavigationTargets("),
+    );
+    const attentionProjection = desktopCard.slice(
+      desktopCard.indexOf("function anyWindowDemandsAttention("),
+      desktopCard.indexOf("function windowMatchesSearch("),
     );
 
     expect(scene).toContain('import "../code/main.js" as OverviewRuntime');
@@ -1370,6 +1382,67 @@ describe("overview effect package", () => {
       "card.keyboardSelectionId === card.desktopNavigationTargetId()",
     );
     expect(numberGutter).toContain("visible: numberGutter.keyboardSelected");
+    expect(desktopCard).toContain("property int attentionRevision: 0");
+    expect(numberGutter).toContain(
+      "readonly property bool attentionRequested: card.anyWindowDemandsAttention(card.attentionRevision)",
+    );
+    expect(numberGutter).toContain("id: desktopAttentionBadge");
+    expect(numberGutter).toContain("visible: numberGutter.attentionRequested");
+    expect(numberGutter.indexOf("id: desktopAttentionBadge")).toBeLessThan(
+      numberGutter.lastIndexOf("z: 2"),
+    );
+    for (const signal of ["ItemAdded", "ItemRemoved"]) {
+      expect(windowRepeaterHeader).toMatch(
+        new RegExp(
+          `on${signal}: \\{\\s*card\\.navigationTargetsChanged\\(\\);\\s*card\\.attentionRevision \\+= 1;\\s*\\}`,
+          "u",
+        ),
+      );
+    }
+    expect(windowPresentation).toContain(
+      "readonly property bool attentionRequested: card.windowDemandsAttention(candidate)",
+    );
+    expect(windowPresentation).toMatch(
+      /onCandidateChanged: \{\s*refreshActionSnapshot\(\);\s*card\.attentionRevision \+= 1;\s*\}/u,
+    );
+    expect(windowPresentation).toContain(
+      "onAttentionRequestedChanged: card.attentionRevision += 1",
+    );
+    expect(windowPresentation).toContain("ignoreUnknownSignals: true");
+    expect(attentionProjection).toContain("windowRepeater.count");
+    expect(attentionProjection).toContain("windowRepeater.itemAt(index)");
+    expect(attentionProjection).toContain(
+      "presentation.attentionRequested === true",
+    );
+    expect(attentionProjection).toContain(
+      "candidate.demandsAttention === true",
+    );
+    expect(attentionProjection).toMatch(
+      /function windowDemandsAttention\(candidate\) \{[\s\S]*try \{[\s\S]*catch \(error\) \{\s*return false;/u,
+    );
+    for (const visual of [
+      { badge: "thumbnailAttentionBadge", source: thumbnail },
+      { badge: "tabAttentionBadge", source: tab },
+    ]) {
+      expect(visual.source).toContain(`id: ${visual.badge}`);
+      expect(visual.source).toContain(
+        "visible: windowPresentation.attentionRequested",
+      );
+      expect(visual.source).toContain('text: "!"');
+      expect(visual.source.indexOf(`id: ${visual.badge}`)).toBeLessThan(
+        visual.source.lastIndexOf("z: 3"),
+      );
+    }
+    expect(thumbnail).toContain(
+      'border.color: KWin.Workspace.activeWindow === model.window ? "#f4f8ff" : "#71839e"',
+    );
+    expect(tab).toContain("windowPresentation.tiledPresentation.selected");
+    expect(
+      `${attentionProjection}\n${numberGutter}\n${thumbnail}\n${tab}`,
+    ).not.toMatch(/\b(?:Timer|Behavior|Animation)\s*\{/u);
+    expect(attentionProjection).not.toMatch(
+      /windowTapped|windowCloseRequested|closeWindow|activeWindow\s*=|\.setValue\s*\(|Settings/u,
+    );
     expect(`${scene}\n${desktopCard}`).not.toMatch(
       /\bTimer\s*\{|KWin\.Workspace\.(?:stackingOrder|windows)\b|\.setValue\s*\(/u,
     );
