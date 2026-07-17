@@ -92,15 +92,17 @@ Rectangle {
     Keys.onPressed: event => {
         const modifiers = event.modifiers & ~Qt.KeypadModifier;
         const forbiddenModifiers = Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier;
-        if ((modifiers & forbiddenModifiers) !== Qt.NoModifier) {
-            event.accepted = false;
-            return;
-        }
-
+        const controlOnly = modifiers === Qt.ControlModifier;
         const unmodified = modifiers === Qt.NoModifier;
         const searchTextModifier = unmodified || modifiers === Qt.ShiftModifier;
         let handled = true;
-        if (unmodified && event.key === Qt.Key_Left) {
+        if (controlOnly && event.key === Qt.Key_Backspace && searchQuery.length > 0) {
+            root.removeLastSearchClause();
+        } else if (controlOnly && event.key === Qt.Key_U && searchQuery.length > 0) {
+            searchQuery = "";
+        } else if ((modifiers & forbiddenModifiers) !== Qt.NoModifier) {
+            handled = false;
+        } else if (unmodified && event.key === Qt.Key_Left) {
             root.navigateKeyboardSelection("left");
         } else if (unmodified && event.key === Qt.Key_Right) {
             root.navigateKeyboardSelection("right");
@@ -897,6 +899,23 @@ Rectangle {
         const current = searchQuery;
         try {
             const next = runtime.removeLastOverviewSearchCharacter(current);
+            if (typeof next === "string") {
+                searchQuery = next;
+            }
+        } catch (error) {
+            return;
+        }
+    }
+
+    function removeLastSearchClause() {
+        const runtime = OverviewRuntime.DriftileOverview;
+        if (!runtime || typeof runtime.removeLastOverviewSearchClause !== "function") {
+            return;
+        }
+
+        const current = searchQuery;
+        try {
+            const next = runtime.removeLastOverviewSearchClause(current);
             if (typeof next === "string") {
                 searchQuery = next;
             }

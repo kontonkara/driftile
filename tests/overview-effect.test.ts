@@ -1971,7 +1971,7 @@ describe("overview effect package", () => {
       "const forbiddenModifiers = Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier",
     );
     expect(keyHandler).toMatch(
-      /\(modifiers & forbiddenModifiers\) !== Qt\.NoModifier\) \{\s*event\.accepted = false;\s*return;/u,
+      /\(modifiers & forbiddenModifiers\) !== Qt\.NoModifier\) \{\s*handled = false;/u,
     );
     for (const [key, direction] of [
       ["Left", "left"],
@@ -2330,6 +2330,17 @@ describe("overview effect package", () => {
     expect(keyHandler).toContain("event.key === Qt.Key_Backspace");
     expect(keyHandler).toContain("root.removeLastSearchCharacter()");
     expect(keyHandler).toContain(
+      "controlOnly && event.key === Qt.Key_Backspace && searchQuery.length > 0",
+    );
+    expect(keyHandler).toContain("root.removeLastSearchClause()");
+    expect(keyHandler).toContain(
+      "controlOnly && event.key === Qt.Key_U && searchQuery.length > 0",
+    );
+    expect(
+      keyHandler.indexOf("controlOnly && event.key === Qt.Key_Backspace"),
+    ).toBeLessThan(keyHandler.indexOf("(modifiers & forbiddenModifiers)"));
+    expect(keyHandler).toContain("event.accepted = handled");
+    expect(keyHandler).toContain(
       "event.key === Qt.Key_Space && searchQuery.length === 0",
     );
     expect(keyHandler).toMatch(
@@ -2342,6 +2353,13 @@ describe("overview effect package", () => {
     expect(searchFunctions).toContain(
       'typeof runtime.removeLastOverviewSearchCharacter !== "function"',
     );
+    expect(searchFunctions).toContain(
+      'typeof runtime.removeLastOverviewSearchClause !== "function"',
+    );
+    expect(searchFunctions).toContain(
+      "runtime.removeLastOverviewSearchClause(current)",
+    );
+    expect(searchFunctions).not.toContain("repairKeyboardSelection()");
     expect(scene).toContain("function onActiveChanged()");
     expect(scene).toContain('root.searchQuery = ""');
     expect(scene).toContain("No matching windows: ${root.searchQuery}");
@@ -2414,6 +2432,7 @@ describe("overview effect package", () => {
     expect(scene).toContain("visible: root.searchQuery.length > 0");
     expect(overviewRuntimeIndex).toContain("matchesOverviewWindowSearchPlan");
     expect(overviewRuntimeIndex).toContain("planOverviewWindowSearchQuery");
+    expect(overviewRuntimeIndex).toContain("removeLastOverviewSearchClause");
     expect(`${scene}\n${desktopCard}`).not.toMatch(
       /\b(?:Timer|TextInput)\s*\{|\.setValue\s*\(/u,
     );

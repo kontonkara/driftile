@@ -36,6 +36,7 @@ export {
   matchesOverviewWindowSearch,
   planOverviewWindowSearchQuery,
   removeLastOverviewSearchCharacter,
+  removeLastOverviewSearchClause,
 } from "./window-search";
 export type {
   OverviewWindowSearchFieldName,
