@@ -85,8 +85,8 @@ keyboard, close, and search paths through their existing tabs. Activating one
 restores its exact public KWin minimized state before focusing it. Stacked and
 floating minimized windows remain outside this slice.
 
-Version 1.55.0 (in development) gives eligible minimized stacked tiled members
-and tracked floating windows without a tab one compact caption placeholder.
+Version 1.55.0 gives eligible minimized stacked tiled members and tracked
+floating windows without a tab one compact caption placeholder.
 Each placeholder stays inside the visible intersection of its projected slot or
 frame, retains its attention cue, and joins the existing pointer, keyboard,
 close, and search paths. Existing minimized tab behavior is unchanged.
@@ -273,8 +273,9 @@ activation, and normal close remain silent.
 
 ## Install a release
 
-Download `driftile-overview-1.54.0.kwineffect` and `SHA256SUMS` from the stable
-[1.54.0 release](release-notes-1.54.0.md), then verify the archive:
+Download `driftile-overview-1.55.0.kwineffect` and `SHA256SUMS` from the stable
+[1.55.0 release](https://github.com/kontonkara/driftile/releases/tag/v1.55.0),
+then verify the archive:
 
 ```console
 $ sha256sum --check --ignore-missing SHA256SUMS
@@ -284,7 +285,7 @@ Install the overview package as the desktop user:
 
 ```bash
 kpackagetool6 --type=KWin/Effect \
-  --install ./driftile-overview-1.54.0.kwineffect
+  --install ./driftile-overview-1.55.0.kwineffect
 ```
 
 To build the same versioned archive from source, run `npm ci` followed by
@@ -309,7 +310,7 @@ uninstalling the package.
 
 ## NixOS and Home Manager
 
-The 1.54.0 flake exposes the effect separately as
+The 1.55.0 flake exposes the effect separately as
 `packages.<system>.driftile-overview`. The NixOS and Home Manager modules keep
 it opt-in:
 
@@ -339,12 +340,15 @@ in another scope; `null` leaves their KConfig values untouched.
 
 ## Validation
 
-Version 1.54.0 validates its gesture, same- and cross-output transfer, search,
+Version 1.55.0 validates its gesture, same- and cross-output transfer, search,
 keyboard, pointer, and close paths without giving the companion ownership of
 layout state.
 
 Version 1.54.0 adds focused restore-and-focus, close, keyboard, pointer, and
 search coverage for minimized member tabs without changing layout ownership.
+
+Version 1.55.0 extends those guarded paths to eligible minimized stacked tiled
+and tracked floating placeholders without adding drag or layout ownership.
 
 ## Safety boundary
 
