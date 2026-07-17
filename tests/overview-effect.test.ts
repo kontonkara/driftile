@@ -578,7 +578,7 @@ describe("overview effect package", () => {
       'color: windowPresentation.minimizedWindow ? "#8a96a8" : "#f3f7ff"',
     );
     expect(tab).toContain(
-      "model.window && model.window.caption ? String(model.window.caption)",
+      "text: windowPresentation.windowLabel ? windowPresentation.windowLabel.primary",
     );
     expect(tab).toContain("elide: Text.ElideRight");
     expect(tab).toContain(
@@ -1356,7 +1356,7 @@ describe("overview effect package", () => {
     );
     expect(placeholder).toContain("&& windowPresentation.matchesSearch");
     expect(placeholder).toContain(
-      "card.minimizedPlaceholderLabel(windowPresentation.candidate)",
+      '? `Minimized · ${windowPresentation.windowLabel.primary}` : "Minimized"',
     );
     expect(placeholder).toContain("textFormat: Text.PlainText");
     expect(placeholder).toContain("elide: Text.ElideRight");
@@ -1378,6 +1378,138 @@ describe("overview effect package", () => {
     );
     expect(`${planner}\n${placeholder}`).not.toMatch(
       /\b(?:Timer|Behavior|Animation|DragHandler|ShortcutHandler)\s*\{|\bsequence\s*:|org\.kde\.kwin\.private|\.setValue\s*\(|KWin\.(?:SceneView|Workspace)\.[A-Za-z0-9_]+\s*=(?!=)/u,
+    );
+  });
+
+  it("labels visible windows through one fail-closed presentation plan", () => {
+    const presentation = desktopCard.slice(
+      desktopCard.indexOf("id: windowPresentation"),
+      desktopCard.indexOf("id: thumbnailShell"),
+    );
+    const thumbnail = desktopCard.slice(
+      desktopCard.indexOf("id: thumbnailShell"),
+      desktopCard.indexOf("id: tabShell"),
+    );
+    const tab = desktopCard.slice(
+      desktopCard.indexOf("id: tabShell"),
+      desktopCard.indexOf("id: minimizedPlaceholderShell"),
+    );
+    const placeholder = desktopCard.slice(
+      desktopCard.indexOf("id: minimizedPlaceholderShell"),
+      desktopCard.indexOf("id: activeColumnBadge"),
+    );
+    const thumbnailFooterStart = thumbnail.indexOf("id: thumbnailLabelFooter");
+    const thumbnailFooter = thumbnail.slice(
+      thumbnailFooterStart,
+      thumbnail.indexOf(
+        "border.width: thumbnailShell.keyboardSelected ? 3 : 0",
+        thumbnailFooterStart,
+      ),
+    );
+    const tabLabelStart = tab.indexOf("Text {");
+    const tabLabel = tab.slice(
+      tabLabelStart,
+      tab.indexOf("Rectangle {", tabLabelStart),
+    );
+    const placeholderLabelStart = placeholder.indexOf("Text {");
+    const placeholderLabel = placeholder.slice(
+      placeholderLabelStart,
+      placeholder.indexOf("Rectangle {", placeholderLabelStart),
+    );
+    const planner = desktopCard.slice(
+      desktopCard.indexOf("function planWindowLabel("),
+      desktopCard.indexOf("function anyWindowDemandsAttention("),
+    );
+    const labelUi = `${thumbnailFooter}\n${tabLabel}\n${placeholderLabel}`;
+
+    expect(overviewRuntimeIndex).toContain(
+      'export { planOverviewWindowLabel } from "./window-label";',
+    );
+    expect(presentation).toMatch(
+      /readonly property var windowLabel: card\.planWindowLabel\(candidate, matchesSearch && model\.window[\s\S]*!minimizedWindow && selectedThumbnail[\s\S]*\|\| hasMinimizedTabFrame[\s\S]*\|\| \(minimizedPlaceholderFrame !== null/u,
+    );
+
+    expect(thumbnailFooter).toMatch(
+      /id: thumbnailLabelFooter[\s\S]*anchors\.left: parent\.left[\s\S]*anchors\.right: parent\.right[\s\S]*anchors\.bottom: parent\.bottom[\s\S]*anchors\.leftMargin: 5[\s\S]*anchors\.rightMargin: 5/u,
+    );
+    expect(thumbnailFooter).toContain(
+      "visible: windowPresentation.windowLabel !== null && thumbnailShell.width >= 120",
+    );
+    expect(thumbnailFooter).toContain(
+      "&& thumbnailShell.height >= (hasSecondary ? 72 : 52)",
+    );
+    expect(thumbnailFooter).toMatch(
+      /clip: true[\s\S]*text: windowPresentation\.windowLabel \? windowPresentation\.windowLabel\.primary[\s\S]*text: windowPresentation\.windowLabel && windowPresentation\.windowLabel\.secondary !== null/u,
+    );
+
+    expect(tabLabel).toMatch(
+      /text: windowPresentation\.windowLabel \? windowPresentation\.windowLabel\.primary[\s\S]*\? String\(windowPresentation\.tiledPresentation\.memberIndex \+ 1\)/u,
+    );
+    expect(placeholderLabel).toContain(
+      '? `Minimized · ${windowPresentation.windowLabel.primary}` : "Minimized"',
+    );
+    for (const label of [thumbnailFooter, tabLabel, placeholderLabel]) {
+      expect(label).toContain("elide: Text.ElideRight");
+      expect(label).toContain("textFormat: Text.PlainText");
+    }
+
+    expect(thumbnailFooter).toContain(
+      "anchors.bottomMargin: windowPresentation.attentionRequested ? 8 : 5",
+    );
+    expect(tabLabel).toContain(
+      "anchors.rightMargin: windowPresentation.attentionRequested ? 18 : 4",
+    );
+    expect(placeholderLabel).toContain(
+      "anchors.rightMargin: windowPresentation.attentionRequested",
+    );
+    for (const [visual, attentionBadge, keyboardBorder] of [
+      [thumbnail, "thumbnailAttentionBadge", "thumbnailShell.keyboardSelected"],
+      [tab, "tabAttentionBadge", "tabShell.keyboardSelected"],
+      [
+        placeholder,
+        "minimizedPlaceholderAttentionBadge",
+        "minimizedPlaceholderShell.keyboardSelected",
+      ],
+    ] as const) {
+      expect(visual).toContain(`id: ${attentionBadge}`);
+      expect(visual).toContain(
+        "visible: windowPresentation.attentionRequested",
+      );
+      expect(visual).toMatch(
+        new RegExp(
+          `id: ${attentionBadge}[\\s\\S]*z: 2[\\s\\S]*border\\.width: ${keyboardBorder.replace(".", "\\.")} \\? 3 : 0[\\s\\S]*z: 3`,
+          "u",
+        ),
+      );
+    }
+
+    expect(planner).toContain("if (eligible !== true || !candidate)");
+    expect(planner).toContain(
+      'typeof runtime.planOverviewWindowLabel !== "function"',
+    );
+    for (const field of [
+      "caption",
+      "desktopFileName",
+      "resourceClass",
+      "resourceName",
+    ]) {
+      expect(planner).toContain(`const ${field} = candidate.${field}`);
+      expect(planner).toContain(`${field}: ${field} === null ? undefined`);
+    }
+    expect(planner).toContain(
+      'if (!planned || Array.isArray(planned) || typeof planned !== "object")',
+    );
+    expect(planner).toMatch(
+      /runtime\.planOverviewWindowLabel\(\{[\s\S]*!boundedPlainWindowLabel\(primary\)[\s\S]*secondary !== null && !boundedPlainWindowLabel\(secondary\)/u,
+    );
+    expect(planner).toContain(
+      'typeof value !== "string" || value.length === 0 || value.length > 192',
+    );
+    expect(planner).toContain("if (codePoints > 96)");
+    expect(planner).toMatch(/catch \(error\) \{\s*return null;/u);
+
+    expect(labelUi).not.toMatch(
+      /\b(?:TapHandler|DragHandler|Timer|Behavior|Animation|ShortcutHandler)\s*\{|^\s*import\s+|\bsequence\s*:|org\.kde\.kwin\.private|\.setValue\s*\(|KWin\.(?:SceneView|Workspace)\.[A-Za-z0-9_]+\s*=(?!=)|candidate\.[A-Za-z0-9_]+\s*=(?!=)/mu,
     );
   });
 
