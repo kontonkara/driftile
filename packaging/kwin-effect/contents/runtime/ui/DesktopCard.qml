@@ -17,6 +17,7 @@ Rectangle {
     required property bool showApplicationIdentity
     required property bool showWindowCloseButtons
     required property bool showWindowLabels
+    required property bool showWindowStateBadges
     property string keyboardSelectionId: ""
 
     signal desktopTapped(var candidate, string expectedDesktopId, var expectedScreen)
@@ -246,11 +247,14 @@ Rectangle {
 
                 readonly property var candidate: model.window
                 property var actionSnapshot: null
+                property int windowStateRevision: 0
                 readonly property bool attentionRequested: card.windowDemandsAttention(candidate)
-                readonly property bool matchesSearch: card.windowMatchesSearch(candidate)
                 readonly property string windowId: model.window ? String(model.window.internalId) : ""
                 readonly property var tiledPresentation: card.tiledPresentations[windowId]
                 readonly property var frame: card.frameForWindow(model.window, windowId)
+                readonly property var windowState: card.planWindowState(candidate, frame, tiledPresentation,
+                                                                        windowStateRevision)
+                readonly property bool matchesSearch: card.windowMatchesSearch(candidate, windowState)
                 readonly property bool selectedThumbnail: !tiledPresentation || tiledPresentation.selected
                 readonly property bool minimizedWindow: model.window ? model.window.minimized : false
                 readonly property bool minimizedActivationEligible: minimizedWindow
@@ -283,6 +287,7 @@ Rectangle {
                 }
                 onAttentionRequestedChanged: card.attentionRevision += 1
                 onMinimizedPlaceholderFrameChanged: card.navigationTargetsChanged()
+                onWindowStateChanged: card.navigationTargetsChanged()
 
                 Component.onCompleted: refreshActionSnapshot()
 
@@ -301,6 +306,14 @@ Rectangle {
 
                     function onFrameGeometryChanged() {
                         card.navigationTargetsChanged();
+                    }
+
+                    function onFullScreenChanged() {
+                        windowPresentation.windowStateRevision += 1;
+                    }
+
+                    function onMaximizedChanged() {
+                        windowPresentation.windowStateRevision += 1;
                     }
 
                     function onCaptionChanged() {
@@ -437,6 +450,44 @@ Rectangle {
                             color: "#ffffff"
                             font.bold: true
                             font.pixelSize: Math.max(7, thumbnailAttentionBadge.height * 0.7)
+                        }
+                    }
+
+                    Rectangle {
+                        id: thumbnailWindowStateBadge
+
+                        anchors.top: parent.top
+                        anchors.left: parent.left
+                        anchors.margins: 5
+                        width: windowStateBadgeText.implicitWidth + 12
+                        height: 18
+                        visible: card.showWindowStateBadges && thumbnailShell.visible
+                                 && thumbnailShell.width >= 96 && thumbnailShell.height >= 52
+                                 && card.windowStateBadgeEligible(windowPresentation.candidate,
+                                                                  windowPresentation.windowState,
+                                                                  windowPresentation.selectedThumbnail,
+                                                                  windowPresentation.minimizedWindow)
+                        color: "#dc111824"
+                        border.width: 1
+                        border.color: "#a06f829f"
+                        radius: 3
+                        z: 2
+
+                        Text {
+                            id: windowStateBadgeText
+
+                            anchors.fill: parent
+                            anchors.leftMargin: 6
+                            anchors.rightMargin: 6
+                            text: windowPresentation.windowState && windowPresentation.windowState.badge !== null
+                                ? windowPresentation.windowState.badge : ""
+                            color: "#f3f7ff"
+                            font.bold: true
+                            font.pixelSize: 10
+                            horizontalAlignment: Text.AlignHCenter
+                            verticalAlignment: Text.AlignVCenter
+                            elide: Text.ElideRight
+                            textFormat: Text.PlainText
                         }
                     }
 
@@ -1381,6 +1432,95 @@ Rectangle {
         }
     }
 
+    function planWindowState(candidate, frame, tiledPresentation, revision) {
+        if (!candidate || !Number.isInteger(revision) || revision < 0) {
+            return null;
+        }
+
+        try {
+            if (candidate.deleted !== false) {
+                return null;
+            }
+
+            const fullScreen = candidate.fullScreen;
+            const maximizeMode = candidate.maximizeMode;
+            let floating;
+            if (frame !== null && frame !== undefined) {
+                floating = frame.floating;
+            } else if (tiledPresentation !== null && tiledPresentation !== undefined) {
+                floating = false;
+            } else {
+                return null;
+            }
+
+            if (typeof fullScreen !== "boolean" || typeof floating !== "boolean"
+                    || typeof maximizeMode !== "number" || !Number.isInteger(maximizeMode)
+                    || maximizeMode < 0 || maximizeMode > 3) {
+                return null;
+            }
+
+            const runtime = OverviewRuntime.DriftileOverview;
+            if (!runtime || typeof runtime.planOverviewWindowState !== "function") {
+                return null;
+            }
+
+            const planned = runtime.planOverviewWindowState({
+                floating,
+                fullScreen,
+                maximizeMode
+            });
+            if (!windowStatePlanIsValid(planned)) {
+                return null;
+            }
+
+            return {
+                badge: planned.badge,
+                searchText: planned.searchText
+            };
+        } catch (error) {
+            return null;
+        }
+    }
+
+    function windowStatePlanIsValid(planned) {
+        if (!planned || Array.isArray(planned) || typeof planned !== "object"
+                || typeof planned.searchText !== "string") {
+            return false;
+        }
+
+        const badge = planned.badge;
+        const searchText = planned.searchText;
+        if (badge === null) {
+            return searchText.length === 0;
+        }
+        if (badge === "Floating") {
+            return searchText === "floating";
+        }
+        if (badge === "Maximized") {
+            return searchText === "maximized" || searchText === "maximized floating";
+        }
+        if (badge === "Fullscreen") {
+            return searchText === "fullscreen" || searchText === "fullscreen floating"
+                    || searchText === "fullscreen maximized"
+                    || searchText === "fullscreen maximized floating";
+        }
+
+        return false;
+    }
+
+    function windowStateBadgeEligible(candidate, windowState, selectedThumbnail, minimizedWindow) {
+        if (!candidate || !windowState || windowState.badge === null || selectedThumbnail !== true
+                || minimizedWindow === true) {
+            return false;
+        }
+
+        try {
+            return candidate.deleted === false && candidate.normalWindow === true;
+        } catch (error) {
+            return false;
+        }
+    }
+
     function planWindowLabel(candidate, eligible) {
         if (eligible !== true || !candidate) {
             return null;
@@ -1479,7 +1619,7 @@ Rectangle {
         }
     }
 
-    function windowMatchesSearch(candidate) {
+    function windowMatchesSearch(candidate, windowState) {
         const query = typeof searchQuery === "string" ? searchQuery : "";
         try {
             const runtime = OverviewRuntime.DriftileOverview;
@@ -1496,14 +1636,14 @@ Rectangle {
                     ? String(candidate.resourceName) : "",
                 desktopFileName: candidate && candidate.desktopFileName !== undefined
                     && candidate.desktopFileName !== null ? String(candidate.desktopFileName) : "",
-                state: card.windowSearchState(candidate)
+                state: card.windowSearchState(candidate, windowState)
             }) === true;
         } catch (error) {
             return query.length === 0;
         }
     }
 
-    function windowSearchState(candidate) {
+    function windowSearchState(candidate, windowState) {
         const states = [];
         if (windowDemandsAttention(candidate)) {
             states.push("urgent attention");
@@ -1512,6 +1652,9 @@ Rectangle {
         try {
             if (candidate && candidate.deleted !== true && candidate.minimized === true) {
                 states.push("minimized");
+            }
+            if (windowStatePlanIsValid(windowState) && windowState.searchText.length > 0) {
+                states.push(windowState.searchText);
             }
         } catch (error) {
             return states.join(" ");

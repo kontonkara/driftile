@@ -341,7 +341,7 @@ describe("overview effect package", () => {
 
   it("keeps a fixed scene-effect proxy over the cache-busted controller", () => {
     expect(createHash("sha256").update(main, "utf8").digest("hex")).toBe(
-      "42f3363fff9733934186fb347568f33bc8108b9bbb11c64dda24c37a948ac147",
+      "baf0d20cb5466c58039e1960bfda8c5ab92cd8b3cd19284f44a2bed99dd929bb",
     );
     expect(main).toContain("KWin.SceneEffect {");
     expect(main).toContain("Date.now().toString(36)");
@@ -1567,6 +1567,97 @@ describe("overview effect package", () => {
     );
   });
 
+  it("shows one bounded static state badge on eligible selected thumbnails", () => {
+    const presentation = desktopCard.slice(
+      desktopCard.indexOf("id: windowPresentation"),
+      desktopCard.indexOf("id: thumbnailShell"),
+    );
+    const thumbnail = desktopCard.slice(
+      desktopCard.indexOf("id: thumbnailShell"),
+      desktopCard.indexOf("id: tabShell"),
+    );
+    const tab = desktopCard.slice(
+      desktopCard.indexOf("id: tabShell"),
+      desktopCard.indexOf("id: minimizedPlaceholderShell"),
+    );
+    const placeholder = desktopCard.slice(
+      desktopCard.indexOf("id: minimizedPlaceholderShell"),
+      desktopCard.indexOf("id: activeColumnBadge"),
+    );
+    const planner = desktopCard.slice(
+      desktopCard.indexOf("function planWindowState("),
+      desktopCard.indexOf("function planWindowLabel("),
+    );
+    const search = desktopCard.slice(
+      desktopCard.indexOf("function windowMatchesSearch("),
+      desktopCard.indexOf("function clippedNavigationRect("),
+    );
+    const badgeStart = thumbnail.indexOf("id: thumbnailWindowStateBadge");
+    const badge = thumbnail.slice(
+      badgeStart,
+      thumbnail.indexOf("id: thumbnailLabelFooter", badgeStart),
+    );
+
+    expect(desktopCard).toContain(
+      "required property bool showWindowStateBadges",
+    );
+    expect(presentation).toContain("property int windowStateRevision: 0");
+    expect(presentation).toMatch(
+      /readonly property var windowState: card\.planWindowState\(candidate, frame, tiledPresentation,\s*windowStateRevision\)/u,
+    );
+    expect(presentation).toContain("function onFullScreenChanged()");
+    expect(presentation).toContain("function onMaximizedChanged()");
+    expect(presentation.match(/windowStateRevision \+= 1/gu)).toHaveLength(2);
+    expect(presentation).toContain(
+      "onWindowStateChanged: card.navigationTargetsChanged()",
+    );
+
+    expect(planner).toContain("const fullScreen = candidate.fullScreen");
+    expect(planner).toContain("const maximizeMode = candidate.maximizeMode");
+    expect(planner).toContain("floating = frame.floating");
+    expect(planner).toContain("floating = false");
+    expect(planner).toContain(
+      'typeof runtime.planOverviewWindowState !== "function"',
+    );
+    expect(planner).toMatch(
+      /runtime\.planOverviewWindowState\(\{\s*floating,\s*fullScreen,\s*maximizeMode\s*\}\)/u,
+    );
+    expect(planner).toContain("function windowStatePlanIsValid(planned)");
+    expect(planner).toContain('badge === "Fullscreen"');
+    expect(planner).toContain('badge === "Maximized"');
+    expect(planner).toContain('badge === "Floating"');
+    expect(planner).toContain('searchText === "fullscreen maximized floating"');
+    expect(planner).toContain("candidate.normalWindow === true");
+    expect(planner).toMatch(/catch \(error\) \{\s*return null;/u);
+
+    expect(badgeStart).toBeGreaterThan(0);
+    expect(badge).toContain("anchors.top: parent.top");
+    expect(badge).toContain("anchors.left: parent.left");
+    expect(badge).toContain(
+      "visible: card.showWindowStateBadges && thumbnailShell.visible",
+    );
+    expect(badge).toContain(
+      "thumbnailShell.width >= 96 && thumbnailShell.height >= 52",
+    );
+    expect(badge).toContain("windowStateBadgeEligible(");
+    expect(badge).toContain("windowPresentation.selectedThumbnail");
+    expect(badge).toContain("windowPresentation.minimizedWindow");
+    expect(badge).toContain("windowPresentation.windowState.badge");
+    expect(badge).toContain("textFormat: Text.PlainText");
+    expect(tab).not.toContain("thumbnailWindowStateBadge");
+    expect(placeholder).not.toContain("thumbnailWindowStateBadge");
+    expect(search).toContain(
+      "function windowMatchesSearch(candidate, windowState)",
+    );
+    expect(search).toContain(
+      "state: card.windowSearchState(candidate, windowState)",
+    );
+    expect(search).toContain("states.push(windowState.searchText)");
+    expect(`${badge}\n${planner}`).not.toMatch(
+      /\b(?:TapHandler|DragHandler|Timer|Behavior|Animation|ShortcutHandler)\s*\{|\bsequence\s*:|org\.kde\.kwin\.private|\.setValue\s*\(|KWin\.(?:SceneView|Workspace)\.[A-Za-z0-9_]+\s*=(?!=)|candidate\.[A-Za-z0-9_]+\s*=(?!=)/u,
+    );
+  });
+
   it("navigates only live visible window targets with unmodified keys", () => {
     const keyHandler = scene.slice(
       scene.indexOf("Keys.onPressed:"),
@@ -1995,7 +2086,7 @@ describe("overview effect package", () => {
 
     expect(desktopCard).toContain("required property string searchQuery");
     expect(desktopCard).toContain(
-      "readonly property bool matchesSearch: card.windowMatchesSearch(candidate)",
+      "readonly property bool matchesSearch: card.windowMatchesSearch(candidate, windowState)",
     );
     expect(desktopCard).toContain("!presentation.matchesSearch");
     expect(desktopCard).toContain("function onCaptionChanged()");
@@ -2010,15 +2101,20 @@ describe("overview effect package", () => {
     ]) {
       expect(matcher).toContain(`${field}:`);
     }
-    expect(matcher).toContain("state: card.windowSearchState(candidate)");
-    expect(matcher).toContain("function windowSearchState(candidate)");
+    expect(matcher).toContain(
+      "state: card.windowSearchState(candidate, windowState)",
+    );
+    expect(matcher).toContain(
+      "function windowSearchState(candidate, windowState)",
+    );
     expect(matcher).toContain("if (windowDemandsAttention(candidate))");
     expect(matcher).toContain('states.push("urgent attention")');
     expect(matcher).toContain(
       "candidate && candidate.deleted !== true && candidate.minimized === true",
     );
     expect(matcher).toContain('states.push("minimized")');
-    expect(matcher.match(/states\.push\(/gu)).toHaveLength(2);
+    expect(matcher).toContain("states.push(windowState.searchText)");
+    expect(matcher.match(/states\.push\(/gu)).toHaveLength(3);
     expect(matcher).toContain('return states.join(" ")');
     expect(matcher).toContain(
       'typeof runtime.matchesOverviewWindowSearch !== "function"',
