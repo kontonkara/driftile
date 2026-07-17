@@ -35,5 +35,9 @@
       <label>Show window close buttons</label>
       <default>true</default>
     </entry>
+    <entry name="ShowWindowStateBadges" type="Bool">
+      <label>Show window state badges</label>
+      <default>true</default>
+    </entry>
   </group>
 </kcfg>

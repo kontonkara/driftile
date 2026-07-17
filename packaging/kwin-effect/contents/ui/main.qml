@@ -18,6 +18,7 @@ KWin.SceneEffect {
     readonly property bool showWindowLabels: showWindowLabelsFromConfig()
     readonly property bool showApplicationIdentity: showApplicationIdentityFromConfig()
     readonly property bool showWindowCloseButtons: showWindowCloseButtonsFromConfig()
+    readonly property bool showWindowStateBadges: showWindowStateBadgesFromConfig()
 
     readonly property bool active: controller ? controller.active : false
     readonly property bool loading: controller ? controller.loading : false
@@ -127,6 +128,11 @@ KWin.SceneEffect {
 
     function showWindowCloseButtonsFromConfig() {
         const value = configuration ? configuration.ShowWindowCloseButtons : undefined;
+        return typeof value === "boolean" ? value : true;
+    }
+
+    function showWindowStateBadgesFromConfig() {
+        const value = configuration ? configuration.ShowWindowStateBadges : undefined;
         return typeof value === "boolean" ? value : true;
     }
 
