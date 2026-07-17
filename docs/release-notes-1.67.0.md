@@ -1,7 +1,7 @@
 # Driftile 1.67.0
 
-Driftile 1.67.0 will keep rapid column motion synchronized, add desktop
-send-without-follow actions, and make focus recovery after closing a window
+Driftile 1.67.0 keeps rapid column motion synchronized, adds desktop
+send-without-follow actions, and makes focus recovery after closing a window
 resilient to interim null activations.
 
 ## Highlights

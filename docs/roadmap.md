@@ -1,14 +1,12 @@
 # Roadmap
 
-Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.66.0 are
+Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.67.0 are
 released. The delivered milestones and release criteria below are a historical
 record. Later direction is not a committed release schedule.
 
-Stable 1.66.0 keeps rapid transition retargeting continuous across workspace
-handoffs and retains bounded close-focus recovery through transient KWin focus
-handoffs. Logical persistence remains v4.
-
-The 1.67.0 focus and desktop-send package is in progress.
+Stable 1.67.0 synchronizes rapid split-position retargets, preserves bounded
+close-focus handoffs through interim null activations, and adds desktop sends
+without following. Logical persistence remains v4.
 
 ## Foundation (delivered)
 
@@ -2379,7 +2377,7 @@ Release criteria (met):
 - Settings, shortcuts, logical persistence v4, package identities, and public
   Plasma 6.7+ API use remain unchanged.
 
-### 1.67.0 (in progress)
+### 1.67.0 (released)
 
 - Retarget the coupled KWin Position and Translation components together on
   every rapid logical position change across negative global coordinates, even
@@ -2395,7 +2393,7 @@ Release criteria (met):
   after that desktop becomes visible. Write only the visible source geometry
   during the send transaction.
 
-Release criteria:
+Release criteria (met):
 
 - Coupled position timelines cannot diverge, jerk adjacent columns apart, or
   briefly expose wallpaper between them during rapid navigation.
