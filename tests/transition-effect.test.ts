@@ -1249,9 +1249,7 @@ describe("transition effect package", () => {
   });
 
   it("captures a hidden focus target after desktop effect ownership ends", () => {
-    const harness = createHarness({
-      window: createWindow({ visible: false }),
-    });
+    const harness = createHarness();
     const target = createWindow({
       geometry: { x: 340, y: 30, width: 300, height: 200 },
       visible: false,
@@ -1266,6 +1264,13 @@ describe("transition effect package", () => {
     harness.effects.activeWindow = harness.window;
     harness.setFullScreenEffectActive(true);
     harness.setFullScreenEffectActive(false);
+    harness.effects.desktopChanged.emit(null, null, null, null);
+    changeGeometry(harness.window, {
+      x: 40,
+      y: 50,
+      width: 400,
+      height: 250,
+    });
 
     changeGeometry(ineligible, {
       x: 760,
@@ -1279,13 +1284,15 @@ describe("transition effect package", () => {
       width: 500,
       height: 300,
     });
-    expect(harness.animationRequests).toHaveLength(0);
+    expect(harness.animationRequests.map(({ window }) => window)).toEqual([
+      harness.window,
+    ]);
 
     harness.effects.activeWindow = target;
     harness.effects.windowActivated.emit(target);
 
-    expect(harness.animationRequests).toHaveLength(1);
-    expect(harness.animationRequests[0]).toMatchObject({
+    expect(harness.animationRequests).toHaveLength(2);
+    expect(harness.animationRequests[1]).toMatchObject({
       window: target,
       animations: [
         {
@@ -1318,7 +1325,7 @@ describe("transition effect package", () => {
     harness.effects.activeWindow = unrelated;
     harness.effects.windowActivated.emit(unrelated);
 
-    expect(harness.animationRequests).toHaveLength(1);
+    expect(harness.animationRequests).toHaveLength(2);
     expect(harness.cancelledAnimations).toHaveLength(0);
   });
 

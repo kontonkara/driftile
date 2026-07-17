@@ -161,7 +161,6 @@ class DriftileTransitionsEffect {
     if (window && window.visible) {
       this.visibilityLeasedWindows.delete(window);
       this.continuityLeasedWindows.delete(window);
-      this.settleVisibilityHandoff(window);
     }
 
     const newGeometry = window && window.geometry;
@@ -241,13 +240,11 @@ class DriftileTransitionsEffect {
 
     this.visibilityHandoffPending = this.duration > 0;
     this.replayDeferredTransitions();
-    this.settleVisibilityHandoff(effects.activeWindow);
   }
 
   onVisibilityContextChanged() {
     this.pruneVisibilityLeases();
     this.replayDeferredTransitions();
-    this.settleVisibilityHandoff(effects.activeWindow);
   }
 
   onWindowActivated(window) {
