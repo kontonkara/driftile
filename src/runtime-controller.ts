@@ -1086,6 +1086,7 @@ export class RuntimeController {
   private applicationInitialUnfocused: ApplicationInitialUnfocused;
   private applicationInitialMaximized: ApplicationInitialMaximized;
   private applicationTilingExclusions: ApplicationTilingExclusions;
+  private readonly automaticFloatingContextKeys = new Map<WindowId, string>();
   private readonly automaticFloatingWindows = new Set<WindowId>();
   private readonly borderlessClaimBackoffs = new Set<WindowId>();
   private readonly borderlessHelperClaimBackoffs = new Map<string, string>();
@@ -4519,6 +4520,7 @@ export class RuntimeController {
       this.unconfirmedFullscreenRetentions.clear();
       this.unconfirmedFullscreenTargets.clear();
       this.dirtyContexts.clear();
+      this.automaticFloatingContextKeys.clear();
       this.automaticFloatingWindows.clear();
       this.borderlessClaimBackoffs.clear();
       this.borderlessHelperClaimBackoffs.clear();
@@ -7981,6 +7983,7 @@ export class RuntimeController {
     this.resumeSamples.delete(managedId);
     this.suspendedWindows.delete(managedId);
     this.transientResumeProbes.delete(managedId);
+    this.automaticFloatingContextKeys.delete(managedId);
     this.automaticFloatingWindows.delete(managedId);
     this.floatingWindows.delete(managedId);
     this.floatingPositionAdmissionHistory.delete(managedId);
@@ -8092,6 +8095,16 @@ export class RuntimeController {
       }
     }
 
+    const knownContextKey = this.automaticFloatingContextKeys.get(id);
+
+    if (knownContextKey) {
+      const context = managedContextFromKey(knownContextKey);
+
+      if (context && this.isContextVisible(context)) {
+        return knownContextKey;
+      }
+    }
+
     for (const [key, rememberedId] of this.lastFloatingFocus) {
       if (rememberedId !== id) {
         continue;
@@ -8128,11 +8141,28 @@ export class RuntimeController {
       return false;
     }
 
+    if (this.clearedWindowRemovalFocusHandoffFollows(id)) {
+      return true;
+    }
+
     const remembered =
       focus.layer === "floating"
         ? this.lastFloatingFocus.get(focus.contextKey)
         : this.lastTiledFocus.get(focus.contextKey);
     return remembered === id;
+  }
+
+  private clearedWindowRemovalFocusHandoffFollows(id: WindowId): boolean {
+    const target = this.lastNonNullActivatedWindow;
+
+    return (
+      this.workspace.activeWindow === null &&
+      this.lastActivatedWindow === null &&
+      target !== null &&
+      String(target.internalId) !== String(id) &&
+      this.previousNonNullActivatedWindow !== null &&
+      String(this.previousNonNullActivatedWindow.internalId) === String(id)
+    );
   }
 
   private scheduleWindowRemovalFocusRecovery(
@@ -9443,6 +9473,10 @@ export class RuntimeController {
 
     if (context) {
       const key = contextKey(context);
+
+      if (this.automaticFloatingWindows.has(id)) {
+        this.automaticFloatingContextKeys.set(id, key);
+      }
 
       if (this.windowRemovalFocusCandidateLayer(id, source, key)) {
         this.windowRemovalFocusHistory.delete(id);
@@ -30196,21 +30230,37 @@ export class RuntimeController {
       const source = this.observer.source(id);
 
       if (!source) {
+        this.automaticFloatingContextKeys.delete(id);
         this.automaticFloatingWindows.delete(id);
         changed = true;
         continue;
       }
 
       if (this.automaticFloatingOwnershipApplies(id, source)) {
+        this.refreshAutomaticFloatingContextKey(id, source);
         continue;
       }
 
+      this.automaticFloatingContextKeys.delete(id);
       this.automaticFloatingWindows.delete(id);
       this.pendingWindowSyncs.add(id);
       changed = true;
     }
 
     return changed;
+  }
+
+  private refreshAutomaticFloatingContextKey(
+    id: WindowId,
+    source: KWinWindow,
+  ): void {
+    const focusContext = this.resolveLayerFocusContext(source);
+
+    if (focusContext) {
+      this.automaticFloatingContextKeys.set(id, contextKey(focusContext));
+    } else {
+      this.automaticFloatingContextKeys.delete(id);
+    }
   }
 
   private refreshContextAutomaticFloatingOwnershipUnsafe(
@@ -30259,6 +30309,7 @@ export class RuntimeController {
     scheduleFollowUp = true,
   ): boolean {
     if (!source || !this.automaticFloatingOwnershipApplies(id, source)) {
+      this.automaticFloatingContextKeys.delete(id);
       this.automaticFloatingWindows.delete(id);
       return false;
     }
@@ -30268,6 +30319,7 @@ export class RuntimeController {
     const initiallyUnfocused = initialFocus === "unfocused";
     const initiallyMaximized = this.freshInitialMaximizedApplies(id, source);
     const initiallyFullscreen = this.freshInitialFullscreenApplies(id, source);
+    this.refreshAutomaticFloatingContextKey(id, source);
     this.automaticFloatingWindows.add(id);
     this.floatingPositionAdmissionHistory.add(id);
     this.initialLayoutPolicyByWindow.delete(id);

@@ -2889,6 +2889,93 @@ describe("RuntimeController", () => {
     controller.stop();
   });
 
+  it.each([
+    "tiled",
+    "minimized-tiled",
+    "manual-floating",
+    "dialog",
+    "application-excluded",
+  ] as const)(
+    "recovers after a cleared pre-removal %s focus handoff",
+    (kind) => {
+      const output = createOutput("DP-1", 0);
+      const desktop = { id: "desktop-1" };
+      const previous = createTrackedWindow("previous", output, desktop);
+      const automaticFloatingOptions =
+        kind === "dialog"
+          ? { dialog: true, normalWindow: false }
+          : kind === "application-excluded"
+            ? { desktopFileName: "org.example.Excluded" }
+            : {};
+      const removed = createTrackedWindow(
+        "removed",
+        output,
+        desktop,
+        automaticFloatingOptions,
+      );
+      const replacement = createTrackedWindow(
+        "replacement",
+        output,
+        desktop,
+        automaticFloatingOptions,
+      );
+      const fixture = createWorkspace(
+        output,
+        desktop,
+        [output],
+        [desktop],
+        [previous.window, removed.window, replacement.window],
+      );
+      const scheduler = new ManualScheduler();
+      const controller = new RuntimeController(fixture.workspace, {
+        ...(kind === "application-excluded"
+          ? {
+              applicationTilingExclusions: requiredApplicationTilingExclusions(
+                "org.example.Excluded",
+              ),
+            }
+          : {}),
+        clientAreaOption: 2,
+        schedule: scheduler.schedule,
+      });
+
+      expect(controller.start()).toBe(true);
+
+      if (kind === "manual-floating") {
+        fixture.workspace.activeWindow = removed.window;
+        expect(controller.toggleFloating()).toBe(true);
+        flushManualScheduler(scheduler);
+        fixture.workspace.activeWindow = replacement.window;
+        expect(controller.toggleFloating()).toBe(true);
+        flushManualScheduler(scheduler);
+      }
+
+      fixture.workspace.activeWindow = previous.window;
+      fixture.workspace.activeWindow = removed.window;
+      flushManualScheduler(scheduler);
+      fixture.workspace.activeWindow = replacement.window;
+
+      if (kind === "minimized-tiled") {
+        Object.defineProperty(replacement.window, "minimized", {
+          configurable: true,
+          value: true,
+        });
+      }
+
+      fixture.workspace.activeWindow = null;
+      const activationCount = fixture.activationCount;
+
+      fixture.windowRemoved.emit(removed.window);
+      flushManualScheduler(scheduler);
+
+      expect(fixture.workspace.activeWindow).toBe(
+        kind === "minimized-tiled" ? previous.window : replacement.window,
+      );
+      expect(fixture.activationCount).toBe(activationCount + 1);
+      controller.stop();
+    },
+  );
+
   it("focuses the next stack member after removing the selected window", () => {
     const output = createOutput("DP-1", 0);
     const desktop = { id: "desktop-1" };
