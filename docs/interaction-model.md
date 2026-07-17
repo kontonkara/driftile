@@ -100,10 +100,10 @@ perform no KWin, layout, configuration, or persistence write.
 `Escape` closes it before other input is processed, while its pointer button
 provides the same action. The reference includes the existing structured-search
 fields and operators. When the reference overflows, unmodified `Up`/`Down`,
-`Page Up`/`Page Down`, and `Home`/`End` scroll it within its bounds without
-dispatching an overview action. On sufficiently large idle scenes, the F1 hint
-also opens the reference with a left click or touch. A new overview session
-starts with the reference hidden.
+`Page Up`/`Page Down`, `Home`/`End`, and mouse or touchpad wheel input scroll it
+within its bounds without dispatching an overview action. On sufficiently large
+idle scenes, the F1 hint also opens the reference with a left click or touch. A
+new overview session starts with the reference hidden.
 
 A thumbnail or non-minimized tab can be dropped on an exact desktop card on the
 same or another output. Cross-output completion confirms the public output move

@@ -2327,6 +2327,11 @@ describe("overview effect package", () => {
       help.indexOf("readonly property real helpLineStep:"),
       help.indexOf("Rectangle {"),
     );
+    const helpWheelStart = help.indexOf("WheelHandler {");
+    const helpWheel = help.slice(
+      helpWheelStart,
+      help.indexOf("Column {", helpWheelStart),
+    );
 
     expect(scene).toContain("property bool keyboardHelpVisible: false");
     expect(keyHandler).toMatch(
@@ -2362,24 +2367,44 @@ describe("overview effect package", () => {
     expect(helpScrolling).toContain(
       "Math.max(0, helpViewport.contentHeight - helpViewport.height)",
     );
-    expect(helpScrolling).toContain("if (maximumContentY <= 0)");
     expect(helpScrolling).toContain(
-      "let targetContentY = helpViewport.contentY",
+      "if (maximumContentY <= 0 || !Number.isFinite(targetContentY))",
+    );
+    expect(helpScrolling).toContain(
+      "helpViewport.contentY = Math.max(0, Math.min(maximumContentY, targetContentY));",
     );
     for (const key of ["Up", "Down", "PageUp", "PageDown", "Home", "End"]) {
       expect(helpScrolling).toContain(`key === Qt.Key_${key}`);
     }
-    expect(helpScrolling).toContain("targetContentY -= helpLineStep");
-    expect(helpScrolling).toContain("targetContentY += helpLineStep");
-    expect(helpScrolling).toContain("targetContentY -= helpViewport.height");
-    expect(helpScrolling).toContain("targetContentY += helpViewport.height");
-    expect(helpScrolling).toContain("targetContentY = 0");
-    expect(helpScrolling).toContain("targetContentY = maximumContentY");
     expect(helpScrolling).toContain(
-      "helpViewport.contentY = Math.max(0, Math.min(maximumContentY, targetContentY));",
+      "setHelpContentY(helpViewport.contentY - helpLineStep)",
     );
+    expect(helpScrolling).toContain(
+      "setHelpContentY(helpViewport.contentY + helpLineStep)",
+    );
+    expect(helpScrolling).toContain(
+      "setHelpContentY(helpViewport.contentY - helpViewport.height)",
+    );
+    expect(helpScrolling).toContain(
+      "setHelpContentY(helpViewport.contentY + helpViewport.height)",
+    );
+    expect(helpScrolling).toContain("setHelpContentY(0)");
+    expect(helpScrolling).toContain(
+      "setHelpContentY(helpViewport.contentHeight - helpViewport.height)",
+    );
+    expect(helpScrolling).toMatch(
+      /function handleHelpWheel\(event\)[\s\S]*event\.accepted = true;[\s\S]*event\.angleDelta[\s\S]*event\.pixelDelta[\s\S]*setHelpContentY\(helpViewport\.contentY \+ delta\);/u,
+    );
+    expect(helpScrolling).toContain(
+      "delta = -event.angleDelta.y * helpLineStep / 120",
+    );
+    expect(helpScrolling).toContain("delta = -event.pixelDelta.y");
+    expect(helpWheel).toMatch(
+      /target: null[\s\S]*acceptedDevices: PointerDevice\.Mouse \| PointerDevice\.TouchPad[\s\S]*acceptedModifiers: Qt\.KeyboardModifierMask[\s\S]*orientation: Qt\.Vertical[\s\S]*blocking: true[\s\S]*onWheel: event => keyboardHelpOverlay\.handleHelpWheel\(event\)/u,
+    );
+    expect(help.match(/\bWheelHandler\s*\{/gu)).toHaveLength(1);
     expect(help).toContain(
-      'text: "Scroll: Up/Down, Page Up/Page Down, Home/End\\nClose: F1, Escape, or Close"',
+      'text: "Scroll: Wheel, Up/Down, Page Up/Page Down, Home/End\\nClose: F1, Escape, or Close"',
     );
     expect(help).toContain("KeyboardHelpCloseButton {");
     expect(help).toContain(

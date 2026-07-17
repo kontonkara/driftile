@@ -347,31 +347,49 @@ Rectangle {
 
         sourceComponent: Component {
             Item {
+                id: keyboardHelpOverlay
+
                 readonly property real helpLineStep: 40
 
-                function handleScrollKey(key) {
+                function setHelpContentY(targetContentY) {
                     const maximumContentY = Math.max(0, helpViewport.contentHeight - helpViewport.height);
-                    if (maximumContentY <= 0) {
-                        return;
-                    }
-
-                    let targetContentY = helpViewport.contentY;
-                    if (key === Qt.Key_Up) {
-                        targetContentY -= helpLineStep;
-                    } else if (key === Qt.Key_Down) {
-                        targetContentY += helpLineStep;
-                    } else if (key === Qt.Key_PageUp) {
-                        targetContentY -= helpViewport.height;
-                    } else if (key === Qt.Key_PageDown) {
-                        targetContentY += helpViewport.height;
-                    } else if (key === Qt.Key_Home) {
-                        targetContentY = 0;
-                    } else if (key === Qt.Key_End) {
-                        targetContentY = maximumContentY;
-                    } else {
+                    if (maximumContentY <= 0 || !Number.isFinite(targetContentY)) {
                         return;
                     }
                     helpViewport.contentY = Math.max(0, Math.min(maximumContentY, targetContentY));
+                }
+
+                function handleScrollKey(key) {
+                    if (key === Qt.Key_Up) {
+                        setHelpContentY(helpViewport.contentY - helpLineStep);
+                    } else if (key === Qt.Key_Down) {
+                        setHelpContentY(helpViewport.contentY + helpLineStep);
+                    } else if (key === Qt.Key_PageUp) {
+                        setHelpContentY(helpViewport.contentY - helpViewport.height);
+                    } else if (key === Qt.Key_PageDown) {
+                        setHelpContentY(helpViewport.contentY + helpViewport.height);
+                    } else if (key === Qt.Key_Home) {
+                        setHelpContentY(0);
+                    } else if (key === Qt.Key_End) {
+                        setHelpContentY(helpViewport.contentHeight - helpViewport.height);
+                    }
+                }
+
+                function handleHelpWheel(event) {
+                    if (!event) {
+                        return;
+                    }
+                    event.accepted = true;
+
+                    let delta = 0;
+                    if (event.angleDelta && Number.isFinite(event.angleDelta.y)
+                            && event.angleDelta.y !== 0) {
+                        delta = -event.angleDelta.y * helpLineStep / 120;
+                    } else if (event.pixelDelta && Number.isFinite(event.pixelDelta.y)
+                               && event.pixelDelta.y !== 0) {
+                        delta = -event.pixelDelta.y;
+                    }
+                    setHelpContentY(helpViewport.contentY + delta);
                 }
 
                 Rectangle {
@@ -424,6 +442,16 @@ Rectangle {
                         clip: true
                         interactive: contentHeight > height
 
+                        WheelHandler {
+                            target: null
+                            acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
+                            acceptedModifiers: Qt.KeyboardModifierMask
+                            orientation: Qt.Vertical
+                            blocking: true
+
+                            onWheel: event => keyboardHelpOverlay.handleHelpWheel(event)
+                        }
+
                         Column {
                             id: helpContent
 
@@ -462,7 +490,7 @@ Rectangle {
                             Text {
                                 width: parent.width
                                 bottomPadding: 8
-                                text: "Scroll: Up/Down, Page Up/Page Down, Home/End\nClose: F1, Escape, or Close"
+                                text: "Scroll: Wheel, Up/Down, Page Up/Page Down, Home/End\nClose: F1, Escape, or Close"
                                 textFormat: Text.PlainText
                                 color: "#aebbd0"
                                 font.pixelSize: 12
