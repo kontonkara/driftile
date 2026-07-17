@@ -101,6 +101,10 @@ Version 1.57.0 adds live presentation controls for the ordinary thumbnail
 footer and application identity. Both preserve the 1.56.0 presentation by
 default and change no window target or search result.
 
+Version 1.58.0 adds an optional close button to eligible thumbnails, tabs, and
+minimized placeholders. The button is shown only on hover or keyboard
+selection and reuses the existing exact close path.
+
 The companion is disabled by default. When enabled with a fresh shortcut
 record, `Meta+O` toggles it. KGlobalAccel preserves an existing assignment
 across upgrades, including an explicitly unbound action, so review it in
@@ -222,6 +226,25 @@ labels needed by tabs and minimized placeholders. Application identity can be
 disabled independently; captions remain normalized, and a missing caption then
 uses the existing tab or placeholder fallback. Both settings update live and
 do not alter search matching.
+
+## Window close buttons
+
+An eligible closeable window preview can show one compact close button when it
+is hovered or selected from the keyboard. Small surfaces hide the complete
+button rather than clipping it. Attention cues and label text reserve their own
+space while the button is visible.
+
+A left click requests closure through the same exact live-window validation as
+`Delete` and middle click. It does not focus, activate, restore, or begin a drag
+on the window first; a minimized window therefore stays minimized while its
+close request is delivered. The button holds the pointer press exclusively, and
+the parent preview independently rejects a tap inside its bounds.
+
+The effect setting enables close buttons by default and updates live. Home
+Manager can manage the same value with
+`programs.driftile.overview.showWindowCloseButtons`; `null` leaves KConfig
+untouched. Buttons add no action, binding, timer, animation, layout or
+persistence write, private API, or KWin fork.
 
 ## Minimized placeholders
 
@@ -356,6 +379,7 @@ programs.driftile.overview.screenEdge = "top-left";
 programs.driftile.overview.backdropColor = "#E60B0F17";
 programs.driftile.overview.showWindowLabels = true;
 programs.driftile.overview.showApplicationIdentity = true;
+programs.driftile.overview.showWindowCloseButtons = true;
 programs.driftile.overview.touchpadGesture = {
   enable = true;
   fingerCount = 4;
@@ -389,6 +413,10 @@ or layout behavior.
 Version 1.57.0 adds focused KConfig, QML, normalization, NixOS-surface, and Home
 Manager coverage for live label presentation preferences without changing
 window targets or search behavior.
+
+Version 1.58.0 adds focused pointer-arbitration, close-path, package-content,
+KConfig, NixOS-surface, and Home Manager coverage for close buttons without
+changing the existing `Delete` or middle-click paths.
 
 ## Safety boundary
 

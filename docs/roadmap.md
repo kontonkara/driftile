@@ -2133,3 +2133,31 @@ Release criteria (met):
 
 The batch adds no action, binding, input handler, geometry or layout write,
 persistence field, animation, timer, private API, or KWin fork.
+
+### 1.58.0 (in development)
+
+- Show one compact close button on an eligible thumbnail, tab, or minimized
+  placeholder while that exact surface is hovered or keyboard-selected.
+- Route a left click through the existing exact guarded close request without
+  focusing, activating, restoring, or dragging the window first.
+- Hide the complete button on small surfaces and keep attention cues and label
+  text unobstructed.
+- Keep the button's pointer grab exclusive and independently reject its bounds
+  in the parent activation handler.
+- Add a default-enabled live KConfig preference and a nullable per-user Home
+  Manager option without changing the NixOS option surface.
+- Include the new QML component in deterministic package-content validation.
+
+Release criteria:
+
+- Ordinary, tabbed, and minimized previews expose at most one close button for
+  a live closeable window, and stale or ineligible windows expose none.
+- Button clicks cannot also activate, restore, focus, or start a drag; existing
+  `Delete` and middle-click close behavior remains unchanged.
+- Disabled, malformed, or geometry-constrained presentation fails safely and
+  does not change window targets.
+- One grouped package, Nix, Wayland, X11, and hidden VM gate passes before
+  publication.
+
+The batch adds no KWin action, binding, layout or persistence write, timer,
+animation, private API, or compositor fork.
