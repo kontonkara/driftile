@@ -13637,7 +13637,6 @@ export class RuntimeController {
         this.workspace.activeWindow === command.activeWindow ||
         this.workspace.activeWindow === null ||
         (!command.follow &&
-          this.workspace.activeWindow !== null &&
           this.windowRemovalFocusCandidateLayer(
             windowId(String(this.workspace.activeWindow.internalId)),
             this.workspace.activeWindow,
