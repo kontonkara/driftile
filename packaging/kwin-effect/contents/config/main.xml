@@ -47,5 +47,9 @@
       <label>Show application icons</label>
       <default>true</default>
     </entry>
+    <entry name="ShowOutputNames" type="Bool">
+      <label>Show output names</label>
+      <default>true</default>
+    </entry>
   </group>
 </kcfg>

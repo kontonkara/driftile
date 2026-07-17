@@ -21,6 +21,7 @@ KWin.SceneEffect {
     readonly property bool showWindowStateBadges: showWindowStateBadgesFromConfig()
     readonly property bool showDesktopNames: showDesktopNamesFromConfig()
     readonly property bool showApplicationIcons: showApplicationIconsFromConfig()
+    readonly property bool showOutputNames: showOutputNamesFromConfig()
 
     readonly property bool active: controller ? controller.active : false
     readonly property bool loading: controller ? controller.loading : false
@@ -145,6 +146,11 @@ KWin.SceneEffect {
 
     function showApplicationIconsFromConfig() {
         const value = configuration ? configuration.ShowApplicationIcons : undefined;
+        return typeof value === "boolean" ? value : true;
+    }
+
+    function showOutputNamesFromConfig() {
+        const value = configuration ? configuration.ShowOutputNames : undefined;
         return typeof value === "boolean" ? value : true;
     }
 
