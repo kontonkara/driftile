@@ -51,6 +51,10 @@ const outputIdentityBadge = readFileSync(
   new URL("contents/runtime/ui/OutputIdentityBadge.qml", effectRoot),
   "utf8",
 );
+const searchMatchBadge = readFileSync(
+  new URL("contents/runtime/ui/SearchMatchBadge.qml", effectRoot),
+  "utf8",
+);
 const overviewRuntimeIndex = readFileSync(
   new URL("../src/overview/runtime.ts", import.meta.url),
   "utf8",
@@ -64,6 +68,7 @@ const qmlSources = [
   desktopCard,
   windowApplicationIcon,
   outputIdentityBadge,
+  searchMatchBadge,
   windowCloseButton,
 ];
 
@@ -2336,9 +2341,13 @@ describe("overview effect package", () => {
     expect(scene).toContain("textFormat: Text.PlainText");
     expect(scene).not.toContain("TextInput");
     expect(searchFeedback).toContain(
-      "runtime.countOverviewWindowNavigationTargets(targets)",
+      "runtime.summarizeOverviewWindowNavigationTargets(targets)",
     );
-    expect(searchFeedback).toContain("searchResultCount = resultCount");
+    expect(searchFeedback).toContain("searchSummaryIsValid(summary");
+    expect(searchFeedback).toContain("searchResultCount = summary.total");
+    expect(searchFeedback).toContain(
+      "searchResultCountsByDesktop = summary.byDesktop",
+    );
     expect(searchFeedback).not.toContain("collectNavigationTargets()");
 
     expect(desktopCard).toContain("required property string searchQuery");
@@ -2382,6 +2391,48 @@ describe("overview effect package", () => {
     );
     expect(`${scene}\n${desktopCard}`).not.toMatch(
       /\b(?:Timer|TextInput)\s*\{|\.setValue\s*\(/u,
+    );
+  });
+
+  it("shows passive per-desktop search result counts from one navigation summary", () => {
+    const searchFeedback = scene.slice(
+      scene.indexOf("function repairKeyboardSelectionFrom("),
+      scene.indexOf("function preferredInitialNavigationTarget("),
+    );
+    const numberGutter = desktopCard.slice(
+      desktopCard.indexOf("id: numberGutter"),
+      desktopCard.indexOf("id: viewport"),
+    );
+
+    expect(scene).toContain(
+      "property var searchResultCountsByDesktop: Object.create(null)",
+    );
+    expect(scene).toContain(
+      "searchResultCount: root.searchResultCountForDesktop(modelData)",
+    );
+    expect(
+      searchFeedback.match(/summarizeOverviewWindowNavigationTargets/gu),
+    ).toHaveLength(2);
+    expect(searchFeedback).toContain("searchQuery.length > 0");
+    expect(searchFeedback).toContain(
+      "searchResultCountsByDesktop = Object.create(null)",
+    );
+    expect(searchFeedback).not.toMatch(
+      /desktopRepeater|windowRepeater|collectNavigationTargets\(\)|overviewModel\.outputs/u,
+    );
+
+    expect(desktopCard).toContain("required property int searchResultCount");
+    expect(numberGutter).toMatch(
+      /active: card\.searchQuery\.trim\(\)\.length > 0 && card\.searchResultCount > 0/u,
+    );
+    expect(numberGutter).toMatch(
+      /sourceComponent: Component \{\s*SearchMatchBadge \{\s*count: card\.searchResultCount/u,
+    );
+    expect(searchMatchBadge).toContain("required property int count");
+    expect(searchMatchBadge).toContain("text: String(badge.count)");
+    expect(searchMatchBadge).toContain("textFormat: Text.PlainText");
+    expect(searchMatchBadge).not.toMatch(
+      /\b(?:Action|Animation|Behavior|Connections|DragHandler|MouseArea|TapHandler|Timer)\s*\{|\.setValue\s*\(|\bon[A-Z]\w*\s*:/u,
     );
   });
 

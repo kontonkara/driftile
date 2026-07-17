@@ -15,6 +15,7 @@ Rectangle {
     required property string outputName
     required property var screen
     required property string searchQuery
+    required property int searchResultCount
     required property bool showApplicationIcons
     required property bool showApplicationIdentity
     required property bool showDesktopNames
@@ -98,6 +99,22 @@ Rectangle {
             border.color: "#fff1f4"
             radius: width / 2
             z: 1
+        }
+
+        Loader {
+            anchors.right: parent.right
+            anchors.bottom: parent.bottom
+            anchors.margins: 5
+            width: item ? item.implicitWidth : 0
+            height: item ? item.implicitHeight : 0
+            active: card.searchQuery.trim().length > 0 && card.searchResultCount > 0
+            z: 1
+
+            sourceComponent: Component {
+                SearchMatchBadge {
+                    count: card.searchResultCount
+                }
+            }
         }
 
         Rectangle {

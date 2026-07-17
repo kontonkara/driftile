@@ -61,6 +61,7 @@ Rectangle {
     property int overviewWheelRemainder: 0
     property string searchQuery: ""
     property int searchResultCount: 0
+    property var searchResultCountsByDesktop: Object.create(null)
     property bool desktopReorderActive: false
     property real desktopReorderCardGap: 0
     property real desktopReorderCardHeight: 0
@@ -227,6 +228,7 @@ Rectangle {
             keyboardSelectionId: root.keyboardSelectionId
             outputName: root.outputName
             searchQuery: root.searchQuery
+            searchResultCount: root.searchResultCountForDesktop(modelData)
             screen: root.targetScreen
             showApplicationIdentity: root.showApplicationIdentity
             showApplicationIcons: root.showApplicationIcons
@@ -718,16 +720,19 @@ Rectangle {
 
     function repairKeyboardSelectionFrom(targets) {
         searchResultCount = 0;
+        searchResultCountsByDesktop = Object.create(null);
         if (searchQuery.length > 0) {
             const runtime = OverviewRuntime.DriftileOverview;
-            if (runtime && typeof runtime.countOverviewWindowNavigationTargets === "function") {
+            if (runtime && typeof runtime.summarizeOverviewWindowNavigationTargets === "function") {
                 try {
-                    const resultCount = runtime.countOverviewWindowNavigationTargets(targets);
-                    if (Number.isInteger(resultCount) && resultCount >= 0 && resultCount <= targets.length) {
-                        searchResultCount = resultCount;
+                    const summary = runtime.summarizeOverviewWindowNavigationTargets(targets);
+                    if (searchSummaryIsValid(summary, targets.length)) {
+                        searchResultCount = summary.total;
+                        searchResultCountsByDesktop = summary.byDesktop;
                     }
                 } catch (error) {
                     searchResultCount = 0;
+                    searchResultCountsByDesktop = Object.create(null);
                 }
             }
         }
@@ -738,6 +743,32 @@ Rectangle {
 
         const preferred = preferredInitialNavigationTarget(targets);
         keyboardSelectionId = preferred ? preferred.id : "";
+    }
+
+    function searchSummaryIsValid(summary, targetCount) {
+        if (!summary || !Number.isInteger(summary.total) || summary.total < 0 || summary.total > targetCount
+                || !summary.byDesktop || typeof summary.byDesktop !== "object"
+                || Array.isArray(summary.byDesktop)) {
+            return false;
+        }
+
+        for (const desktopId of Object.keys(summary.byDesktop)) {
+            const count = summary.byDesktop[desktopId];
+            if (desktopId.length === 0 || !Number.isInteger(count) || count <= 0 || count > summary.total) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    function searchResultCountForDesktop(desktopId) {
+        const counts = searchResultCountsByDesktop;
+        if (!counts || typeof desktopId !== "string" || desktopId.length === 0) {
+            return 0;
+        }
+
+        const count = counts[desktopId];
+        return Number.isInteger(count) && count > 0 ? count : 0;
     }
 
     function preferredInitialNavigationTarget(targets) {
