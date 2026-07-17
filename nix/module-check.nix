@@ -1,6 +1,7 @@
 {
   defaultPackage,
   defaultOverviewPackage,
+  defaultShortcutEditorPackage,
   defaultTransitionsPackage,
   homeManagerModule,
   lib,
@@ -75,6 +76,7 @@ let
         programs.driftile = {
           package = pkgs.hello;
           overview.package = pkgs.hello;
+          shortcutEditor.package = pkgs.hello;
           transitions.package = pkgs.hello;
         };
       } { };
@@ -92,6 +94,15 @@ let
       } { };
       overviewOverridden = evaluate module packageOptionPath {
         programs.driftile.overview = {
+          enable = true;
+          package = pkgs.hello;
+        };
+      } { };
+      shortcutEditorEnabled = evaluate module packageOptionPath {
+        programs.driftile.shortcutEditor.enable = true;
+      } { };
+      shortcutEditorOverridden = evaluate module packageOptionPath {
+        programs.driftile.shortcutEditor = {
           enable = true;
           package = pkgs.hello;
         };
@@ -115,6 +126,7 @@ let
         programs.driftile = {
           enable = true;
           overview.enable = true;
+          shortcutEditor.enable = true;
           transitions.enable = true;
         };
       } { };
@@ -124,6 +136,11 @@ let
     assert packagePaths packageOptionPath mainOverridden == [ (toString pkgs.hello) ];
     assert packagePaths packageOptionPath overviewEnabled == [ (toString defaultOverviewPackage) ];
     assert packagePaths packageOptionPath overviewOverridden == [ (toString pkgs.hello) ];
+    assert
+      packagePaths packageOptionPath shortcutEditorEnabled == [
+        (toString defaultShortcutEditorPackage)
+      ];
+    assert packagePaths packageOptionPath shortcutEditorOverridden == [ (toString pkgs.hello) ];
     assert
       packagePaths packageOptionPath transitionsEnabled == [ (toString defaultTransitionsPackage) ];
     assert packagePaths packageOptionPath transitionsOverridden == [ (toString pkgs.hello) ];
@@ -136,6 +153,7 @@ let
       packagePaths packageOptionPath allEnabled == [
         (toString defaultPackage)
         (toString defaultOverviewPackage)
+        (toString defaultShortcutEditorPackage)
         (toString defaultTransitionsPackage)
       ];
     true;
@@ -175,6 +193,18 @@ let
       }
       {
         programs.driftile.transitions.enable = true;
+      };
+  homeManagerShortcutEditorCollision =
+    evaluate homeManagerModule
+      [
+        "home"
+        "packages"
+      ]
+      {
+        programs.driftile.shortcutEditor.enable = true;
+      }
+      {
+        programs.driftile.shortcutEditor.enable = true;
       };
   homeManagerMainWithSystemOverview =
     evaluate homeManagerModule
@@ -1851,6 +1881,7 @@ in
 assert homeManagerValid;
 assert map (entry: entry.assertion) homeManagerCollision.config.assertions == [ false ];
 assert map (entry: entry.assertion) homeManagerOverviewCollision.config.assertions == [ false ];
+assert map (entry: entry.assertion) homeManagerShortcutEditorCollision.config.assertions == [ false ];
 assert map (entry: entry.assertion) homeManagerTransitionsCollision.config.assertions == [ false ];
 assert map (entry: entry.assertion) homeManagerMainWithSystemOverview.config.assertions == [ true ];
 assert map (entry: entry.assertion) homeManagerOverviewWithSystemMain.config.assertions == [ true ];
@@ -1866,6 +1897,9 @@ assert homeManagerProfileWithSystemInstall.config.xdg.configFile ? "driftile/sho
 assert homeManagerWithoutProfile.config.xdg.configFile == { };
 assert homeManagerWithoutSettings.config.qt.kde.settings == { };
 assert homeManagerOptionSurface.options.programs.driftile ? settings;
+assert homeManagerOptionSurface.options.programs.driftile ? shortcutEditor;
+assert homeManagerOptionSurface.options.programs.driftile.shortcutEditor ? enable;
+assert homeManagerOptionSurface.options.programs.driftile.shortcutEditor ? package;
 assert homeManagerOptionSurface.options.programs.driftile.overview ? screenEdge;
 assert homeManagerOptionSurface.options.programs.driftile.overview ? backdropColor;
 assert homeManagerOptionSurface.options.programs.driftile.overview ? touchpadGesture;
@@ -1877,6 +1911,9 @@ assert homeManagerOptionSurface.options.programs.driftile.transitions ? easingCu
 assert homeManagerOptionSurface.options.programs.driftile.transitions ? resizeAnimationThreshold;
 assert homeManagerOptionSurface.options.programs.driftile.transitions ? windowClassExclusions;
 assert nixosOptionSurface.options.programs.driftile ? transitions;
+assert nixosOptionSurface.options.programs.driftile ? shortcutEditor;
+assert nixosOptionSurface.options.programs.driftile.shortcutEditor ? enable;
+assert nixosOptionSurface.options.programs.driftile.shortcutEditor ? package;
 assert !(nixosOptionSurface.options.programs.driftile.overview ? screenEdge);
 assert !(nixosOptionSurface.options.programs.driftile.overview ? backdropColor);
 assert !(nixosOptionSurface.options.programs.driftile.overview ? touchpadGesture);

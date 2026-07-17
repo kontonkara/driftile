@@ -1,6 +1,7 @@
 {
   defaultPackage,
   defaultOverviewPackage,
+  defaultShortcutEditorPackage,
   defaultTransitionsPackage,
   home-manager,
   homeManagerModule,
@@ -170,6 +171,9 @@ let
   transitionsOnly = evaluateHome {
     programs.driftile.transitions.enable = true;
   } { };
+  shortcutEditorOnly = evaluateHome {
+    programs.driftile.shortcutEditor.enable = true;
+  } { };
   bothPackages = evaluateHome {
     programs.driftile = {
       enable = true;
@@ -180,6 +184,7 @@ let
     programs.driftile = {
       enable = true;
       overview.enable = true;
+      shortcutEditor.enable = true;
       transitions.enable = true;
     };
   } { };
@@ -191,6 +196,15 @@ let
   } { };
   overviewDisabled = evaluateHome {
     programs.driftile.overview.package = pkgs.hello;
+  } { };
+  shortcutEditorOverride = evaluateHome {
+    programs.driftile.shortcutEditor = {
+      enable = true;
+      package = pkgs.hello;
+    };
+  } { };
+  shortcutEditorDisabled = evaluateHome {
+    programs.driftile.shortcutEditor.package = pkgs.hello;
   } { };
   overviewTouchpadGesture = evaluateHome {
     programs.driftile.overview.touchpadGesture = {
@@ -495,6 +509,16 @@ let
       }
     ];
   };
+  systemShortcutEditorConfiguration = lib.nixosSystem {
+    inherit system;
+    modules = [
+      nixosModule
+      {
+        programs.driftile.shortcutEditor.enable = true;
+        system.stateVersion = "26.05";
+      }
+    ];
+  };
   settingsOnly = evaluateHome {
     programs.driftile = {
       settings = {
@@ -520,6 +544,12 @@ let
   transitionsCollisionEvaluation = builtins.tryEval (
     builtins.deepSeq transitionsCollision.activationPackage true
   );
+  shortcutEditorCollision = evaluateHome {
+    programs.driftile.shortcutEditor.enable = true;
+  } systemShortcutEditorConfiguration.config;
+  shortcutEditorCollisionEvaluation = builtins.tryEval (
+    builtins.deepSeq shortcutEditorCollision.activationPackage true
+  );
   mainWithSystemOverview = evaluateHome {
     programs.driftile.enable = true;
   } systemOverviewConfiguration.config;
@@ -528,21 +558,27 @@ let
   } systemConfiguration.config;
   packagePath = toString defaultPackage;
   overviewPackagePath = toString defaultOverviewPackage;
+  shortcutEditorPackagePath = toString defaultShortcutEditorPackage;
   transitionsPackagePath = toString defaultTransitionsPackage;
   homePackagePaths = configuration: map toString configuration.config.home.packages;
   systemPackagePaths = map toString systemConfiguration.config.environment.systemPackages;
   systemOverviewPackagePaths = map toString systemOverviewConfiguration.config.environment.systemPackages;
   systemTransitionsPackagePaths =
     map toString systemTransitionsConfiguration.config.environment.systemPackages;
+  systemShortcutEditorPackagePaths =
+    map toString systemShortcutEditorConfiguration.config.environment.systemPackages;
   packageCount =
     configuration: lib.count (path: path == packagePath) (homePackagePaths configuration);
   overviewPackageCount =
     configuration: lib.count (path: path == overviewPackagePath) (homePackagePaths configuration);
+  shortcutEditorPackageCount =
+    configuration: lib.count (path: path == shortcutEditorPackagePath) (homePackagePaths configuration);
   transitionsPackageCount =
     configuration: lib.count (path: path == transitionsPackagePath) (homePackagePaths configuration);
 in
 assert packageCount standalone == 1;
 assert overviewPackageCount standalone == 0;
+assert shortcutEditorPackageCount standalone == 0;
 assert transitionsPackageCount standalone == 0;
 assert packageCount overviewOnly == 0;
 assert overviewPackageCount overviewOnly == 1;
@@ -550,11 +586,16 @@ assert transitionsPackageCount overviewOnly == 0;
 assert packageCount transitionsOnly == 0;
 assert overviewPackageCount transitionsOnly == 0;
 assert transitionsPackageCount transitionsOnly == 1;
+assert packageCount shortcutEditorOnly == 0;
+assert overviewPackageCount shortcutEditorOnly == 0;
+assert shortcutEditorPackageCount shortcutEditorOnly == 1;
+assert transitionsPackageCount shortcutEditorOnly == 0;
 assert packageCount bothPackages == 1;
 assert overviewPackageCount bothPackages == 1;
 assert transitionsPackageCount bothPackages == 0;
 assert packageCount allPackages == 1;
 assert overviewPackageCount allPackages == 1;
+assert shortcutEditorPackageCount allPackages == 1;
 assert transitionsPackageCount allPackages == 1;
 assert packageCount overviewOverride == 0;
 assert overviewPackageCount overviewOverride == 0;
@@ -562,6 +603,10 @@ assert lib.elem (toString pkgs.hello) (homePackagePaths overviewOverride);
 assert packageCount overviewDisabled == 0;
 assert overviewPackageCount overviewDisabled == 0;
 assert !lib.elem (toString pkgs.hello) (homePackagePaths overviewDisabled);
+assert shortcutEditorPackageCount shortcutEditorOverride == 0;
+assert lib.elem (toString pkgs.hello) (homePackagePaths shortcutEditorOverride);
+assert shortcutEditorPackageCount shortcutEditorDisabled == 0;
+assert !lib.elem (toString pkgs.hello) (homePackagePaths shortcutEditorDisabled);
 assert overviewPackageCount overviewTouchpadGesture == 0;
 assert overviewPackageCount overviewTouchpadGestureDefaults == 0;
 assert overviewPackageCount overviewTouchpadGestureWithSystemInstall == 0;
@@ -996,10 +1041,15 @@ assert
 assert lib.all (assertion: assertion.assertion) standalone.config.assertions;
 assert lib.elem packagePath systemPackagePaths;
 assert !lib.elem overviewPackagePath systemPackagePaths;
+assert !lib.elem shortcutEditorPackagePath systemPackagePaths;
 assert !lib.elem transitionsPackagePath systemPackagePaths;
 assert lib.elem overviewPackagePath systemOverviewPackagePaths;
 assert !lib.elem packagePath systemOverviewPackagePaths;
 assert !lib.elem transitionsPackagePath systemOverviewPackagePaths;
+assert lib.elem shortcutEditorPackagePath systemShortcutEditorPackagePaths;
+assert !lib.elem packagePath systemShortcutEditorPackagePaths;
+assert !lib.elem overviewPackagePath systemShortcutEditorPackagePaths;
+assert !lib.elem transitionsPackagePath systemShortcutEditorPackagePaths;
 assert lib.elem transitionsPackagePath systemTransitionsPackagePaths;
 assert !lib.elem packagePath systemTransitionsPackagePaths;
 assert !lib.elem overviewPackagePath systemTransitionsPackagePaths;
@@ -1054,6 +1104,7 @@ assert
   '';
 assert !collisionEvaluation.success;
 assert !overviewCollisionEvaluation.success;
+assert !shortcutEditorCollisionEvaluation.success;
 assert !transitionsCollisionEvaluation.success;
 assert lib.all (assertion: assertion.assertion) mainWithSystemOverview.config.assertions;
 assert lib.all (assertion: assertion.assertion) overviewWithSystemMain.config.assertions;

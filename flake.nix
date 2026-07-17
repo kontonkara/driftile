@@ -96,6 +96,34 @@
             platforms = pkgs.lib.platforms.linux;
           };
         };
+      shortcutEditorFor =
+        pkgs: version:
+        pkgs.stdenv.mkDerivation {
+          pname = "driftile-shortcut-editor";
+          inherit version;
+          src = ./native/shortcut-editor;
+
+          strictDeps = true;
+          nativeBuildInputs = [
+            pkgs.cmake
+            pkgs.ninja
+            pkgs.kdePackages.wrapQtAppsHook
+          ];
+          buildInputs = [
+            pkgs.kdePackages.kglobalaccel
+            pkgs.kdePackages.kxmlgui
+            pkgs.kdePackages.qtbase
+          ];
+          cmakeFlags = [ "-DDRIFTILE_VERSION=${version}" ];
+
+          meta = {
+            description = "Native shortcut editor for Driftile";
+            homepage = "https://github.com/kontonkara/driftile";
+            license = pkgs.lib.licenses.gpl3Plus;
+            mainProgram = "driftile-shortcut-editor";
+            platforms = pkgs.lib.platforms.linux;
+          };
+        };
     in
     {
       checks = forAllSystems (
@@ -107,6 +135,7 @@
           home-manager = import ./nix/home-manager-check.nix {
             defaultPackage = self.packages.${system}.driftile;
             defaultOverviewPackage = self.packages.${system}."driftile-overview";
+            defaultShortcutEditorPackage = self.packages.${system}."driftile-shortcut-editor";
             defaultTransitionsPackage = self.packages.${system}."driftile-transitions";
             inherit
               home-manager
@@ -120,6 +149,7 @@
           modules = import ./nix/module-check.nix {
             defaultPackage = self.packages.${system}.driftile;
             defaultOverviewPackage = self.packages.${system}."driftile-overview";
+            defaultShortcutEditorPackage = self.packages.${system}."driftile-shortcut-editor";
             defaultTransitionsPackage = self.packages.${system}."driftile-transitions";
             inherit
               homeManagerModule
@@ -131,11 +161,13 @@
           package-layout = pkgs.runCommand "driftile-package-layout-check" { } ''
             main=${self.packages.${system}.driftile}
             overview=${self.packages.${system}."driftile-overview"}
+            shortcut_editor=${self.packages.${system}."driftile-shortcut-editor"}
             transitions=${self.packages.${system}."driftile-transitions"}
 
             test -d "$main/share/kwin/scripts/io.github.kontonkara.driftile"
             test -x "$main/bin/driftile-shortcuts"
             test -f "$main/libexec/driftile/driftile-shortcuts.mjs"
+            test ! -e "$main/bin/driftile-shortcut-editor"
             test ! -e "$main/share/kwin/effects"
             test "$(find "$main" -mindepth 1 -maxdepth 1 | wc -l)" -eq 3
             test "$(find "$main/bin" -mindepth 1 -maxdepth 1 | wc -l)" -eq 1
@@ -161,6 +193,16 @@
             test "$(find "$transitions/share/kwin" -mindepth 1 -maxdepth 1 | wc -l)" -eq 1
             test "$(find "$transitions/share/kwin/effects" -mindepth 1 -maxdepth 1 | wc -l)" -eq 1
 
+            test -x "$shortcut_editor/bin/driftile-shortcut-editor"
+            test -x "$shortcut_editor/bin/.driftile-shortcut-editor-wrapped"
+            test -f "$shortcut_editor/share/applications/io.github.kontonkara.driftile.shortcuts.desktop"
+            test ! -e "$shortcut_editor/share/kwin"
+            test ! -e "$shortcut_editor/libexec"
+            test "$(find "$shortcut_editor" -mindepth 1 -maxdepth 1 | wc -l)" -eq 2
+            test "$(find "$shortcut_editor/bin" -mindepth 1 -maxdepth 1 | wc -l)" -eq 2
+            test "$(find "$shortcut_editor/share" -mindepth 1 -maxdepth 1 | wc -l)" -eq 1
+            test "$(find "$shortcut_editor/share/applications" -mindepth 1 -maxdepth 1 | wc -l)" -eq 1
+
             touch "$out"
           '';
         }
@@ -181,9 +223,11 @@
         let
           pkgs = import nixpkgs { inherit system; };
           driftile = packageFor pkgs;
+          shortcutEditor = shortcutEditorFor pkgs driftile.version;
         in
         {
           "driftile-overview" = driftile.overview;
+          "driftile-shortcut-editor" = shortcutEditor;
           "driftile-transitions" = driftile.transitions;
           inherit driftile;
           default = driftile;
@@ -276,6 +320,7 @@
               xrandr
               xwayland
             ]);
+          shortcutEditor = self.packages.${system}."driftile-shortcut-editor";
         in
         {
           default = pkgs.mkShell {
@@ -296,6 +341,10 @@
               pkgs.harfbuzz
               pkgs.pango.out
             ];
+          };
+
+          shortcut-editor = pkgs.mkShell {
+            inputsFrom = [ shortcutEditor ];
           };
         }
       );

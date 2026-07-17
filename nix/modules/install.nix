@@ -412,6 +412,12 @@ let
     "overview"
     "enable"
   ] false osConfig;
+  systemShortcutEditorInstallEnabled = lib.attrByPath [
+    "programs"
+    "driftile"
+    "shortcutEditor"
+    "enable"
+  ] false osConfig;
   systemTransitionsInstallEnabled = lib.attrByPath [
     "programs"
     "driftile"
@@ -428,6 +434,17 @@ in
       default = self.packages.${system}.driftile;
       defaultText = lib.literalExpression "inputs.driftile.packages.\${pkgs.stdenv.hostPlatform.system}.driftile";
       description = "The Driftile package to install.";
+    };
+
+    shortcutEditor = {
+      enable = lib.mkEnableOption "installation of the Driftile shortcut editor";
+
+      package = lib.mkOption {
+        type = lib.types.package;
+        default = self.packages.${system}."driftile-shortcut-editor";
+        defaultText = lib.literalExpression "inputs.driftile.packages.\${pkgs.stdenv.hostPlatform.system}.\"driftile-shortcut-editor\"";
+        description = "The Driftile shortcut editor package to install.";
+      };
     };
 
     overview =
@@ -830,6 +847,19 @@ in
             {
               assertion = !systemOverviewInstallEnabled;
               message = "Install the Driftile overview effect through either NixOS or Home Manager for a user, not both.";
+            }
+          ];
+        })
+      ]
+    ))
+    (lib.mkIf cfg.shortcutEditor.enable (
+      lib.mkMerge [
+        (lib.setAttrByPath packageOptionPath [ cfg.shortcutEditor.package ])
+        (lib.optionalAttrs preventSystemInstall {
+          assertions = [
+            {
+              assertion = !systemShortcutEditorInstallEnabled;
+              message = "Install the Driftile shortcut editor through either NixOS or Home Manager for a user, not both.";
             }
           ];
         })
