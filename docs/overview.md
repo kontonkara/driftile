@@ -111,7 +111,7 @@ ordinary thumbnails. State terms also join the existing all-term search.
 Version 1.60.0 adds bounded desktop names to sufficiently large cards and makes
 each owning desktop name available to window search.
 
-Version 1.61.0 is in development. It adds optional application icons to
+Version 1.61.0 adds optional application icons to
 eligible window labels without changing their actions or search behavior.
 
 The companion is disabled by default. When enabled with a fresh shortcut
@@ -391,8 +391,8 @@ activation, and normal close remain silent.
 
 ## Install a release
 
-Download `driftile-overview-1.59.0.kwineffect` and `SHA256SUMS` from the stable
-[1.59.0 release](https://github.com/kontonkara/driftile/releases/tag/v1.59.0),
+Download `driftile-overview-1.61.0.kwineffect` and `SHA256SUMS` from the stable
+[1.61.0 release](https://github.com/kontonkara/driftile/releases/tag/v1.61.0),
 then verify the archive:
 
 ```console
@@ -403,7 +403,7 @@ Install the overview package as the desktop user:
 
 ```bash
 kpackagetool6 --type=KWin/Effect \
-  --install ./driftile-overview-1.59.0.kwineffect
+  --install ./driftile-overview-1.61.0.kwineffect
 ```
 
 To build the same versioned archive from source, run `npm ci` followed by
@@ -428,7 +428,7 @@ uninstalling the package.
 
 ## NixOS and Home Manager
 
-The 1.59.0 flake exposes the effect separately as
+The 1.61.0 flake exposes the effect separately as
 `packages.<system>.driftile-overview`. The NixOS and Home Manager modules keep
 it opt-in:
 
@@ -452,7 +452,7 @@ programs.driftile.overview.touchpadGesture = {
 };
 ```
 
-The 1.61.0 development source additionally accepts:
+The module also accepts:
 
 ```nix
 programs.driftile.overview.showDesktopNames = true;
@@ -495,6 +495,10 @@ changing the existing `Delete` or middle-click paths.
 Version 1.60.0 adds focused normalization, adaptive-gutter, search, KConfig,
 NixOS-surface, and Home Manager coverage for desktop names without changing
 window targets or layout ownership.
+
+Version 1.61.0 adds focused lazy-loading, public icon access, KConfig,
+NixOS-surface, and Home Manager coverage for application icons without changing
+window targets, input, or layout ownership.
 
 ## Safety boundary
 

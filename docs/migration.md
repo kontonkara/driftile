@@ -1,7 +1,29 @@
 # Migration
 
-The latest stable release is 1.59.0. Use the steps below when changing release
+The latest stable release is 1.61.0. Use the steps below when changing release
 generations, and never combine files from different releases.
+
+## Upgrade from 1.59.0 to 1.61.0
+
+1. Release a helper-owned shortcut profile with the installed helper.
+2. Disable Driftile and both optional effects in System Settings.
+3. Install matching 1.61.0 artifacts, or pin the Nix input to `v1.61.0` and
+   rebuild.
+4. Re-enable Driftile and only the optional effects you use, then reclaim the
+   helper profile if needed.
+
+Logical layout state remains v4. The optional Overview adds bounded desktop
+names and lazy application icons; both presentations default to enabled and
+can be managed with nullable Home Manager options. Layout, persistence,
+actions, bindings, and window input paths are unchanged.
+
+## Roll back from 1.61.0 to 1.59.0
+
+Release a helper-owned profile, disable Driftile and both optional effects,
+then restore matching verified 1.59.0 artifacts or pin the Nix input to
+`v1.59.0` and rebuild. Remove `overview.showDesktopNames` and
+`overview.showApplicationIcons` before evaluating the 1.59.0 Home Manager
+module. Retained KConfig values are ignored by the older Overview.
 
 ## Upgrade from 1.58.0 to 1.59.0
 
