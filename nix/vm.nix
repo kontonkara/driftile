@@ -205,6 +205,32 @@ let
         return 1
       }
 
+      verify_shortcut_editor() {
+        local editor_pid
+        local verified=true
+
+        driftile-shortcut-editor \
+          > /tmp/shared/driftile-shortcut-editor.log \
+          2>&1 &
+        editor_pid=$!
+
+        if ! wait_for_window "Driftile Shortcuts"; then
+          verified=false
+        else
+          sleep 0.5
+          if window_match_id "Shortcut editor" >/dev/null 2>&1; then
+            verified=false
+          fi
+        fi
+
+        terminate_process "$editor_pid"
+        if ! wait_for_window_gone "Driftile Shortcuts"; then
+          verified=false
+        fi
+
+        [[ "$verified" == true ]]
+      }
+
       run_kwin_probe() {
         local load_result
         local probe_id=$2
@@ -12818,6 +12844,15 @@ let
 
       printf '%s\n' "$loaded" > /tmp/shared/driftile-loaded
 
+      shortcut_editor_verified=false
+      if [[ "$loaded" == true ]] \
+        && wait_for_shortcuts \
+        && verify_shortcut_editor; then
+        shortcut_editor_verified=true
+      fi
+      printf '%s\n' "$shortcut_editor_verified" \
+        > /tmp/shared/driftile-shortcut-editor-verified
+
       primary_desktop_id=""
       secondary_desktop_id=""
       desktops_ready=false
@@ -12874,7 +12909,9 @@ let
 
       focus_verified=false
 
-      if [[ "$loaded" == true && "$desktops_ready" == true ]] \
+      if [[ "$loaded" == true \
+        && "$shortcut_editor_verified" == true \
+        && "$desktops_ready" == true ]] \
         && verify_focus \
         && verify_center_focused_column_configuration \
         && verify_physical_consume_expel_shortcuts \
@@ -13793,6 +13830,7 @@ in
   networking.hostName = if driftileVmTwoHead then "driftile-vm-two-head" else "driftile-vm";
   programs.driftile.enable = true;
   programs.driftile.overview.enable = !driftileVmTwoHead;
+  programs.driftile.shortcutEditor.enable = true;
   system.stateVersion = "26.05";
   system.switch.enable = false;
 
