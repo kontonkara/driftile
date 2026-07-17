@@ -31,10 +31,12 @@ class DriftileTransitionsEffect {
     this.animateSize = true;
     this.easingCurve = QEasingCurve.OutCubic;
     this.resizeAnimationThreshold = DEFAULT_RESIZE_ANIMATION_THRESHOLD;
-    this.windowClassExclusionsValid = true;
+    this.windowExclusionsValid = true;
     this.windowClassExclusions = new Set();
-    this.windowClassClassificationGeneration = 0;
-    this.windowClassClassifications = new Map();
+    this.windowCaptionExclusions = new Set();
+    this.windowRoleExclusions = new Set();
+    this.windowClassificationGeneration = 0;
+    this.windowClassifications = new Map();
     this.managedWindows = [];
     this.observedWindowGeometries = new Map();
     this.activeAnimationWindows = new Set();
@@ -91,13 +93,24 @@ class DriftileTransitionsEffect {
     this.animateSize = this.readBooleanConfig("AnimateSize", true);
     this.easingCurve = this.readEasingCurveConfig();
     this.resizeAnimationThreshold = this.readResizeAnimationThresholdConfig();
-    const exclusionConfig = this.parseWindowClassExclusions(
+    const windowClassExclusionConfig = this.parseExclusions(
       effect.readConfig("WindowClassExclusions", ""),
     );
-    this.windowClassExclusionsValid = exclusionConfig.valid;
-    this.windowClassExclusions = exclusionConfig.exclusions;
-    this.windowClassClassificationGeneration += 1;
-    this.windowClassClassifications.clear();
+    const windowCaptionExclusionConfig = this.parseExclusions(
+      effect.readConfig("WindowCaptionExclusions", ""),
+    );
+    const windowRoleExclusionConfig = this.parseExclusions(
+      effect.readConfig("WindowRoleExclusions", ""),
+    );
+    this.windowExclusionsValid =
+      windowClassExclusionConfig.valid &&
+      windowCaptionExclusionConfig.valid &&
+      windowRoleExclusionConfig.valid;
+    this.windowClassExclusions = windowClassExclusionConfig.exclusions;
+    this.windowCaptionExclusions = windowCaptionExclusionConfig.exclusions;
+    this.windowRoleExclusions = windowRoleExclusionConfig.exclusions;
+    this.windowClassificationGeneration += 1;
+    this.windowClassifications.clear();
     for (const window of this.managedWindows) {
       this.clearWindowTransitions(window);
     }
@@ -138,7 +151,7 @@ class DriftileTransitionsEffect {
 
     this.clearWindowTransitions(window);
     this.observedWindowGeometries.delete(window);
-    this.windowClassClassifications.delete(window);
+    this.windowClassifications.delete(window);
     if (this.visibilityHandoffAnchor === window) {
       this.visibilityHandoffAnchor = null;
     }
@@ -639,7 +652,7 @@ class DriftileTransitionsEffect {
       window.managed &&
       window.moveable &&
       (window.hasDecoration || !window.keepAbove) &&
-      this.isWindowClassEligible(window) &&
+      this.isWindowEligible(window) &&
       !window.move &&
       !window.resize
     );
@@ -697,7 +710,7 @@ class DriftileTransitionsEffect {
       : DEFAULT_RESIZE_ANIMATION_THRESHOLD;
   }
 
-  parseWindowClassExclusions(configuredValue) {
+  parseExclusions(configuredValue) {
     const exclusions = new Set();
     if (typeof configuredValue !== "string") {
       return { valid: false, exclusions };
@@ -717,15 +730,15 @@ class DriftileTransitionsEffect {
     }
 
     for (const configuredLine of normalizedValue.split("\n")) {
-      const windowClass = configuredLine.trim();
-      if (windowClass.length === 0) {
+      const entry = configuredLine.trim();
+      if (entry.length === 0) {
         continue;
       }
-      if (exclusions.has(windowClass)) {
+      if (exclusions.has(entry)) {
         return { valid: false, exclusions: new Set() };
       }
 
-      const entryBytes = this.utf8ByteLength(windowClass);
+      const entryBytes = this.utf8ByteLength(entry);
       if (
         entryBytes <= 0 ||
         entryBytes > MAXIMUM_EXCLUSION_BYTES ||
@@ -733,7 +746,7 @@ class DriftileTransitionsEffect {
       ) {
         return { valid: false, exclusions: new Set() };
       }
-      exclusions.add(windowClass);
+      exclusions.add(entry);
     }
 
     return { valid: true, exclusions };
@@ -763,14 +776,19 @@ class DriftileTransitionsEffect {
     return bytes;
   }
 
-  classifyWindowClass(window) {
+  classifyWindow(window) {
     const windowClass = window.windowClass;
-    const cachedClassification = this.windowClassClassifications.get(window);
+    const caption =
+      this.windowCaptionExclusions.size > 0 ? window.caption : undefined;
+    const windowRole =
+      this.windowRoleExclusions.size > 0 ? window.windowRole : undefined;
+    const cachedClassification = this.windowClassifications.get(window);
     if (
       cachedClassification !== undefined &&
-      cachedClassification.generation ===
-        this.windowClassClassificationGeneration &&
-      cachedClassification.windowClass === windowClass
+      cachedClassification.generation === this.windowClassificationGeneration &&
+      cachedClassification.windowClass === windowClass &&
+      cachedClassification.caption === caption &&
+      cachedClassification.windowRole === windowRole
     ) {
       return cachedClassification;
     }
@@ -778,25 +796,31 @@ class DriftileTransitionsEffect {
     const stringWindowClass = typeof windowClass === "string";
     const classification = {
       excluded:
-        !this.windowClassExclusionsValid ||
+        !this.windowExclusionsValid ||
         (stringWindowClass &&
           this.windowClassExclusions.size > 0 &&
-          this.windowClassExclusions.has(windowClass)),
-      generation: this.windowClassClassificationGeneration,
+          this.windowClassExclusions.has(windowClass)) ||
+        (typeof caption === "string" &&
+          this.windowCaptionExclusions.has(caption)) ||
+        (typeof windowRole === "string" &&
+          this.windowRoleExclusions.has(windowRole)),
+      generation: this.windowClassificationGeneration,
       shell:
         stringWindowClass &&
         windowClass
           .trim()
           .split(/\s+/u)
           .some((component) => SHELL_WINDOW_CLASSES.has(component)),
+      caption,
       windowClass,
+      windowRole,
     };
-    this.windowClassClassifications.set(window, classification);
+    this.windowClassifications.set(window, classification);
     return classification;
   }
 
-  isWindowClassEligible(window) {
-    const classification = this.classifyWindowClass(window);
+  isWindowEligible(window) {
+    const classification = this.classifyWindow(window);
     return !classification.shell && !classification.excluded;
   }
 

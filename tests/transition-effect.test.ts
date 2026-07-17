@@ -67,6 +67,8 @@ interface WindowStub {
   resize: boolean;
   skipSwitcher: boolean;
   windowClass?: string;
+  caption?: string;
+  windowRole?: string;
   transientFor(): WindowStub | null;
   readonly [key: string]: unknown;
 }
@@ -134,6 +136,8 @@ function createWindow(overrides: Partial<WindowStub> = {}): WindowStub {
     resize: false,
     skipSwitcher: false,
     windowClass: "konsole org.kde.konsole",
+    caption: "Konsole",
+    windowRole: "",
     transientFor: () => null,
     ...overrides,
   };
@@ -149,6 +153,8 @@ function createHarness(
     readonly easingCurve?: unknown;
     readonly resizeAnimationThreshold?: unknown;
     readonly windowClassExclusions?: unknown;
+    readonly windowCaptionExclusions?: unknown;
+    readonly windowRoleExclusions?: unknown;
   } = {},
 ) {
   const window = options.window ?? createWindow();
@@ -180,6 +186,14 @@ function createHarness(
       options.windowClassExclusions === undefined
         ? ""
         : options.windowClassExclusions,
+    WindowCaptionExclusions:
+      options.windowCaptionExclusions === undefined
+        ? ""
+        : options.windowCaptionExclusions,
+    WindowRoleExclusions:
+      options.windowRoleExclusions === undefined
+        ? ""
+        : options.windowRoleExclusions,
   };
   let nextAnimationId = 1;
   const effects = {
@@ -1839,11 +1853,136 @@ describe("transition effect package", () => {
     expect(harness.animationRequests).toHaveLength(2);
     expect(windowClassReads).toBe(4);
     expect(script).toContain("this.windowClassExclusions.has(windowClass)");
-    expect(script).toContain("this.windowClassClassifications.get(window)");
+    expect(script).toContain("this.windowClassifications.get(window)");
     expect(script).toContain(
       "cachedClassification.windowClass === windowClass",
     );
-    expect(script).toContain("this.windowClassClassifications.delete(window)");
+    expect(script).toContain("this.windowClassifications.delete(window)");
+  });
+
+  it("matches changing captions and window roles without stale classifications", () => {
+    let observedCaption = "Search";
+    let observedWindowRole = "regular";
+    let captionReads = 0;
+    let windowRoleReads = 0;
+    const window = createWindow();
+    Object.defineProperties(window, {
+      caption: {
+        configurable: true,
+        get() {
+          captionReads += 1;
+          return observedCaption;
+        },
+      },
+      windowRole: {
+        configurable: true,
+        get() {
+          windowRoleReads += 1;
+          return observedWindowRole;
+        },
+      },
+    });
+    const harness = createHarness({
+      window,
+      windowCaptionExclusions: "  Search  ",
+      windowRoleExclusions: "popup",
+    });
+
+    changeGeometry(window, {
+      x: 40,
+      y: 50,
+      width: 400,
+      height: 250,
+    });
+    expect(harness.animationRequests).toHaveLength(0);
+
+    observedCaption = "search";
+    observedWindowRole = "popup";
+    changeGeometry(window, {
+      x: 60,
+      y: 70,
+      width: 500,
+      height: 300,
+    });
+    expect(harness.animationRequests).toHaveLength(0);
+
+    observedWindowRole = "Popup";
+    changeGeometry(window, {
+      x: 80,
+      y: 90,
+      width: 600,
+      height: 350,
+    });
+    expect(harness.animationRequests).toHaveLength(1);
+    expect(captionReads).toBe(3);
+    expect(windowRoleReads).toBe(3);
+
+    harness.setConfiguredValue("WindowCaptionExclusions", "Renamed search");
+    harness.setConfiguredValue("WindowRoleExclusions", "");
+    harness.configChanged.emit();
+    observedCaption = "Renamed search";
+    observedWindowRole = "popup";
+    changeGeometry(window, {
+      x: 100,
+      y: 110,
+      width: 700,
+      height: 400,
+    });
+    expect(harness.animationRequests).toHaveLength(1);
+    expect(captionReads).toBe(4);
+    expect(windowRoleReads).toBe(3);
+
+    harness.setConfiguredValue("WindowCaptionExclusions", "");
+    harness.configChanged.emit();
+    changeGeometry(window, {
+      x: 120,
+      y: 130,
+      width: 800,
+      height: 450,
+    });
+    expect(harness.animationRequests).toHaveLength(2);
+    expect(captionReads).toBe(4);
+    expect(windowRoleReads).toBe(3);
+    expect(script).toContain("cachedClassification.caption === caption");
+    expect(script).toContain("cachedClassification.windowRole === windowRole");
+  });
+
+  it("fails closed when caption or window role exclusion config is malformed", () => {
+    const malformedConfigurations: ReadonlyArray<readonly [string, unknown]> = [
+      [
+        "WindowCaptionExclusions",
+        Array.from(
+          { length: 129 },
+          (_, index) => `window ${String(index)}`,
+        ).join("\n"),
+      ],
+      ["WindowCaptionExclusions", "duplicate\nduplicate"],
+      ["WindowRoleExclusions", "a".repeat(256)],
+      ["WindowRoleExclusions", { role: "popup" }],
+    ];
+
+    for (const [name, malformedValue] of malformedConfigurations) {
+      const harness = createHarness();
+      harness.setConfiguredValue(name, malformedValue);
+      harness.configChanged.emit();
+      changeGeometry(harness.window, {
+        x: 40,
+        y: 50,
+        width: 400,
+        height: 250,
+      });
+      expect(harness.animationRequests, name).toHaveLength(0);
+
+      harness.setConfiguredValue(name, "");
+      harness.configChanged.emit();
+      changeGeometry(harness.window, {
+        x: 60,
+        y: 70,
+        width: 500,
+        height: 300,
+      });
+      expect(harness.animationRequests, name).toHaveLength(1);
+    }
   });
 
   it("rejects malformed or oversized exclusion input as a whole", () => {
