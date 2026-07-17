@@ -2402,3 +2402,27 @@ Release criteria (met):
 - Existing move/follow behavior, default 88 bindings, settings, logical
   persistence v4, and schemas remain unchanged.
 - The implementation uses public Plasma 6.7+ APIs and introduces no KWin fork.
+
+### 1.68.0 (in progress)
+
+- Retarget both active position components when a corrective resize changes a
+  moving window's center without changing its frame origin.
+- Keep rapid three-column reversals aligned when a partially off-screen window
+  receives small application-driven geometry corrections.
+- Recover a same-context focus handoff when KWin selects a provisional
+  replacement, clears it, and reports the removed window afterward.
+- Retain the last visible automatic-floating context through removal so the
+  recovery target remains confined to the correct desktop, output, activity,
+  and layer.
+
+Release criteria:
+
+- A corrective resize cannot leave one column on an older position target or
+  expose a persistent wallpaper slot between otherwise adjacent columns.
+- Close recovery accepts tiled, manually floating, automatically floating,
+  and application-excluded replacements and falls back from an ineligible
+  minimized target.
+- Recovery remains bounded by the existing settlement and retry path and does
+  not poll, cross contexts, or add a timer.
+- Settings, shortcuts, schemas, logical persistence v4, and public Plasma 6.7+
+  API use remain unchanged.
