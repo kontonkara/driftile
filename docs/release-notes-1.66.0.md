@@ -1,6 +1,6 @@
 # Driftile 1.66.0
 
-The prepared Driftile 1.66.0 package makes rapid window navigation continuous
+Driftile 1.66.0 makes rapid window navigation continuous
 and keeps focus recovery reliable through short KWin handoffs.
 
 ## Highlights

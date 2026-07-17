@@ -1,15 +1,12 @@
 # Roadmap
 
-Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.65.0 are
+Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.66.0 are
 released. The delivered milestones and release criteria below are a historical
 record. Later direction is not a committed release schedule.
 
-Stable 1.65.0 adds bounded alternative groups and in-session editing shortcuts
-to structured Overview search. Logical persistence remains v4.
-
-Prepared 1.66.0 keeps rapid transition retargeting continuous across workspace
+Stable 1.66.0 keeps rapid transition retargeting continuous across workspace
 handoffs and retains bounded close-focus recovery through transient KWin focus
-handoffs. It changes no setting, shortcut, schema, or public API.
+handoffs. Logical persistence remains v4.
 
 ## Foundation (delivered)
 
@@ -2352,7 +2349,7 @@ Release criteria (met):
 - Search editing remains session-only and adds no global binding, setting,
   KWin request, layout or persistence write, private API, or KWin fork.
 
-### 1.66.0 (prepared)
+### 1.66.0 (released)
 
 - Retarget active movement and size interpolation with the configured
   Plasma-scaled duration instead of a separate short interval.
@@ -2369,7 +2366,7 @@ Release criteria (met):
   keep a surviving replacement focused, or restore the captured handoff or MRU
   target if KWin clears it during settlement.
 
-Release criteria (prepared):
+Release criteria (met):
 
 - Rapid alternating focus commands remain bounded and continue from KWin's
   interpolated position under the configured Plasma animation scale.
