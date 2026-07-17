@@ -38,6 +38,7 @@ programs.driftile.overview.showWindowCloseButtons = true;
 programs.driftile.overview.showWindowStateBadges = true;
 programs.driftile.overview.showDesktopNames = true;
 programs.driftile.overview.showApplicationIcons = true;
+programs.driftile.overview.showOutputNames = true;
 programs.driftile.overview.touchpadGesture = {
   enable = true;
   fingerCount = 4;
@@ -60,11 +61,14 @@ desktop-name search remains available when the label is hidden.
 ordinary label footers, tabs, and minimized placeholders. A missing icon keeps
 the existing text presentation; disabling icons prevents the Loader payload
 from being instantiated, so it neither creates a Kirigami icon nor reads the
-public KWin icon. All six boolean settings update live and default to enabled
-in the effect. Malformed values fall back to enabled, while their nullable Home
+public KWin icon. `showOutputNames` controls the bounded output label on large
+multi-output scenes; search by output name remains available while the label is
+hidden. All seven boolean settings update live and default to enabled in the
+effect. Malformed values fall back to enabled, while their nullable Home
 Manager options leave existing KConfig values untouched when set to `null`.
-Desktop names and application icons do not expand the NixOS option surface; a
-system-installed effect uses the same per-user KConfig values.
+Desktop names, application icons, and output names do not expand the NixOS
+option surface; a system-installed effect uses the same per-user KConfig
+values.
 
 Use a different count from vertical desktop navigation and Plasma's built-in
 Overview, or disable the overlapping gesture, so each global direction has one

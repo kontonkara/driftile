@@ -2242,3 +2242,29 @@ Release criteria (met):
 
 The batch uses public `Window.icon` and Kirigami presentation and adds no
 private API or KWin fork.
+
+### 1.62.0 (in development)
+
+- Show one bounded normalized output name on sufficiently large multi-output
+  Overview scenes.
+- Hide the passive label on small scenes, during search, when disabled, and in
+  single-output sessions without changing desktop-card geometry.
+- Include the owning output name in all-term window search independently of
+  label visibility.
+- Read and normalize the public output name once per scene only when
+  presentation or search needs it; malformed or hostile values fail closed.
+- Add default-enabled live `ShowOutputNames` KConfig and a nullable Home
+  Manager option. Keep the NixOS option surface unchanged.
+
+Release criteria:
+
+- Multi-output labels remain passive, bounded, adaptive, and outside every
+  pointer, keyboard, focus, layout, and persistence path.
+- Output terms compose with existing caption, application, desktop, attention,
+  minimized, and state terms whether or not the label is visible.
+- Disabled, single-output, geometry-constrained, malformed, and hostile paths
+  expose no label and avoid unnecessary output-name reads.
+
+The batch uses only public Plasma 6.7+ output state and adds no action, binding,
+timer, animation, geometry or layout write, persistence field, private API, or
+KWin fork.

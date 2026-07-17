@@ -114,6 +114,9 @@ each owning desktop name available to window search.
 Version 1.61.0 adds optional application icons to
 eligible window labels without changing their actions or search behavior.
 
+Version 1.62.0 is in development. It identifies sufficiently large
+multi-output scenes and makes each owning output name available to search.
+
 The companion is disabled by default. When enabled with a fresh shortcut
 record, `Meta+O` toggles it. KGlobalAccel preserves an existing assignment
 across upgrades, including an explicitly unbound action, so review it in
@@ -234,6 +237,25 @@ existing KConfig value untouched. The NixOS option surface is unchanged.
 
 The label reads the public virtual-desktop name and adds no pointer or keyboard
 input, timer, animation, action, desktop selection, layout or persistence write.
+
+## Output names
+
+Each sufficiently large multi-output scene can show one bounded output name in
+its top-right corner. The passive label is hidden on small scenes and while the
+search overlay is active. Single-output scenes retain their existing layout.
+
+Window search includes the owning output name independently of label
+visibility and composes it with caption, application, desktop, attention,
+minimized, and state terms. The normalized name is computed once per scene only
+when presentation or search needs it.
+
+`ShowOutputNames` is enabled by default and updates live. A malformed or
+non-boolean KConfig value falls back to enabled. Home Manager can manage it
+with nullable `programs.driftile.overview.showOutputNames`; `null` leaves the
+existing KConfig value untouched. The NixOS option surface is unchanged.
+
+The label reads only the public output name and adds no pointer or keyboard
+input, timer, animation, action, focus, layout or persistence write.
 
 ## Window labels
 
@@ -459,14 +481,21 @@ programs.driftile.overview.showDesktopNames = true;
 programs.driftile.overview.showApplicationIcons = true;
 ```
 
+The 1.62.0 development source additionally accepts:
+
+```nix
+programs.driftile.overview.showOutputNames = true;
+```
+
 The main script and overview can be installed independently. For example, a
 system-wide main package can be combined with a per-user overview. Do not
 install the same package ID through both NixOS and Home Manager for one user.
 Neither module enables the effect in KWin; enable it in Desktop Effects and
 adjust its shortcut, screen edge, backdrop, or touchpad gesture only if needed.
 The Home Manager-only nullable overview options can manage an effect installed
-in another scope; `null` leaves their KConfig values untouched. Desktop-name
-and application-icon presentation do not add corresponding NixOS options.
+in another scope; `null` leaves their KConfig values untouched. Desktop-name,
+application-icon, and output-name presentation do not add corresponding NixOS
+options.
 
 ## Validation
 
@@ -500,6 +529,10 @@ Version 1.61.0 adds focused lazy-loading, public icon access, KConfig,
 NixOS-surface, and Home Manager coverage for application icons without changing
 window targets, input, or layout ownership.
 
+Version 1.62.0 adds focused normalization, adaptive multi-output presentation,
+search, KConfig, NixOS-surface, and Home Manager coverage for output names
+without changing window targets or layout ownership.
+
 ## Safety boundary
 
 On activation, the effect accepts only two identical reads of a valid current
@@ -516,6 +549,10 @@ Application icons are a lazy read-only presentation of each direct public
 window icon. Missing or inaccessible icons fail closed, while disabled and
 ineligible surfaces do not instantiate the Kirigami icon or read the KWin
 property.
+
+Output names are a bounded read-only projection of each scene's public output.
+Missing, malformed, hostile, single-output, or geometry-constrained
+presentation fails closed without changing focus, input, layout, or persistence.
 
 Current-card thumbnail focus is unchanged: the effect revalidates the direct
 live window object, exact internal ID, output, desktop and activity memberships,
