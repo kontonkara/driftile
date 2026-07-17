@@ -2848,6 +2848,47 @@ describe("RuntimeController", () => {
     },
   );
 
+  it("recovers a pre-removal replacement past an interim null activation", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const previous = createTrackedWindow("previous", output, desktop);
+    const removed = createTrackedWindow("removed", output, desktop);
+    const replacement = createTrackedWindow("replacement", output, desktop);
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [previous.window, removed.window, replacement.window],
+    );
+    const scheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      schedule: scheduler.schedule,
+    });
+
+    expect(controller.start()).toBe(true);
+    fixture.workspace.activeWindow = previous.window;
+    fixture.workspace.activeWindow = removed.window;
+    flushManualScheduler(scheduler);
+    fixture.workspace.activeWindow = null;
+    fixture.workspace.activeWindow = replacement.window;
+    const pendingBeforeRemoval = scheduler.pendingCount;
+    fixture.windowRemoved.emit(removed.window);
+
+    expect(scheduler.pendingCount).toBe(pendingBeforeRemoval);
+    flushManualScheduler(scheduler);
+
+    expect(fixture.workspace.activeWindow).toBe(replacement.window);
+    fixture.workspace.activeWindow = null;
+    const activationCount = fixture.activationCount;
+    flushManualScheduler(scheduler);
+
+    expect(fixture.workspace.activeWindow).toBe(replacement.window);
+    expect(fixture.activationCount).toBe(activationCount + 1);
+    controller.stop();
+  });
+
   it("focuses the next stack member after removing the selected window", () => {
     const output = createOutput("DP-1", 0);
     const desktop = { id: "desktop-1" };

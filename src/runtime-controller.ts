@@ -1200,7 +1200,9 @@ export class RuntimeController {
   private readonly lastFloatingFocus = new Map<string, WindowId>();
   private readonly lastTiledFocus = new Map<string, WindowId>();
   private lastActivatedWindow: KWinWindow | null = null;
+  private lastNonNullActivatedWindow: KWinWindow | null = null;
   private previousActivatedWindow: KWinWindow | null = null;
+  private previousNonNullActivatedWindow: KWinWindow | null = null;
   private readonly windowFocusHistory = new Set<WindowId>();
   private readonly windowRemovalFocusHistory = new Set<WindowId>();
   private pendingWindowRemovalFocusRecovery: PendingWindowRemovalFocusRecovery | null =
@@ -4471,7 +4473,9 @@ export class RuntimeController {
       this.lastFloatingFocus.clear();
       this.lastTiledFocus.clear();
       this.lastActivatedWindow = null;
+      this.lastNonNullActivatedWindow = null;
       this.previousActivatedWindow = null;
+      this.previousNonNullActivatedWindow = null;
       this.windowFocusHistory.clear();
       this.windowRemovalFocusHistory.clear();
       this.pendingWindowRemovalFocusRecovery = null;
@@ -8292,9 +8296,9 @@ export class RuntimeController {
     const active = this.workspace.activeWindow;
     return Boolean(
       active &&
-      this.lastActivatedWindow === active &&
-      this.previousActivatedWindow &&
-      String(this.previousActivatedWindow.internalId) === String(id),
+      this.lastNonNullActivatedWindow === active &&
+      this.previousNonNullActivatedWindow &&
+      String(this.previousNonNullActivatedWindow.internalId) === String(id),
     );
   }
 
@@ -8458,6 +8462,11 @@ export class RuntimeController {
     if (window !== this.lastActivatedWindow) {
       this.previousActivatedWindow = this.lastActivatedWindow;
       this.lastActivatedWindow = window;
+    }
+
+    if (window && window !== this.lastNonNullActivatedWindow) {
+      this.previousNonNullActivatedWindow = this.lastNonNullActivatedWindow;
+      this.lastNonNullActivatedWindow = window;
     }
 
     if (!window) {
