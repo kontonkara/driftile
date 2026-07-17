@@ -38,6 +38,7 @@ class DriftileTransitionsEffect {
     this.windowClassClassificationGeneration = 0;
     this.windowClassClassifications = new Map();
     this.managedWindows = [];
+    this.observedWindowGeometries = new Map();
     this.activeAnimationWindows = new Set();
     this.deferredWindows = new Set();
     this.visibilityLeasedWindows = new Set();
@@ -120,6 +121,12 @@ class DriftileTransitionsEffect {
 
     window[MANAGED_PROPERTY] = true;
     this.managedWindows.push(window);
+    if (this.isValidGeometry(window.geometry)) {
+      this.observedWindowGeometries.set(
+        window,
+        this.copyGeometry(window.geometry),
+      );
+    }
     window.windowFrameGeometryChanged.connect(
       this.onWindowFrameGeometryChanged.bind(this),
     );
@@ -141,6 +148,7 @@ class DriftileTransitionsEffect {
     }
 
     this.clearWindowTransitions(window);
+    this.observedWindowGeometries.delete(window);
     this.windowClassClassifications.delete(window);
     delete window[MANAGED_PROPERTY];
     const index = this.managedWindows.indexOf(window);
@@ -156,27 +164,41 @@ class DriftileTransitionsEffect {
       this.settleVisibilityHandoff(window);
     }
 
+    const newGeometry = window && window.geometry;
+    if (!this.isValidGeometry(newGeometry)) {
+      this.observedWindowGeometries.delete(window);
+      this.clearWindowTransitions(window);
+      return;
+    }
+
+    const observedGeometry = this.observedWindowGeometries.get(window);
+    if (
+      this.isValidGeometry(observedGeometry) &&
+      !this.geometryChanged(observedGeometry, newGeometry)
+    ) {
+      return;
+    }
+
+    const previousGeometry = this.isValidGeometry(observedGeometry)
+      ? observedGeometry
+      : oldGeometry;
+    this.observedWindowGeometries.set(window, this.copyGeometry(newGeometry));
+
     if (
       this.duration <= 0 ||
       !this.isDeferredTransitionEligible(window) ||
-      !this.isValidGeometry(oldGeometry)
+      !this.isValidGeometry(previousGeometry)
     ) {
       this.clearWindowTransitions(window);
       return;
     }
 
-    const newGeometry = window.geometry;
-    if (!this.isValidGeometry(newGeometry)) {
-      this.clearWindowTransitions(window);
-      return;
-    }
-
-    if (!this.geometryChanged(oldGeometry, newGeometry)) {
+    if (!this.geometryChanged(previousGeometry, newGeometry)) {
       return;
     }
 
     if (effects.hasActiveFullScreenEffect) {
-      this.deferWindowTransition(window, oldGeometry);
+      this.deferWindowTransition(window, previousGeometry);
       return;
     }
 
@@ -187,7 +209,7 @@ class DriftileTransitionsEffect {
 
     if (!this.isTransitionPresentable(window)) {
       if (this.shouldDeferVisibilityHandoff(window)) {
-        this.deferWindowTransition(window, oldGeometry);
+        this.deferWindowTransition(window, previousGeometry);
       } else {
         this.clearWindowTransitions(window);
       }
@@ -195,7 +217,7 @@ class DriftileTransitionsEffect {
     }
 
     const visibilityLeaseUsed = this.visibilityLeasedWindows.has(window);
-    this.animateWindowTransition(window, oldGeometry, newGeometry);
+    this.animateWindowTransition(window, previousGeometry, newGeometry);
     this.consumeVisibilityLease(window, visibilityLeaseUsed);
   }
 
@@ -448,8 +470,6 @@ class DriftileTransitionsEffect {
       this.animateSize &&
       sizeGeometryChanged &&
       resizeDelta > this.resizeAnimationThreshold;
-    const sizeInterpolationSuppressed =
-      this.animateSize && sizeGeometryChanged && !sizeChanged;
     const newSize = {
       value1: newGeometry.width,
       value2: newGeometry.height,
@@ -468,39 +488,45 @@ class DriftileTransitionsEffect {
       value1: newGeometry.x + newGeometry.width / 2,
       value2: newGeometry.y + newGeometry.height / 2,
     };
-    const positionChanged =
+    const oldPositionComponents = this.positionComponents(oldPosition);
+    const newPositionComponents = this.positionComponents(newPosition);
+    const absolutePositionChanged =
       this.animatePosition &&
-      (oldPosition.value1 !== newPosition.value1 ||
-        oldPosition.value2 !== newPosition.value2);
-    let state;
-    if (
-      sizeInterpolationSuppressed &&
-      window[ANIMATION_PROPERTY] !== undefined
-    ) {
-      state = this.windowAnimationState(window);
-      if (state[SIZE_ANIMATION] !== undefined) {
-        this.retargetAnimation(state, SIZE_ANIMATION, newSize);
-      }
-    }
+      !this.animationTargetsEqual(
+        oldPositionComponents.absolute,
+        newPositionComponents.absolute,
+      );
+    const translationChanged =
+      this.animatePosition &&
+      !this.animationTargetsEqual(
+        oldPositionComponents.translation,
+        newPositionComponents.translation,
+      );
+    const state = this.windowAnimationState(window);
+    this.retargetChangedAnimation(
+      state,
+      SIZE_ANIMATION,
+      newSize,
+      this.animateSize && sizeGeometryChanged,
+    );
+    this.retargetChangedAnimation(
+      state,
+      POSITION_ANIMATION,
+      newPositionComponents.absolute,
+      absolutePositionChanged,
+    );
+    this.retargetChangedAnimation(
+      state,
+      TRANSLATION_ANIMATION,
+      newPositionComponents.translation,
+      translationChanged,
+    );
 
-    if (!sizeChanged && !positionChanged) {
-      if (state !== undefined) {
-        this.storeWindowAnimationState(window, state);
-      }
-      return;
-    }
-
-    if (state === undefined) {
-      state = this.windowAnimationState(window);
-    }
     const animations = [];
     const animationProperties = [];
     const animationTargets = [];
 
-    if (
-      sizeChanged &&
-      !this.retargetAnimation(state, SIZE_ANIMATION, newSize)
-    ) {
+    if (sizeChanged && state[SIZE_ANIMATION] === undefined) {
       animationProperties.push(SIZE_ANIMATION);
       animationTargets.push(newSize);
       animations.push({
@@ -513,50 +539,25 @@ class DriftileTransitionsEffect {
         curve: this.easingCurve,
       });
     }
-    if (positionChanged) {
-      const oldPositionComponents = this.positionComponents(oldPosition);
-      const newPositionComponents = this.positionComponents(newPosition);
-      const translationRequired =
-        oldPositionComponents.translation.value1 !== 0 ||
-        oldPositionComponents.translation.value2 !== 0 ||
-        newPositionComponents.translation.value1 !== 0 ||
-        newPositionComponents.translation.value2 !== 0;
-
-      if (
-        !this.retargetAnimation(
-          state,
-          POSITION_ANIMATION,
-          newPositionComponents.absolute,
-        )
-      ) {
-        animationProperties.push(POSITION_ANIMATION);
-        animationTargets.push(newPositionComponents.absolute);
-        animations.push({
-          type: Effect.Position,
-          from: oldPositionComponents.absolute,
-          to: newPositionComponents.absolute,
-          curve: this.easingCurve,
-        });
-      }
-      if (
-        (translationRequired || state[TRANSLATION_ANIMATION] !== undefined) &&
-        !this.retargetAnimation(
-          state,
-          TRANSLATION_ANIMATION,
-          newPositionComponents.translation,
-        )
-      ) {
-        if (translationRequired) {
-          animationProperties.push(TRANSLATION_ANIMATION);
-          animationTargets.push(newPositionComponents.translation);
-          animations.push({
-            type: Effect.Translation,
-            from: oldPositionComponents.translation,
-            to: newPositionComponents.translation,
-            curve: this.easingCurve,
-          });
-        }
-      }
+    if (absolutePositionChanged && state[POSITION_ANIMATION] === undefined) {
+      animationProperties.push(POSITION_ANIMATION);
+      animationTargets.push(newPositionComponents.absolute);
+      animations.push({
+        type: Effect.Position,
+        from: oldPositionComponents.absolute,
+        to: newPositionComponents.absolute,
+        curve: this.easingCurve,
+      });
+    }
+    if (translationChanged && state[TRANSLATION_ANIMATION] === undefined) {
+      animationProperties.push(TRANSLATION_ANIMATION);
+      animationTargets.push(newPositionComponents.translation);
+      animations.push({
+        type: Effect.Translation,
+        from: oldPositionComponents.translation,
+        to: newPositionComponents.translation,
+        curve: this.easingCurve,
+      });
     }
 
     if (animations.length > 0) {
@@ -846,27 +847,34 @@ class DriftileTransitionsEffect {
     return derivedCount;
   }
 
+  retargetChangedAnimation(state, property, target, changed) {
+    if (
+      changed &&
+      state[property] !== undefined &&
+      !this.animationTargetsEqual(
+        state[ANIMATION_TARGET_PROPERTIES[property]],
+        target,
+      )
+    ) {
+      this.retargetAnimation(state, property, target);
+    }
+  }
+
   retargetAnimation(state, property, target) {
     const animationId = state[property];
     if (animationId === undefined) {
       return false;
     }
 
-    const targetProperty = ANIMATION_TARGET_PROPERTIES[property];
-    if (this.animationTargetsEqual(state[targetProperty], target)) {
-      return true;
-    }
-
     if (retarget(animationId, target, this.retargetDuration)) {
-      state[targetProperty] = this.copyAnimationTarget(target);
+      state[ANIMATION_TARGET_PROPERTIES[property]] =
+        this.copyAnimationTarget(target);
       return true;
     }
 
-    const activeAnimationCount = this.activeAnimationCount(state);
-    delete state[property];
-    delete state[targetProperty];
+    this.cancelAnimation(state, property);
     state[ACTIVE_ANIMATION_COUNT] = Math.min(
-      activeAnimationCount,
+      this.activeAnimationCount(state),
       this.trackedAnimationCount(state),
     );
     return false;

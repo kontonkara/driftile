@@ -161,6 +161,7 @@ function createHarness(
   const configChanged = createSignal<[]>();
   const animationEnded = createSignal<[WindowStub, number]>();
   const animationRequests: AnimationRequest[] = [];
+  const activeAnimations = new Map<number, WindowStub>();
   const cancelledAnimations: unknown[] = [];
   const retargetCalls: RetargetCall[] = [];
   const failedRetargets = new Set<number>();
@@ -210,7 +211,11 @@ function createHarness(
     },
     animate(request: AnimationRequest) {
       animationRequests.push(request);
-      return request.animations.map(() => nextAnimationId++);
+      return request.animations.map(() => {
+        const animationId = nextAnimationId++;
+        activeAnimations.set(animationId, request.window);
+        return animationId;
+      });
     },
     animationTime(duration: number) {
       animationTimeCalls.push(duration);
@@ -218,11 +223,15 @@ function createHarness(
     },
     cancel(animation: unknown) {
       cancelledAnimations.push(animation);
-      return true;
+      return typeof animation === "number"
+        ? activeAnimations.delete(animation)
+        : false;
     },
     retarget(animationId: number, target: unknown, duration: number) {
       retargetCalls.push({ animationId, target, duration });
-      return !failedRetargets.has(animationId);
+      return (
+        activeAnimations.has(animationId) && !failedRetargets.has(animationId)
+      );
     },
     effect: {
       animationEnded,
@@ -237,6 +246,11 @@ function createHarness(
   });
 
   return {
+    activeAnimationIds() {
+      return [...activeAnimations.keys()].sort(
+        (first, second) => first - second,
+      );
+    },
     animationRequests,
     animationTimeCalls,
     cancelledAnimations,
@@ -244,7 +258,12 @@ function createHarness(
     effects,
     failedRetargets,
     finishAnimations(window: WindowStub, animationCount = 2) {
-      for (let index = 0; index < animationCount; index += 1) {
+      const animationIds = [...activeAnimations]
+        .filter(([, animationWindow]) => animationWindow === window)
+        .map(([animationId]) => animationId)
+        .slice(0, animationCount);
+      for (const animationId of animationIds) {
+        activeAnimations.delete(animationId);
         animationEnded.emit(window, 0);
       }
     },
@@ -460,7 +479,7 @@ describe("transition effect package", () => {
       },
     ]);
     expect(harness.animationRequests).toHaveLength(1);
-    expect(harness.cancelledAnimations).toHaveLength(0);
+    expect(harness.cancelledAnimations).toEqual([1]);
     expect("driftileTransitionAnimation" in harness.window).toBe(false);
 
     let staleStateReads = 0;
@@ -709,7 +728,7 @@ describe("transition effect package", () => {
     expect(harness.cancelledAnimations).toHaveLength(0);
   });
 
-  it("bounds rapid off-output motion to one retargetable position pair", () => {
+  it("bounds rapid off-output motion to one retargetable translation", () => {
     const window = createWindow({
       geometry: { x: -1000, y: 30, width: 300, height: 200 },
     });
@@ -725,11 +744,11 @@ describe("transition effect package", () => {
     }
 
     expect(harness.animationRequests).toHaveLength(1);
-    expect(harness.animationRequests[0]?.animations).toHaveLength(2);
+    expect(harness.animationRequests[0]?.animations).toHaveLength(1);
     expect(harness.retargetCalls).toHaveLength(34);
     expect(
       harness.retargetCalls.every(
-        ({ animationId, duration }) => animationId === 2 && duration === 100,
+        ({ animationId, duration }) => animationId === 1 && duration === 100,
       ),
     ).toBe(true);
     expect(harness.cancelledAnimations).toHaveLength(0);
@@ -741,7 +760,7 @@ describe("transition effect package", () => {
       width: 300,
       height: 200,
     });
-    expect(harness.cancelledAnimations).toEqual([1, 2]);
+    expect(harness.cancelledAnimations).toEqual([1]);
   });
 
   it("suppresses live user move and resize geometry signals", () => {
@@ -1885,6 +1904,87 @@ describe("transition effect package", () => {
     expect(harness.cancelledAnimations).toHaveLength(0);
   });
 
+  it("coalesces delayed reports at the current target", () => {
+    const harness = createHarness();
+    changeGeometry(harness.window, {
+      x: 40,
+      y: 50,
+      width: 400,
+      height: 250,
+    });
+
+    const staleGeometry = { x: -800, y: 30, width: 300, height: 200 };
+    harness.window.windowFrameGeometryChanged.emit(
+      harness.window,
+      staleGeometry,
+    );
+    harness.window.windowFrameGeometryChanged.emit(
+      harness.window,
+      staleGeometry,
+    );
+
+    expect(harness.animationRequests).toHaveLength(1);
+    expect(harness.retargetCalls).toHaveLength(0);
+    expect(harness.activeAnimationIds()).toEqual([1, 2]);
+
+    harness.finishAnimations(harness.window);
+    harness.window.windowFrameGeometryChanged.emit(
+      harness.window,
+      staleGeometry,
+    );
+
+    expect(harness.animationRequests).toHaveLength(1);
+    expect(harness.activeAnimationIds()).toHaveLength(0);
+    expect("driftileTransitionAnimation" in harness.window).toBe(false);
+  });
+
+  it("keeps rapid cross-edge reversals on one synchronized pair", () => {
+    const window = createWindow({
+      geometry: { x: 100, y: 30, width: 300, height: 200 },
+    });
+    const harness = createHarness({ window });
+    const targets = [-500, 220, -620, 340, -740];
+
+    for (const x of targets) {
+      changeGeometry(window, { x, y: 30, width: 300, height: 200 });
+      const retargetCount = harness.retargetCalls.length;
+      window.windowFrameGeometryChanged.emit(window, {
+        x: x > 0 ? -900 : 900,
+        y: 30,
+        width: 300,
+        height: 200,
+      });
+      expect(harness.retargetCalls).toHaveLength(retargetCount);
+    }
+
+    expect(harness.animationRequests).toHaveLength(1);
+    expect(
+      harness.animationRequests[0]?.animations.map(({ type }) => type),
+    ).toEqual(["position", "translation"]);
+    expect(harness.retargetCalls.map(({ animationId }) => animationId)).toEqual(
+      [1, 2, 1, 2, 1, 2, 1, 2],
+    );
+    expect(harness.activeAnimationIds()).toEqual([1, 2]);
+    expect(harness.cancelledAnimations).toHaveLength(0);
+
+    harness.finishAnimations(window, 1);
+    changeGeometry(window, { x: 460, y: 30, width: 300, height: 200 });
+
+    expect(harness.animationRequests).toHaveLength(2);
+    expect(
+      harness.animationRequests[1]?.animations.map(({ type }) => type),
+    ).toEqual(["position"]);
+    expect(harness.retargetCalls.map(({ animationId }) => animationId)).toEqual(
+      [1, 2, 1, 2, 1, 2, 1, 2, 1, 2],
+    );
+    expect(harness.cancelledAnimations).toEqual([1]);
+    expect(harness.activeAnimationIds()).toEqual([2, 3]);
+
+    harness.finishAnimations(window);
+    expect(harness.activeAnimationIds()).toHaveLength(0);
+    expect("driftileTransitionAnimation" in window).toBe(false);
+  });
+
   it("retires completed animation state before the next geometry change", () => {
     const harness = createHarness();
     changeGeometry(harness.window, {
@@ -1919,11 +2019,17 @@ describe("transition effect package", () => {
       height: 250,
     });
     harness.failedRetargets.add(2);
-    changeGeometry(harness.window, {
+    harness.window.geometry = {
       x: 60,
       y: 70,
       width: 500,
       height: 300,
+    };
+    harness.window.windowFrameGeometryChanged.emit(harness.window, {
+      x: -800,
+      y: 30,
+      width: 300,
+      height: 200,
     });
 
     expect(harness.retargetCalls.map(({ animationId }) => animationId)).toEqual(
@@ -1937,7 +2043,8 @@ describe("transition effect package", () => {
         to: { value1: 310, value2: 220 },
       },
     ]);
-    expect(harness.cancelledAnimations).toHaveLength(0);
+    expect(harness.cancelledAnimations).toEqual([2]);
+    expect(harness.activeAnimationIds()).toEqual([1, 3]);
   });
 
   it("keeps a position retarget when only the size retarget fails", () => {
@@ -1967,7 +2074,8 @@ describe("transition effect package", () => {
         to: { value1: 500, value2: 300 },
       },
     ]);
-    expect(harness.cancelledAnimations).toHaveLength(0);
+    expect(harness.cancelledAnimations).toEqual([1]);
+    expect(harness.activeAnimationIds()).toEqual([2, 3]);
   });
 
   it("cancels active state on ineligibility, config reload, and deletion", () => {
