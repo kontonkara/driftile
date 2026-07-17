@@ -361,6 +361,7 @@ Rectangle {
                         && (!windowPresentation.tiledPresentation || windowPresentation.tiledPresentation.selected)
                     readonly property bool keyboardSelected: keyboardTarget
                         && card.keyboardSelectionId === card.navigationTargetId(windowPresentation.windowId)
+                    readonly property var windowLabel: card.planWindowLabel(windowPresentation.candidate, visible)
 
                     x: windowPresentation.frame ? windowPresentation.frame.x : 0
                     y: windowPresentation.frame ? windowPresentation.frame.y : 0
@@ -429,6 +430,66 @@ Rectangle {
                             color: "#ffffff"
                             font.bold: true
                             font.pixelSize: Math.max(7, thumbnailAttentionBadge.height * 0.7)
+                        }
+                    }
+
+                    Rectangle {
+                        id: thumbnailLabelFooter
+
+                        readonly property bool hasSecondary: thumbnailShell.windowLabel !== null
+                            && thumbnailShell.windowLabel.secondary !== null
+
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        anchors.bottom: parent.bottom
+                        anchors.leftMargin: 5
+                        anchors.rightMargin: 5
+                        anchors.bottomMargin: windowPresentation.attentionRequested ? 8 : 5
+                        height: hasSecondary ? 34 : 22
+                        visible: thumbnailShell.windowLabel !== null && thumbnailShell.width >= 120
+                                 && thumbnailShell.height >= (hasSecondary ? 72 : 52)
+                        color: "#dc111824"
+                        border.width: 1
+                        border.color: "#805f718a"
+                        radius: 3
+                        clip: true
+                        z: 2
+
+                        Text {
+                            anchors.left: parent.left
+                            anchors.right: parent.right
+                            anchors.top: parent.top
+                            anchors.leftMargin: 6
+                            anchors.rightMargin: 6
+                            anchors.topMargin: thumbnailLabelFooter.hasSecondary ? 3 : 0
+                            height: thumbnailLabelFooter.hasSecondary ? 15 : parent.height
+                            text: thumbnailShell.windowLabel ? thumbnailShell.windowLabel.primary : ""
+                            color: "#f3f7ff"
+                            font.bold: true
+                            font.pixelSize: thumbnailLabelFooter.hasSecondary ? 11 : 12
+                            horizontalAlignment: Text.AlignLeft
+                            verticalAlignment: Text.AlignVCenter
+                            elide: Text.ElideRight
+                            textFormat: Text.PlainText
+                        }
+
+                        Text {
+                            anchors.left: parent.left
+                            anchors.right: parent.right
+                            anchors.bottom: parent.bottom
+                            anchors.leftMargin: 6
+                            anchors.rightMargin: 6
+                            anchors.bottomMargin: 2
+                            height: 14
+                            visible: thumbnailLabelFooter.hasSecondary
+                            text: thumbnailShell.windowLabel && thumbnailShell.windowLabel.secondary !== null
+                                ? thumbnailShell.windowLabel.secondary : ""
+                            color: "#aebbd0"
+                            font.pixelSize: 9
+                            horizontalAlignment: Text.AlignLeft
+                            verticalAlignment: Text.AlignVCenter
+                            elide: Text.ElideRight
+                            textFormat: Text.PlainText
                         }
                     }
 
@@ -1199,6 +1260,80 @@ Rectangle {
     function minimizedPlaceholderLabel(candidate) {
         const caption = boundedWindowCaption(candidate);
         return caption.length > 0 ? `Minimized · ${caption}` : "Minimized";
+    }
+
+    function planWindowLabel(candidate, eligible) {
+        if (eligible !== true || !candidate) {
+            return null;
+        }
+
+        try {
+            const runtime = OverviewRuntime.DriftileOverview;
+            if (!runtime || typeof runtime.planOverviewWindowLabel !== "function") {
+                return null;
+            }
+
+            const caption = candidate.caption;
+            const desktopFileName = candidate.desktopFileName;
+            const resourceClass = candidate.resourceClass;
+            const resourceName = candidate.resourceName;
+            if (!windowLabelFieldIsValid(caption) || !windowLabelFieldIsValid(desktopFileName)
+                    || !windowLabelFieldIsValid(resourceClass) || !windowLabelFieldIsValid(resourceName)) {
+                return null;
+            }
+
+            const planned = runtime.planOverviewWindowLabel({
+                caption: caption === null ? undefined : caption,
+                desktopFileName: desktopFileName === null ? undefined : desktopFileName,
+                resourceClass: resourceClass === null ? undefined : resourceClass,
+                resourceName: resourceName === null ? undefined : resourceName
+            });
+            if (!planned || Array.isArray(planned) || typeof planned !== "object") {
+                return null;
+            }
+
+            const primary = planned.primary;
+            const secondary = planned.secondary;
+            if (!boundedPlainWindowLabel(primary)
+                    || (secondary !== null && !boundedPlainWindowLabel(secondary))) {
+                return null;
+            }
+
+            return {
+                primary,
+                secondary
+            };
+        } catch (error) {
+            return null;
+        }
+    }
+
+    function windowLabelFieldIsValid(value) {
+        return value === undefined || value === null || typeof value === "string";
+    }
+
+    function boundedPlainWindowLabel(value) {
+        if (typeof value !== "string" || value.length === 0 || value.length > 192) {
+            return false;
+        }
+
+        let codePoints = 0;
+        for (let offset = 0; offset < value.length;) {
+            const codePoint = value.codePointAt(offset);
+            if (!Number.isInteger(codePoint) || codePoint <= 0x1f || codePoint === 0x7f
+                    || (codePoint >= 0x80 && codePoint <= 0x9f)
+                    || codePoint === 0x2028 || codePoint === 0x2029) {
+                return false;
+            }
+
+            offset += codePoint > 0xffff ? 2 : 1;
+            codePoints += 1;
+            if (codePoints > 96) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     function anyWindowDemandsAttention(revision) {
