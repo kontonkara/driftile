@@ -1,13 +1,12 @@
 # Roadmap
 
-Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.48.0 are
+Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.49.0 are
 released. The delivered milestones and release criteria below are a historical
 record. Later direction is not a committed release schedule.
 
-Stable 1.48.0 minimally reveals ordinary columns after full-width predecessors,
-keeps rapid optional transition retargets continuous, and previews predicted
-singleton frames on selected empty destinations. Logical persistence remains
-v4.
+Stable 1.49.0 restores eligible same-context focus after more close paths and
+retains immediate transition presentation after workspace handoffs. Logical
+persistence remains v4.
 
 ## Foundation (delivered)
 
@@ -1916,7 +1915,7 @@ or private API.
 
 The batch changes no setting, action, schema, default binding, or private API.
 
-### 1.49.0 (in development)
+### 1.49.0 (released)
 
 - Include the most recently focused eligible tiled, manually floating,
   automatically floating, and application-excluded window in close-focus

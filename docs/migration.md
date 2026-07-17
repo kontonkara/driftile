@@ -1,7 +1,28 @@
 # Migration
 
-The latest stable release is 1.48.0. Use the steps below when changing release
+The latest stable release is 1.49.0. Use the steps below when changing release
 generations, and never combine files from different releases.
+
+## Upgrade from 1.48.0 to 1.49.0
+
+1. Release a helper-owned shortcut profile with the installed helper.
+2. Disable Driftile and both optional effects in System Settings.
+3. Install matching 1.49.0 artifacts, or pin the Nix input to `v1.49.0` and
+   rebuild.
+4. Re-enable Driftile and only the optional effects you use, then reclaim the
+   helper profile if needed.
+
+Logical layout state remains v4, and settings, shortcut IDs, default bindings,
+and the optional overview are unchanged. Upgrade the main script for expanded
+close-focus recovery and immediate post-workspace focus presentation.
+
+## Roll back from 1.49.0 to 1.48.0
+
+Release a helper-owned profile, disable Driftile and both optional effects,
+then restore matching verified 1.48.0 artifacts or pin the Nix input to
+`v1.48.0` and rebuild. Both versions use logical layout state v4 with the same
+settings and action IDs, so no state conversion or configuration removal is
+required. The 1.48.0 overview package remains compatible.
 
 ## Upgrade from 1.47.0 to 1.48.0
 

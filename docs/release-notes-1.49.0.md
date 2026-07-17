@@ -1,7 +1,7 @@
 # Driftile 1.49.0
 
-Driftile 1.49.0 is in development. It improves close-focus recovery and
-optional transition continuity around workspace handoffs.
+Driftile 1.49.0 improves close-focus recovery and optional transition
+continuity around workspace handoffs.
 
 ## Highlights
 
