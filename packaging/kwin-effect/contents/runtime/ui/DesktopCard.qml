@@ -1135,7 +1135,7 @@ Rectangle {
     onCurrentChanged: card.navigationTargetsChanged()
     onSearchQueryChanged: card.navigationTargetsChanged()
 
-    function collectNavigationTargets(sceneItem) {
+    function collectNavigationTargets(sceneItem, includeOffscreen = false) {
         const targets = [];
         if (!sceneItem || !desktop || !screen || desktop.id === undefined || desktop.id === null
                 || desktopId.length === 0 || String(desktop.id) !== desktopId) {
@@ -1143,7 +1143,7 @@ Rectangle {
         }
 
         if (!current && searchQuery.trim().length === 0) {
-            const gutterRect = clippedCardNavigationRect(numberGutter, sceneItem);
+            const gutterRect = clippedCardNavigationRect(numberGutter, sceneItem, includeOffscreen);
             if (gutterRect) {
                 targets.push({
                     candidate: desktop,
@@ -1168,7 +1168,7 @@ Rectangle {
                                                         : presentation.tiledPresentation
                                                           && !presentation.tiledPresentation.selected
                                                           ? presentation.tabTarget : presentation.thumbnailTarget;
-            const rect = clippedNavigationRect(visual, sceneItem);
+            const rect = clippedNavigationRect(visual, sceneItem, includeOffscreen);
             if (!rect) {
                 continue;
             }
@@ -1812,7 +1812,7 @@ Rectangle {
         return states.join(" ");
     }
 
-    function clippedNavigationRect(visual, sceneItem) {
+    function clippedNavigationRect(visual, sceneItem, includeOffscreen = false) {
         if (!visual || !visual.visible || visual.width <= 0 || visual.height <= 0 || !viewport.visible || !card.visible) {
             return null;
         }
@@ -1821,19 +1821,21 @@ Rectangle {
             let rect = plainRect(visual.mapToItem(sceneItem, 0, 0, visual.width, visual.height));
             rect = intersectRects(rect, plainRect(viewport.mapToItem(sceneItem, 0, 0, viewport.width, viewport.height)));
             rect = intersectRects(rect, plainRect(card.mapToItem(sceneItem, 0, 0, card.width, card.height)));
-            rect = intersectRects(rect, {
-                height: sceneItem.height,
-                width: sceneItem.width,
-                x: 0,
-                y: 0
-            });
-            return rect && rect.width > 0 && rect.height > 0 ? rect : null;
+            if (includeOffscreen !== true) {
+                rect = intersectRects(rect, {
+                    height: sceneItem.height,
+                    width: sceneItem.width,
+                    x: 0,
+                    y: 0
+                });
+            }
+            return navigationRectIsValid(rect) ? rect : null;
         } catch (error) {
             return null;
         }
     }
 
-    function clippedCardNavigationRect(visual, sceneItem) {
+    function clippedCardNavigationRect(visual, sceneItem, includeOffscreen = false) {
         if (!visual || !visual.visible || visual.width <= 0 || visual.height <= 0 || !card.visible) {
             return null;
         }
@@ -1841,16 +1843,24 @@ Rectangle {
         try {
             let rect = plainRect(visual.mapToItem(sceneItem, 0, 0, visual.width, visual.height));
             rect = intersectRects(rect, plainRect(card.mapToItem(sceneItem, 0, 0, card.width, card.height)));
-            rect = intersectRects(rect, {
-                height: sceneItem.height,
-                width: sceneItem.width,
-                x: 0,
-                y: 0
-            });
-            return rect && rect.width > 0 && rect.height > 0 ? rect : null;
+            if (includeOffscreen !== true) {
+                rect = intersectRects(rect, {
+                    height: sceneItem.height,
+                    width: sceneItem.width,
+                    x: 0,
+                    y: 0
+                });
+            }
+            return navigationRectIsValid(rect) ? rect : null;
         } catch (error) {
             return null;
         }
+    }
+
+    function navigationRectIsValid(rect) {
+        return rect && Number.isFinite(rect.x) && Number.isFinite(rect.y)
+            && Number.isFinite(rect.width) && Number.isFinite(rect.height)
+            && rect.width > 0 && rect.height > 0;
     }
 
     function intersectRects(first, second) {
