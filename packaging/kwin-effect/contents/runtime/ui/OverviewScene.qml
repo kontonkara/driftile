@@ -31,6 +31,9 @@ Rectangle {
         && typeof sceneEffect.showWindowStateBadges === "boolean"
         ? sceneEffect.showWindowStateBadges
         : true
+    readonly property bool showDesktopNames: sceneEffect && typeof sceneEffect.showDesktopNames === "boolean"
+        ? sceneEffect.showDesktopNames
+        : true
     readonly property string outputId: outputIdForScreen()
     readonly property var desktopIds: outputId.length > 0 ? orderedDesktopIds() : []
     readonly property real outerMargin: Math.max(20, Math.min(width, height) * 0.035)
@@ -214,6 +217,7 @@ Rectangle {
             showWindowCloseButtons: root.showWindowCloseButtons
             showWindowLabels: root.showWindowLabels
             showWindowStateBadges: root.showWindowStateBadges
+            showDesktopNames: root.showDesktopNames
             onDesktopReorderCanceled: expectedDesktopId => root.cancelDesktopReorder(expectedDesktopId)
             onDesktopReorderGrabbed: (candidate, expectedDesktopId, expectedScreen, sceneX, sceneY) =>
                                          root.beginDesktopReorder(candidate, expectedDesktopId, expectedScreen,

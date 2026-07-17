@@ -237,6 +237,7 @@ let
       showApplicationIdentity = true;
       showWindowCloseButtons = false;
       showWindowStateBadges = false;
+      showDesktopNames = false;
     };
   } { };
   overviewSettingsUnmanaged = evaluateHome {
@@ -247,6 +248,7 @@ let
       showApplicationIdentity = null;
       showWindowCloseButtons = null;
       showWindowStateBadges = null;
+      showDesktopNames = null;
     };
   } { };
   overviewSettingsWithSystemInstall = evaluateHome {
@@ -257,6 +259,7 @@ let
       showApplicationIdentity = false;
       showWindowCloseButtons = true;
       showWindowStateBadges = true;
+      showDesktopNames = true;
     };
   } systemOverviewConfiguration.config;
   invalidOverviewTouchpadGestureRejected =
@@ -697,6 +700,7 @@ assert
       ShowApplicationIdentity = true;
       ShowWindowCloseButtons = false;
       ShowWindowStateBadges = false;
+      ShowDesktopNames = false;
     };
   };
 assert overviewSettingsUnmanaged.config.qt.kde.settings == { };
@@ -709,6 +713,7 @@ assert
       ShowApplicationIdentity = false;
       ShowWindowCloseButtons = true;
       ShowWindowStateBadges = true;
+      ShowDesktopNames = true;
     };
   };
 assert lib.all (assertion: assertion.assertion) overviewSettingsWithSystemInstall.config.assertions;
@@ -723,6 +728,7 @@ assert invalidOverviewSettingRejected { showWindowLabels = "true"; };
 assert invalidOverviewSettingRejected { showApplicationIdentity = 1; };
 assert invalidOverviewSettingRejected { showWindowCloseButtons = "true"; };
 assert invalidOverviewSettingRejected { showWindowStateBadges = "true"; };
+assert invalidOverviewSettingRejected { showDesktopNames = "true"; };
 assert packageCount transitionsOverride == 0;
 assert overviewPackageCount transitionsOverride == 0;
 assert transitionsPackageCount transitionsOverride == 0;

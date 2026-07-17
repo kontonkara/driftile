@@ -39,5 +39,9 @@
       <label>Show window state badges</label>
       <default>true</default>
     </entry>
+    <entry name="ShowDesktopNames" type="Bool">
+      <label>Show desktop names</label>
+      <default>true</default>
+    </entry>
   </group>
 </kcfg>

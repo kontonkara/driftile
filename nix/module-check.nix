@@ -367,6 +367,7 @@ let
           showApplicationIdentity = true;
           showWindowCloseButtons = false;
           showWindowStateBadges = false;
+          showDesktopNames = false;
         };
       }
       { };
@@ -384,6 +385,7 @@ let
           showApplicationIdentity = null;
           showWindowCloseButtons = null;
           showWindowStateBadges = null;
+          showDesktopNames = null;
         };
       }
       { };
@@ -401,6 +403,7 @@ let
           showApplicationIdentity = false;
           showWindowCloseButtons = true;
           showWindowStateBadges = true;
+          showDesktopNames = true;
         };
       }
       {
@@ -1958,6 +1961,7 @@ assert homeManagerOptionSurface.options.programs.driftile.overview ? showWindowL
 assert homeManagerOptionSurface.options.programs.driftile.overview ? showApplicationIdentity;
 assert homeManagerOptionSurface.options.programs.driftile.overview ? showWindowCloseButtons;
 assert homeManagerOptionSurface.options.programs.driftile.overview ? showWindowStateBadges;
+assert homeManagerOptionSurface.options.programs.driftile.overview ? showDesktopNames;
 assert homeManagerOptionSurface.options.programs.driftile.overview ? touchpadGesture;
 assert homeManagerOptionSurface.options.programs.driftile ? transitions;
 assert homeManagerOptionSurface.options.programs.driftile.transitions ? duration;
@@ -1976,6 +1980,7 @@ assert !(nixosOptionSurface.options.programs.driftile.overview ? showWindowLabel
 assert !(nixosOptionSurface.options.programs.driftile.overview ? showApplicationIdentity);
 assert !(nixosOptionSurface.options.programs.driftile.overview ? showWindowCloseButtons);
 assert !(nixosOptionSurface.options.programs.driftile.overview ? showWindowStateBadges);
+assert !(nixosOptionSurface.options.programs.driftile.overview ? showDesktopNames);
 assert !(nixosOptionSurface.options.programs.driftile.overview ? touchpadGesture);
 assert !(nixosOptionSurface.options.programs.driftile.transitions ? duration);
 assert !(nixosOptionSurface.options.programs.driftile.transitions ? animatePosition);
@@ -2027,6 +2032,7 @@ assert
       ShowApplicationIdentity = true;
       ShowWindowCloseButtons = false;
       ShowWindowStateBadges = false;
+      ShowDesktopNames = false;
     };
   };
 assert homeManagerOverviewSettingsUnmanaged.config.qt.kde.settings == { };
@@ -2039,6 +2045,7 @@ assert
       ShowApplicationIdentity = false;
       ShowWindowCloseButtons = true;
       ShowWindowStateBadges = true;
+      ShowDesktopNames = true;
     };
   };
 assert homeManagerOverviewSettingsWithSystemInstall.config.assertions == [ ];
@@ -2053,6 +2060,7 @@ assert invalidOverviewSettingRejected { showWindowLabels = "true"; };
 assert invalidOverviewSettingRejected { showApplicationIdentity = 1; };
 assert invalidOverviewSettingRejected { showWindowCloseButtons = "true"; };
 assert invalidOverviewSettingRejected { showWindowStateBadges = "true"; };
+assert invalidOverviewSettingRejected { showDesktopNames = "true"; };
 assert packagePaths [ "home" "packages" ] homeManagerTransitionDurationMinimum == [ ];
 assert packagePaths [ "home" "packages" ] homeManagerTransitionDurationMaximum == [ ];
 assert
