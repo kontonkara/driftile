@@ -1,7 +1,30 @@
 # Migration
 
-The latest stable release is 1.46.0. Use the steps below when changing release
+The latest stable release is 1.47.0. Use the steps below when changing release
 generations, and never combine files from different releases.
+
+## Upgrade from 1.46.0 to 1.47.0
+
+1. Release a helper-owned shortcut profile with the installed helper.
+2. Disable Driftile and both optional effects in System Settings.
+3. Install matching 1.47.0 artifacts, or pin the Nix input to `v1.47.0` and
+   rebuild.
+4. Re-enable Driftile and only the optional effects you use, then reclaim the
+   helper profile if needed.
+
+Logical layout state remains v4, and settings, shortcut IDs, default bindings,
+and both optional effects are unchanged. Upgrade the main script to receive
+live exact-window and empty-gutter feedback while dragging a tiled window
+between visible outputs or virtual desktops. Layout changes still occur only
+after the pointer drop is committed.
+
+## Roll back from 1.47.0 to 1.46.0
+
+Release a helper-owned profile, disable Driftile and both optional effects,
+then restore matching verified 1.46.0 artifacts or pin the Nix input to
+`v1.46.0` and rebuild. Both versions use logical layout state v4 with the same
+settings and action IDs, so no state conversion or configuration removal is
+required.
 
 ## Upgrade from 1.45.0 to 1.46.0
 
