@@ -256,6 +256,10 @@ Rectangle {
                     && tiledPresentation.tabFrame !== undefined
                 readonly property var minimizedPlaceholderFrame: minimizedActivationEligible
                     ? card.planMinimizedPlaceholderFrame(frame, hasMinimizedTabFrame) : null
+                readonly property var windowLabel: card.planWindowLabel(candidate, matchesSearch && model.window
+                    && ((!minimizedWindow && selectedThumbnail && frame !== null && frame !== undefined)
+                        || hasMinimizedTabFrame
+                        || (minimizedPlaceholderFrame !== null && minimizedPlaceholderFrame !== undefined)))
                 readonly property bool dragEligible: card.windowSnapshotCanDrag(windowPresentation)
                 readonly property bool closeEligible: card.windowSnapshotCanRequestClose(windowPresentation)
                 readonly property var sourceDesktop: card.desktop
@@ -361,7 +365,6 @@ Rectangle {
                         && (!windowPresentation.tiledPresentation || windowPresentation.tiledPresentation.selected)
                     readonly property bool keyboardSelected: keyboardTarget
                         && card.keyboardSelectionId === card.navigationTargetId(windowPresentation.windowId)
-                    readonly property var windowLabel: card.planWindowLabel(windowPresentation.candidate, visible)
 
                     x: windowPresentation.frame ? windowPresentation.frame.x : 0
                     y: windowPresentation.frame ? windowPresentation.frame.y : 0
@@ -436,8 +439,8 @@ Rectangle {
                     Rectangle {
                         id: thumbnailLabelFooter
 
-                        readonly property bool hasSecondary: thumbnailShell.windowLabel !== null
-                            && thumbnailShell.windowLabel.secondary !== null
+                        readonly property bool hasSecondary: windowPresentation.windowLabel !== null
+                            && windowPresentation.windowLabel.secondary !== null
 
                         anchors.left: parent.left
                         anchors.right: parent.right
@@ -446,7 +449,7 @@ Rectangle {
                         anchors.rightMargin: 5
                         anchors.bottomMargin: windowPresentation.attentionRequested ? 8 : 5
                         height: hasSecondary ? 34 : 22
-                        visible: thumbnailShell.windowLabel !== null && thumbnailShell.width >= 120
+                        visible: windowPresentation.windowLabel !== null && thumbnailShell.width >= 120
                                  && thumbnailShell.height >= (hasSecondary ? 72 : 52)
                         color: "#dc111824"
                         border.width: 1
@@ -463,7 +466,7 @@ Rectangle {
                             anchors.rightMargin: 6
                             anchors.topMargin: thumbnailLabelFooter.hasSecondary ? 3 : 0
                             height: thumbnailLabelFooter.hasSecondary ? 15 : parent.height
-                            text: thumbnailShell.windowLabel ? thumbnailShell.windowLabel.primary : ""
+                            text: windowPresentation.windowLabel ? windowPresentation.windowLabel.primary : ""
                             color: "#f3f7ff"
                             font.bold: true
                             font.pixelSize: thumbnailLabelFooter.hasSecondary ? 11 : 12
@@ -482,8 +485,8 @@ Rectangle {
                             anchors.bottomMargin: 2
                             height: 14
                             visible: thumbnailLabelFooter.hasSecondary
-                            text: thumbnailShell.windowLabel && thumbnailShell.windowLabel.secondary !== null
-                                ? thumbnailShell.windowLabel.secondary : ""
+                            text: windowPresentation.windowLabel && windowPresentation.windowLabel.secondary !== null
+                                ? windowPresentation.windowLabel.secondary : ""
                             color: "#aebbd0"
                             font.pixelSize: 9
                             horizontalAlignment: Text.AlignLeft
@@ -597,15 +600,16 @@ Rectangle {
                         anchors.fill: parent
                         anchors.leftMargin: 4
                         anchors.rightMargin: windowPresentation.attentionRequested ? 18 : 4
-                        text: model.window && model.window.caption ? String(model.window.caption)
-                                                                   : windowPresentation.tiledPresentation
-                                                                     ? String(windowPresentation.tiledPresentation.memberIndex + 1)
-                                                                     : ""
+                        text: windowPresentation.windowLabel ? windowPresentation.windowLabel.primary
+                                                             : windowPresentation.tiledPresentation
+                                                               ? String(windowPresentation.tiledPresentation.memberIndex + 1)
+                                                               : ""
                         color: windowPresentation.minimizedWindow ? "#8a96a8" : "#f3f7ff"
                         font.pixelSize: Math.max(8, Math.min(12, tabShell.height * 0.55))
                         horizontalAlignment: Text.AlignHCenter
                         verticalAlignment: Text.AlignVCenter
                         elide: Text.ElideRight
+                        textFormat: Text.PlainText
                     }
 
                     Rectangle {
@@ -731,7 +735,8 @@ Rectangle {
                         anchors.leftMargin: 7
                         anchors.rightMargin: windowPresentation.attentionRequested
                             ? Math.min(18, minimizedPlaceholderShell.width * 0.42) : 7
-                        text: card.minimizedPlaceholderLabel(windowPresentation.candidate)
+                        text: windowPresentation.windowLabel
+                            ? `Minimized · ${windowPresentation.windowLabel.primary}` : "Minimized"
                         color: "#d9e2ef"
                         font.pixelSize: Math.max(7, Math.min(11, minimizedPlaceholderShell.height * 0.48))
                         font.bold: true
@@ -1245,21 +1250,6 @@ Rectangle {
         } catch (error) {
             return null;
         }
-    }
-
-    function boundedWindowCaption(candidate) {
-        try {
-            const caption = candidate && candidate.caption !== undefined && candidate.caption !== null
-                ? String(candidate.caption) : "";
-            return caption.length > 160 ? caption.slice(0, 160) : caption;
-        } catch (error) {
-            return "";
-        }
-    }
-
-    function minimizedPlaceholderLabel(candidate) {
-        const caption = boundedWindowCaption(candidate);
-        return caption.length > 0 ? `Minimized · ${caption}` : "Minimized";
     }
 
     function planWindowLabel(candidate, eligible) {
