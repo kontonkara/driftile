@@ -196,7 +196,10 @@ import type {
   KWinWorkspace,
 } from "./platform/kwin/api";
 import { KWinActivityAdapter } from "./platform/kwin/activity-adapter";
-import { applicationRuleIdentity } from "./platform/kwin/application-identity";
+import {
+  applicationRoleRuleIdentity,
+  applicationRuleIdentity,
+} from "./platform/kwin/application-identity";
 import {
   PointerPreviewContextCache,
   type PointerPreviewContextLease,
@@ -277,6 +280,58 @@ const REQUIRED_POINTER_COLUMN_DROP_SETTLEMENT_SAMPLES = 2;
 const REQUIRED_POINTER_RESIZE_COMPENSATION_SAMPLES = 20;
 const REQUIRED_POINTER_RESIZE_SETTLEMENT_SAMPLES = 2;
 const WINDOW_HEIGHT_PRESET_CYCLE_TOLERANCE = 1;
+
+interface ExactApplicationRuleSet {
+  readonly canonicalEntries: readonly string[];
+  excludes(identity: string): boolean;
+}
+
+function applicationRuleSetMatchesIdentity(
+  applicationId: string,
+  roleApplicationId: string | null,
+  rules: ExactApplicationRuleSet,
+): boolean {
+  return (
+    rules.canonicalEntries.length > 0 &&
+    ((roleApplicationId !== null && rules.excludes(roleApplicationId)) ||
+      rules.excludes(applicationId))
+  );
+}
+
+function applicationRuleSetMatches(
+  source: KWinWindow,
+  applicationId: string | null,
+  rules: ExactApplicationRuleSet,
+): boolean {
+  if (applicationId === null || rules.canonicalEntries.length === 0) {
+    return false;
+  }
+
+  return applicationRuleSetMatchesIdentity(
+    applicationId,
+    applicationRoleRuleIdentity(source, applicationId),
+    rules,
+  );
+}
+
+function applicationRuleMapValue<Value, Lookup extends string>(
+  source: KWinWindow,
+  applicationId: string | null,
+  rules: {
+    readonly canonicalEntries: readonly string[];
+  } & Record<Lookup, (identity: string) => Value | undefined>,
+  lookup: Lookup,
+): Value | undefined {
+  if (applicationId === null || rules.canonicalEntries.length === 0) {
+    return undefined;
+  }
+
+  const roleApplicationId = applicationRoleRuleIdentity(source, applicationId);
+  const roleValue =
+    roleApplicationId === null ? undefined : rules[lookup](roleApplicationId);
+
+  return roleValue !== undefined ? roleValue : rules[lookup](applicationId);
+}
 
 type ColumnResizeAction =
   "decrease" | "increase" | "preset-next" | "preset-previous" | "reset";
@@ -10361,8 +10416,17 @@ export class RuntimeController {
     }
 
     const applicationId = applicationRuleIdentity(source);
+    if (applicationId === null) {
+      return false;
+    }
+
+    const roleApplicationId = applicationRoleRuleIdentity(
+      source,
+      applicationId,
+    );
     return (
-      applicationId !== null &&
+      (roleApplicationId !== null &&
+        this.applicationFocusCentering.centersOnFocus(roleApplicationId)) ||
       this.applicationFocusCentering.centersOnFocus(applicationId)
     );
   }
@@ -29015,9 +29079,12 @@ export class RuntimeController {
 
     const applicationId = applicationRuleIdentity(source);
     const destination =
-      (applicationId
-        ? policy.applications.initialDestinationFor(applicationId)
-        : undefined) ?? policy.defaultDestination;
+      applicationRuleMapValue(
+        source,
+        applicationId,
+        policy.applications,
+        "initialDestinationFor",
+      ) ?? policy.defaultDestination;
     const command = destination
       ? this.freshInitialDestinationCommand(id, source, destination)
       : null;
@@ -29382,11 +29449,12 @@ export class RuntimeController {
     source: KWinWindow,
   ): ApplicationFloatingPosition | undefined {
     const applicationId = applicationRuleIdentity(source);
-    const applicationPosition =
-      applicationId === null ||
-      this.applicationFloatingPositions.canonicalEntries.length === 0
-        ? undefined
-        : this.applicationFloatingPositions.floatingPositionFor(applicationId);
+    const applicationPosition = applicationRuleMapValue(
+      source,
+      applicationId,
+      this.applicationFloatingPositions,
+      "floatingPositionFor",
+    );
 
     return applicationPosition ?? this.defaultFloatingPosition ?? undefined;
   }
@@ -29467,8 +29535,33 @@ export class RuntimeController {
     }
 
     const applicationId = applicationRuleIdentity(source);
+    const hasApplicationLayouts =
+      policy.applications.canonicalEntries.length > 0;
+    const hasLegacyFloating = policy.legacyFloating.canonicalEntries.length > 0;
+    const roleApplicationId =
+      applicationId !== null && (hasApplicationLayouts || hasLegacyFloating)
+        ? applicationRoleRuleIdentity(source, applicationId)
+        : null;
+    const roleLayout =
+      roleApplicationId === null || !hasApplicationLayouts
+        ? undefined
+        : policy.applications.initialLayoutFor(roleApplicationId);
+
+    if (roleLayout !== undefined) {
+      return roleLayout === "floating";
+    }
+
+    if (
+      applicationId !== null &&
+      roleApplicationId !== null &&
+      hasLegacyFloating &&
+      policy.legacyFloating.excludes(roleApplicationId)
+    ) {
+      return true;
+    }
+
     const applicationLayout =
-      applicationId === null
+      applicationId === null || !hasApplicationLayouts
         ? undefined
         : policy.applications.initialLayoutFor(applicationId);
 
@@ -29478,6 +29571,7 @@ export class RuntimeController {
 
     if (
       applicationId !== null &&
+      hasLegacyFloating &&
       policy.legacyFloating.excludes(applicationId)
     ) {
       return true;
@@ -29495,7 +29589,7 @@ export class RuntimeController {
     }
 
     const applicationId = applicationRuleIdentity(source);
-    return applicationId !== null && applications.excludes(applicationId);
+    return applicationRuleSetMatches(source, applicationId, applications);
   }
 
   private freshInitialFullWidthApplies(
@@ -29519,10 +29613,32 @@ export class RuntimeController {
     }
 
     const applicationId = applicationRuleIdentity(source);
+    const hasUnfocused = policy.unfocused.canonicalEntries.length > 0;
+    const hasFocused = policy.focused.canonicalEntries.length > 0;
+    const roleApplicationId =
+      applicationId !== null && (hasUnfocused || hasFocused)
+        ? applicationRoleRuleIdentity(source, applicationId)
+        : null;
+
+    if (
+      roleApplicationId !== null &&
+      hasUnfocused &&
+      policy.unfocused.excludes(roleApplicationId)
+    ) {
+      return "unfocused";
+    }
+
+    if (
+      roleApplicationId !== null &&
+      hasFocused &&
+      policy.focused.excludes(roleApplicationId)
+    ) {
+      return "focused";
+    }
 
     if (
       applicationId !== null &&
-      policy.unfocused.canonicalEntries.length > 0 &&
+      hasUnfocused &&
       policy.unfocused.excludes(applicationId)
     ) {
       return "unfocused";
@@ -29530,7 +29646,7 @@ export class RuntimeController {
 
     if (
       applicationId !== null &&
-      policy.focused.canonicalEntries.length > 0 &&
+      hasFocused &&
       policy.focused.excludes(applicationId)
     ) {
       return "focused";
@@ -29878,7 +29994,7 @@ export class RuntimeController {
     }
 
     const applicationId = applicationRuleIdentity(source);
-    return applicationId !== null && applications.excludes(applicationId);
+    return applicationRuleSetMatches(source, applicationId, applications);
   }
 
   private freshInitialMaximizedApplies(
@@ -29929,7 +30045,7 @@ export class RuntimeController {
     }
 
     const applicationId = applicationRuleIdentity(source);
-    return applicationId !== null && applications.excludes(applicationId);
+    return applicationRuleSetMatches(source, applicationId, applications);
   }
 
   private freshInitialFullscreenApplies(
@@ -29971,9 +30087,7 @@ export class RuntimeController {
   ): boolean {
     return (
       source.normalWindow &&
-      applicationId !== null &&
-      exclusions.canonicalEntries.length > 0 &&
-      exclusions.excludes(applicationId)
+      applicationRuleSetMatches(source, applicationId, exclusions)
     );
   }
 
@@ -29996,10 +30110,18 @@ export class RuntimeController {
       return false;
     }
 
+    const roleApplicationId = applicationRoleRuleIdentity(
+      source,
+      applicationId,
+    );
+
     return (
-      (previous.canonicalEntries.length > 0 &&
-        previous.excludes(applicationId)) !==
-      (next.canonicalEntries.length > 0 && next.excludes(applicationId))
+      applicationRuleSetMatchesIdentity(
+        applicationId,
+        roleApplicationId,
+        previous,
+      ) !==
+      applicationRuleSetMatchesIdentity(applicationId, roleApplicationId, next)
     );
   }
 
@@ -30870,9 +30992,10 @@ export class RuntimeController {
         ? applicationRuleIdentity(source)
         : knownApplicationId;
 
-    return (
-      applicationId === null ||
-      !this.applicationBorderlessExclusions.excludes(applicationId)
+    return !applicationRuleSetMatches(
+      source,
+      applicationId,
+      this.applicationBorderlessExclusions,
     );
   }
 
@@ -32715,10 +32838,14 @@ export class RuntimeController {
 
     const source = sources[0];
     const applicationId = source ? applicationRuleIdentity(source) : null;
-    const applicationWidth =
-      applicationId === null
-        ? undefined
-        : this.applicationColumnWidths.columnWidthFor(applicationId);
+    const applicationWidth = source
+      ? applicationRuleMapValue(
+          source,
+          applicationId,
+          this.applicationColumnWidths,
+          "columnWidthFor",
+        )
+      : undefined;
 
     if (applicationWidth !== undefined) {
       return { ...applicationWidth };
@@ -32744,11 +32871,12 @@ export class RuntimeController {
 
   private initialWindowHeight(source: KWinWindow): WindowHeight | undefined {
     const applicationId = applicationRuleIdentity(source);
-
-    const applicationHeight =
-      applicationId !== null
-        ? this.applicationWindowHeights.windowHeightFor(applicationId)
-        : undefined;
+    const applicationHeight = applicationRuleMapValue(
+      source,
+      applicationId,
+      this.applicationWindowHeights,
+      "windowHeightFor",
+    );
     const height = applicationHeight ?? this.defaultWindowHeight.windowHeight;
 
     return height === null ? undefined : { ...height };
@@ -32792,13 +32920,16 @@ export class RuntimeController {
   ): ColumnPresentation {
     const applicationId = source ? applicationRuleIdentity(source) : null;
 
-    if (applicationId === null) {
+    if (!source || applicationId === null) {
       return this.defaultColumnPresentation;
     }
 
     return (
-      this.applicationColumnPresentations.columnPresentationFor(
+      applicationRuleMapValue(
+        source,
         applicationId,
+        this.applicationColumnPresentations,
+        "columnPresentationFor",
       ) ?? this.defaultColumnPresentation
     );
   }

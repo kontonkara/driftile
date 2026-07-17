@@ -9563,6 +9563,189 @@ describe("RuntimeController", () => {
     ]);
   });
 
+  it("prefers role-specific live rules before application fallbacks", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const main = createTrackedWindow("main", output, desktop, {
+      desktopFileName: "org.example.Editor",
+      noBorder: false,
+      windowRole: "main",
+    });
+    const popup = createTrackedWindow("popup", output, desktop, {
+      desktopFileName: "org.example.Editor",
+      noBorder: false,
+      windowRole: "popup",
+    });
+    const utility = createTrackedWindow("utility", output, desktop, {
+      desktopFileName: "org.example.Editor",
+      noBorder: false,
+      windowRole: "utility",
+    });
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [main.window, popup.window, utility.window],
+    );
+    const widths = decodeApplicationColumnWidthOverrides(
+      "org.example.Editor=30%\norg.example.Editor|popup=45%",
+    );
+    const heights = decodeApplicationWindowHeightOverrides(
+      "org.example.Editor=40%\norg.example.Editor|popup=60%",
+    );
+    const presentations = decodeApplicationColumnPresentations(
+      "org.example.Editor=stacked\norg.example.Editor|popup=tabbed",
+    );
+
+    if (!widths || !heights || !presentations) {
+      throw new Error("role-specific live rule fixture is invalid");
+    }
+
+    const controller = new RuntimeController(fixture.workspace, {
+      applicationBorderlessExclusions: requiredApplicationBorderlessExclusions(
+        "org.example.Editor|popup",
+      ),
+      applicationColumnPresentations: presentations,
+      applicationColumnWidths: widths,
+      applicationFloatingPositions: requiredApplicationFloatingPositions(
+        "org.example.Editor=top-left,10,20\norg.example.Editor|popup=bottom-right,30,40",
+      ),
+      applicationFocusCentering: requiredApplicationFocusCentering(
+        "org.example.Editor|popup",
+      ),
+      applicationTilingExclusions: requiredApplicationTilingExclusions(
+        "org.example.Editor|utility",
+      ),
+      applicationWindowHeights: heights,
+      borderlessWindows: true,
+      clientAreaOption: 2,
+      gap: 10,
+    });
+
+    expect(controller.start()).toBe(true);
+    const columns = runtimeLayout(controller).snapshot(
+      outputId(output.name),
+      desktopId(desktop.id),
+      FALLBACK_ACTIVITY_ID,
+    ).columns;
+    expect(
+      columns.map((column) => ({
+        presentation: column.presentation,
+        width: column.width,
+        windowHeight: column.windowHeights?.[0],
+        windowId: column.windowIds[0],
+      })),
+    ).toEqual([
+      {
+        presentation: "stacked",
+        width: { kind: "proportion", value: 0.3 },
+        windowHeight: { index: 140, kind: "preset" },
+        windowId: windowId("main"),
+      },
+      {
+        presentation: "tabbed",
+        width: { kind: "proportion", value: 0.45 },
+        windowHeight: { index: 160, kind: "preset" },
+        windowId: windowId("popup"),
+      },
+    ]);
+    expect(controller.managedCount).toBe(2);
+    expect(controller.automaticFloatingCount).toBe(1);
+    expect(main.window.noBorder).toBe(true);
+    expect(popup.window.noBorder).toBe(false);
+    expect(utility.window.noBorder).toBe(true);
+
+    const runtime = controller as unknown as {
+      applicationCentersOnFocus(source: KWinWindow): boolean;
+      applicationFloatingPosition(source: KWinWindow):
+        | {
+            readonly anchor: string;
+            readonly x: number;
+            readonly y: number;
+          }
+        | undefined;
+    };
+    expect(
+      [main, popup].map(({ window }) =>
+        runtime.applicationCentersOnFocus(window),
+      ),
+    ).toEqual([false, true]);
+    expect(
+      [main, popup].map(({ window }) =>
+        runtime.applicationFloatingPosition(window),
+      ),
+    ).toEqual([
+      { anchor: "top-left", x: 10, y: 20 },
+      { anchor: "bottom-right", x: 30, y: 40 },
+    ]);
+  });
+
+  it("skips empty role lookups and safely falls back from unreadable roles", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const tracked = createTrackedWindow("target", output, desktop, {
+      desktopFileName: "org.example.Editor",
+    });
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [tracked.window],
+    );
+    let roleReads = 0;
+    Object.defineProperty(tracked.window, "windowRole", {
+      configurable: true,
+      get: () => {
+        roleReads += 1;
+        throw new Error("window role is unavailable");
+      },
+    });
+    const emptyController = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+    });
+    const emptyRuntime = emptyController as unknown as {
+      applicationCentersOnFocus(source: KWinWindow): boolean;
+      applicationTilingExclusionApplies(source: KWinWindow): boolean;
+      initialColumnWidth(
+        sources: readonly KWinWindow[],
+        devicePixelRatio: number,
+      ): ColumnWidth;
+    };
+
+    expect(emptyRuntime.applicationCentersOnFocus(tracked.window)).toBe(false);
+    expect(emptyRuntime.applicationTilingExclusionApplies(tracked.window)).toBe(
+      false,
+    );
+    expect(emptyRuntime.initialColumnWidth([tracked.window], 1)).toEqual({
+      kind: "proportion",
+      value: 0.5,
+    });
+    expect(roleReads).toBe(0);
+
+    const widths = decodeApplicationColumnWidthOverrides(
+      "org.example.Editor=40%",
+    );
+
+    if (!widths) {
+      throw new Error("unreadable role fallback fixture is invalid");
+    }
+
+    expect(emptyController.setApplicationColumnWidths(widths)).toBe(true);
+    expect(
+      emptyController.setApplicationFocusCentering(
+        requiredApplicationFocusCentering("org.example.Editor"),
+      ),
+    ).toBe(true);
+    expect(emptyRuntime.applicationCentersOnFocus(tracked.window)).toBe(true);
+    expect(emptyRuntime.initialColumnWidth([tracked.window], 1)).toEqual({
+      kind: "proportion",
+      value: 0.4,
+    });
+    expect(roleReads).toBe(2);
+  });
+
   it("applies a changed default presentation only to future columns", () => {
     const output = createOutput("DP-1", 0);
     const desktop = { id: "desktop-1" };
@@ -10072,6 +10255,81 @@ describe("RuntimeController", () => {
         )
         .columns.flatMap((column) => column.windowIds),
     ).toEqual([windowId("existing"), windowId("added")]);
+  });
+
+  it("resolves role-specific fresh state before application policies", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const main = createTrackedWindow("main", output, desktop, {
+      desktopFileName: "org.example.Editor",
+      windowRole: "main",
+    });
+    const popup = createTrackedWindow("popup", output, desktop, {
+      desktopFileName: "org.example.Editor",
+      windowRole: "popup",
+    });
+    const legacy = createTrackedWindow("legacy", output, desktop, {
+      desktopFileName: "org.example.Editor",
+      windowRole: "legacy",
+    });
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [main.window],
+    );
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+    });
+    const layouts = requiredApplicationInitialLayouts(
+      "org.example.Editor=tiled\norg.example.Editor|popup=floating",
+    );
+    const legacyFloating = requiredApplicationInitialFloating(
+      "org.example.Editor\norg.example.Editor|legacy",
+    );
+    const focused = requiredApplicationInitialFocused("org.example.Editor");
+    const unfocused = requiredApplicationInitialUnfocused(
+      "org.example.Editor|popup",
+    );
+
+    const runtime = controller as unknown as {
+      applicationInitialFocus(source: KWinWindow, policy: unknown): unknown;
+      freshInitialFloatingApplies(id: WindowId, source: KWinWindow): boolean;
+      readonly initialLayoutPolicyByWindow: Map<WindowId, unknown>;
+    };
+    const layoutPolicy = Object.freeze({
+      applications: layouts,
+      defaultLayout: "tiled" as const,
+      legacyFloating,
+    });
+
+    for (const tracked of [main, popup, legacy]) {
+      runtime.initialLayoutPolicyByWindow.set(
+        windowId(String(tracked.window.internalId)),
+        layoutPolicy,
+      );
+    }
+
+    expect(
+      [main, popup, legacy].map(({ window }) =>
+        runtime.freshInitialFloatingApplies(
+          windowId(String(window.internalId)),
+          window,
+        ),
+      ),
+    ).toEqual([false, true, true]);
+
+    const focusPolicy = {
+      defaultFocus: "default" as const,
+      focused,
+      unfocused,
+    };
+    expect(
+      [main, popup].map(({ window }) =>
+        runtime.applicationInitialFocus(window, focusPolicy),
+      ),
+    ).toEqual(["focused", "unfocused"]);
   });
 
   it("applies fresh initial layout precedence from the policy captured at tracking", () => {
