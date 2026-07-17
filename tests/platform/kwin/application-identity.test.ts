@@ -1,9 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { applicationRuleIdentity } from "../../../src/platform/kwin/application-identity";
+import {
+  applicationRoleRuleIdentity,
+  applicationRuleIdentity,
+} from "../../../src/platform/kwin/application-identity";
 import type { KWinWindow } from "../../../src/platform/kwin/api";
 
 type IdentitySource = Pick<KWinWindow, "desktopFileName" | "resourceClass">;
+type RoleIdentitySource = Pick<KWinWindow, "windowRole">;
 
 describe("applicationRuleIdentity", () => {
   it("returns an exact desktop file name without reading the fallback", () => {
@@ -54,6 +58,80 @@ describe("applicationRuleIdentity", () => {
           throw new Error("unreadable resource class");
         },
       }),
+    ).toBeNull();
+  });
+});
+
+describe("applicationRoleRuleIdentity", () => {
+  it("rejects the empty role exposed by Wayland windows", () => {
+    expect(
+      applicationRoleRuleIdentity({ windowRole: "" }, "org.example.Editor"),
+    ).toBeNull();
+  });
+
+  it("combines an X11 application identity with its exact window role", () => {
+    expect(
+      applicationRoleRuleIdentity(
+        { windowRole: "editor-main" },
+        "example-editor",
+      ),
+    ).toBe("example-editor|editor-main");
+  });
+
+  it("preserves case in both identity components", () => {
+    expect(
+      applicationRoleRuleIdentity(
+        { windowRole: "MainWindow" },
+        "Example-Editor",
+      ),
+    ).toBe("Example-Editor|MainWindow");
+    expect(
+      applicationRoleRuleIdentity(
+        { windowRole: "mainwindow" },
+        "example-editor",
+      ),
+    ).toBe("example-editor|mainwindow");
+  });
+
+  it("fails closed when the window role getter throws", () => {
+    expect(
+      applicationRoleRuleIdentity(
+        {
+          get windowRole(): string {
+            throw new Error("unreadable window role");
+          },
+        },
+        "example-editor",
+      ),
+    ).toBeNull();
+  });
+
+  it("rejects missing, non-string, and malformed components", () => {
+    expect(applicationRoleRuleIdentity({}, "example-editor")).toBeNull();
+    expect(
+      applicationRoleRuleIdentity(
+        { windowRole: 1 } as unknown as RoleIdentitySource,
+        "example-editor",
+      ),
+    ).toBeNull();
+    expect(applicationRoleRuleIdentity({ windowRole: "main" }, "")).toBeNull();
+    expect(
+      applicationRoleRuleIdentity(
+        { windowRole: "main" },
+        1 as unknown as string,
+      ),
+    ).toBeNull();
+  });
+
+  it("rejects pipe characters in either identity component", () => {
+    expect(
+      applicationRoleRuleIdentity({ windowRole: "main" }, "example|editor"),
+    ).toBeNull();
+    expect(
+      applicationRoleRuleIdentity(
+        { windowRole: "main|dialog" },
+        "example-editor",
+      ),
     ).toBeNull();
   });
 });
