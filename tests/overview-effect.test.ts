@@ -1567,6 +1567,84 @@ describe("overview effect package", () => {
     );
   });
 
+  it("presents bounded desktop names without changing compact gutter input", () => {
+    const numberGutter = desktopCard.slice(
+      desktopCard.indexOf("id: numberGutter"),
+      desktopCard.indexOf("id: desktopNameGutter"),
+    );
+    const desktopNameGutter = desktopCard.slice(
+      desktopCard.indexOf("id: desktopNameGutter"),
+      desktopCard.indexOf("id: viewport"),
+    );
+    const labelTextPosition = desktopNameGutter.indexOf(
+      "text: card.desktopLabel ? card.desktopLabel.label",
+    );
+    const labelTextStart = desktopNameGutter.lastIndexOf(
+      "Text {",
+      labelTextPosition,
+    );
+    const labelText = desktopNameGutter.slice(
+      labelTextStart,
+      desktopNameGutter.length,
+    );
+    const planner = desktopCard.slice(
+      desktopCard.indexOf("function planDesktopLabel("),
+      desktopCard.indexOf("function planWindowState("),
+    );
+    const search = desktopCard.slice(
+      desktopCard.indexOf("function windowMatchesSearch("),
+      desktopCard.indexOf("function windowSearchState("),
+    );
+
+    expect(desktopCard).toContain("required property bool showDesktopNames");
+    expect(desktopCard).toContain(
+      "readonly property var desktopLabel: planDesktopLabel(desktop)",
+    );
+    expect(desktopCard).toMatch(
+      /readonly property bool desktopNamePresented: showDesktopNames && desktopLabel !== null\s*&& width >= 560 && height >= 72/u,
+    );
+    expect(desktopCard).toContain(
+      "readonly property real contentLeft: desktopNamePresented ? Math.max(112, Math.min(170, width * 0.14)) : 42",
+    );
+    expect(numberGutter).toContain("width: 42");
+    expect(numberGutter).toContain("width: numberGutter.width - 18");
+    expect(desktopNameGutter).toContain("x: 42");
+    expect(desktopNameGutter).toContain(
+      "width: Math.max(0, card.contentLeft - 42)",
+    );
+    expect(desktopNameGutter).toContain("visible: card.desktopNamePresented");
+    expect(labelTextPosition).toBeGreaterThan(0);
+    expect(labelText).toContain("anchors.fill: parent");
+    expect(labelText).toContain("elide: Text.ElideRight");
+    expect(labelText).toContain("textFormat: Text.PlainText");
+
+    expect(planner).toContain("const name = desktop.name");
+    expect(planner).toContain('typeof name !== "string"');
+    expect(planner).toContain(
+      'typeof runtime.planOverviewDesktopLabel !== "function"',
+    );
+    expect(planner).toMatch(
+      /runtime\.planOverviewDesktopLabel\(\{\s*name\s*\}\)/u,
+    );
+    expect(planner).toContain("!boundedPlainDesktopLabel(planned.label)");
+    expect(planner).toContain(
+      'typeof value !== "string" || value.length === 0 || value.length > 128',
+    );
+    expect(planner).toContain("if (codePoints > 64)");
+    expect(planner).toMatch(/catch \(error\) \{\s*return null;/u);
+    expect(search).toContain(
+      'desktopName: card.desktopLabel ? card.desktopLabel.label : ""',
+    );
+    expect(search).not.toContain("showDesktopNames");
+
+    expect(numberGutter.match(/\bTapHandler\s*\{/gu)).toHaveLength(1);
+    expect(numberGutter.match(/\bDragHandler\s*\{/gu)).toHaveLength(1);
+    expect(numberGutter).toContain("id: desktopAttentionBadge");
+    expect(labelText).not.toMatch(
+      /\b(?:TapHandler|DragHandler|Timer|Behavior|Animation|ShortcutHandler|Connections)\s*\{|\bsequence\s*:|org\.kde\.kwin\.private|\.setValue\s*\(|KWin\.(?:SceneView|Workspace)\.[A-Za-z0-9_]+\s*=(?!=)|desktop\.[A-Za-z0-9_]+\s*=(?!=)/u,
+    );
+  });
+
   it("shows one bounded static state badge on eligible selected thumbnails", () => {
     const presentation = desktopCard.slice(
       desktopCard.indexOf("id: windowPresentation"),
@@ -2097,6 +2175,7 @@ describe("overview effect package", () => {
       "resourceClass",
       "resourceName",
       "desktopFileName",
+      "desktopName",
       "state",
     ]) {
       expect(matcher).toContain(`${field}:`);
@@ -2403,7 +2482,7 @@ describe("overview effect package", () => {
     expect(desktopCard).toContain(
       "signal desktopTapped(var candidate, string expectedDesktopId, var expectedScreen)",
     );
-    expect(numberGutter).toContain("width: card.contentLeft");
+    expect(numberGutter).toContain("width: 42");
     expect(numberGutter).toContain("height: card.height");
     expect(numberGutter).toContain("acceptedButtons: Qt.LeftButton");
     expect(numberGutter).toContain(

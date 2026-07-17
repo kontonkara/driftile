@@ -15,6 +15,7 @@ Rectangle {
     required property var screen
     required property string searchQuery
     required property bool showApplicationIdentity
+    required property bool showDesktopNames
     required property bool showWindowCloseButtons
     required property bool showWindowLabels
     required property bool showWindowStateBadges
@@ -36,7 +37,10 @@ Rectangle {
                         var expectedScreen)
 
     readonly property var columns: context ? context.columns : []
-    readonly property real contentLeft: 42
+    readonly property var desktopLabel: planDesktopLabel(desktop)
+    readonly property bool desktopNamePresented: showDesktopNames && desktopLabel !== null
+        && width >= 560 && height >= 72
+    readonly property real contentLeft: desktopNamePresented ? Math.max(112, Math.min(170, width * 0.14)) : 42
     readonly property real contentTop: 10
     readonly property real contentWidth: Math.max(1, width - contentLeft - 10)
     readonly property real contentHeight: Math.max(1, height - contentTop * 2)
@@ -63,7 +67,7 @@ Rectangle {
             && card.keyboardSelectionId === card.desktopNavigationTargetId()
         readonly property bool attentionRequested: card.anyWindowDemandsAttention(card.attentionRevision)
 
-        width: card.contentLeft
+        width: 42
         height: card.height
 
         Text {
@@ -141,6 +145,29 @@ Rectangle {
                     card.desktopReorderCanceled(card.desktopId);
                 }
             }
+        }
+    }
+
+    Item {
+        id: desktopNameGutter
+
+        x: 42
+        width: Math.max(0, card.contentLeft - 42)
+        height: card.height
+        visible: card.desktopNamePresented
+
+        Text {
+            anchors.fill: parent
+            anchors.leftMargin: 7
+            anchors.rightMargin: 9
+            text: card.desktopLabel ? card.desktopLabel.label : ""
+            color: card.current ? "#e8eef9" : "#9eabbe"
+            font.bold: card.current
+            font.pixelSize: Math.max(10, Math.min(14, card.height * 0.12))
+            horizontalAlignment: Text.AlignLeft
+            verticalAlignment: Text.AlignVCenter
+            elide: Text.ElideRight
+            textFormat: Text.PlainText
         }
     }
 
@@ -1432,6 +1459,62 @@ Rectangle {
         }
     }
 
+    function planDesktopLabel(desktop) {
+        if (!desktop) {
+            return null;
+        }
+
+        try {
+            const name = desktop.name;
+            if (typeof name !== "string") {
+                return null;
+            }
+
+            const runtime = OverviewRuntime.DriftileOverview;
+            if (!runtime || typeof runtime.planOverviewDesktopLabel !== "function") {
+                return null;
+            }
+
+            const planned = runtime.planOverviewDesktopLabel({
+                name
+            });
+            if (!planned || Array.isArray(planned) || typeof planned !== "object"
+                    || !boundedPlainDesktopLabel(planned.label)) {
+                return null;
+            }
+
+            return {
+                label: planned.label
+            };
+        } catch (error) {
+            return null;
+        }
+    }
+
+    function boundedPlainDesktopLabel(value) {
+        if (typeof value !== "string" || value.length === 0 || value.length > 128) {
+            return false;
+        }
+
+        let codePoints = 0;
+        for (let offset = 0; offset < value.length;) {
+            const codePoint = value.codePointAt(offset);
+            if (!Number.isInteger(codePoint) || codePoint <= 0x1f || codePoint === 0x7f
+                    || (codePoint >= 0x80 && codePoint <= 0x9f)
+                    || codePoint === 0x2028 || codePoint === 0x2029) {
+                return false;
+            }
+
+            offset += codePoint > 0xffff ? 2 : 1;
+            codePoints += 1;
+            if (codePoints > 64) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
     function planWindowState(candidate, frame, tiledPresentation, revision) {
         if (!candidate || !Number.isInteger(revision) || revision < 0) {
             return null;
@@ -1636,6 +1719,7 @@ Rectangle {
                     ? String(candidate.resourceName) : "",
                 desktopFileName: candidate && candidate.desktopFileName !== undefined
                     && candidate.desktopFileName !== null ? String(candidate.desktopFileName) : "",
+                desktopName: card.desktopLabel ? card.desktopLabel.label : "",
                 state: card.windowSearchState(candidate, windowState)
             }) === true;
         } catch (error) {
