@@ -49,6 +49,15 @@ export type {
   OverviewSpatialLayoutInput,
   OverviewSpatialLayoutPlan,
 } from "./spatial-layout";
+export {
+  planOverviewSpatialViewport,
+  planOverviewSpatialWorkspaceCenter,
+} from "./spatial-viewport";
+export type {
+  OverviewSpatialViewportInput,
+  OverviewSpatialViewportPlan,
+  OverviewSpatialWorkspaceCenterInput,
+} from "./spatial-viewport";
 
 export type OverviewModelLoadResult =
   | OverviewLayoutProjectionResult

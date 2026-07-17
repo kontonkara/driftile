@@ -366,7 +366,7 @@ describe("overview effect package", () => {
 
   it("keeps a fixed scene-effect proxy over the cache-busted controller", () => {
     expect(createHash("sha256").update(main, "utf8").digest("hex")).toBe(
-      "8a15fd21f721cd360dd76056ba0e68a5984b62f832c42fec39d82ea3a2900ed6",
+      "a0c16e1f0939928ed53b5a0b40778d75183e6f4d4a2133ddcbcbcacb111fac66",
     );
     expect(main).toContain("KWin.SceneEffect {");
     expect(main).toContain("Date.now().toString(36)");
@@ -1221,6 +1221,13 @@ describe("overview effect package", () => {
       scene.indexOf("function planSpatialLayout("),
       scene.indexOf("function beginDesktopReorder("),
     );
+    const spatialInputStart = scene.indexOf("id: spatialViewportInput");
+    const desktopRepeaterStart = scene.indexOf("id: desktopRepeater");
+    const spatialInput = scene.slice(
+      spatialInputStart,
+      scene.lastIndexOf("Repeater {", desktopRepeaterStart) +
+        "Repeater {".length,
+    );
     const numberGutter = desktopCard.slice(
       desktopCard.indexOf("id: numberGutter"),
       desktopCard.indexOf("id: viewport"),
@@ -1258,14 +1265,97 @@ describe("overview effect package", () => {
       "const aspectError = Math.abs(plan.cardWidth * height - plan.cardHeight * width);",
     );
     expect(scene).toContain(
-      "readonly property real cardTop: overviewSpatialLayout.edgeMargin - overviewSpatialLayout.initialContentY",
+      "readonly property real cardTop: overviewSpatialLayout.edgeMargin - spatialContentY",
     );
+    expect(scene).toContain("property real spatialContentY: 0");
     expect(reorderDelegate).toContain("x: root.cardX");
     expect(reorderDelegate).toContain(
       "y: root.cardTop + index * (root.cardHeight + root.cardGap)",
     );
     expect(reorderDelegate).toContain("width: root.cardWidth");
     expect(reorderDelegate).toContain("height: root.cardHeight");
+
+    expect(overviewRuntimeIndex).toContain("planOverviewSpatialViewport");
+    expect(overviewRuntimeIndex).toContain(
+      "planOverviewSpatialWorkspaceCenter",
+    );
+    expect(spatialLayout).toMatch(
+      /runtime\.planOverviewSpatialViewport\(\{[\s\S]*sceneHeight: height,[\s\S]*contentHeight: overviewSpatialLayout\.contentHeight,[\s\S]*contentY: requestedContentY/u,
+    );
+    expect(spatialLayout).toMatch(
+      /function resetSpatialViewport\(\)[\s\S]*planSpatialViewport\(overviewSpatialLayout\.initialContentY\)[\s\S]*spatialContentY = plan\.contentY/u,
+    );
+    expect(scene).toMatch(
+      /onOverviewSpatialLayoutChanged:[\s\S]*resetDesktopReorder\(\);[\s\S]*resetSpatialViewport\(\);/u,
+    );
+    expect(scene).toMatch(
+      /Component\.onCompleted:[\s\S]*resetSpatialViewport\(\);[\s\S]*forceActiveFocus\(\);/u,
+    );
+    expect(scene).toMatch(
+      /function onActiveChanged\(\)[\s\S]*sceneEffect\.active !== true[\s\S]*root\.spatialContentY = 0;[\s\S]*root\.resetSpatialViewport\(\);/u,
+    );
+
+    expect(scene).toContain(
+      "onKeyboardSelectionIdChanged: root.centerKeyboardSelectionWorkspace()",
+    );
+    expect(spatialLayout).toContain(
+      "navigationTargetForId(collectNavigationTargets(), selectedTargetId)",
+    );
+    expect(spatialLayout).toContain(
+      "const workspaceIndex = desktopIds.indexOf(target.desktopId)",
+    );
+    expect(spatialLayout).toMatch(
+      /runtime\.planOverviewSpatialWorkspaceCenter\(\{[\s\S]*sceneHeight: height,[\s\S]*contentHeight: overviewSpatialLayout\.contentHeight,[\s\S]*cardHeight,[\s\S]*gap: cardGap,[\s\S]*workspaceCount: desktopIds\.length,[\s\S]*workspaceIndex/u,
+    );
+    expect(spatialLayout).toContain(
+      "confirmedTarget.desktopId !== target.desktopId",
+    );
+
+    expect(scene).toContain("clip: true");
+    expect(spatialInputStart).toBeGreaterThan(0);
+    expect(desktopRepeaterStart).toBeGreaterThan(spatialInputStart);
+    expect(spatialInput).toContain("anchors.fill: parent");
+    expect(spatialInput).toContain("containmentMask: QtObject {");
+    expect(spatialInput).toContain(
+      "return root.spatialViewportBackdropContains(point)",
+    );
+    expect(spatialInput.match(/\bDragHandler\s*\{/gu)).toHaveLength(1);
+    expect(spatialInput).toContain("target: null");
+    expect(spatialInput).toContain("acceptedButtons: Qt.LeftButton");
+    expect(spatialInput).toContain(
+      "acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad | PointerDevice.TouchScreen",
+    );
+    expect(spatialInput).toContain(
+      "grabPermissions: PointerHandler.TakeOverForbidden",
+    );
+    expect(spatialInput).toContain("xAxis.enabled: false");
+    expect(spatialInput).toContain("yAxis.enabled: true");
+    expect(spatialInput).toContain(
+      "root.setSpatialContentY(spatialViewportInput.panStartContentY - activeTranslation.y)",
+    );
+    expect(spatialInput).toContain(
+      "spatialViewportInput.panLayout = root.overviewSpatialLayout",
+    );
+    expect(spatialInput).toContain(
+      "spatialViewportInput.panLayout === root.overviewSpatialLayout",
+    );
+    expect(spatialInput).toContain("!root.desktopReorderActive");
+    expect(spatialInput).toContain("!root.keyboardHelpVisible");
+    expect(spatialInput).not.toContain("preventStealing");
+    expect(spatialLayout).toContain("point.x < cardX");
+    expect(spatialLayout).toContain("point.x >= cardX + cardWidth");
+    expect(spatialLayout).toContain(
+      "return relativeY - workspaceIndex * stride >= cardHeight",
+    );
+    expect(spatialLayout).toContain(
+      "spatialViewportOverlayContainsPoint(keyboardHelpHint, point)",
+    );
+    expect(spatialLayout).toContain(
+      "spatialViewportOverlayContainsPoint(searchOverlay, point)",
+    );
+    expect(`${spatialInput}\n${spatialLayout}`).not.toMatch(
+      /\b(?:Animation|Behavior|MouseArea|TapHandler|Timer|WheelHandler)\s*\{|\.setValue\s*\(|KWin\.(?:SceneView|Workspace)\.[A-Za-z0-9_]+\s*=(?!=)/u,
+    );
 
     expect(numberGutter.match(/\bDragHandler\s*\{/gu)).toHaveLength(1);
     expect(numberGutter).toContain("target: null");
@@ -2324,7 +2414,7 @@ describe("overview effect package", () => {
       "if (!current && searchQuery.trim().length === 0)",
     );
     expect(cardTargets).toContain(
-      "clippedCardNavigationRect(numberGutter, sceneItem)",
+      "clippedCardNavigationRect(numberGutter, sceneItem, includeOffscreen)",
     );
     expect(cardTargets).toContain('kind: "desktop"');
     expect(cardTargets).toContain('kind: "window"');
