@@ -1217,6 +1217,10 @@ describe("overview effect package", () => {
   });
 
   it("reorders live desktop cards only through one guarded gutter drag", () => {
+    const spatialLayout = scene.slice(
+      scene.indexOf("function planSpatialLayout("),
+      scene.indexOf("function beginDesktopReorder("),
+    );
     const numberGutter = desktopCard.slice(
       desktopCard.indexOf("id: numberGutter"),
       desktopCard.indexOf("id: viewport"),
@@ -1233,6 +1237,35 @@ describe("overview effect package", () => {
       scene.indexOf("function closeStaleOverview("),
       scene.indexOf("function outputIdForScreen("),
     );
+
+    expect(scene).toMatch(
+      /readonly property int currentWorkspaceIndex:[\s\S]*desktopIds\.indexOf\(String\(currentDesktop\.id\)\)/u,
+    );
+    expect(scene).toMatch(
+      /readonly property real overviewZoom:[\s\S]*Number\.isFinite\(sceneEffect\.overviewZoom\)[\s\S]*\? sceneEffect\.overviewZoom : 0\.5/u,
+    );
+    expect(spatialLayout).toContain(
+      'typeof runtime.planOverviewSpatialLayout !== "function"',
+    );
+    expect(spatialLayout).toMatch(
+      /runtime\.planOverviewSpatialLayout\(\{[\s\S]*sceneWidth: width,[\s\S]*sceneHeight: height,[\s\S]*workspaceCount: desktopIds\.length,[\s\S]*currentWorkspaceIndex,[\s\S]*zoom: overviewZoom/u,
+    );
+    expect(spatialLayout).toMatch(
+      /return spatialLayoutIsValid\(plan\) \? plan : fallback;[\s\S]*catch \(error\) \{\s*return fallback;/u,
+    );
+    expect(spatialLayout).toContain("function legacySpatialLayout()");
+    expect(spatialLayout).toContain(
+      "const aspectError = Math.abs(plan.cardWidth * height - plan.cardHeight * width);",
+    );
+    expect(scene).toContain(
+      "readonly property real cardTop: overviewSpatialLayout.edgeMargin - overviewSpatialLayout.initialContentY",
+    );
+    expect(reorderDelegate).toContain("x: root.cardX");
+    expect(reorderDelegate).toContain(
+      "y: root.cardTop + index * (root.cardHeight + root.cardGap)",
+    );
+    expect(reorderDelegate).toContain("width: root.cardWidth");
+    expect(reorderDelegate).toContain("height: root.cardHeight");
 
     expect(numberGutter.match(/\bDragHandler\s*\{/gu)).toHaveLength(1);
     expect(numberGutter).toContain("target: null");
@@ -1272,6 +1305,24 @@ describe("overview effect package", () => {
     expect(scene).toContain(
       "visible: root.desktopReorderActive && root.desktopReorderInsertionSlot >= 0",
     );
+    expect(scene).toMatch(
+      /x: root\.desktopReorderCardX[\s\S]*y: root\.desktopReorderCardTop[\s\S]*width: root\.desktopReorderCardWidth/u,
+    );
+    expect(reorder).toContain("desktopReorderCardTop = cardTop");
+    expect(reorder).toContain("desktopReorderCardWidth = cardWidth");
+    expect(reorder).toContain("desktopReorderCardX = cardX");
+    expect(reorder).toContain("cardTop === desktopReorderCardTop");
+    expect(reorder).toContain("point.x < desktopReorderCardX");
+    expect(reorder).toContain(
+      "point.x >= desktopReorderCardX + desktopReorderCardWidth",
+    );
+    expect(reorder).toContain(
+      "const movableTop = desktopReorderCardTop + firstMovableIndex * stride",
+    );
+    expect(reorder).toContain(
+      "const protectedTop = desktopReorderCardTop + movableCount * stride",
+    );
+    expect(reorder).not.toContain("desktopReorderOuterMargin");
     expect(reorder).toContain("runtime.planOverviewDesktopDrop(");
     expect(reorder).toContain("desktopReorderEmptyDesktopAboveFirst");
     expect(reorder).toContain(

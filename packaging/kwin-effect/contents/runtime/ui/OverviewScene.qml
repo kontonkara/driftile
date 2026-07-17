@@ -52,11 +52,17 @@ Rectangle {
     readonly property string outputName: outputLabelPlan ? outputLabelPlan.label : ""
     readonly property string outputId: outputIdForScreen()
     readonly property var desktopIds: outputId.length > 0 ? orderedDesktopIds() : []
+    readonly property int currentWorkspaceIndex: currentDesktop && currentDesktop.id !== undefined
+        && currentDesktop.id !== null ? desktopIds.indexOf(String(currentDesktop.id)) : -1
+    readonly property real overviewZoom: sceneEffect && Number.isFinite(sceneEffect.overviewZoom)
+        ? sceneEffect.overviewZoom : 0.5
+    readonly property var overviewSpatialLayout: planSpatialLayout()
     readonly property real outerMargin: Math.max(20, Math.min(width, height) * 0.035)
-    readonly property real cardGap: Math.max(2, Math.min(10, height * 0.012))
-    readonly property real cardHeight: desktopIds.length > 0 ? Math.max(1, (height - outerMargin * 2 - cardGap
-                                                                            * Math.max(0, desktopIds.length - 1))
-                                                                        / desktopIds.length) : 0
+    readonly property real cardGap: overviewSpatialLayout.gap
+    readonly property real cardHeight: overviewSpatialLayout.cardHeight
+    readonly property real cardWidth: overviewSpatialLayout.cardWidth
+    readonly property real cardX: overviewSpatialLayout.cardX
+    readonly property real cardTop: overviewSpatialLayout.edgeMargin - overviewSpatialLayout.initialContentY
     property bool desktopReorderAvailable: false
     property bool emptyDesktopAboveFirst: false
     property bool keyboardHelpVisible: false
@@ -70,6 +76,9 @@ Rectangle {
     property bool desktopReorderActive: false
     property real desktopReorderCardGap: 0
     property real desktopReorderCardHeight: 0
+    property real desktopReorderCardTop: 0
+    property real desktopReorderCardWidth: 0
+    property real desktopReorderCardX: 0
     property var desktopReorderCurrentDesktop: null
     property string desktopReorderCurrentDesktopId: ""
     property var desktopReorderDesktopIds: []
@@ -78,7 +87,6 @@ Rectangle {
     property bool desktopReorderEmptyDesktopAboveFirst: false
     property int desktopReorderInsertionSlot: -1
     property var desktopReorderModel: null
-    property real desktopReorderOuterMargin: 0
     property var desktopReorderOutput: null
     property string desktopReorderOutputId: ""
     property real desktopReorderSceneHeight: 0
@@ -240,9 +248,9 @@ Rectangle {
             required property int index
 
             enabled: !root.keyboardHelpVisible
-            x: root.outerMargin
-            y: root.outerMargin + index * (root.cardHeight + root.cardGap)
-            width: Math.max(1, root.width - root.outerMargin * 2)
+            x: root.cardX
+            y: root.cardTop + index * (root.cardHeight + root.cardGap)
+            width: root.cardWidth
             height: root.cardHeight
             context: root.contextFor(modelData)
             current: root.currentDesktop !== null && String(root.currentDesktop.id) === modelData
@@ -561,16 +569,82 @@ Rectangle {
     Rectangle {
         readonly property real lineHeight: Math.max(2, Math.min(4, root.desktopReorderCardGap))
 
-        x: root.desktopReorderOuterMargin
-        y: root.desktopReorderOuterMargin
+        x: root.desktopReorderCardX
+        y: root.desktopReorderCardTop
            + root.desktopReorderInsertionSlot * (root.desktopReorderCardHeight + root.desktopReorderCardGap)
            - (root.desktopReorderInsertionSlot === 0 ? 0 : root.desktopReorderCardGap / 2) - lineHeight / 2
-        width: Math.max(1, root.desktopReorderSceneWidth - root.desktopReorderOuterMargin * 2)
+        width: root.desktopReorderCardWidth
         height: lineHeight
         visible: root.desktopReorderActive && root.desktopReorderInsertionSlot >= 0
         color: "#ffd166"
         radius: lineHeight / 2
         z: 10000
+    }
+
+    function planSpatialLayout() {
+        const fallback = legacySpatialLayout();
+        if (!Number.isFinite(width) || width <= 0 || !Number.isFinite(height) || height <= 0
+                || desktopIds.length <= 0 || currentWorkspaceIndex < 0
+                || currentWorkspaceIndex >= desktopIds.length) {
+            return fallback;
+        }
+
+        const runtime = OverviewRuntime.DriftileOverview;
+        if (!runtime || typeof runtime.planOverviewSpatialLayout !== "function") {
+            return fallback;
+        }
+
+        try {
+            const plan = runtime.planOverviewSpatialLayout({
+                                                               sceneWidth: width,
+                                                               sceneHeight: height,
+                                                               workspaceCount: desktopIds.length,
+                                                               currentWorkspaceIndex,
+                                                               zoom: overviewZoom
+                                                           });
+            return spatialLayoutIsValid(plan) ? plan : fallback;
+        } catch (error) {
+            return fallback;
+        }
+    }
+
+    function spatialLayoutIsValid(plan) {
+        if (!plan || !Number.isFinite(plan.cardWidth) || plan.cardWidth <= 0
+                || !Number.isFinite(plan.cardHeight) || plan.cardHeight <= 0
+                || !Number.isFinite(plan.cardX) || plan.cardX < 0
+                || !Number.isFinite(plan.gap) || plan.gap <= 0
+                || !Number.isFinite(plan.edgeMargin) || plan.edgeMargin < 0
+                || !Number.isFinite(plan.contentHeight) || plan.contentHeight < height
+                || !Number.isFinite(plan.initialContentY) || plan.initialContentY < 0
+                || plan.cardX + plan.cardWidth > width || plan.cardHeight > height
+                || plan.initialContentY > Math.max(0, plan.contentHeight - height)) {
+            return false;
+        }
+
+        const aspectError = Math.abs(plan.cardWidth * height - plan.cardHeight * width);
+        const aspectScale = Math.max(1, plan.cardWidth * height, plan.cardHeight * width);
+        const currentCardCenter = plan.edgeMargin - plan.initialContentY
+            + currentWorkspaceIndex * (plan.cardHeight + plan.gap) + plan.cardHeight / 2;
+        return aspectError <= aspectScale * 0.000001
+            && Math.abs(currentCardCenter - height / 2) <= Math.max(1, height) * 0.000001;
+    }
+
+    function legacySpatialLayout() {
+        const edgeMargin = Math.max(20, Math.min(width, height) * 0.035);
+        const gap = Math.max(2, Math.min(10, height * 0.012));
+        const count = desktopIds.length;
+        const legacyCardHeight = count > 0
+            ? Math.max(1, (height - edgeMargin * 2 - gap * Math.max(0, count - 1)) / count) : 0;
+        return {
+            cardHeight: legacyCardHeight,
+            cardWidth: Math.max(1, width - edgeMargin * 2),
+            cardX: edgeMargin,
+            contentHeight: Math.max(height, edgeMargin * 2 + legacyCardHeight * count
+                                    + gap * Math.max(0, count - 1)),
+            edgeMargin,
+            gap,
+            initialContentY: 0
+        };
     }
 
     function beginDesktopReorder(candidate, expectedDesktopId, expectedScreen, sceneX, sceneY) {
@@ -608,6 +682,9 @@ Rectangle {
         desktopReorderActive = true;
         desktopReorderCardGap = cardGap;
         desktopReorderCardHeight = cardHeight;
+        desktopReorderCardTop = cardTop;
+        desktopReorderCardWidth = cardWidth;
+        desktopReorderCardX = cardX;
         desktopReorderCurrentDesktop = selectedDesktop;
         desktopReorderCurrentDesktopId = String(selectedDesktop.id);
         desktopReorderDesktopIds = snapshot.ids;
@@ -615,7 +692,6 @@ Rectangle {
         desktopReorderEffect = effect;
         desktopReorderEmptyDesktopAboveFirst = keepEmptyDesktopAboveFirst;
         desktopReorderModel = model;
-        desktopReorderOuterMargin = outerMargin;
         desktopReorderOutput = expectedOutput;
         desktopReorderOutputId = expectedOutputId;
         desktopReorderSceneHeight = height;
@@ -660,7 +736,8 @@ Rectangle {
         const selectedDesktopId = desktopReorderCurrentDesktopId;
         const snapshot = liveDesktopSnapshot();
         const geometryUnchanged = width === desktopReorderSceneWidth && height === desktopReorderSceneHeight
-            && outerMargin === desktopReorderOuterMargin && cardGap === desktopReorderCardGap
+            && cardX === desktopReorderCardX && cardWidth === desktopReorderCardWidth
+            && cardTop === desktopReorderCardTop && cardGap === desktopReorderCardGap
             && cardHeight === desktopReorderCardHeight;
         const contextUnchanged = desktopContextIsExact(effect, model, liveScreen, expectedOutput, expectedOutputId,
                                                        source, sourceId) && selectedDesktop === currentDesktop
@@ -697,6 +774,9 @@ Rectangle {
         desktopReorderActive = false;
         desktopReorderCardGap = 0;
         desktopReorderCardHeight = 0;
+        desktopReorderCardTop = 0;
+        desktopReorderCardWidth = 0;
+        desktopReorderCardX = 0;
         desktopReorderCurrentDesktop = null;
         desktopReorderCurrentDesktopId = "";
         desktopReorderDesktopIds = [];
@@ -705,7 +785,6 @@ Rectangle {
         desktopReorderEmptyDesktopAboveFirst = false;
         desktopReorderInsertionSlot = -1;
         desktopReorderModel = null;
-        desktopReorderOuterMargin = 0;
         desktopReorderOutput = null;
         desktopReorderOutputId = "";
         desktopReorderSceneHeight = 0;
@@ -732,17 +811,17 @@ Rectangle {
         const firstMovableIndex = desktopReorderEmptyDesktopAboveFirst ? 1 : 0;
         const movableCount = desktopReorderDesktopIds.length - 1;
         const stride = desktopReorderCardHeight + desktopReorderCardGap;
-        const movableTop = desktopReorderOuterMargin + firstMovableIndex * stride;
-        const protectedTop = desktopReorderOuterMargin + movableCount * stride;
+        const movableTop = desktopReorderCardTop + firstMovableIndex * stride;
+        const protectedTop = desktopReorderCardTop + movableCount * stride;
         if (!point || !Number.isFinite(point.x) || !Number.isFinite(point.y)
-                || point.x < desktopReorderOuterMargin
-                || point.x >= desktopReorderSceneWidth - desktopReorderOuterMargin
+                || point.x < desktopReorderCardX
+                || point.x >= desktopReorderCardX + desktopReorderCardWidth
                 || point.y < movableTop || point.y >= protectedTop) {
             return -1;
         }
 
         return Math.max(firstMovableIndex,
-                        Math.min(movableCount, Math.floor((point.y - desktopReorderOuterMargin
+                        Math.min(movableCount, Math.floor((point.y - desktopReorderCardTop
                                                            + desktopReorderCardHeight / 2
                                                            + desktopReorderCardGap) / stride)));
     }
