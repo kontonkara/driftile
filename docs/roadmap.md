@@ -1,12 +1,11 @@
 # Roadmap
 
-Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.64.0 are
+Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.65.0 are
 released. The delivered milestones and release criteria below are a historical
 record. Later direction is not a committed release schedule.
 
-Stable 1.64.0 adds structured Overview search with quoted phrases,
-exclusions, and explicit title, application, desktop, output, and state scopes.
-Logical persistence remains v4.
+Stable 1.65.0 adds bounded alternative groups and in-session editing shortcuts
+to structured Overview search. Logical persistence remains v4.
 
 ## Foundation (delivered)
 
@@ -2317,7 +2316,7 @@ Release criteria (met):
   timer, animation, geometry write, persistence field, private API, or KWin
   fork.
 
-### 1.65.0 (prepared)
+### 1.65.0 (released)
 
 - Let one standalone unquoted `|` separate AND-connected search clauses into
   up to four alternative groups; a window matches when any complete group
@@ -2335,7 +2334,7 @@ Release criteria (met):
 - Let `Ctrl+U` clear a non-empty query while keeping the Overview open.
 - Preserve the existing unmodified `Backspace` and `Escape` behavior.
 
-Release criteria (prepared):
+Release criteria (met):
 
 - Existing queries retain their case-insensitive AND behavior, while each
   valid alternative independently composes scopes, phrases, and exclusions.
