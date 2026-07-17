@@ -1,11 +1,11 @@
 # Roadmap
 
-Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.53.0 are
+Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.54.0 are
 released. The delivered milestones and release criteria below are a historical
 record. Later direction is not a committed release schedule.
 
-Stable 1.53.0 adds read-only attention cues and attention-aware search to the
-optional Overview. Logical persistence remains v4.
+Stable 1.54.0 restores, focuses, closes, navigates, and searches minimized
+member tabs in the optional Overview. Logical persistence remains v4.
 
 ## Foundation (delivered)
 
@@ -2034,7 +2034,7 @@ Release criteria (met):
 The batch changes no setting, action, binding, focus path, layout state,
 persistence schema, or private API.
 
-### 1.54.0 (in development)
+### 1.54.0 (released)
 
 - Make minimized members of tabbed columns pointer, keyboard, and search targets
   through their existing tabs.
@@ -2047,7 +2047,7 @@ persistence schema, or private API.
 - Keep minimized stacked and floating windows outside this slice and leave drag
   and drop disabled for minimized tabs.
 
-Release criteria:
+Release criteria (met):
 
 - Click, `Enter`, and keyboard navigation reach the exact minimized member and
   close the Overview only after confirmed restore and focus.
