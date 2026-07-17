@@ -1,12 +1,12 @@
 # Roadmap
 
-Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.56.0 are
+Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.57.0 are
 released. The delivered milestones and release criteria below are a historical
 record. Later direction is not a committed release schedule.
 
-Stable 1.56.0 adds normalized caption and application labels to ordinary large
-thumbnails, tabs, and minimized placeholders in the optional Overview. Logical
-persistence remains v4.
+Stable 1.57.0 adds live Overview preferences for large-thumbnail label
+visibility and application identity while retaining bounded caption planning.
+Logical persistence remains v4.
 
 ## Foundation (delivered)
 
@@ -2109,7 +2109,7 @@ Release criteria (met):
   timer, animation, layout or settings write, action, binding, persistence field,
   or private API.
 
-### 1.57.0 (in development)
+### 1.57.0 (released)
 
 - Add a live `ShowWindowLabels` preference with the existing labeled
   presentation as its default.
@@ -2121,7 +2121,7 @@ Release criteria (met):
 - Expose both nullable per-user preferences through Home Manager without
   changing system package ownership or the NixOS option surface.
 
-Release criteria:
+Release criteria (met):
 
 - Malformed external values fall back to the existing enabled presentation.
 - Both preferences update through KConfig without restarting KWin and preserve
