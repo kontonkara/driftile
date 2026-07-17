@@ -96,6 +96,10 @@ search overlay reports the unique window-result count or an explicit no-match
 message as plain text. These interactions change only overview selection and
 perform no KWin, layout, configuration, or persistence write.
 
+`F1` opens a modal, bounded keyboard reference inside the overview. `F1` or
+`Escape` closes it before other input is processed, and a new overview session
+starts with the reference hidden.
+
 A thumbnail or non-minimized tab can be dropped on an exact desktop card on the
 same or another output. Cross-output completion confirms the public output move
 and desktop membership separately. A partial result is compensated only while

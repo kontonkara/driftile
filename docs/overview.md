@@ -79,6 +79,11 @@ removes the window, so an application prompt remains usable. A middle click on
 a visible thumbnail, closeable tab, or closeable placeholder uses the same
 guarded path without restoring a minimized window.
 
+`F1` opens a compact keyboard reference inside the Overview. The panel adapts
+to small scenes and scrolls when needed. While it is open, background window,
+desktop, search, pointer, and wheel input stays inactive; `F1` or `Escape`
+closes the panel first. Closing and reopening the Overview resets the panel.
+
 Typing filters visible windows with a case-insensitive query. Whitespace-
 separated terms use AND matching across the window title, application identity,
 desktop name, output name, and state. Double quotes require a contiguous phrase
