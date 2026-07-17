@@ -36,6 +36,7 @@ programs.driftile.overview.showWindowLabels = true;
 programs.driftile.overview.showApplicationIdentity = true;
 programs.driftile.overview.showWindowCloseButtons = true;
 programs.driftile.overview.showWindowStateBadges = true;
+programs.driftile.overview.showDesktopNames = true;
 programs.driftile.overview.touchpadGesture = {
   enable = true;
   fingerCount = 4;
@@ -51,9 +52,14 @@ line or fallback. `showWindowCloseButtons` controls the hover and
 keyboard-selection close affordance for eligible Overview window previews.
 `showWindowStateBadges` controls static state badges on sufficiently large
 selected ordinary thumbnails; tabs, minimized placeholders, and state search
-are unaffected. All four boolean settings update live and default to enabled
-in the effect. Malformed values fall back to enabled, while their nullable Home
-Manager options leave existing KConfig values untouched when set to `null`.
+are unaffected. `showDesktopNames` controls normalized names beside the number
+gutter on sufficiently large desktop cards; smaller cards stay compact, and
+desktop-name search remains available when the label is hidden. All five
+boolean settings update live and default to enabled in the effect. Malformed
+values fall back to enabled, while their nullable Home Manager options leave
+existing KConfig values untouched when set to `null`. `showDesktopNames` does
+not expand the NixOS option surface; a system-installed effect uses the same
+per-user KConfig value.
 
 Use a different count from vertical desktop navigation and Plasma's built-in
 Overview, or disable the overlapping gesture, so each global direction has one

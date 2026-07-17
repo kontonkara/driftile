@@ -108,6 +108,9 @@ selection and reuses the existing exact close path.
 Version 1.59.0 adds static window-state badges to sufficiently large selected
 ordinary thumbnails. State terms also join the existing all-term search.
 
+Version 1.60.0 is in development. It adds bounded desktop names to sufficiently
+large cards and makes each owning desktop name available to window search.
+
 The companion is disabled by default. When enabled with a fresh shortcut
 record, `Meta+O` toggles it. KGlobalAccel preserves an existing assignment
 across upgrades, including an explicitly unbound action, so review it in
@@ -209,6 +212,25 @@ window itself is outside the current card.
 
 The cues follow public KWin events and are read-only. They do not request focus,
 change layout, add a setting or action, or write persistent state.
+
+## Desktop names
+
+A sufficiently large desktop card can show its normalized virtual-desktop name
+beside the fixed number gutter. The name is plain text, bounded, whitespace
+normalized, and elided when needed. Small or narrow cards keep the existing
+compact numbered gutter and content area.
+
+Window search includes the owning desktop name for every projected window.
+Turning the label off hides only its presentation; desktop-name search remains
+available and composes with the existing all-term search fields.
+
+`ShowDesktopNames` is enabled by default and updates live. A malformed or
+non-boolean KConfig value falls back to enabled. Home Manager can manage it
+with nullable `programs.driftile.overview.showDesktopNames`; `null` leaves the
+existing KConfig value untouched. The NixOS option surface is unchanged.
+
+The label reads the public virtual-desktop name and adds no pointer or keyboard
+input, timer, animation, action, desktop selection, layout or persistence write.
 
 ## Window labels
 
@@ -409,13 +431,20 @@ programs.driftile.overview.touchpadGesture = {
 };
 ```
 
+The 1.60.0 development source additionally accepts:
+
+```nix
+programs.driftile.overview.showDesktopNames = true;
+```
+
 The main script and overview can be installed independently. For example, a
 system-wide main package can be combined with a per-user overview. Do not
 install the same package ID through both NixOS and Home Manager for one user.
 Neither module enables the effect in KWin; enable it in Desktop Effects and
 adjust its shortcut, screen edge, backdrop, or touchpad gesture only if needed.
 The Home Manager-only nullable overview options can manage an effect installed
-in another scope; `null` leaves their KConfig values untouched.
+in another scope; `null` leaves their KConfig values untouched. Desktop-name
+presentation does not add a corresponding NixOS option.
 
 ## Validation
 
@@ -441,6 +470,10 @@ Version 1.58.0 adds focused pointer-arbitration, close-path, package-content,
 KConfig, NixOS-surface, and Home Manager coverage for close buttons without
 changing the existing `Delete` or middle-click paths.
 
+Version 1.60.0 adds focused normalization, adaptive-gutter, search, KConfig,
+NixOS-surface, and Home Manager coverage for desktop names without changing
+window targets or layout ownership.
+
 ## Safety boundary
 
 On activation, the effect accepts only two identical reads of a valid current
@@ -448,6 +481,10 @@ v2 catalog with canonical v4 logical state whose activity, outputs, desktops,
 and referenced windows match KWin. It projects only the current activity. A
 missing, changing, legacy, corrupt, future, oversized, or stale snapshot keeps
 the effect closed.
+
+Desktop names are a bounded read-only projection of each direct public desktop
+object. Missing, malformed, empty, hostile, or inaccessible names fail closed
+without changing selection, geometry, focus, input, layout, or persistence.
 
 Current-card thumbnail focus is unchanged: the effect revalidates the direct
 live window object, exact internal ID, output, desktop and activity memberships,

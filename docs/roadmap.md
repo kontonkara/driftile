@@ -2189,3 +2189,23 @@ Release criteria (met):
   badge.
 
 No other feature belongs to 1.59.0.
+
+### 1.60.0 (in development)
+
+- Show each normalized virtual-desktop name beside the fixed number gutter on
+  sufficiently large Overview cards.
+- Keep small and narrow cards on the existing compact numbered gutter, without
+  clipping or shrinking their projected window content.
+- Include the owning desktop name in all-term window search whether or not its
+  label is visible.
+- Add default-enabled live `ShowDesktopNames` KConfig and a nullable Home
+  Manager option. Malformed values retain the enabled presentation, and `null`
+  leaves KConfig unmanaged.
+- Keep the NixOS option surface unchanged; system installations use the same
+  per-user effect setting.
+- Treat desktop names as a bounded, normalized, read-only projection of public
+  KWin state. Missing or hostile names fail closed.
+
+The batch adds no pointer or keyboard input, action, binding, timer, animation,
+desktop selection, focus, geometry, layout or persistence write, private API,
+or KWin fork.
