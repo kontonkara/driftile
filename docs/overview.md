@@ -1,138 +1,26 @@
 # Overview Companion
 
-The optional overview companion is a separate KWin effect. It presents
-Driftile's current activity, output, desktop, column, stack, viewport, and
-floating-window model. In 1.7.0, a left click on a valid thumbnail in the
-current desktop card focuses that live window through KWin and closes the
-effect. Plasma's built-in Overview remains the baseline: the companion never
-opens over it, silently cancels a loading attempt if it becomes active, and
-never activates, deactivates, or configures the Plasma effect.
+Driftile Overview is an optional KWin effect that presents the current
+activity's outputs, virtual desktops, columns, stacks, viewport, and floating
+windows. It reads the layout published by the main Driftile script; it does not
+maintain a second layout model. Plasma's built-in Overview remains available
+and is never replaced or configured by the companion.
 
-In 1.8.0, a left click on a non-current desktop card's number gutter selects
-that desktop. The current desktop's gutter remains inert.
+The companion provides:
 
-In 1.9.0, a left click on a valid non-current thumbnail selects its desktop
-and then focuses that exact window. Current-card focus remains direct.
+- pointer and keyboard focus across current and non-current desktop cards;
+- keyboard, wheel, and structured text search across window, desktop, output,
+  application, and state fields;
+- tab and minimized-window selection, restoration, and closure;
+- guarded window transfer and desktop reordering;
+- optional labels, application icons, state badges, close buttons, screen-edge
+  activation, backdrop color, and touchpad access.
 
-Version 1.20.0 keeps one large selected thumbnail for a tabbed column and adds
-a compact ordered strip for its live members. A left click on a different
-valid tab uses the same guarded focus path. The main script remains the sole
-owner of layout state and records the resulting selection.
-
-Version 1.21.0 adds keyboard selection without changing the pointer paths or
-layout ownership.
-
-Version 1.22.0 adds guarded desktop-card reordering from the number gutter
-without changing layout ownership.
-
-Version 1.23.0 adds one read-only active-column layout badge to each desktop
-card without adding input or layout behavior.
-
-Version 1.24.0 adds one best-effort Plasma OSD after the current activation
-attempt is rejected. The user-facing message is generic; the exact technical
-reason remains in the KWin journal. A canceled attempt, stale callback,
-successful activation, or normal close is silent.
-
-Version 1.25.0 leaves overview behavior unchanged.
-
-Version 1.26.0 leaves overview behavior unchanged.
-
-Version 1.27.0 leaves overview behavior unchanged.
-
-Version 1.28.0 leaves overview behavior unchanged.
-
-Version 1.29.0 leaves overview behavior unchanged.
-
-Version 1.30.0 leaves overview behavior unchanged.
-
-Version 1.31.0 projects only the current activity. Changing the current
-activity or available activity set closes an open companion before it can act
-on stale delegates.
-
-Version 1.32.0 adds an optional four-finger vertical touchpad gesture. An up
-swipe opens the companion and a down swipe closes an active or pending
-activation. The gesture can be disabled or changed to `3`–`5` fingers in the
-effect settings.
-
-Version 1.32.0 also lets a visible thumbnail or non-minimized tab be
-dragged onto another desktop card on the same output. A successful drop moves
-that one window and closes the companion; invalid or stale drops leave both the
-window and companion unchanged.
-
-Version 1.33.0 extends the same gesture to another output. The destination card
-selects both the output and desktop; the existing same-output path is unchanged.
-
-Version 1.44.0 adds optional pointer screen-edge activation, a
-configurable backdrop color with opacity, and desktop selection from empty
-content in a non-current card. Window, tab, gutter, reorder, and drop targets
-retain their existing priority.
-
-Version 1.45.0 leaves overview behavior unchanged.
-
-Version 1.47.0 leaves overview behavior unchanged.
-
-Version 1.48.0 leaves overview behavior unchanged.
-
-Version 1.49.0 leaves overview behavior unchanged.
-
-Version 1.52.0 leaves overview behavior unchanged.
-
-Version 1.53.0 adds read-only attention cues and attention-aware search without
-changing Overview input or layout ownership.
-
-Version 1.54.0 lets minimized members of tabbed columns participate in pointer,
-keyboard, close, and search paths through their existing tabs. Activating one
-restores its exact public KWin minimized state before focusing it. Stacked and
-floating minimized windows remain outside this slice.
-
-Version 1.55.0 gives eligible minimized stacked tiled members and tracked
-floating windows without a tab one compact caption placeholder.
-Each placeholder stays inside the visible intersection of its projected slot or
-frame, retains its attention cue, and joins the existing pointer, keyboard,
-close, and search paths. Existing minimized tab behavior is unchanged.
-
-Version 1.56.0 adds a static plain-text footer to an ordinary large thumbnail.
-The window caption is primary; its exact application identity is used as a
-fallback or as a distinct secondary line. Tabs and minimized placeholders use
-the same bounded caption and application-identity normalization. Small frames
-keep their existing presentation without a footer.
-
-Version 1.57.0 adds live presentation controls for the ordinary thumbnail
-footer and application identity. Both preserve the 1.56.0 presentation by
-default and change no window target or search result.
-
-Version 1.58.0 adds an optional close button to eligible thumbnails, tabs, and
-minimized placeholders. The button is shown only on hover or keyboard
-selection and reuses the existing exact close path.
-
-Version 1.59.0 adds static window-state badges to sufficiently large selected
-ordinary thumbnails. State terms also join the existing all-term search.
-
-Version 1.60.0 adds bounded desktop names to sufficiently large cards and makes
-each owning desktop name available to window search.
-
-Version 1.61.0 adds optional application icons to
-eligible window labels without changing their actions or search behavior.
-
-Version 1.62.0 identifies sufficiently large
-multi-output scenes and makes each owning output name available to search.
-
-Version 1.63.0 adds exact per-desktop search counts and selected-result
-position feedback without changing Overview input or layout ownership.
-
-Version 1.64.0 adds quoted phrases, exclusions, and field scopes to window
-search. Invalid structured queries fail closed and are reported in the
-Overview instead of being interpreted partially.
-
-Version 1.65.0 adds bounded alternative groups and session-local shortcuts for
-editing the active Overview search without adding a global binding or setting.
-
-The companion is disabled by default. When enabled with a fresh shortcut
-record, `Meta+O` toggles it. KGlobalAccel preserves an existing assignment
-across upgrades, including an explicitly unbound action, so review it in
-**System Settings > Keyboard > Shortcuts** after upgrading. The effect has no
-screen edge by default and requires the main Driftile KWin script because that
-script publishes the authoritative layout snapshot.
+The effect is disabled by default and requires the main Driftile KWin script.
+After enabling it under **System Settings > Window Management > Desktop
+Effects**, a fresh shortcut record uses `Meta+O`. Existing KGlobalAccel
+assignments are preserved across upgrades, including an explicitly unbound
+action. The effect reserves no screen edge by default.
 
 `driftile_open_overview` and `driftile_close_overview` are separate unbound
 actions for one-way automation. Opening an active or pending overview and
@@ -479,214 +367,38 @@ input handler, KWin or layout write, persistence field, or scan beyond the
 existing activation snapshot. Cancellation, a stale callback, successful
 activation, and normal close remain silent.
 
-## Install a release
+## Installation
 
-Download `driftile-overview-1.66.0.kwineffect` and `SHA256SUMS` from the stable
-[1.66.0 release](https://github.com/kontonkara/driftile/releases/tag/v1.66.0),
-then verify the archive:
+Install the main package first, then install the overview from the same release.
+The [installation guide](installation.md#optional-overview) provides the
+verified KPackage commands for ordinary distributions and the matching upgrade
+and removal steps.
 
-```console
-$ sha256sum --check --ignore-missing SHA256SUMS
-```
-
-Install the overview package as the desktop user:
-
-```bash
-kpackagetool6 --type=KWin/Effect \
-  --install ./driftile-overview-1.66.0.kwineffect
-```
-
-To build the same versioned archive from source, run `npm ci` followed by
-`npm run package`; the archive is written to `dist/`.
-
-Enable **Driftile Overview** in **System Settings > Window Management > Desktop
-Effects**. Change `Meta+O` in **System Settings > Keyboard > Shortcuts** if
-another assignment is preferred. Use the effect's configure button to change
-or disable its touchpad gesture.
-
-Disable the effect before upgrading or removing it. Remove the package with:
-
-```bash
-kpackagetool6 --type=KWin/Effect \
-  --remove io.github.kontonkara.driftile.overview
-```
-
-KGlobalAccel preserves shortcut metadata and later manual assignments across
-effect unloads. The retained action is inert while the effect is unloaded. If
-the assignment should also be removed, clear it in System Settings before
-uninstalling the package.
-
-## NixOS and Home Manager
-
-The 1.66.0 flake exposes the effect separately as
-`packages.<system>.driftile-overview`. The NixOS and Home Manager modules keep
-it opt-in:
+NixOS and Home Manager keep the companion opt-in:
 
 ```nix
 programs.driftile.overview.enable = true;
 ```
 
-Home Manager can additionally manage access and appearance independently of
-package ownership:
-
-```nix
-programs.driftile.overview.screenEdge = "top-left";
-programs.driftile.overview.backdropColor = "#E60B0F17";
-programs.driftile.overview.showWindowLabels = true;
-programs.driftile.overview.showApplicationIdentity = true;
-programs.driftile.overview.showWindowCloseButtons = true;
-programs.driftile.overview.showWindowStateBadges = true;
-programs.driftile.overview.touchpadGesture = {
-  enable = true;
-  fingerCount = 4;
-};
-```
-
-The module also accepts:
-
-```nix
-programs.driftile.overview.showDesktopNames = true;
-programs.driftile.overview.showApplicationIcons = true;
-programs.driftile.overview.showOutputNames = true;
-```
-
-The main script and overview can be installed independently. For example, a
-system-wide main package can be combined with a per-user overview. Do not
-install the same package ID through both NixOS and Home Manager for one user.
-Neither module enables the effect in KWin; enable it in Desktop Effects and
-adjust its shortcut, screen edge, backdrop, or touchpad gesture only if needed.
-The Home Manager-only nullable overview options can manage an effect installed
-in another scope; `null` leaves their KConfig values untouched. Desktop-name,
-application-icon, and output-name presentation do not add corresponding NixOS
-options.
-
-## Validation
-
-Version 1.55.0 validates its gesture, same- and cross-output transfer, search,
-keyboard, pointer, and close paths without giving the companion ownership of
-layout state.
-
-Version 1.54.0 adds focused restore-and-focus, close, keyboard, pointer, and
-search coverage for minimized member tabs without changing layout ownership.
-
-Version 1.55.0 extends those guarded paths to eligible minimized stacked tiled
-and tracked floating placeholders without adding drag or layout ownership.
-
-Version 1.56.0 adds focused normalization and QML contract coverage for static
-thumbnail, tab, and minimized-placeholder labels without changing their input
-or layout behavior.
-
-Version 1.57.0 adds focused KConfig, QML, normalization, NixOS-surface, and Home
-Manager coverage for live label presentation preferences without changing
-window targets or search behavior.
-
-Version 1.58.0 adds focused pointer-arbitration, close-path, package-content,
-KConfig, NixOS-surface, and Home Manager coverage for close buttons without
-changing the existing `Delete` or middle-click paths.
-
-Version 1.60.0 adds focused normalization, adaptive-gutter, search, KConfig,
-NixOS-surface, and Home Manager coverage for desktop names without changing
-window targets or layout ownership.
-
-Version 1.61.0 adds focused lazy-loading, public icon access, KConfig,
-NixOS-surface, and Home Manager coverage for application icons without changing
-window targets, input, or layout ownership.
-
-Version 1.62.0 adds focused normalization, adaptive multi-output presentation,
-search, KConfig, NixOS-surface, and Home Manager coverage for output names
-without changing window targets or layout ownership.
+Home Manager can manage access and appearance independently of package
+ownership. See
+[Configuration](configuration.md#optional-overview-access-and-appearance) for
+all nullable options. Neither Nix module enables the effect in KWin; enable it
+in **Desktop Effects** after rebuilding. Do not install the same package ID
+through both NixOS and Home Manager for one user.
 
 ## Safety boundary
 
-On activation, the effect accepts only two identical reads of a valid current
-v2 catalog with canonical v4 logical state whose activity, outputs, desktops,
-and referenced windows match KWin. It projects only the current activity. A
-missing, changing, legacy, corrupt, future, oversized, or stale snapshot keeps
-the effect closed.
+The effect opens only from a stable current layout snapshot matching KWin's
+live activity, outputs, desktops, and windows. Missing, changing, malformed,
+future, or stale state keeps it closed.
 
-Desktop names are a bounded read-only projection of each direct public desktop
-object. Missing, malformed, empty, hostile, or inaccessible names fail closed
-without changing selection, geometry, focus, input, layout, or persistence.
+Every focus, close, desktop-selection, reorder, and transfer action revalidates
+its live target before writing through KWin's public API. Invalid or rejected
+targets fail safely; a stale effect closes without taking layout ownership.
+Late focus failure never rolls back an already confirmed desktop selection.
 
-Application icons are a lazy read-only presentation of each direct public
-window icon. Missing or inaccessible icons fail closed, while disabled and
-ineligible surfaces do not instantiate the Kirigami icon or read the KWin
-property.
-
-Output names are a bounded read-only projection of each scene's public output.
-Missing, malformed, hostile, single-output, or geometry-constrained
-presentation fails closed without changing focus, input, layout, or persistence.
-
-Current-card thumbnail focus is unchanged: the effect revalidates the direct
-live window object, exact internal ID, output, desktop and activity memberships,
-visibility, minimized and deleted state, and input eligibility. It retains or
-requests `KWin.Workspace.activeWindow` and closes only after confirmed focus.
-An invalid, stale, or rejected request leaves the effect open.
-
-Tab selection uses that same live-window path. Only the selected non-minimized
-member has a large thumbnail. Every live member keeps one non-overlapping tab,
-and the selected ordinary tab remains inert while keyboard navigation uses its
-thumbnail instead of a duplicate target.
-
-An eligible minimized member tab captures the exact public KWin window, output,
-desktop, activity, input, managed, and minimized state.
-Activation revalidates that snapshot, writes only the public minimized state,
-confirms restoration, and then focuses the same exact window. The effect closes
-only after focus is confirmed. `Delete` and middle click instead revalidate the
-exact closeable window and request its public close path without restoring it.
-Existing minimized member tabs retain this behavior unchanged.
-
-An eligible minimized placeholder additionally requires an exact tracked
-stacked tiled member or tracked floating window without a tab. Its caption is
-clipped to the visible intersection of the validated projected slot or frame;
-malformed, tiny, fully clipped, or offscreen projections fail closed. Activation
-and closure reuse the same exact restore, focus, and close paths as minimized
-tabs. Minimized drag and drop, deleted or stale windows, and ineligible targets
-remain outside both paths. The interaction retains public attention cues and
-adds no geometry, layout, setting, action, binding, persistence field, or
-private API write.
-
-A non-current thumbnail first revalidates the exact active effect, model, live
-screen, projected output, direct desktop object and ID, direct window object and
-ID, current activity, memberships, state, and input eligibility. The window may
-still be hidden because its desktop is not selected. The effect then uses the
-existing desktop-selection path and requires exact confirmation before
-revalidating the same candidate, now including visible state, requesting the
-exact active window, and confirming focus.
-
-Desktop selection revalidates the active effect, exact live screen and output,
-the desktop's direct object and ID, and its non-current state immediately before
-the write. Wayland uses public `KWin.SceneView.currentDesktop`. If that property
-is unavailable, `KWin.Workspace.currentDesktop` is permitted only with exactly
-one live screen. The effect closes only after an exact read confirms the
-selection; invalid, stale, raced, or rejected requests leave it open.
-
-Any rejection before desktop selection leaves the effect open. Once selection
-is confirmed, a late invalidation or focus failure keeps the selected desktop,
-closes the stale effect, and performs no rollback.
-
-Ordinary KWin activation may raise the window, and Driftile's existing focus
-handling may reveal its tiled column. Beyond a confirmed desktop request, the
-effect does not switch activities, move windows, write memberships, outputs,
-geometry, or settings, or assign another shortcut. Its optional public screen
-edge only requests activation and owns no layout state.
-Desktop-card drag may change only the global desktop order through the guarded
-public path above. Keyboard activation reuses the existing guarded paths. The
-overview gesture adds no shortcut action, input grab, persistence field,
-private API, second window model, timer, or KWin write. Ordinary pointer and
-keyboard interaction still perform no window, stacking-order, or layout scan;
-an empty-card click performs one bounded visible-delegate hit test before the
-existing desktop action. The effect does not infer columns from window geometry
-or add animation.
-Disabling or uninstalling it leaves the main extension and Plasma's built-in
-Overview unchanged.
-
-Packaged lifecycle checks cover native Wayland, XWayland, two-output Wayland,
-and single-output native X11. The two-output Wayland scenario additionally
-routes physical left clicks through the compositor for native Wayland and
-XWayland passes. It verifies current-card focus, per-output desktop selection,
-and cross-desktop thumbnail activation against an exact target plus a
-last-active decoy while preserving the other output, frames, memberships,
-settings, persisted layout, and Plasma's built-in Overview. Native X11 retains
-lifecycle and static fallback coverage; the harness does not claim an
-end-to-end X11 selection or cross-desktop activation click.
+The main Driftile script remains the only layout owner. Disabling or
+uninstalling the companion leaves the main extension and Plasma's built-in
+Overview unchanged. See [Compatibility](compatibility.md) for backend limits
+and [Architecture](architecture.md) for the full validation boundary.

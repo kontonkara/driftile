@@ -46,6 +46,19 @@ Open **System Settings > Window Management > KWin Scripts**, enable
 the layout and presentation settings described in
 [Configuration](configuration.md).
 
+### Optional overview
+
+Install the optional overview effect separately:
+
+```bash
+kpackagetool6 --type=KWin/Effect \
+  --install ./driftile-overview-1.66.0.kwineffect
+```
+
+Enable **Driftile Overview** under **System Settings > Window Management >
+Desktop Effects**. Its configure button controls appearance, screen-edge, and
+touchpad access. See [Overview companion](overview.md) for its controls.
+
 ### Optional transitions
 
 Install the optional transition effect separately:
@@ -112,8 +125,8 @@ restore displaced assignments automatically.
 
 ### Optional native shortcut editor
 
-Driftile 1.62.0 provides **Driftile Shortcuts**, an optional Qt/KDE
-editor for the active extension's primary and alternate assignments. Enable
+Driftile provides **Driftile Shortcuts**, an optional Qt/KDE editor for the
+active extension's primary and alternate assignments. Enable
 Driftile before starting it; an inactive extension has no registered actions to
 edit. Changes remain local to the window until **Apply** is pressed. Apply
 checks the complete pending assignment and current KGlobalAccel owners, rejects
@@ -152,7 +165,7 @@ programs.driftile.shortcutEditor.enable = true;
 The editor changes live assignments only. Keep using the reversible helper for
 saved claim/release transactions or JSON profiles.
 
-The 1.62.0 package installs a freedesktop launcher and AppStream metadata,
+The package installs a freedesktop launcher and AppStream metadata,
 exposes `--help` and `--version`, displays registered defaults, and restores
 either the selected default or the complete default set as unapplied changes.
 The same conflict checks and rollback-capable Apply transaction remain
@@ -175,19 +188,16 @@ authoritative.
      --upgrade ./driftile-<new-version>.kwinscript
    ```
 
-5. When upgrading to 1.19.0 from 1.18.0 or 1.19.0-rc.1, restart the Plasma
-   session once. Fresh installations do not require this step.
-6. Enable Driftile and review its configuration.
-7. If using the helper, claim the new profile and run `check` with the same
+5. Enable Driftile and review its configuration.
+6. If using the helper, claim the new profile and run `check` with the same
    optional custom profile.
-8. Re-enable the optional overview and transition effects.
+7. Re-enable the optional overview and transition effects.
 
 Manually assigned KGlobalAccel shortcuts remain unchanged across an upgrade.
 Edit them in System Settings only when the fresh release defaults are wanted.
 
-Release packages keep KWin's required entrypoints stable and select the
-complete QML and JavaScript runtime by content hash. After the one-time 1.19.0
-transition, changed runtimes no longer reuse an older in-memory component.
+Read [Migration](migration.md) before upgrading across release generations;
+it records any version-specific session or option changes.
 
 ## Disable or uninstall
 
@@ -202,7 +212,12 @@ kpackagetool6 --type=KWin/Script \
   --remove io.github.kontonkara.driftile
 ```
 
-Remove the optional transition effect independently:
+Remove each installed optional effect independently:
+
+```bash
+kpackagetool6 --type=KWin/Effect \
+  --remove io.github.kontonkara.driftile.overview
+```
 
 ```bash
 kpackagetool6 --type=KWin/Effect \
@@ -304,213 +319,38 @@ modules = [
 
 ### Shared options
 
-The 1.62.0 module exposes the optional overview as a separate package. It
-remains disabled unless requested:
+Optional companions remain separate and disabled unless requested:
 
 ```nix
 programs.driftile.overview.enable = true;
-programs.driftile.overview.screenEdge = "top-left";
-programs.driftile.overview.backdropColor = "#E60B0F17";
-programs.driftile.overview.showWindowLabels = true;
-programs.driftile.overview.showApplicationIdentity = true;
-programs.driftile.overview.showWindowCloseButtons = true;
-programs.driftile.overview.showWindowStateBadges = true;
-programs.driftile.overview.touchpadGesture = {
-  enable = true;
-  fingerCount = 4;
-};
-```
-
-The module also accepts:
-
-```nix
-programs.driftile.overview.showDesktopNames = true;
-programs.driftile.overview.showApplicationIcons = true;
-programs.driftile.overview.showOutputNames = true;
-```
-
-`overview.screenEdge`, `overview.backdropColor`,
-`overview.showWindowLabels`, `overview.showApplicationIdentity`,
-`overview.showWindowCloseButtons`, `overview.showWindowStateBadges`, and
-`overview.touchpadGesture` are Home Manager-only nullable options. Their
-defaults are `null`, which leaves the effect's existing values untouched; they
-can manage an overview installed in another scope. `overview.showDesktopNames`,
-`overview.showApplicationIcons`, and `overview.showOutputNames` follow the same
-nullable semantics. The effect enables window labels, application identity,
-close buttons, state
-badges, desktop names, application icons, and output names by default, and
-disables screen-edge activation by default. The NixOS option surface is
-unchanged; a system-wide installation uses the effect's per-user KConfig
-values.
-
-The modules also expose the optional transition effect as an independent
-package:
-
-```nix
 programs.driftile.transitions.enable = true;
-programs.driftile.transitions.duration = 180;
-programs.driftile.transitions.animatePosition = true;
-programs.driftile.transitions.animateSize = true;
-programs.driftile.transitions.windowClassExclusions = [ ];
+programs.driftile.shortcutEditor.enable = true;
 ```
 
-Installation does not enable the effect in KWin. Enable **Driftile
-Transitions** in **Desktop Effects** after rebuilding.
-
-The duration is a nullable integer from `0` to `1000`; both animation switches
-and the bounded exact `windowClass` list are nullable too. Each default is
-`null`, which leaves that KWin setting untouched. These options can manage an
-effect installed in another scope without setting `transitions.enable`.
-
-Main-script, overview, transition, and shortcut-editor ownership are
-independent. NixOS may install one while Home Manager installs another, but the
-modules reject installing the same package ID in both scopes for one user. The
-overview module does not enable its effect in KWin. On a fresh shortcut record,
-the enabled overview offers `Meta+O`; upgrades preserve the current
-KGlobalAccel assignment. See [Overview companion](overview.md).
-
-The current Home Manager module exposes a complete settings profile:
+The modules install packages but do not enable KWin effects. Enable **Driftile
+Overview** or **Driftile Transitions** in **Desktop Effects** after rebuilding.
+Home Manager can also own the main settings and nullable companion settings:
 
 ```nix
 programs.driftile.settings = {
-  applicationBorderlessExclusions = [ ];
-  applicationColumnPresentations = {
-    "org.mozilla.firefox" = "tabbed";
-  };
-  applicationColumnWidths = {
-    "org.kde.konsole" = 60;
-  };
-  applicationFocusCentering = [ ];
-  applicationInitialDestinations = {
-    "org.mozilla.firefox" = {
-      desktop = 2;
-      output = "DP-2";
-    };
-    "org.kde.konsole".desktopName = "Development";
-  };
-  defaultInitialDestination = {
-    desktopName = "Development";
-    output = "DP-2";
-  };
-  defaultInitialFocus = "default";
-  defaultInitialLayout = "tiled";
-  applicationInitialFocused = [ ];
-  applicationInitialUnfocused = [ ];
-  applicationInitialFloating = [ ];
-  applicationInitialLayouts = {
-    "org.kde.kcalc" = "floating";
-    "org.mozilla.firefox" = "tiled";
-  };
-  applicationFloatingPositions = {
-    "org.kde.kcalc" = {
-      anchor = "bottom-right";
-      x = 24;
-      y = 24;
-    };
-  };
-  applicationInitialFullWidth = [ ];
-  applicationInitialMaximized = [ ];
-  applicationInitialFullscreen = [ ];
-  applicationTilingExclusions = [ ];
-  borderlessWindows = true;
-  centerFocusedColumn = false;
-  columnWidthPresets = [ 20 50 80 ];
-  defaultColumnPresentation = "stacked";
-  defaultFloatingPosition = {
-    anchor = "bottom-right";
-    x = 24;
-    y = 24;
-  };
   gap = 16;
-  showTabIndicator = true;
   defaultColumnWidthPercent = 33;
-  defaultColumnWidthPixels = 0;
-  useInitialWindowWidth = false;
-  columnWidthStepPercent = 10;
-  touchpadNavigation = false;
-  touchpadWorkspaceNavigation = false;
-  touchpadNavigationFingerCount = 5;
-  touchpadNaturalScroll = true;
-  windowHeightPresets = [ ];
-  windowHeightStepPercent = 10;
 };
+
+programs.driftile.overview.screenEdge = "top-left";
+programs.driftile.transitions.duration = 180;
 ```
 
-Application policy lists default to empty; an empty `windowHeightPresets` list
-keeps the exact built-in `1/3`, `1/2`, and `2/3` cycle. See
-[Application column presentation](configuration.md#application-column-presentation),
-[Horizontal focus centering](configuration.md#horizontal-focus-centering),
-[Application initial destinations](configuration.md#application-initial-destinations),
-[Applications initially focused](configuration.md#applications-initially-focused),
-[Applications initially unfocused](configuration.md#applications-initially-unfocused),
-[Default initial layout](configuration.md#default-initial-layout),
-[Application initial layouts](configuration.md#application-initial-layouts),
-[Applications initially floating](configuration.md#applications-initially-floating),
-[Default floating position](configuration.md#default-floating-position),
-[Application floating positions](configuration.md#application-floating-positions),
-[Applications initially maximized to edges](configuration.md#applications-initially-maximized-to-edges),
-[Window height presets](configuration.md#window-height-presets),
-and
-[Application borderless exclusions](configuration.md#application-borderless-exclusions)
-for exact matching, limits, and live behavior.
+See [Configuration](configuration.md#home-manager) for the complete typed
+settings and companion options, and [Shortcuts](shortcuts.md#custom-profiles)
+for declarative shortcut profiles. When NixOS installs the package system-wide,
+Home Manager can manage settings with `programs.driftile.enable = false` to
+avoid installing the same KWin package twice.
 
-The profile is independent of package installation. When the package is
-already installed by NixOS or another system module, keep
-`programs.driftile.enable = false` and set `programs.driftile.settings` in Home
-Manager. See [Configuration](configuration.md#home-manager) for ownership and
-reload behavior.
-
-The 1.62.0 Home Manager module can also generate a custom shortcut profile:
-
-```nix
-programs.driftile.shortcuts = {
-  driftile_focus_column_left = [ "Meta+A" "Meta+Left" ];
-  driftile_reset_column_width = [ ];
-};
-```
-
-This writes JSON v1 to `$XDG_CONFIG_HOME/driftile/shortcuts.json` (normally
-`~/.config/driftile/shortcuts.json`). It does not claim shortcuts
-automatically. After rebuilding, enable Driftile and run:
-
-```bash
-profile="${XDG_CONFIG_HOME:-$HOME/.config}/driftile/shortcuts.json"
-driftile-shortcuts claim --profile "$profile"
-driftile-shortcuts check --profile "$profile"
-```
-
-For a system-wide NixOS installation, import the Home Manager module only for
-settings or a shortcut profile and leave Home Manager's
-`programs.driftile.enable` false. The system package supplies
-`driftile-shortcuts`, while Home Manager manages only the requested user
-configuration; this avoids installing the KWin package twice.
-
-`programs.driftile.package` can override the package in either module. Choose
-one installation scope for each user instead of also installing the
-`.kwinscript`; multiple copies with the same KWin package ID can make package
-selection ambiguous. Rebuild the NixOS or Home Manager generation, then enable
-and configure Driftile in System Settings.
-
-The Nix package provides the shortcut helper as `driftile-shortcuts` with its
-Node.js, `busctl`, and `flock` runtime dependencies wrapped:
-
-```bash
-driftile-shortcuts claim
-driftile-shortcuts check
-driftile-shortcuts release
-```
-
-Release the profile before upgrading or removing the Nix package so the
-recovery command remains available. Before a removal rebuild, also disable
-Driftile in **KWin Scripts** and select **Apply**. Then remove the relevant
-module declaration or set `programs.driftile.enable = false` and rebuild. Nix
-removal retains the same `kwinrc`, layout snapshot, and manually assigned
-shortcut state described above. Remove `programs.driftile.settings` before
-cleaning its KConfig values so a later Home Manager activation cannot restore
-them.
-
-Source builds use `nix build`; the development shell is available through
-`nix develop`.
+Choose one installation scope for each package ID. Rebuild, then enable and
+configure Driftile in System Settings. Before upgrading or removing a Nix
+package, release any helper-owned shortcut profile while
+`driftile-shortcuts` is still available.
 
 ## Compatibility and migration
 

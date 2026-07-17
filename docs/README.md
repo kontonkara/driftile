@@ -11,6 +11,7 @@ do.
   declarative Home Manager options.
 - [Shortcuts](shortcuts.md): default actions, the optional native editor, and
   custom shortcut profiles.
+- [Migration](migration.md): version-specific upgrade and rollback steps.
 
 ## Use Driftile
 
