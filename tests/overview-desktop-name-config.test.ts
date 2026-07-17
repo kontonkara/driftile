@@ -29,7 +29,7 @@ describe("overview desktop name configuration", () => {
     expect(entry).toContain("<default>true</default>");
     expect(control).toContain("<bool>true</bool>");
     expect(configurationUi).toMatch(
-      /<widget class="QWidget" name="DriftileOverviewEffectConfig">[\s\S]*?<height>320<\/height>[\s\S]*?<layout class="QFormLayout"/u,
+      /<widget class="QWidget" name="DriftileOverviewEffectConfig">[\s\S]*?<height>350<\/height>[\s\S]*?<layout class="QFormLayout"/u,
     );
   });
 
