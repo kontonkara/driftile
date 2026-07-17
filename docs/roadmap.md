@@ -1,12 +1,12 @@
 # Roadmap
 
-Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.69.0 are
+Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.70.0 are
 released. The delivered milestones and release criteria below are a historical
 record. Later direction is not a committed release schedule.
 
-Stable 1.69.0 adds exact caption and window-role exclusions to the optional
-transition effect without disabling animation for the complete application.
-Logical persistence remains v4.
+Stable 1.70.0 lets every exact application rule prefer one role-qualified
+window selector while preserving the ordinary application fallback. Logical
+persistence remains v4.
 
 ## Foundation (delivered)
 
@@ -2447,7 +2447,7 @@ Release criteria (met):
 - The batch adds no action, binding, geometry write, layout or persistence
   field, private API, or KWin fork.
 
-### 1.70.0 (in development)
+### 1.70.0 (released)
 
 - Let every exact application rule use an optional
   `application-id|windowRole` selector for one specific window role.
@@ -2457,7 +2457,7 @@ Release criteria (met):
 - Keep plain application rules and all existing configuration values fully
   compatible without adding a setting or changing default behavior.
 
-Release criteria:
+Release criteria (met):
 
 - Composite matching remains exact and case-sensitive, and rejects ambiguous
   components containing the `|` separator.
