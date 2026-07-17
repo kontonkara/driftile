@@ -77,6 +77,9 @@ Version 1.49.0 leaves overview behavior unchanged.
 
 Version 1.52.0 leaves overview behavior unchanged.
 
+Version 1.53.0 adds read-only attention cues and attention-aware search without
+changing Overview input or layout ownership.
+
 The companion is disabled by default. When enabled with a fresh shortcut
 record, `Meta+O` toggles it. KGlobalAccel preserves an existing assignment
 across upgrades, including an explicitly unbound action, so review it in
@@ -142,6 +145,10 @@ effect. Desktop-gutter targets stay hidden while a search query is active. The
 query is session-only and is discarded when the effect closes. Its plain-text
 feedback reports the unique matching-window count or `No matching windows`.
 
+The special search terms `urgent` and `attention` match windows with a current
+public KWin attention request. They combine with title and application terms
+under the same every-term rule.
+
 An unmodified vertical mouse wheel cycles the current actionable targets in
 visual order. An active search limits the cycle to matching windows; otherwise
 non-current desktop gutters also participate. High-resolution deltas accumulate
@@ -156,6 +163,16 @@ A left click on empty content in a non-current desktop card uses the same
 guarded desktop-selection path as its number gutter. Visible thumbnails and
 tabs, active search results, the current card, gutter reorder, and window drag
 or close input remain separate.
+
+## Attention cues
+
+A public KWin attention request adds a static, non-animated accent to the
+window's Overview thumbnail or tab. Its desktop card also shows a marker in the
+number gutter, so attention remains visible when the window itself is outside
+the current card.
+
+The cues follow public KWin events and are read-only. They do not request focus,
+change layout, add a setting or action, or write persistent state.
 
 ## Desktop reordering
 

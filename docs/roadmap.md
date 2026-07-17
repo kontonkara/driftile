@@ -2013,3 +2013,24 @@ Release criteria (met):
 
 The batch changes no action, binding, layout persistence schema, or private
 API.
+
+### 1.53.0 (in development)
+
+- Project public KWin attention requests into the optional Overview as static,
+  non-animated per-window or tab accents.
+- Mark each affected desktop card in its number gutter and let search terms
+  `urgent` or `attention` match requesting windows.
+- Keep the projection event-driven and read-only, with no focus, layout,
+  setting, action, or persistence change.
+
+Release criteria:
+
+- A requesting window has one cue in its visible thumbnail or tab, and its
+  owning desktop card has the matching gutter marker.
+- Public attention changes update cues without polling, animation, or KWin
+  writes.
+- Attention terms compose with the existing all-term search while ordinary
+  title and application matching remains unchanged.
+
+The batch changes no setting, action, binding, focus path, layout state,
+persistence schema, or private API.
