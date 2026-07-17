@@ -21,15 +21,25 @@ const WHITE_SPACE_PATTERN = /\s/u;
 
 export function planOverviewWindowLabel(
   fields: unknown,
+  showApplicationIdentity: unknown = true,
 ): OverviewWindowLabelPlan | null {
   try {
-    const snapshot = snapshotFields(fields);
+    if (typeof showApplicationIdentity !== "boolean") {
+      return null;
+    }
+
+    const snapshot = snapshotFields(fields, showApplicationIdentity);
 
     if (snapshot === null) {
       return null;
     }
 
     const caption = normalizeText(snapshot.caption, MAXIMUM_LABEL_CODE_POINTS);
+
+    if (!showApplicationIdentity) {
+      return caption.length > 0 ? { primary: caption, secondary: null } : null;
+    }
+
     const applicationIdentity = firstApplicationIdentity(snapshot);
     const primary = caption.length > 0 ? caption : applicationIdentity;
 
@@ -51,18 +61,34 @@ export function planOverviewWindowLabel(
   }
 }
 
-function snapshotFields(value: unknown): OverviewWindowLabelFields | null {
+function snapshotFields(
+  value: unknown,
+  includeApplicationIdentity: boolean,
+): OverviewWindowLabelFields | null {
   if (!isRecord(value)) {
     return null;
   }
 
   const caption = value["caption"];
+
+  if (!isOptionalString(caption)) {
+    return null;
+  }
+
+  if (!includeApplicationIdentity) {
+    return {
+      caption,
+      desktopFileName: undefined,
+      resourceClass: undefined,
+      resourceName: undefined,
+    };
+  }
+
   const desktopFileName = value["desktopFileName"];
   const resourceClass = value["resourceClass"];
   const resourceName = value["resourceName"];
 
   if (
-    !isOptionalString(caption) ||
     !isOptionalString(desktopFileName) ||
     !isOptionalString(resourceClass) ||
     !isOptionalString(resourceName)

@@ -70,6 +70,71 @@ describe("planOverviewWindowLabel", () => {
     ).toEqual({ primary: "Konsole", secondary: null });
   });
 
+  it("can produce a caption-only label without reading application fields", () => {
+    const captionOnly = Object.defineProperties(
+      { caption: "  Build\u0000\t status  " },
+      {
+        desktopFileName: {
+          get(): never {
+            throw new Error("desktop identity must not be read");
+          },
+        },
+        resourceClass: {
+          get(): never {
+            throw new Error("resource class must not be read");
+          },
+        },
+        resourceName: {
+          get(): never {
+            throw new Error("resource name must not be read");
+          },
+        },
+      },
+    );
+
+    expect(planOverviewWindowLabel(captionOnly, false)).toEqual({
+      primary: "Build status",
+      secondary: null,
+    });
+  });
+
+  it("fails closed when a caption-only label has no usable caption", () => {
+    expect(
+      planOverviewWindowLabel(
+        {
+          caption: "\u0000\u007f\u009f\t",
+          desktopFileName: "org.kde.konsole.desktop",
+        },
+        false,
+      ),
+    ).toBeNull();
+  });
+
+  it("bounds caption-only labels by Unicode code points", () => {
+    const result = planOverviewWindowLabel(
+      { caption: `${"😀".repeat(95)}\n😀ignored` },
+      false,
+    );
+
+    expect(result).toEqual({
+      primary: "😀".repeat(95),
+      secondary: null,
+    });
+    expect(Array.from(result?.primary ?? "")).toHaveLength(95);
+  });
+
+  it.each([null, 0, "false", {}, []])(
+    "fails closed for an invalid application-identity option (%o)",
+    (showApplicationIdentity) => {
+      expect(
+        planOverviewWindowLabel(
+          { caption: "Konsole", desktopFileName: "org.kde.konsole.desktop" },
+          showApplicationIdentity,
+        ),
+      ).toBeNull();
+    },
+  );
+
   it.each([
     null,
     [],
