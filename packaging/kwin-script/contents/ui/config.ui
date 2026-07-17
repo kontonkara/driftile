@@ -603,7 +603,7 @@
        <item>
         <widget class="QLabel" name="applicationIdentifierHint">
          <property name="text">
-          <string>Each application identifier is exact and case-sensitive: KWin desktopFileName when available, otherwise resourceClass.</string>
+          <string>Rules use an exact, case-sensitive application identifier: KWin desktopFileName when available, otherwise resourceClass. The optional application-id|windowRole selector is more specific and takes precedence; neither component may contain |.</string>
          </property>
          <property name="wordWrap">
           <bool>true</bool>
