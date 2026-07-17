@@ -101,6 +101,8 @@ Rectangle {
                     && ((unmodified && event.key === Qt.Key_F1)
                         || (searchTextModifier && event.key === Qt.Key_Escape))) {
                 keyboardHelpVisible = false;
+            } else if (unmodified && keyboardHelpLoader.item) {
+                keyboardHelpLoader.item.handleScrollKey(event.key);
             }
             event.accepted = true;
             return;
@@ -345,6 +347,33 @@ Rectangle {
 
         sourceComponent: Component {
             Item {
+                readonly property real helpLineStep: 40
+
+                function handleScrollKey(key) {
+                    const maximumContentY = Math.max(0, helpViewport.contentHeight - helpViewport.height);
+                    if (maximumContentY <= 0) {
+                        return;
+                    }
+
+                    let targetContentY = helpViewport.contentY;
+                    if (key === Qt.Key_Up) {
+                        targetContentY -= helpLineStep;
+                    } else if (key === Qt.Key_Down) {
+                        targetContentY += helpLineStep;
+                    } else if (key === Qt.Key_PageUp) {
+                        targetContentY -= helpViewport.height;
+                    } else if (key === Qt.Key_PageDown) {
+                        targetContentY += helpViewport.height;
+                    } else if (key === Qt.Key_Home) {
+                        targetContentY = 0;
+                    } else if (key === Qt.Key_End) {
+                        targetContentY = maximumContentY;
+                    } else {
+                        return;
+                    }
+                    helpViewport.contentY = Math.max(0, Math.min(maximumContentY, targetContentY));
+                }
+
                 Rectangle {
                     anchors.fill: parent
                     color: "#b30b0f17"
@@ -433,10 +462,11 @@ Rectangle {
                             Text {
                                 width: parent.width
                                 bottomPadding: 8
-                                text: "F1, Escape, or Close dismisses this panel"
+                                text: "Scroll: Up/Down, Page Up/Page Down, Home/End\nClose: F1, Escape, or Close"
                                 textFormat: Text.PlainText
                                 color: "#aebbd0"
                                 font.pixelSize: 12
+                                wrapMode: Text.Wrap
                             }
 
                             Repeater {

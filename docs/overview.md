@@ -80,13 +80,14 @@ a visible thumbnail, closeable tab, or closeable placeholder uses the same
 guarded path without restoring a minimized window.
 
 `F1` opens a compact keyboard reference inside the Overview. The panel adapts
-to small scenes and scrolls when needed. On sufficiently large scenes, its
-hint also opens the panel with a left click or touch and hides during search or
-while the panel is open. While it is open, background window, desktop, search,
-pointer, and wheel input stays inactive; `F1` or `Escape` closes the panel
-first. A compact `Close` button provides the same action for pointer users. The
-panel also summarizes the existing search fields and operators. Closing and
-reopening the Overview resets the panel.
+to small scenes and scrolls when needed. `Up`/`Down`, `Page Up`/`Page Down`,
+and `Home`/`End` scroll the open panel without changing the Overview selection.
+On sufficiently large scenes, its hint also opens the panel with a left click
+or touch and hides during search or while the panel is open. While it is open,
+background window, desktop, search, pointer, and wheel input stays inactive;
+`F1` or `Escape` closes the panel first. A compact `Close` button provides the
+same action for pointer users. The panel also summarizes the existing search
+fields and operators. Closing and reopening the Overview resets the panel.
 
 Typing filters visible windows with a case-insensitive query. Whitespace-
 separated terms use AND matching across the window title, application identity,

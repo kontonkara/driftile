@@ -2312,9 +2312,20 @@ describe("overview effect package", () => {
       scene.indexOf("Keys.onPressed:"),
       scene.indexOf("Component.onCompleted:"),
     );
+    const modalKeyHandler = keyHandler.slice(
+      keyHandler.indexOf("if (keyboardHelpVisible)"),
+      keyHandler.indexOf(
+        "if (unmodified && event.key === Qt.Key_F1)",
+        keyHandler.indexOf("if (keyboardHelpVisible)") + 1,
+      ),
+    );
     const help = scene.slice(
       scene.indexOf("id: keyboardHelpLoader"),
       scene.indexOf("id: outputIdentityLoader"),
+    );
+    const helpScrolling = help.slice(
+      help.indexOf("readonly property real helpLineStep:"),
+      help.indexOf("Rectangle {"),
     );
 
     expect(scene).toContain("property bool keyboardHelpVisible: false");
@@ -2327,6 +2338,18 @@ describe("overview effect package", () => {
     expect(keyHandler.indexOf("if (keyboardHelpVisible)")).toBeLessThan(
       keyHandler.indexOf("let handled = true"),
     );
+    expect(modalKeyHandler).toContain(
+      "else if (unmodified && keyboardHelpLoader.item)",
+    );
+    expect(modalKeyHandler).toContain(
+      "keyboardHelpLoader.item.handleScrollKey(event.key);",
+    );
+    expect(
+      modalKeyHandler.indexOf("keyboardHelpVisible = false;"),
+    ).toBeLessThan(modalKeyHandler.indexOf("handleScrollKey(event.key)"));
+    expect(modalKeyHandler).toMatch(
+      /handleScrollKey\(event\.key\);[\s\S]*event\.accepted = true;[\s\S]*return;/u,
+    );
     expect(scene).toContain("root.keyboardHelpVisible = false;");
     expect(scene).toContain("enabled: !root.keyboardHelpVisible");
 
@@ -2335,6 +2358,29 @@ describe("overview effect package", () => {
     expect(help).toContain("width: Math.min(560,");
     expect(help).toContain("height: Math.min(helpContent.implicitHeight + 40,");
     expect(help).toContain("interactive: contentHeight > height");
+    expect(helpScrolling).toContain("readonly property real helpLineStep: 40");
+    expect(helpScrolling).toContain(
+      "Math.max(0, helpViewport.contentHeight - helpViewport.height)",
+    );
+    expect(helpScrolling).toContain("if (maximumContentY <= 0)");
+    expect(helpScrolling).toContain(
+      "let targetContentY = helpViewport.contentY",
+    );
+    for (const key of ["Up", "Down", "PageUp", "PageDown", "Home", "End"]) {
+      expect(helpScrolling).toContain(`key === Qt.Key_${key}`);
+    }
+    expect(helpScrolling).toContain("targetContentY -= helpLineStep");
+    expect(helpScrolling).toContain("targetContentY += helpLineStep");
+    expect(helpScrolling).toContain("targetContentY -= helpViewport.height");
+    expect(helpScrolling).toContain("targetContentY += helpViewport.height");
+    expect(helpScrolling).toContain("targetContentY = 0");
+    expect(helpScrolling).toContain("targetContentY = maximumContentY");
+    expect(helpScrolling).toContain(
+      "helpViewport.contentY = Math.max(0, Math.min(maximumContentY, targetContentY));",
+    );
+    expect(help).toContain(
+      'text: "Scroll: Up/Down, Page Up/Page Down, Home/End\\nClose: F1, Escape, or Close"',
+    );
     expect(help).toContain("KeyboardHelpCloseButton {");
     expect(help).toContain(
       "onCloseRequested: root.keyboardHelpVisible = false",
