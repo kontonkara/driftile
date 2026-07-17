@@ -2033,3 +2033,29 @@ Release criteria (met):
 
 The batch changes no setting, action, binding, focus path, layout state,
 persistence schema, or private API.
+
+### 1.54.0 (in development)
+
+- Make minimized members of tabbed columns pointer, keyboard, and search targets
+  through their existing tabs.
+- Restore an activated minimized tab through its exact public KWin state, then
+  focus the same window only after restoration is confirmed.
+- Let `Delete` and middle click close an exact closeable minimized tab without
+  restoring it.
+- Add `minimized` to the existing all-term title, application, and attention
+  search while keeping the selected ordinary tab inert.
+- Keep minimized stacked and floating windows outside this slice and leave drag
+  and drop disabled for minimized tabs.
+
+Release criteria:
+
+- Click, `Enter`, and keyboard navigation reach the exact minimized member and
+  close the Overview only after confirmed restore and focus.
+- `Delete` and middle click revalidate the same closeable minimized window;
+  stale or mismatched state performs no action.
+- `minimized` composes with title, application, `urgent`, and `attention` terms
+  without changing ordinary search results.
+
+The batch uses only public KWin state and keeps the Overview read-only with
+respect to layout ownership. It adds no setting, action, binding, persistence
+field, layout write, or private API.

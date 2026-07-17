@@ -80,6 +80,11 @@ Version 1.52.0 leaves overview behavior unchanged.
 Version 1.53.0 adds read-only attention cues and attention-aware search without
 changing Overview input or layout ownership.
 
+Version 1.54.0 lets minimized members of tabbed columns participate in pointer,
+keyboard, close, and search paths through their existing tabs. Activating one
+restores its exact public KWin minimized state before focusing it. Stacked and
+floating minimized windows remain outside this slice.
+
 The companion is disabled by default. When enabled with a fresh shortcut
 record, `Meta+O` toggles it. KGlobalAccel preserves an existing assignment
 across upgrades, including an explicitly unbound action, so review it in
@@ -121,21 +126,25 @@ when available. It falls back to the first actionable target on the current
 desktop, then the first actionable target in visual order. Arrow keys move
 spatially in the requested direction without wrapping.
 
-`Enter`, `Return`, and `Space` run the selected target's existing guarded
-public KWin window-focus or desktop-selection path. `Escape` closes the effect
-without an action. In a tabbed column, the selected member is represented only
-by its large thumbnail; each other actionable member is represented by its
-tab. Minimized, invalid, and fully clipped items are excluded. A partially
-clipped target remains actionable, and spatial navigation uses only its visible
-intersection. The number gutter of every non-current live desktop, including
-the shared empty tail, is also a target; the current desktop's gutter is not.
+`Enter`, `Return`, and `Space` run the selected target's guarded public KWin
+window-focus or desktop-selection path. Activating a minimized member tab first
+restores that exact window and then focuses it. `Escape` closes the
+effect without an action. In a tabbed column, the selected ordinary member is
+represented only by its large thumbnail and its duplicate tab remains inert;
+each other actionable member is represented by its tab. Exact minimized member
+tabs also participate, while invalid, ineligible, and fully clipped items are
+excluded. A partially clipped target remains actionable, and spatial navigation
+uses only its visible intersection. The number gutter of every non-current live
+desktop, including the shared empty tail, is also a target; the current
+desktop's gutter is not.
 `Tab` and `Shift+Tab` cycle through targets in visual order, while `Home` and
 `End` select the first or last target. Sequential navigation wraps and the
 selected desktop gutter uses the same visible keyboard highlight as a window.
-`Delete` requests closure of the selected live window. Desktop targets and
-stale or non-closeable windows are no-ops; the overview stays open until KWin
-actually removes the window, so an application prompt remains usable. A middle
-click on a visible thumbnail or non-minimized tab uses the same guarded path.
+`Delete` requests closure of the selected live window, including an exact
+closeable minimized tab. Desktop targets and stale or non-closeable windows are
+no-ops; the overview stays open until KWin actually removes the window, so an
+application prompt remains usable. A middle click on a visible thumbnail or
+closeable tab uses the same guarded path without restoring a minimized window.
 
 Typing filters visible windows by title and application identity. Matching is
 case-insensitive and every typed term must match. Arrow navigation immediately
@@ -146,8 +155,9 @@ query is session-only and is discarded when the effect closes. Its plain-text
 feedback reports the unique matching-window count or `No matching windows`.
 
 The special search terms `urgent` and `attention` match windows with a current
-public KWin attention request. They combine with title and application terms
-under the same every-term rule.
+public KWin attention request. `minimized` matches an exact minimized member
+tab. These terms combine with title and application terms under the same
+every-term rule.
 
 An unmodified vertical mouse wheel cycles the current actionable targets in
 visual order. An active search limits the cycle to matching windows; otherwise
@@ -197,7 +207,8 @@ Drag a selected thumbnail or a non-minimized tab onto another desktop card.
 The final empty desktop is a valid target. A card on another output moves the
 window to that output and desktop while preserving its activity. Same-card
 drops, all-desktop windows, transients, modal windows, and ambiguous model
-ownership are rejected.
+ownership are rejected. Minimized tabs remain visible but cannot start a drag
+or otherwise participate in drag and drop.
 
 Release revalidates the active effect, immutable overview model, output,
 source and target desktop objects, current activity, and exact live window.
@@ -305,6 +316,9 @@ Version 1.53.0 validates its gesture, same- and cross-output transfer, search,
 keyboard, pointer, and close paths without giving the companion ownership of
 layout state.
 
+Version 1.54.0 adds focused restore-and-focus, close, keyboard, pointer, and
+search coverage for minimized member tabs without changing layout ownership.
+
 ## Safety boundary
 
 On activation, the effect accepts only two identical reads of a valid current
@@ -320,12 +334,19 @@ requests `KWin.Workspace.activeWindow` and closes only after confirmed focus.
 An invalid, stale, or rejected request leaves the effect open.
 
 Tab selection uses that same live-window path. Only the selected non-minimized
-member has a large thumbnail. Every live member keeps one non-overlapping tab;
-minimized members remain visible but disabled, and the selected tab remains
-inert for pointer input. Keyboard navigation represents that member with its
-thumbnail instead of a duplicate tab target.
-Deleted, minimized, explicitly hidden, stale, or non-input targets are rejected
-without a layout or settings write.
+member has a large thumbnail. Every live member keeps one non-overlapping tab,
+and the selected ordinary tab remains inert while keyboard navigation uses its
+thumbnail instead of a duplicate target.
+
+An eligible minimized member tab captures the exact public KWin window, output,
+desktop, activity, input, managed, and minimized state.
+Activation revalidates that snapshot, writes only the public minimized state,
+confirms restoration, and then focuses the same exact window. The effect closes
+only after focus is confirmed. `Delete` and middle click instead revalidate the
+exact closeable window and request its public close path without restoring it.
+Minimized stacked and floating windows, drag and drop, deleted or stale windows,
+and ineligible targets remain outside this path. The interaction adds no
+setting, action, binding, persistence field, layout write, or private API.
 
 A non-current thumbnail first revalidates the exact active effect, model, live
 screen, projected output, direct desktop object and ID, direct window object and
