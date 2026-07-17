@@ -11,6 +11,8 @@ export {
   planOverviewWheelNavigation,
 } from "./navigation";
 export type { OverviewWheelNavigationPlan } from "./navigation";
+export { planOverviewDesktopLabel } from "./desktop-label";
+export type { OverviewDesktopLabelPlan } from "./desktop-label";
 export { planOverviewDesktopDrop } from "./desktop-drop";
 export { planOverviewMinimizedPlaceholder } from "./minimized-placeholder";
 export type { OverviewMinimizedPlaceholderRect } from "./minimized-placeholder";

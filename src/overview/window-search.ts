@@ -2,6 +2,7 @@ const MAX_QUERY_CODE_POINTS = 128;
 const MAX_QUERY_SCAN_CODE_POINTS = MAX_QUERY_CODE_POINTS * 4;
 const MAX_QUERY_TERMS = 8;
 const MAX_SEARCH_FIELD_CODE_POINTS = 512;
+const MAX_DESKTOP_NAME_SEARCH_FIELD_CODE_POINTS = 64;
 
 const SEARCH_FIELD_NAMES = [
   "caption",
@@ -9,6 +10,7 @@ const SEARCH_FIELD_NAMES = [
   "resourceName",
   "desktopFileName",
   "state",
+  "desktopName",
 ] as const;
 
 export function appendOverviewSearchText(
@@ -52,7 +54,14 @@ export function matchesOverviewWindowSearch(
         return false;
       }
 
-      searchableFields.push(codePointPrefix(value).toLowerCase());
+      searchableFields.push(
+        codePointPrefix(
+          value,
+          name === "desktopName"
+            ? MAX_DESKTOP_NAME_SEARCH_FIELD_CODE_POINTS
+            : MAX_SEARCH_FIELD_CODE_POINTS,
+        ).toLowerCase(),
+      );
     }
 
     if (searchableFields.length === 0) {
@@ -112,11 +121,11 @@ function searchTerms(query: unknown): string[] {
         .map((term) => term.toLowerCase());
 }
 
-function codePointPrefix(value: string): string {
+function codePointPrefix(value: string, maximum: number): string {
   let codePoints = 0;
   let offset = 0;
 
-  while (offset < value.length && codePoints < MAX_SEARCH_FIELD_CODE_POINTS) {
+  while (offset < value.length && codePoints < maximum) {
     const codePoint = value.codePointAt(offset);
     if (codePoint === undefined) {
       break;
