@@ -2268,3 +2268,30 @@ Release criteria (met):
 The batch uses only public Plasma 6.7+ output state and adds no action, binding,
 timer, animation, geometry or layout write, persistence field, private API, or
 KWin fork.
+
+### 1.63.0 (development)
+
+- Derive the unique global search total, exact per-desktop counts, and
+  unique-window ordinals from one bounded navigation-target summary.
+- Show the selected unique window as `ordinal/total` while retaining total-only
+  and no-match feedback when no exact window selection is available.
+- Give every target for the same multi-desktop window one shared ordinal while
+  counting that window once globally and once on each owning desktop.
+- Show a passive match-count badge on desktops with results and statically
+  deemphasize zero-result cards during non-whitespace search.
+- Preserve whitespace-only global feedback and every existing card geometry,
+  ordering, and input path.
+
+Release criteria:
+
+- Duplicate targets cannot inflate the global total, per-desktop count, or
+  unique-window ordinal sequence.
+- Multi-desktop targets share one ordinal and contribute one result to every
+  exact owning desktop.
+- Exact selection shows a valid ordinal and total; missing, stale, or malformed
+  summary data falls back safely to total-only or no-match feedback.
+- Search badges and deemphasis never hide, move, resize, or add input to a
+  desktop card and remain inactive for whitespace-only queries.
+
+The batch adds no timer, animation, KWin request, geometry or layout write,
+persistence field, private API, or KWin fork.

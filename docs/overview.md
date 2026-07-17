@@ -117,6 +117,9 @@ eligible window labels without changing their actions or search behavior.
 Version 1.62.0 identifies sufficiently large
 multi-output scenes and makes each owning output name available to search.
 
+Version 1.63.0 adds exact per-desktop search counts and selected-result
+position feedback without changing Overview input or layout ownership.
+
 The companion is disabled by default. When enabled with a fresh shortcut
 record, `Meta+O` toggles it. KGlobalAccel preserves an existing assignment
 across upgrades, including an explicitly unbound action, so review it in
@@ -186,8 +189,21 @@ case-insensitive and every typed term must match. Arrow navigation immediately
 repairs its selection within the filtered results; `Backspace` removes one
 Unicode code point and `Escape` clears a non-empty query before it can close the
 effect. Desktop-gutter targets stay hidden while a search query is active. The
-query is session-only and is discarded when the effect closes. Its plain-text
-feedback reports the unique matching-window count or `No matching windows`.
+query is session-only and is discarded when the effect closes.
+
+One bounded pass over the current navigation targets supplies the unique global
+window total, the exact count for each desktop, and one visual-order ordinal for
+each unique window. A window projected on several desktops keeps the same
+ordinal on every target and contributes once to the global total and once to
+each owning desktop. When an exact window target is selected, the plain-text
+feedback reports its ordinal and the total; otherwise it falls back to the total
+or `No matching windows`.
+
+During a non-whitespace search, a desktop with matches shows its count in the
+number gutter and a zero-result desktop is statically deemphasized. Cards are
+never hidden or reflowed, and the presentation adds no input target. A
+whitespace-only query retains the previous global feedback semantics without
+per-desktop badges or deemphasis.
 
 The special search terms `urgent` and `attention` match windows with a current
 public KWin attention request. `minimized` matches an exact minimized member tab
@@ -201,8 +217,8 @@ in a bounded remainder, and one event can advance only a bounded number of
 steps. Wheel navigation changes only the selected highlight and performs no
 KWin, layout, or persistent-state write.
 
-The interaction adds no layout or persistent state, KConfig value, shortcut,
-schema, or private API.
+The interaction adds no timer, animation, KWin request, layout or persistent
+state, KConfig value, shortcut, schema, or private API.
 
 A left click on empty content in a non-current desktop card uses the same
 guarded desktop-selection path as its number gutter. Visible thumbnails and
