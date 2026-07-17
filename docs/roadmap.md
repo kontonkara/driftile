@@ -1,13 +1,10 @@
 # Roadmap
 
-Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.63.0 are
+Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.64.0 are
 released. The delivered milestones and release criteria below are a historical
 record. Later direction is not a committed release schedule.
 
-Stable 1.63.0 adds per-desktop search counts, selected-result position, and
-zero-result card emphasis to the Overview. Logical persistence remains v4.
-
-Prepared 1.64.0 adds structured Overview search with quoted phrases,
+Stable 1.64.0 adds structured Overview search with quoted phrases,
 exclusions, and explicit title, application, desktop, output, and state scopes.
 Logical persistence remains v4.
 
@@ -2300,7 +2297,7 @@ Release criteria (met):
 The batch adds no timer, animation, KWin request, geometry or layout write,
 persistence field, private API, or KWin fork.
 
-### 1.64.0 (prepared)
+### 1.64.0 (released)
 
 - Preserve case-insensitive whitespace-separated AND terms for unscoped
   Overview search.
@@ -2311,7 +2308,7 @@ persistence field, private API, or KWin fork.
 - Reject malformed recognized scopes and quoted phrases without exposing
   partial results, and report the invalid query in the Overview.
 
-Compatibility target:
+Release criteria (met):
 
 - Existing unscoped queries retain their matching behavior.
 - Structured search remains session-only and read-only toward KWin, layout,
