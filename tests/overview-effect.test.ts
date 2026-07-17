@@ -43,6 +43,10 @@ const windowCloseButton = readFileSync(
   new URL("contents/runtime/ui/WindowCloseButton.qml", effectRoot),
   "utf8",
 );
+const windowApplicationIcon = readFileSync(
+  new URL("contents/runtime/ui/WindowApplicationIcon.qml", effectRoot),
+  "utf8",
+);
 const overviewRuntimeIndex = readFileSync(
   new URL("../src/overview/runtime.ts", import.meta.url),
   "utf8",
@@ -54,6 +58,7 @@ const qmlSources = [
   reader,
   scene,
   desktopCard,
+  windowApplicationIcon,
   windowCloseButton,
 ];
 
@@ -1642,6 +1647,97 @@ describe("overview effect package", () => {
     expect(numberGutter).toContain("id: desktopAttentionBadge");
     expect(labelText).not.toMatch(
       /\b(?:TapHandler|DragHandler|Timer|Behavior|Animation|ShortcutHandler|Connections)\s*\{|\bsequence\s*:|org\.kde\.kwin\.private|\.setValue\s*\(|KWin\.(?:SceneView|Workspace)\.[A-Za-z0-9_]+\s*=(?!=)|desktop\.[A-Za-z0-9_]+\s*=(?!=)/u,
+    );
+  });
+
+  it("loads bounded application icons only for eligible static window labels", () => {
+    const thumbnail = desktopCard.slice(
+      desktopCard.indexOf("id: thumbnailShell"),
+      desktopCard.indexOf("id: tabShell"),
+    );
+    const tab = desktopCard.slice(
+      desktopCard.indexOf("id: tabShell"),
+      desktopCard.indexOf("id: minimizedPlaceholderShell"),
+    );
+    const placeholder = desktopCard.slice(
+      desktopCard.indexOf("id: minimizedPlaceholderShell"),
+      desktopCard.indexOf("id: activeColumnBadge"),
+    );
+    const iconLoader = windowApplicationIcon.slice(
+      windowApplicationIcon.indexOf("Loader {"),
+      windowApplicationIcon.indexOf("function readCandidateIcon("),
+    );
+    const iconReader = windowApplicationIcon.slice(
+      windowApplicationIcon.indexOf("function readCandidateIcon("),
+    );
+
+    expect(desktopCard).toContain(
+      "required property bool showApplicationIcons",
+    );
+    expect(desktopCard.match(/WindowApplicationIcon \{/gu)).toHaveLength(3);
+    expect(desktopCard).not.toContain("candidate.icon");
+
+    expect(windowApplicationIcon).toContain(
+      "import org.kde.kirigami as Kirigami",
+    );
+    expect(windowApplicationIcon).toContain(
+      "required property bool presentationEligible",
+    );
+    expect(windowApplicationIcon).toContain("required property var candidate");
+    expect(windowApplicationIcon).toContain(
+      "readonly property bool boundedGeometry: Number.isFinite(root.width) && Number.isFinite(root.height)",
+    );
+    expect(windowApplicationIcon).toContain(
+      "root.width >= 8 && root.height >= 8 && root.width <= 24 && root.height <= 24",
+    );
+    expect(iconLoader).toContain(
+      "active: root.presentationEligible && root.boundedGeometry",
+    );
+    expect(iconLoader.match(/Kirigami\.Icon \{/gu)).toHaveLength(1);
+    expect(iconLoader).toContain(
+      "readonly property var iconSource: root.readCandidateIcon(root.candidate)",
+    );
+    expect(iconLoader).toContain("source: iconHost.iconSource");
+    expect(iconLoader).toContain("visible: iconHost.iconAvailable");
+    expect(iconReader.match(/candidate\.icon/gu)).toHaveLength(1);
+    expect(iconReader).toContain(
+      'icon === null || icon === undefined || typeof icon !== "object" || Array.isArray(icon)',
+    );
+    expect(iconReader).toMatch(/return null;\s*\}\s*return icon;/u);
+    expect(iconReader).toMatch(/catch \(error\) \{\s*return null;/u);
+
+    expect(thumbnail).toMatch(
+      /id: thumbnailApplicationIcon[\s\S]*width: 16\s*height: 16[\s\S]*candidate: windowPresentation\.candidate[\s\S]*presentationEligible: card\.showApplicationIcons && thumbnailLabelFooter\.visible\s*&& thumbnailLabelFooter\.width >= 160/u,
+    );
+    expect(thumbnail).toContain(
+      "anchors.leftMargin: thumbnailApplicationIcon.iconAvailable ? 28 : 6",
+    );
+    expect(
+      thumbnail.match(
+        /anchors\.leftMargin: thumbnailApplicationIcon\.iconAvailable \? 28 : 6/gu,
+      ),
+    ).toHaveLength(2);
+
+    expect(tab).toMatch(
+      /id: tabApplicationIcon[\s\S]*width: Math\.max\(10, Math\.min\(14, tabShell\.height - 6\)\)\s*height: width[\s\S]*candidate: windowPresentation\.candidate[\s\S]*presentationEligible: card\.showApplicationIcons && tabShell\.visible\s*&& tabShell\.width >= 84 && tabShell\.height >= 18/u,
+    );
+    expect(tab).toMatch(
+      /anchors\.leftMargin: tabApplicationIcon\.iconAvailable\s*\? tabApplicationIcon\.x \+ tabApplicationIcon\.width \+ 5 : 4/u,
+    );
+    expect(tab).toContain("anchors.rightMargin: tabCloseButton.visible");
+
+    expect(placeholder).toMatch(
+      /id: minimizedPlaceholderApplicationIcon[\s\S]*width: Math\.max\(10, Math\.min\(16, minimizedPlaceholderShell\.height - 8\)\)\s*height: width[\s\S]*candidate: windowPresentation\.candidate[\s\S]*presentationEligible: card\.showApplicationIcons && minimizedPlaceholderShell\.visible\s*&& minimizedPlaceholderShell\.width >= 120\s*&& minimizedPlaceholderShell\.height >= 20/u,
+    );
+    expect(placeholder).toMatch(
+      /anchors\.leftMargin: minimizedPlaceholderApplicationIcon\.iconAvailable\s*\? minimizedPlaceholderApplicationIcon\.x \+ minimizedPlaceholderApplicationIcon\.width \+ 5 : 7/u,
+    );
+    expect(placeholder).toContain(
+      "anchors.rightMargin: minimizedPlaceholderCloseButton.visible",
+    );
+
+    expect(windowApplicationIcon).not.toMatch(
+      /\b(?:TapHandler|DragHandler|HoverHandler|Timer|Behavior|Animation|ShortcutHandler|Connections)\s*\{|\bsequence\s*:|org\.kde\.kwin\.private|\.setValue\s*\(|KWin\.(?:SceneView|Workspace)\.[A-Za-z0-9_]+\s*=(?!=)|candidate\.[A-Za-z0-9_]+\s*=(?!=)/u,
     );
   });
 

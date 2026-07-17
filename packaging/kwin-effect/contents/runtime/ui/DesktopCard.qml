@@ -14,6 +14,7 @@ Rectangle {
     required property var floatingWindows
     required property var screen
     required property string searchQuery
+    required property bool showApplicationIcons
     required property bool showApplicationIdentity
     required property bool showDesktopNames
     required property bool showWindowCloseButtons
@@ -541,11 +542,24 @@ Rectangle {
                         clip: true
                         z: 2
 
+                        WindowApplicationIcon {
+                            id: thumbnailApplicationIcon
+
+                            anchors.left: parent.left
+                            anchors.leftMargin: 6
+                            anchors.verticalCenter: parent.verticalCenter
+                            width: 16
+                            height: 16
+                            candidate: windowPresentation.candidate
+                            presentationEligible: card.showApplicationIcons && thumbnailLabelFooter.visible
+                                && thumbnailLabelFooter.width >= 160
+                        }
+
                         Text {
                             anchors.left: parent.left
                             anchors.right: parent.right
                             anchors.top: parent.top
-                            anchors.leftMargin: 6
+                            anchors.leftMargin: thumbnailApplicationIcon.iconAvailable ? 28 : 6
                             anchors.rightMargin: 6
                             anchors.topMargin: thumbnailLabelFooter.hasSecondary ? 3 : 0
                             height: thumbnailLabelFooter.hasSecondary ? 15 : parent.height
@@ -563,7 +577,7 @@ Rectangle {
                             anchors.left: parent.left
                             anchors.right: parent.right
                             anchors.bottom: parent.bottom
-                            anchors.leftMargin: 6
+                            anchors.leftMargin: thumbnailApplicationIcon.iconAvailable ? 28 : 6
                             anchors.rightMargin: 6
                             anchors.bottomMargin: 2
                             height: 14
@@ -714,9 +728,23 @@ Rectangle {
                     Drag.proposedAction: Qt.MoveAction
                     Drag.supportedActions: Qt.MoveAction
 
+                    WindowApplicationIcon {
+                        id: tabApplicationIcon
+
+                        anchors.left: parent.left
+                        anchors.leftMargin: 5
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: Math.max(10, Math.min(14, tabShell.height - 6))
+                        height: width
+                        candidate: windowPresentation.candidate
+                        presentationEligible: card.showApplicationIcons && tabShell.visible
+                            && tabShell.width >= 84 && tabShell.height >= 18
+                    }
+
                     Text {
                         anchors.fill: parent
-                        anchors.leftMargin: 4
+                        anchors.leftMargin: tabApplicationIcon.iconAvailable
+                            ? tabApplicationIcon.x + tabApplicationIcon.width + 5 : 4
                         anchors.rightMargin: tabCloseButton.visible
                             ? (windowPresentation.attentionRequested ? 34 : 20)
                             : (windowPresentation.attentionRequested ? 18 : 4)
@@ -883,9 +911,24 @@ Rectangle {
                     radius: 3
                     clip: true
 
+                    WindowApplicationIcon {
+                        id: minimizedPlaceholderApplicationIcon
+
+                        anchors.left: parent.left
+                        anchors.leftMargin: 7
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: Math.max(10, Math.min(16, minimizedPlaceholderShell.height - 8))
+                        height: width
+                        candidate: windowPresentation.candidate
+                        presentationEligible: card.showApplicationIcons && minimizedPlaceholderShell.visible
+                            && minimizedPlaceholderShell.width >= 120
+                            && minimizedPlaceholderShell.height >= 20
+                    }
+
                     Text {
                         anchors.fill: parent
-                        anchors.leftMargin: 7
+                        anchors.leftMargin: minimizedPlaceholderApplicationIcon.iconAvailable
+                            ? minimizedPlaceholderApplicationIcon.x + minimizedPlaceholderApplicationIcon.width + 5 : 7
                         anchors.rightMargin: minimizedPlaceholderCloseButton.visible
                             ? (windowPresentation.attentionRequested ? 35 : 22)
                             : (windowPresentation.attentionRequested
