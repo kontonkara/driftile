@@ -1,11 +1,11 @@
 # Roadmap
 
-Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.62.0 are
+Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.63.0 are
 released. The delivered milestones and release criteria below are a historical
 record. Later direction is not a committed release schedule.
 
-Stable 1.62.0 identifies outputs in multi-output Overview scenes and makes
-output names available to window search. Logical persistence remains v4.
+Stable 1.63.0 adds per-desktop search counts, selected-result position, and
+zero-result card emphasis to the Overview. Logical persistence remains v4.
 
 ## Foundation (delivered)
 
@@ -2269,7 +2269,7 @@ The batch uses only public Plasma 6.7+ output state and adds no action, binding,
 timer, animation, geometry or layout write, persistence field, private API, or
 KWin fork.
 
-### 1.63.0 (development)
+### 1.63.0 (released)
 
 - Derive the unique global search total, exact per-desktop counts, and
   unique-window ordinals from one bounded navigation-target summary.
@@ -2282,7 +2282,7 @@ KWin fork.
 - Preserve whitespace-only global feedback and every existing card geometry,
   ordering, and input path.
 
-Release criteria:
+Release criteria (met):
 
 - Duplicate targets cannot inflate the global total, per-desktop count, or
   unique-window ordinal sequence.
