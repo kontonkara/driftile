@@ -91,6 +91,12 @@ Each placeholder stays inside the visible intersection of its projected slot or
 frame, retains its attention cue, and joins the existing pointer, keyboard,
 close, and search paths. Existing minimized tab behavior is unchanged.
 
+Version 1.56.0 adds a static plain-text footer to an ordinary large thumbnail.
+The window caption is primary; its exact application identity is used as a
+fallback or as a distinct secondary line. Tabs and minimized placeholders use
+the same bounded caption and application-identity normalization. Small frames
+keep their existing presentation without a footer.
+
 The companion is disabled by default. When enabled with a fresh shortcut
 record, `Meta+O` toggles it. KGlobalAccel preserves an existing assignment
 across upgrades, including an explicitly unbound action, so review it in
@@ -192,6 +198,20 @@ window itself is outside the current card.
 
 The cues follow public KWin events and are read-only. They do not request focus,
 change layout, add a setting or action, or write persistent state.
+
+## Window labels
+
+An ordinary large thumbnail can show a static bounded footer. Its normalized
+caption is the primary line. The exact captured application identity becomes
+the primary fallback when the caption is empty and a secondary line when it is
+both present and distinct. Tabs and minimized placeholders derive their text
+from the same normalized caption and identity fields.
+
+Control characters and repeated whitespace are removed before display, and QML
+elides text that does not fit. A small thumbnail hides the complete footer;
+malformed, empty, or inaccessible identity fields fail closed. Labels are
+plain text and add no pointer target, input path, animation, timer, setting,
+action, binding, layout or persistence write, or private API.
 
 ## Minimized placeholders
 
@@ -349,6 +369,10 @@ search coverage for minimized member tabs without changing layout ownership.
 
 Version 1.55.0 extends those guarded paths to eligible minimized stacked tiled
 and tracked floating placeholders without adding drag or layout ownership.
+
+Version 1.56.0 adds focused normalization and QML contract coverage for static
+thumbnail, tab, and minimized-placeholder labels without changing their input
+or layout behavior.
 
 ## Safety boundary
 

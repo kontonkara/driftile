@@ -2086,3 +2086,25 @@ Release criteria (met):
 
 The batch adds no geometry, layout, setting, action, binding, persistence field,
 or private API write.
+
+### 1.56.0 (in development)
+
+- Add a static bounded plain-text footer to ordinary large window thumbnails.
+- Use the normalized caption as the primary line, with the exact application
+  identity as its fallback or a distinct secondary line.
+- Reuse the same normalized caption and application fallback for tab and
+  minimized-placeholder text.
+- Hide the complete footer on small frames instead of clipping it into an
+  unreadable or input-obscuring surface.
+- Keep every existing thumbnail, tab, placeholder, search, and close target
+  unchanged.
+
+Release criteria:
+
+- Control characters, repeated whitespace, overlong text, malformed identity,
+  and inaccessible fields are bounded or fail closed before reaching QML.
+- Ordinary large thumbnails show the caption and distinct application identity,
+  while small thumbnails retain their existing presentation without a footer.
+- Labels remain static and read-only with no new pointer or keyboard input,
+  timer, animation, layout or settings write, action, binding, persistence field,
+  or private API.
