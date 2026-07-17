@@ -2297,6 +2297,55 @@ describe("overview effect package", () => {
     );
   });
 
+  it("shows bounded keyboard help without dispatching overview input", () => {
+    const keyHandler = scene.slice(
+      scene.indexOf("Keys.onPressed:"),
+      scene.indexOf("Component.onCompleted:"),
+    );
+    const help = scene.slice(
+      scene.indexOf("id: keyboardHelpLoader"),
+      scene.indexOf("id: outputIdentityLoader"),
+    );
+
+    expect(scene).toContain("property bool keyboardHelpVisible: false");
+    expect(keyHandler).toMatch(
+      /if \(keyboardHelpVisible\) \{[\s\S]*Qt\.Key_F1[\s\S]*Qt\.Key_Escape[\s\S]*keyboardHelpVisible = false;[\s\S]*event\.accepted = true;[\s\S]*return;/u,
+    );
+    expect(keyHandler).toMatch(
+      /if \(unmodified && event\.key === Qt\.Key_F1\) \{[\s\S]*!event\.isAutoRepeat[\s\S]*keyboardHelpVisible = true;[\s\S]*event\.accepted = true;[\s\S]*return;/u,
+    );
+    expect(keyHandler.indexOf("if (keyboardHelpVisible)")).toBeLessThan(
+      keyHandler.indexOf("let handled = true"),
+    );
+    expect(scene).toContain("root.keyboardHelpVisible = false;");
+    expect(scene).toContain("enabled: !root.keyboardHelpVisible");
+
+    expect(help).toContain("active: root.keyboardHelpVisible");
+    expect(help).toContain("sourceComponent: Component {");
+    expect(help).toContain("width: Math.min(560,");
+    expect(help).toContain("height: Math.min(helpContent.implicitHeight + 40,");
+    expect(help).toContain("interactive: contentHeight > height");
+    for (const label of [
+      "Arrow keys",
+      "Tab / Shift+Tab",
+      "Home / End",
+      "Enter / Space",
+      "Delete",
+      "Type text",
+      "Backspace",
+      "Ctrl+Backspace",
+      "Ctrl+U",
+      "Escape",
+      "F1",
+    ]) {
+      expect(help).toContain(`keys: "${label}"`);
+    }
+    expect(help.match(/\bTapHandler\s*\{/gu)).toHaveLength(1);
+    expect(help).not.toMatch(
+      /\b(?:Action|Animation|Behavior|Connections|Settings|ShortcutHandler|Timer)\s*\{|\.setValue\s*\(|\bsequence\s*:|org\.kde\.kwin\.private/u,
+    );
+  });
+
   it("filters overview windows through one bounded session query", () => {
     const keyHandler = scene.slice(
       scene.indexOf("Keys.onPressed:"),

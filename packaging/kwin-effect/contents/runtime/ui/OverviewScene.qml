@@ -59,6 +59,7 @@ Rectangle {
                                                                         / desktopIds.length) : 0
     property bool desktopReorderAvailable: false
     property bool emptyDesktopAboveFirst: false
+    property bool keyboardHelpVisible: false
     property string keyboardSelectionId: ""
     property int overviewWheelRemainder: 0
     property string searchQuery: ""
@@ -95,6 +96,23 @@ Rectangle {
         const controlOnly = modifiers === Qt.ControlModifier;
         const unmodified = modifiers === Qt.NoModifier;
         const searchTextModifier = unmodified || modifiers === Qt.ShiftModifier;
+        if (keyboardHelpVisible) {
+            if (!event.isAutoRepeat
+                    && ((unmodified && event.key === Qt.Key_F1)
+                        || (searchTextModifier && event.key === Qt.Key_Escape))) {
+                keyboardHelpVisible = false;
+            }
+            event.accepted = true;
+            return;
+        }
+        if (unmodified && event.key === Qt.Key_F1) {
+            if (!event.isAutoRepeat) {
+                keyboardHelpVisible = true;
+            }
+            event.accepted = true;
+            return;
+        }
+
         let handled = true;
         if (controlOnly && event.key === Qt.Key_Backspace && searchQuery.length > 0) {
             root.removeLastSearchClause();
@@ -154,6 +172,7 @@ Rectangle {
         ignoreUnknownSignals: true
 
         function onActiveChanged() {
+            root.keyboardHelpVisible = false;
             if (!root.sceneEffect || root.sceneEffect.active !== true) {
                 root.overviewWheelRemainder = 0;
                 root.searchQuery = "";
@@ -198,6 +217,7 @@ Rectangle {
 
     WheelHandler {
         target: null
+        enabled: !root.keyboardHelpVisible
         acceptedDevices: PointerDevice.Mouse
         acceptedModifiers: Qt.NoModifier
         orientation: Qt.Vertical
@@ -217,6 +237,7 @@ Rectangle {
             required property string modelData
             required property int index
 
+            enabled: !root.keyboardHelpVisible
             x: root.outerMargin
             y: root.outerMargin + index * (root.cardHeight + root.cardGap)
             width: Math.max(1, root.width - root.outerMargin * 2)
@@ -302,6 +323,129 @@ Rectangle {
             horizontalAlignment: Text.AlignHCenter
             verticalAlignment: Text.AlignVCenter
             elide: Text.ElideRight
+        }
+    }
+
+    Loader {
+        id: keyboardHelpLoader
+
+        anchors.fill: parent
+        active: root.keyboardHelpVisible
+        z: 30000
+
+        sourceComponent: Component {
+            Item {
+                Rectangle {
+                    anchors.fill: parent
+                    color: "#b30b0f17"
+                }
+
+                TapHandler {
+                    acceptedButtons: Qt.AllButtons
+                    gesturePolicy: TapHandler.WithinBounds
+                }
+
+                Rectangle {
+                    id: keyboardHelpPanel
+
+                    readonly property var shortcuts: [
+                        { keys: "Arrow keys", action: "Move selection" },
+                        { keys: "Tab / Shift+Tab", action: "Select next / previous" },
+                        { keys: "Home / End", action: "Select first / last" },
+                        { keys: "Enter / Space", action: "Activate selection; Space works outside search" },
+                        { keys: "Delete", action: "Close selected window" },
+                        { keys: "Type text", action: "Search windows" },
+                        { keys: "Backspace", action: "Remove last search character" },
+                        { keys: "Ctrl+Backspace", action: "Remove last search clause" },
+                        { keys: "Ctrl+U", action: "Clear search" },
+                        { keys: "Escape", action: "Close help, clear search, or close Overview" },
+                        { keys: "F1", action: "Toggle keyboard help" }
+                    ]
+
+                    anchors.centerIn: parent
+                    width: Math.min(560, Math.max(1, parent.width - Math.max(24, root.outerMargin * 2)))
+                    height: Math.min(helpContent.implicitHeight + 40,
+                                     Math.max(1, parent.height - Math.max(24, root.outerMargin * 2)))
+                    color: "#fa1a2230"
+                    border.width: 1
+                    border.color: "#86aee8"
+                    radius: 10
+                    clip: true
+
+                    Flickable {
+                        id: helpViewport
+
+                        anchors.fill: parent
+                        anchors.margins: 20
+                        contentWidth: width
+                        contentHeight: helpContent.implicitHeight
+                        boundsBehavior: Flickable.StopAtBounds
+                        clip: true
+                        interactive: contentHeight > height
+
+                        Column {
+                            id: helpContent
+
+                            width: helpViewport.width
+                            spacing: 2
+
+                            Text {
+                                width: parent.width
+                                text: "Keyboard help"
+                                textFormat: Text.PlainText
+                                color: "#f3f7ff"
+                                font.bold: true
+                                font.pixelSize: 18
+                            }
+
+                            Text {
+                                width: parent.width
+                                bottomPadding: 8
+                                text: "F1 or Escape closes this panel"
+                                textFormat: Text.PlainText
+                                color: "#aebbd0"
+                                font.pixelSize: 12
+                            }
+
+                            Repeater {
+                                model: keyboardHelpPanel.shortcuts
+
+                                Item {
+                                    required property var modelData
+
+                                    width: helpContent.width
+                                    height: Math.max(shortcutKeys.implicitHeight, shortcutAction.implicitHeight) + 8
+
+                                    Text {
+                                        id: shortcutKeys
+
+                                        width: Math.min(148, parent.width * 0.4)
+                                        text: modelData.keys
+                                        textFormat: Text.PlainText
+                                        color: "#d8e8ff"
+                                        font.bold: true
+                                        font.pixelSize: 13
+                                        wrapMode: Text.Wrap
+                                    }
+
+                                    Text {
+                                        id: shortcutAction
+
+                                        anchors.left: shortcutKeys.right
+                                        anchors.leftMargin: 12
+                                        anchors.right: parent.right
+                                        text: modelData.action
+                                        textFormat: Text.PlainText
+                                        color: "#f3f7ff"
+                                        font.pixelSize: 13
+                                        wrapMode: Text.Wrap
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 
