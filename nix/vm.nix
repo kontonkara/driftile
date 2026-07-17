@@ -10394,7 +10394,6 @@ let
         local full_x=0
         local full_y=0
         local gap=""
-        local left_exclusion=0
         local original_frame=""
         local original_width=0
         local predecessor_frame=""
@@ -10510,22 +10509,23 @@ let
               successor_height \
               <<< "$successor_frame"
             full_right=$((full_x + full_width))
-            left_exclusion=$((full_x - (2 * gap)))
             predecessor_right=$((predecessor_x + predecessor_width))
             successor_right=$((successor_x + successor_width))
 
             if ((full_width > original_width \
               && predecessor_width == full_width \
-              && predecessor_right <= left_exclusion \
-              && successor_x == full_x \
-              && successor_right < full_right \
+              && predecessor_x < full_x \
+              && predecessor_right > full_x \
+              && predecessor_right == successor_x - gap \
+              && successor_x > full_x \
+              && successor_right == full_right \
               && predecessor_y == full_y \
               && predecessor_height == full_height \
               && successor_y == full_y \
               && successor_height == full_height)); then
               verified=true
               record_focus_state \
-                "new real window anchored at the left gap after a full-width predecessor"
+                "new real window minimally revealed after a full-width predecessor"
             fi
           fi
         fi
@@ -10579,8 +10579,8 @@ let
           printf 'full-width predecessor frame: %s\n' "$full_frame"
           printf 'parked predecessor frame: %s\n' "$predecessor_frame"
           printf 'active successor frame: %s\n' "$successor_frame"
-          printf 'expected active left edge: %s\n' "$full_x"
-          printf 'maximum predecessor right edge: %s\n' "$left_exclusion"
+          printf 'expected active right edge: %s\n' "$full_right"
+          printf 'expected inter-column gap: %s\n' "$gap"
           printf 'verified: %s\n' "$verified"
           printf 'cleanup verified: %s\n' "$cleanup_verified"
         } >> /tmp/shared/driftile-focus-diagnostics
