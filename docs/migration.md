@@ -1,7 +1,38 @@
 # Migration
 
-The latest stable release is 1.56.0. Use the steps below when changing release
+The latest stable release is 1.57.0. Use the steps below when changing release
 generations, and never combine files from different releases.
+
+## Upgrade from 1.56.0 to 1.57.0
+
+1. Release a helper-owned shortcut profile with the installed helper.
+2. Disable Driftile and both optional effects in System Settings.
+3. Install matching 1.57.0 artifacts, or pin the Nix input to `v1.57.0` and
+   rebuild.
+4. Re-enable Driftile and only the optional effects you use, then reclaim the
+   helper profile if needed.
+
+Logical layout state remains v4, and actions, default bindings, layout, input,
+and search behavior are unchanged. The optional Overview adds
+two live presentation preferences. Both default to enabled, preserving the
+1.56.0 presentation. **Show window labels** (`ShowWindowLabels`) controls only
+the ordinary large thumbnail footer; tabs and minimized placeholders retain
+their labels. **Show application identity** (`ShowApplicationIdentity`) removes
+the application line and identity fallback while retaining normalized captions.
+Use the Overview effect's configure button, or the nullable Home Manager options
+`overview.showWindowLabels` and `overview.showApplicationIdentity`; `null`
+leaves the corresponding KConfig value unmanaged. The main script and
+transition effect retain their 1.56.0 behavior.
+
+## Roll back from 1.57.0 to 1.56.0
+
+Release a helper-owned profile, disable Driftile and both optional effects,
+then restore matching verified 1.56.0 artifacts or pin the Nix input to
+`v1.56.0` and rebuild. Remove the two 1.57.0 Home Manager label options before
+evaluating the 1.56.0 module. Both releases use logical layout state v4 with
+the same layout and input behavior. The older Overview ignores retained
+KConfig values for the two preferences and always uses the enabled 1.56.0
+label presentation.
 
 ## Upgrade from 1.55.0 to 1.56.0
 
