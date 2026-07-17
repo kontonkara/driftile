@@ -17,6 +17,11 @@ export type { OverviewMinimizedPlaceholderRect } from "./minimized-placeholder";
 export { planOverviewWindowDesktopDrop } from "./window-drop";
 export { planOverviewWindowLabel } from "./window-label";
 export type { OverviewWindowLabelPlan } from "./window-label";
+export { planOverviewWindowState } from "./window-state";
+export type {
+  OverviewWindowStateBadge,
+  OverviewWindowStatePlan,
+} from "./window-state";
 export {
   appendOverviewSearchText,
   matchesOverviewWindowSearch,
