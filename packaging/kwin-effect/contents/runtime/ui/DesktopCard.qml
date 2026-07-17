@@ -349,6 +349,7 @@ Rectangle {
                     id: thumbnailShell
 
                     readonly property bool keyboardTarget: windowPresentation.matchesSearch
+                        && !windowPresentation.minimizedWindow
                         && (!windowPresentation.tiledPresentation || windowPresentation.tiledPresentation.selected)
                     readonly property bool keyboardSelected: keyboardTarget
                         && card.keyboardSelectionId === card.navigationTargetId(windowPresentation.windowId)
@@ -489,8 +490,11 @@ Rectangle {
 
                     readonly property var frame: windowPresentation.tiledPresentation
                         ? windowPresentation.tiledPresentation.tabFrame : null
-                    readonly property bool keyboardTarget: windowPresentation.tiledPresentation
-                        && !windowPresentation.tiledPresentation.selected && windowPresentation.matchesSearch
+                    readonly property bool activationEligible: windowPresentation.tiledPresentation
+                        && (windowPresentation.minimizedWindow
+                            ? card.windowSnapshotCanActivateMinimizedTab(windowPresentation)
+                            : !windowPresentation.tiledPresentation.selected)
+                    readonly property bool keyboardTarget: activationEligible && windowPresentation.matchesSearch
                     readonly property bool keyboardSelected: keyboardTarget
                         && card.keyboardSelectionId === card.navigationTargetId(windowPresentation.windowId)
 
@@ -581,9 +585,7 @@ Rectangle {
                     TapHandler {
                         acceptedButtons: Qt.LeftButton
                         acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
-                        enabled: tabShell.visible && windowPresentation.tiledPresentation
-                                 && !windowPresentation.tiledPresentation.selected
-                                 && !windowPresentation.minimizedWindow && card.desktop && card.screen
+                        enabled: tabShell.visible && tabShell.activationEligible && card.desktop && card.screen
                         onTapped: card.windowTapped(model.window, windowPresentation.windowId, card.desktop,
                                                     card.desktopId, card.screen)
                     }
@@ -732,13 +734,14 @@ Rectangle {
 
         for (let index = 0; index < windowRepeater.count; index += 1) {
             const presentation = windowRepeater.itemAt(index);
-            if (!presentation || !presentation.matchesSearch || !windowIsActionable(presentation.candidate)) {
+            if (!presentation || !presentation.matchesSearch || !windowCanNavigate(presentation)) {
                 continue;
             }
 
-            const visual = presentation.tiledPresentation && !presentation.tiledPresentation.selected
-                ? presentation.tabTarget
-                : presentation.thumbnailTarget;
+            const visual = presentation.minimizedWindow ? presentation.tabTarget
+                                                        : presentation.tiledPresentation
+                                                          && !presentation.tiledPresentation.selected
+                                                          ? presentation.tabTarget : presentation.thumbnailTarget;
             const rect = clippedNavigationRect(visual, sceneItem);
             if (!rect) {
                 continue;
@@ -855,14 +858,20 @@ Rectangle {
     function windowSnapshotCanRequestClose(presentation) {
         try {
             const snapshot = presentation ? presentation.actionSnapshot : null;
+            const candidate = presentation ? presentation.candidate : null;
             const expectedDesktop = presentation ? presentation.sourceDesktop : null;
             const expectedDesktopId = presentation ? presentation.sourceDesktopId : "";
             const expectedScreen = presentation ? presentation.sourceScreen : null;
-            if (!snapshot || presentation.matchesSearch !== true || snapshot.deleted || snapshot.minimized
+            if (!snapshot || !candidate || presentation.matchesSearch !== true || snapshot.deleted
                     || snapshot.managed !== true || snapshot.closeable !== true || snapshot.windowId.length === 0
+                    || snapshot.windowId !== presentation.windowId
+                    || snapshot.minimized !== (presentation.minimizedWindow === true)
+                    || candidate.deleted === true || candidate.managed !== true || candidate.closeable !== true
+                    || candidate.minimized !== snapshot.minimized
+                    || candidate.internalId === undefined || candidate.internalId === null
+                    || String(candidate.internalId) !== snapshot.windowId
                     || !expectedDesktop || typeof expectedDesktopId !== "string" || expectedDesktopId.length === 0
-                    || !expectedScreen
-                    || snapshot.output !== expectedScreen) {
+                    || !expectedScreen || snapshot.output !== expectedScreen || candidate.output !== expectedScreen) {
                 return false;
             }
 
@@ -970,6 +979,52 @@ Rectangle {
                 && String(candidate.internalId).length > 0;
     }
 
+    function windowCanNavigate(presentation) {
+        return presentation && (windowIsActionable(presentation.candidate)
+                                || windowSnapshotCanActivateMinimizedTab(presentation));
+    }
+
+    function windowSnapshotCanActivateMinimizedTab(presentation) {
+        try {
+            const snapshot = presentation ? presentation.actionSnapshot : null;
+            const candidate = presentation ? presentation.candidate : null;
+            const tiled = presentation ? presentation.tiledPresentation : null;
+            const expectedDesktop = presentation ? presentation.sourceDesktop : null;
+            const expectedDesktopId = presentation ? presentation.sourceDesktopId : "";
+            const expectedScreen = presentation ? presentation.sourceScreen : null;
+            if (!snapshot || !candidate || presentation.matchesSearch !== true
+                    || presentation.minimizedWindow !== true || !tiled || !tiled.tabFrame
+                    || snapshot.deleted || snapshot.minimized !== true || snapshot.managed !== true
+                    || snapshot.wantsInput !== true || snapshot.windowId.length === 0
+                    || snapshot.windowId !== presentation.windowId
+                    || candidate.deleted === true || candidate.minimized !== true || candidate.managed !== true
+                    || candidate.wantsInput !== true || candidate.internalId === undefined
+                    || candidate.internalId === null || String(candidate.internalId) !== snapshot.windowId
+                    || !expectedDesktop || typeof expectedDesktopId !== "string" || expectedDesktopId.length === 0
+                    || !expectedScreen || snapshot.output !== expectedScreen || candidate.output !== expectedScreen) {
+                return false;
+            }
+
+            const desktops = snapshot.desktops;
+            if (!desktops) {
+                return false;
+            }
+            if (desktops.length === 0) {
+                return true;
+            }
+
+            for (let index = 0; index < desktops.length; index += 1) {
+                if (desktops[index] === expectedDesktop && snapshot.desktopIds[index] === expectedDesktopId) {
+                    return true;
+                }
+            }
+
+            return false;
+        } catch (error) {
+            return false;
+        }
+    }
+
     function anyWindowDemandsAttention(revision) {
         if (!Number.isInteger(revision) || revision < 0) {
             return false;
@@ -1011,11 +1066,28 @@ Rectangle {
                     ? String(candidate.resourceName) : "",
                 desktopFileName: candidate && candidate.desktopFileName !== undefined
                     && candidate.desktopFileName !== null ? String(candidate.desktopFileName) : "",
-                state: card.windowDemandsAttention(candidate) ? "urgent attention" : ""
+                state: card.windowSearchState(candidate)
             }) === true;
         } catch (error) {
             return query.length === 0;
         }
+    }
+
+    function windowSearchState(candidate) {
+        const states = [];
+        if (windowDemandsAttention(candidate)) {
+            states.push("urgent attention");
+        }
+
+        try {
+            if (candidate && candidate.deleted !== true && candidate.minimized === true) {
+                states.push("minimized");
+            }
+        } catch (error) {
+            return states.join(" ");
+        }
+
+        return states.join(" ");
     }
 
     function clippedNavigationRect(visual, sceneItem) {
