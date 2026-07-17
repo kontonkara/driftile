@@ -29,6 +29,16 @@ import {
   type ApplicationInitialFloating,
 } from "./application-initial-floating";
 import {
+  decodeApplicationInitialLayouts,
+  decodeInitialLayout,
+  DEFAULT_INITIAL_LAYOUT,
+  EMPTY_APPLICATION_INITIAL_LAYOUTS,
+  sameApplicationInitialLayouts,
+  sameInitialLayouts,
+  type ApplicationInitialLayouts,
+  type InitialLayout,
+} from "./application-initial-layouts";
+import {
   decodeApplicationInitialDestinations,
   EMPTY_APPLICATION_INITIAL_DESTINATIONS,
   sameApplicationInitialDestinations,
@@ -135,7 +145,7 @@ const MIN_RESIZE_STEP_PIXELS = 0;
 const MAX_RESIZE_STEP_PIXELS = 16_384;
 const MIN_TOUCHPAD_NAVIGATION_FINGER_COUNT = 3;
 const MAX_TOUCHPAD_NAVIGATION_FINGER_COUNT = 5;
-const SETTINGS_FIELD_COUNT = 41;
+const SETTINGS_FIELD_COUNT = 43;
 
 export interface DriftileSettings {
   readonly applicationBorderlessExclusions: ApplicationBorderlessExclusions;
@@ -148,6 +158,7 @@ export interface DriftileSettings {
   readonly applicationInitialFocused: ApplicationInitialFocused;
   readonly applicationInitialUnfocused: ApplicationInitialUnfocused;
   readonly applicationInitialFloating: ApplicationInitialFloating;
+  readonly applicationInitialLayouts: ApplicationInitialLayouts;
   readonly applicationInitialFullWidth: ApplicationInitialFullWidth;
   readonly applicationInitialFullscreen: ApplicationInitialFullscreen;
   readonly applicationInitialMaximized: ApplicationInitialMaximized;
@@ -166,6 +177,7 @@ export interface DriftileSettings {
   readonly defaultFloatingPosition: ApplicationFloatingPosition | null;
   readonly defaultInitialDestination: ApplicationInitialDestination | null;
   readonly defaultInitialFocus: DefaultInitialFocus;
+  readonly defaultInitialLayout: InitialLayout;
   readonly defaultWindowHeight: DefaultWindowHeight;
   readonly emptyDesktopAboveFirst: boolean;
   readonly gap: number;
@@ -192,6 +204,7 @@ export const DEFAULT_DRIFTILE_SETTINGS: DriftileSettings = Object.freeze({
   applicationInitialFocused: EMPTY_APPLICATION_INITIAL_FOCUSED,
   applicationInitialUnfocused: EMPTY_APPLICATION_INITIAL_UNFOCUSED,
   applicationInitialFloating: EMPTY_APPLICATION_INITIAL_FLOATING,
+  applicationInitialLayouts: EMPTY_APPLICATION_INITIAL_LAYOUTS,
   applicationInitialFullWidth: EMPTY_APPLICATION_INITIAL_FULL_WIDTH,
   applicationInitialFullscreen: EMPTY_APPLICATION_INITIAL_FULLSCREEN,
   applicationInitialMaximized: EMPTY_APPLICATION_INITIAL_MAXIMIZED,
@@ -210,6 +223,7 @@ export const DEFAULT_DRIFTILE_SETTINGS: DriftileSettings = Object.freeze({
   defaultFloatingPosition: null,
   defaultInitialDestination: null,
   defaultInitialFocus: DEFAULT_INITIAL_FOCUS,
+  defaultInitialLayout: DEFAULT_INITIAL_LAYOUT,
   defaultWindowHeight: AUTOMATIC_DEFAULT_WINDOW_HEIGHT,
   emptyDesktopAboveFirst: false,
   gap: 16,
@@ -246,6 +260,7 @@ export function decodeDriftileSettings(
     !owns(candidate, "applicationInitialFocused") ||
     !owns(candidate, "applicationInitialUnfocused") ||
     !owns(candidate, "applicationInitialFloating") ||
+    !owns(candidate, "applicationInitialLayouts") ||
     !owns(candidate, "applicationInitialFullWidth") ||
     !owns(candidate, "applicationInitialFullscreen") ||
     !owns(candidate, "applicationInitialMaximized") ||
@@ -264,6 +279,7 @@ export function decodeDriftileSettings(
     !owns(candidate, "defaultFloatingPosition") ||
     !owns(candidate, "defaultInitialDestination") ||
     !owns(candidate, "defaultInitialFocus") ||
+    !owns(candidate, "defaultInitialLayout") ||
     !owns(candidate, "defaultWindowHeight") ||
     !owns(candidate, "emptyDesktopAboveFirst") ||
     !owns(candidate, "gap") ||
@@ -311,6 +327,9 @@ export function decodeDriftileSettings(
   const applicationInitialFloating = decodeApplicationInitialFloating(
     candidate["applicationInitialFloating"],
   );
+  const applicationInitialLayouts = decodeApplicationInitialLayouts(
+    candidate["applicationInitialLayouts"],
+  );
   const applicationInitialFullWidth = decodeApplicationInitialFullWidth(
     candidate["applicationInitialFullWidth"],
   );
@@ -346,6 +365,9 @@ export function decodeDriftileSettings(
   const defaultInitialFocus = decodeDefaultInitialFocus(
     candidate["defaultInitialFocus"],
   );
+  const defaultInitialLayout = decodeInitialLayout(
+    candidate["defaultInitialLayout"],
+  );
   const defaultWindowHeight = decodeDefaultWindowHeight(
     candidate["defaultWindowHeight"],
   );
@@ -378,6 +400,7 @@ export function decodeDriftileSettings(
     !applicationInitialFocused ||
     !applicationInitialUnfocused ||
     !applicationInitialFloating ||
+    !applicationInitialLayouts ||
     !applicationInitialFullWidth ||
     !applicationInitialFullscreen ||
     !applicationInitialMaximized ||
@@ -412,6 +435,7 @@ export function decodeDriftileSettings(
     !decodedDefaultFloatingPosition ||
     !decodedDefaultInitialDestination ||
     !defaultInitialFocus ||
+    !defaultInitialLayout ||
     !defaultWindowHeight ||
     typeof emptyDesktopAboveFirst !== "boolean" ||
     !isBoundedNumber(gap, MIN_GAP, MAX_GAP) ||
@@ -452,6 +476,7 @@ export function decodeDriftileSettings(
     applicationInitialFocused,
     applicationInitialUnfocused,
     applicationInitialFloating,
+    applicationInitialLayouts,
     applicationInitialFullWidth,
     applicationInitialFullscreen,
     applicationInitialMaximized,
@@ -471,6 +496,7 @@ export function decodeDriftileSettings(
     defaultInitialDestination:
       decodedDefaultInitialDestination.initialDestination,
     defaultInitialFocus,
+    defaultInitialLayout,
     defaultWindowHeight,
     emptyDesktopAboveFirst,
     gap,
@@ -532,6 +558,10 @@ export function sameDriftileSettings(
       left.applicationInitialFloating,
       right.applicationInitialFloating,
     ) &&
+    sameApplicationInitialLayouts(
+      left.applicationInitialLayouts,
+      right.applicationInitialLayouts,
+    ) &&
     sameApplicationInitialFullWidth(
       left.applicationInitialFullWidth,
       right.applicationInitialFullWidth,
@@ -572,6 +602,7 @@ export function sameDriftileSettings(
       right.defaultInitialDestination,
     ) &&
     left.defaultInitialFocus === right.defaultInitialFocus &&
+    sameInitialLayouts(left.defaultInitialLayout, right.defaultInitialLayout) &&
     sameDefaultWindowHeights(
       left.defaultWindowHeight,
       right.defaultWindowHeight,

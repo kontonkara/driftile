@@ -1,6 +1,16 @@
 import { describe, expect, it } from "vitest";
 import { decodeApplicationBorderlessExclusions } from "../src/application-borderless-exclusions";
 import { decodeApplicationInitialFloating } from "../src/application-initial-floating";
+import {
+  APPLICATION_INITIAL_LAYOUT_LIMITS,
+  decodeApplicationInitialLayouts,
+  decodeInitialLayout,
+  DEFAULT_INITIAL_LAYOUT,
+  DEFAULT_INITIAL_LAYOUT_LIMITS,
+  EMPTY_APPLICATION_INITIAL_LAYOUTS,
+  sameApplicationInitialLayouts,
+  sameInitialLayouts,
+} from "../src/application-initial-layouts";
 import { decodeApplicationInitialFocused } from "../src/application-initial-focused";
 import { decodeApplicationInitialUnfocused } from "../src/application-initial-unfocused";
 import { decodeApplicationInitialFullWidth } from "../src/application-initial-full-width";
@@ -89,6 +99,14 @@ const validApplicationInitialFloating = decodeApplicationInitialFloating(
 
 if (!validApplicationInitialFloating) {
   throw new Error("application initial-floating fixture is invalid");
+}
+
+const validApplicationInitialLayouts = decodeApplicationInitialLayouts(
+  "org.example.Editor=tiled\norg.example.Browser=floating",
+);
+
+if (!validApplicationInitialLayouts) {
+  throw new Error("application initial-layout fixture is invalid");
 }
 
 const validApplicationFloatingPositions = decodeApplicationFloatingPositions(
@@ -217,6 +235,7 @@ const validSettings: DriftileSettings = {
   applicationInitialFocused: validApplicationInitialFocused,
   applicationInitialUnfocused: validApplicationInitialUnfocused,
   applicationInitialFloating: validApplicationInitialFloating,
+  applicationInitialLayouts: validApplicationInitialLayouts,
   applicationInitialFullWidth: validApplicationInitialFullWidth,
   applicationInitialFullscreen: validApplicationInitialFullscreen,
   applicationInitialMaximized: validApplicationInitialMaximized,
@@ -235,6 +254,7 @@ const validSettings: DriftileSettings = {
   defaultFloatingPosition: validDefaultFloatingPosition.floatingPosition,
   defaultInitialDestination: validDefaultInitialDestination.initialDestination,
   defaultInitialFocus: "focused",
+  defaultInitialLayout: "floating",
   defaultWindowHeight: validDefaultWindowHeight,
   emptyDesktopAboveFirst: true,
   gap: 32.5,
@@ -264,6 +284,8 @@ const validSettingsInput = {
   applicationInitialUnfocused:
     "org.example.Background\norg.example.Notification",
   applicationInitialFloating: "org.example.Floating\norg.example.Floating=tool",
+  applicationInitialLayouts:
+    "org.example.Editor=tiled\norg.example.Browser=floating",
   applicationInitialFullWidth: "org.example.Browser\norg.example.Browser=tool",
   applicationInitialFullscreen: "org.example.Game\norg.example.Video",
   applicationInitialMaximized: "org.example.Mail\norg.example.Calendar",
@@ -282,6 +304,7 @@ const validSettingsInput = {
   defaultFloatingPosition: validDefaultFloatingPosition.canonicalValue,
   defaultInitialDestination: validDefaultInitialDestination.canonicalValue,
   defaultInitialFocus: validSettings.defaultInitialFocus,
+  defaultInitialLayout: validSettings.defaultInitialLayout,
   defaultWindowHeight: validSettings.defaultWindowHeight.canonicalValue,
   emptyDesktopAboveFirst: validSettings.emptyDesktopAboveFirst,
   gap: validSettings.gap,
@@ -314,6 +337,7 @@ describe("Driftile settings", () => {
       defaultFloatingPosition: null,
       defaultInitialDestination: null,
       defaultInitialFocus: DEFAULT_INITIAL_FOCUS,
+      defaultInitialLayout: DEFAULT_INITIAL_LAYOUT,
       emptyDesktopAboveFirst: false,
       gap: 16,
       showTabIndicator: true,
@@ -354,6 +378,9 @@ describe("Driftile settings", () => {
     ).toEqual([]);
     expect(
       DEFAULT_DRIFTILE_SETTINGS.applicationInitialFloating.canonicalEntries,
+    ).toEqual([]);
+    expect(
+      DEFAULT_DRIFTILE_SETTINGS.applicationInitialLayouts.canonicalEntries,
     ).toEqual([]);
     expect(
       DEFAULT_DRIFTILE_SETTINGS.applicationFloatingPositions.canonicalEntries,
@@ -420,6 +447,7 @@ describe("Driftile settings", () => {
       defaultFloatingPosition: validSettings.defaultFloatingPosition,
       defaultInitialDestination: validSettings.defaultInitialDestination,
       defaultInitialFocus: validSettings.defaultInitialFocus,
+      defaultInitialLayout: validSettings.defaultInitialLayout,
       defaultWindowHeight: validSettings.defaultWindowHeight,
       emptyDesktopAboveFirst: validSettings.emptyDesktopAboveFirst,
       gap: validSettings.gap,
@@ -477,6 +505,19 @@ describe("Driftile settings", () => {
     expect(decoded?.applicationInitialUnfocused.canonicalEntries).toEqual(
       validApplicationInitialUnfocused.canonicalEntries,
     );
+    expect(decoded?.applicationInitialLayouts.canonicalEntries).toEqual(
+      validApplicationInitialLayouts.canonicalEntries,
+    );
+    expect(
+      decoded?.applicationInitialLayouts.initialLayoutFor(
+        "org.example.Browser",
+      ),
+    ).toBe("floating");
+    expect(
+      decoded?.applicationInitialLayouts.initialLayoutFor(
+        "org.example.browser",
+      ),
+    ).toBeUndefined();
     expect(
       decoded?.applicationInitialDestinations.initialDestinationFor(
         "org.example.Chat",
@@ -561,6 +602,7 @@ describe("Driftile settings", () => {
       applicationInitialFocused: "",
       applicationInitialUnfocused: "",
       applicationInitialFloating: "",
+      applicationInitialLayouts: "",
       applicationInitialFullWidth: "",
       applicationInitialFullscreen: "",
       applicationInitialMaximized: "",
@@ -579,6 +621,7 @@ describe("Driftile settings", () => {
       defaultFloatingPosition: "",
       defaultInitialDestination: "",
       defaultInitialFocus: "default",
+      defaultInitialLayout: "tiled",
       defaultWindowHeight: "auto",
       emptyDesktopAboveFirst: false,
       gap: 0,
@@ -604,6 +647,7 @@ describe("Driftile settings", () => {
       applicationInitialFocused: "org.example.Chat",
       applicationInitialUnfocused: "org.example.Background",
       applicationInitialFloating: "org.example.Floating",
+      applicationInitialLayouts: "org.example.Floating=floating",
       applicationInitialFullWidth: "org.example.Browser",
       applicationInitialFullscreen: "org.example.Game",
       applicationInitialMaximized: "org.example.Mail",
@@ -622,6 +666,7 @@ describe("Driftile settings", () => {
       defaultFloatingPosition: "right,16384,-16384",
       defaultInitialDestination: "desktop:25,output:DP-1",
       defaultInitialFocus: "unfocused",
+      defaultInitialLayout: "floating",
       defaultWindowHeight: "16384px",
       emptyDesktopAboveFirst: true,
       gap: 64,
@@ -684,6 +729,9 @@ describe("Driftile settings", () => {
     expect(
       decoded?.applicationInitialFloating.canonicalEntries.join("\n"),
     ).toBe(settings.applicationInitialFloating);
+    expect(decoded?.applicationInitialLayouts.canonicalEntries.join("\n")).toBe(
+      settings.applicationInitialLayouts,
+    );
     expect(
       decoded?.applicationInitialFullWidth.canonicalEntries.join("\n"),
     ).toBe(settings.applicationInitialFullWidth);
@@ -716,6 +764,7 @@ describe("Driftile settings", () => {
       defaultColumnWidthPercent: settings.defaultColumnWidthPercent,
       defaultColumnWidthPixels: settings.defaultColumnWidthPixels,
       useInitialWindowWidth: settings.useInitialWindowWidth,
+      defaultInitialLayout: settings.defaultInitialLayout,
       emptyDesktopAboveFirst: settings.emptyDesktopAboveFirst,
       gap: settings.gap,
       showTabIndicator: settings.showTabIndicator,
@@ -795,6 +844,7 @@ describe("Driftile settings", () => {
       { defaultInitialDestination: "desktop:0" },
     ],
     ["an invalid default initial focus", { defaultInitialFocus: "focus" }],
+    ["an invalid default initial layout", { defaultInitialLayout: "stacked" }],
     ["an invalid default window height", { defaultWindowHeight: "9" }],
     [
       "invalid application overrides",
@@ -819,6 +869,13 @@ describe("Driftile settings", () => {
       "duplicate application initial-floating entries",
       {
         applicationInitialFloating: "org.example.Editor\n org.example.Editor ",
+      },
+    ],
+    [
+      "duplicate application initial-layout entries",
+      {
+        applicationInitialLayouts:
+          "org.example.Editor=tiled\n org.example.Editor = floating",
       },
     ],
     [
@@ -936,7 +993,7 @@ describe("Driftile settings", () => {
     },
   );
 
-  it("rejects an incomplete forty-one-field snapshot", () => {
+  it("rejects an incomplete forty-three-field snapshot", () => {
     const incomplete: Record<string, unknown> = { ...validSettingsInput };
     delete incomplete["defaultColumnWidthPixels"];
 
@@ -987,6 +1044,14 @@ describe("Driftile settings", () => {
 
     if (!changedApplicationInitialFloating) {
       throw new Error("application initial-floating fixture is invalid");
+    }
+
+    const changedApplicationInitialLayouts = decodeApplicationInitialLayouts(
+      "org.example.Other=floating",
+    );
+
+    if (!changedApplicationInitialLayouts) {
+      throw new Error("application initial-layout fixture is invalid");
     }
 
     const changedApplicationFloatingPositions =
@@ -1113,6 +1178,7 @@ describe("Driftile settings", () => {
       { applicationInitialFocused: changedApplicationInitialFocused },
       { applicationInitialUnfocused: changedApplicationInitialUnfocused },
       { applicationInitialFloating: changedApplicationInitialFloating },
+      { applicationInitialLayouts: changedApplicationInitialLayouts },
       { applicationInitialFullWidth: changedApplicationInitialFullWidth },
       { applicationInitialFullscreen: changedApplicationInitialFullscreen },
       { applicationInitialMaximized: changedApplicationInitialMaximized },
@@ -1131,6 +1197,7 @@ describe("Driftile settings", () => {
       { defaultFloatingPosition: changedDefaultFloatingPosition },
       { defaultInitialDestination: changedDefaultInitialDestination },
       { defaultInitialFocus: "unfocused" as const },
+      { defaultInitialLayout: "tiled" as const },
       { defaultWindowHeight: changedDefaultWindowHeight },
       { emptyDesktopAboveFirst: false },
       { gap: 33 },
@@ -1149,6 +1216,132 @@ describe("Driftile settings", () => {
         sameDriftileSettings(validSettings, { ...validSettings, ...changed }),
       ).toBe(false);
     }
+  });
+});
+
+describe("initial-layout codecs", () => {
+  it("canonicalizes immutable exact application mappings", () => {
+    const decoded = decodeApplicationInitialLayouts(
+      " org.example.Editor = tiled \n\norg.example.Browser=floating\nOrg.example.Browser=tiled",
+    );
+
+    expect(decoded?.canonicalEntries).toEqual([
+      "Org.example.Browser=tiled",
+      "org.example.Browser=floating",
+      "org.example.Editor=tiled",
+    ]);
+    expect(decoded?.initialLayoutFor("org.example.Browser")).toBe("floating");
+    expect(decoded?.initialLayoutFor("Org.example.Browser")).toBe("tiled");
+    expect(decoded?.initialLayoutFor("org.example.browser")).toBeUndefined();
+    expect(Object.isFrozen(decoded)).toBe(true);
+    expect(Object.isFrozen(decoded?.canonicalEntries)).toBe(true);
+    expect(EMPTY_APPLICATION_INITIAL_LAYOUTS.canonicalEntries).toEqual([]);
+  });
+
+  it("compares canonical map and default-layout semantics", () => {
+    const left = decodeApplicationInitialLayouts(
+      "org.example.Editor=tiled\norg.example.Browser=floating",
+    );
+    const reordered = decodeApplicationInitialLayouts(
+      " org.example.Browser = floating \norg.example.Editor = tiled",
+    );
+    const changed = decodeApplicationInitialLayouts(
+      "org.example.Browser=tiled\norg.example.Editor=tiled",
+    );
+
+    if (!left || !reordered || !changed) {
+      throw new Error("application initial-layout fixture is invalid");
+    }
+
+    expect(sameApplicationInitialLayouts(left, reordered)).toBe(true);
+    expect(sameApplicationInitialLayouts(left, changed)).toBe(false);
+    expect(sameInitialLayouts("tiled", "tiled")).toBe(true);
+    expect(sameInitialLayouts("tiled", "floating")).toBe(false);
+  });
+
+  it("keeps tiled as the case-sensitive global default", () => {
+    expect(DEFAULT_INITIAL_LAYOUT).toBe("tiled");
+    expect(decodeInitialLayout(" tiled ")).toBe("tiled");
+    expect(decodeInitialLayout("floating")).toBe("floating");
+
+    const maximumPaddedLayout = `${" ".repeat(
+      DEFAULT_INITIAL_LAYOUT_LIMITS.encodedCharacters - "tiled".length,
+    )}tiled`;
+    expect(decodeInitialLayout(maximumPaddedLayout)).toBe("tiled");
+    expect(decodeInitialLayout(` ${maximumPaddedLayout}`)).toBeNull();
+
+    for (const invalid of [
+      null,
+      "",
+      "Tiled",
+      "stacked",
+      "tiled\t",
+      "floating\u2028",
+    ]) {
+      expect(decodeInitialLayout(invalid)).toBeNull();
+    }
+  });
+
+  it.each([
+    "org.example.Editor",
+    "=tiled",
+    "org.example.Editor=",
+    "org.example.Editor=stacked",
+    "org.example.Editor=Tiled",
+    "org.example.Editor=tiled=extra",
+    "org.example.\u0000Editor=tiled",
+    "org.example.Editor=\tfloating",
+    "org.example.Editor=floating\u007f",
+    "org.example.Editor=floating\u0085",
+    "org.example.Editor=floating\u2028",
+    "org.example.Editor=floating\u2029",
+    "org.example.\ud800=tiled",
+  ])("rejects a malformed or control-bearing mapping: %j", (input) => {
+    expect(decodeApplicationInitialLayouts(input)).toBeNull();
+  });
+
+  it("rejects duplicates and oversized mapping input atomically", () => {
+    expect(
+      decodeApplicationInitialLayouts(
+        "org.example.Editor=tiled\n org.example.Editor = floating",
+      ),
+    ).toBeNull();
+    expect(
+      decodeApplicationInitialLayouts(
+        "org.example.Editor=tiled\nOrg.example.Editor=floating",
+      ),
+    ).not.toBeNull();
+
+    const maximumEntries = Array.from(
+      { length: APPLICATION_INITIAL_LAYOUT_LIMITS.entries },
+      (_, index) => `org.example.App${String(index)}=tiled`,
+    ).join("\n");
+    expect(decodeApplicationInitialLayouts(maximumEntries)).not.toBeNull();
+    expect(
+      decodeApplicationInitialLayouts(
+        `${maximumEntries}\norg.example.Overflow=floating`,
+      ),
+    ).toBeNull();
+
+    const maximumIdentifier = `${"é".repeat(127)}a`;
+    expect(
+      decodeApplicationInitialLayouts(`${maximumIdentifier}=tiled`),
+    ).not.toBeNull();
+    expect(
+      decodeApplicationInitialLayouts(`${maximumIdentifier}a=tiled`),
+    ).toBeNull();
+
+    const maximumLine = `${" ".repeat(
+      APPLICATION_INITIAL_LAYOUT_LIMITS.rawEntryCharacters - "a=tiled".length,
+    )}a=tiled`;
+    expect(decodeApplicationInitialLayouts(maximumLine)).not.toBeNull();
+    expect(decodeApplicationInitialLayouts(` ${maximumLine}`)).toBeNull();
+
+    const maximumDocument = "\n".repeat(
+      APPLICATION_INITIAL_LAYOUT_LIMITS.documentCharacters,
+    );
+    expect(decodeApplicationInitialLayouts(maximumDocument)).not.toBeNull();
+    expect(decodeApplicationInitialLayouts(`${maximumDocument}\n`)).toBeNull();
   });
 });
 
