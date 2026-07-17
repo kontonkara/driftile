@@ -1,0 +1,13 @@
+# SPDX-FileCopyrightText: 2026 Nikita Konton
+# SPDX-License-Identifier: GPL-3.0-or-later
+
+[Desktop Entry]
+Type=Application
+Name=Driftile Shortcuts
+GenericName=Global Shortcut Editor
+Comment=Configure global shortcuts for Driftile
+Exec=driftile-shortcut-editor
+Icon=preferences-desktop-keyboard-shortcuts
+Terminal=false
+Categories=Settings;DesktopSettings;Qt;KDE;
+StartupNotify=true
