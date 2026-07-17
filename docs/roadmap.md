@@ -9,6 +9,10 @@ between visible outputs or virtual desktops. Preview and commit share one
 guarded target plan, and stale cleanup cannot hide newer feedback. Logical
 persistence remains v4.
 
+Version 1.48.0 is in development as a focused interaction batch. Its current
+scope covers minimal full-width focus reveals, smoother rapid transition
+retargeting, and predicted singleton previews for selected empty destinations.
+
 ## Foundation (delivered)
 
 - Build and package a declarative KWin script with a TypeScript runtime.
@@ -1900,3 +1904,18 @@ No unrelated feature belongs to 1.46.0.
 
 The batch adds no action, binding, setting, persistence field, compositor fork,
 or private API.
+
+### 1.48.0 (in development)
+
+- Minimally reveal an ordinary column immediately after a full-width column at
+  the right edge, retaining a partial view of its predecessor while keeping
+  later columns outside the viewport.
+- Keep rapid alternating horizontal focus retargets to one optional transition
+  transform per attribute, coalesce duplicate or stale frame reports including
+  XWayland-style bursts, and replace an ended transition ID cleanly when an
+  in-place retarget fails.
+- Preview the predicted singleton frame on a selected empty cross-output or
+  cross-desktop destination without making the preview authoritative before
+  normal post-drop admission.
+
+The batch changes no setting, action, schema, default binding, or private API.
