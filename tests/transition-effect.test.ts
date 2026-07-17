@@ -344,12 +344,20 @@ describe("transition effect package", () => {
     expect(config).toContain(
       '<entry name="WindowClassExclusions" type="String">',
     );
+    expect(config).toContain(
+      '<entry name="WindowCaptionExclusions" type="String">',
+    );
+    expect(config).toContain(
+      '<entry name="WindowRoleExclusions" type="String">',
+    );
     expect(configUi).toContain('name="kcfg_Duration"');
     expect(configUi).toContain('name="kcfg_EasingCurve"');
     expect(configUi).toContain('name="kcfg_AnimatePosition"');
     expect(configUi).toContain('name="kcfg_AnimateSize"');
     expect(configUi).toContain('name="kcfg_ResizeAnimationThreshold"');
     expect(configUi).toContain('name="kcfg_WindowClassExclusions"');
+    expect(configUi).toContain('name="kcfg_WindowCaptionExclusions"');
+    expect(configUi).toContain('name="kcfg_WindowRoleExclusions"');
     expect(configUi).toContain("<number>1000</number>");
 
     expect(script).not.toMatch(
