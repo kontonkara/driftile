@@ -389,19 +389,39 @@ Rectangle {
                             width: helpViewport.width
                             spacing: 2
 
-                            Text {
+                            Item {
                                 width: parent.width
-                                text: "Keyboard help"
-                                textFormat: Text.PlainText
-                                color: "#f3f7ff"
-                                font.bold: true
-                                font.pixelSize: 18
+                                height: Math.max(keyboardHelpTitle.implicitHeight,
+                                                 keyboardHelpCloseButton.implicitHeight)
+
+                                Text {
+                                    id: keyboardHelpTitle
+
+                                    anchors.left: parent.left
+                                    anchors.right: keyboardHelpCloseButton.left
+                                    anchors.rightMargin: 12
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    text: "Keyboard help"
+                                    textFormat: Text.PlainText
+                                    color: "#f3f7ff"
+                                    font.bold: true
+                                    font.pixelSize: 18
+                                    elide: Text.ElideRight
+                                }
+
+                                KeyboardHelpCloseButton {
+                                    id: keyboardHelpCloseButton
+
+                                    anchors.right: parent.right
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    onCloseRequested: root.keyboardHelpVisible = false
+                                }
                             }
 
                             Text {
                                 width: parent.width
                                 bottomPadding: 8
-                                text: "F1 or Escape closes this panel"
+                                text: "F1, Escape, or Close dismisses this panel"
                                 textFormat: Text.PlainText
                                 color: "#aebbd0"
                                 font.pixelSize: 12

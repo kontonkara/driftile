@@ -55,6 +55,10 @@ const searchMatchBadge = readFileSync(
   new URL("contents/runtime/ui/SearchMatchBadge.qml", effectRoot),
   "utf8",
 );
+const keyboardHelpCloseButton = readFileSync(
+  new URL("contents/runtime/ui/KeyboardHelpCloseButton.qml", effectRoot),
+  "utf8",
+);
 const overviewRuntimeIndex = readFileSync(
   new URL("../src/overview/runtime.ts", import.meta.url),
   "utf8",
@@ -69,6 +73,7 @@ const qmlSources = [
   windowApplicationIcon,
   outputIdentityBadge,
   searchMatchBadge,
+  keyboardHelpCloseButton,
   windowCloseButton,
 ];
 
@@ -2325,6 +2330,18 @@ describe("overview effect package", () => {
     expect(help).toContain("width: Math.min(560,");
     expect(help).toContain("height: Math.min(helpContent.implicitHeight + 40,");
     expect(help).toContain("interactive: contentHeight > height");
+    expect(help).toContain("KeyboardHelpCloseButton {");
+    expect(help).toContain(
+      "onCloseRequested: root.keyboardHelpVisible = false",
+    );
+    expect(keyboardHelpCloseButton).toContain('text: "Close"');
+    expect(keyboardHelpCloseButton).toContain("acceptedButtons: Qt.LeftButton");
+    expect(keyboardHelpCloseButton).toContain(
+      "cursorShape: Qt.PointingHandCursor",
+    );
+    expect(keyboardHelpCloseButton).toContain(
+      "onTapped: button.closeRequested()",
+    );
     for (const label of [
       "Arrow keys",
       "Tab / Shift+Tab",
@@ -2341,7 +2358,7 @@ describe("overview effect package", () => {
       expect(help).toContain(`keys: "${label}"`);
     }
     expect(help.match(/\bTapHandler\s*\{/gu)).toHaveLength(1);
-    expect(help).not.toMatch(
+    expect(`${help}\n${keyboardHelpCloseButton}`).not.toMatch(
       /\b(?:Action|Animation|Behavior|Connections|Settings|ShortcutHandler|Timer)\s*\{|\.setValue\s*\(|\bsequence\s*:|org\.kde\.kwin\.private/u,
     );
   });
