@@ -14,6 +14,8 @@ Rectangle {
     required property var floatingWindows
     required property var screen
     required property string searchQuery
+    required property bool showApplicationIdentity
+    required property bool showWindowLabels
     property string keyboardSelectionId: ""
 
     signal desktopTapped(var candidate, string expectedDesktopId, var expectedScreen)
@@ -449,7 +451,8 @@ Rectangle {
                         anchors.rightMargin: 5
                         anchors.bottomMargin: windowPresentation.attentionRequested ? 8 : 5
                         height: hasSecondary ? 34 : 22
-                        visible: windowPresentation.windowLabel !== null && thumbnailShell.width >= 120
+                        visible: card.showWindowLabels && windowPresentation.windowLabel !== null
+                                 && thumbnailShell.width >= 120
                                  && thumbnailShell.height >= (hasSecondary ? 72 : 52)
                         color: "#dc111824"
                         border.width: 1
@@ -1277,7 +1280,7 @@ Rectangle {
                 desktopFileName: desktopFileName === null ? undefined : desktopFileName,
                 resourceClass: resourceClass === null ? undefined : resourceClass,
                 resourceName: resourceName === null ? undefined : resourceName
-            });
+            }, card.showApplicationIdentity);
             if (!planned || Array.isArray(planned) || typeof planned !== "object") {
                 return null;
             }

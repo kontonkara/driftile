@@ -78,6 +78,12 @@ describe("overview effect package", () => {
     const backdropColorEntry = configuration.match(
       /<entry name="BackdropColor"[\s\S]*?<\/entry>/u,
     )?.[0];
+    const showWindowLabelsEntry = configuration.match(
+      /<entry name="ShowWindowLabels"[\s\S]*?<\/entry>/u,
+    )?.[0];
+    const showApplicationIdentityEntry = configuration.match(
+      /<entry name="ShowApplicationIdentity"[\s\S]*?<\/entry>/u,
+    )?.[0];
     expect(enabledEntry).toContain("<default>true</default>");
     expect(fingerCountEntry).toContain("<default>4</default>");
     expect(fingerCountEntry).toContain("<min>3</min>");
@@ -86,10 +92,16 @@ describe("overview effect package", () => {
     expect(screenEdgeEntry).toContain("<default>none</default>");
     expect(backdropColorEntry).toContain('type="Color"');
     expect(backdropColorEntry).toContain("<default>#e60b0f17</default>");
+    expect(showWindowLabelsEntry).toContain('type="Bool"');
+    expect(showWindowLabelsEntry).toContain("<default>true</default>");
+    expect(showApplicationIdentityEntry).toContain('type="Bool"');
+    expect(showApplicationIdentityEntry).toContain("<default>true</default>");
     expect(configurationUi).toContain('name="kcfg_TouchpadGesture"');
     expect(configurationUi).toContain('name="kcfg_TouchpadGestureFingerCount"');
     expect(configurationUi).toContain('name="kcfg_ScreenEdge"');
     expect(configurationUi).toContain('name="kcfg_BackdropColor"');
+    expect(configurationUi).toContain('name="kcfg_ShowWindowLabels"');
+    expect(configurationUi).toContain('name="kcfg_ShowApplicationIdentity"');
     expect(configurationUi).toMatch(
       /name="kcfg_BackdropColor"[\s\S]*?<property name="alphaChannelEnabled">\s*<bool>true<\/bool>/u,
     );
@@ -301,11 +313,30 @@ describe("overview effect package", () => {
     expect(scene).toMatch(
       /color: sceneEffect && sceneEffect\.backdropColor !== undefined\s*\? sceneEffect\.backdropColor\s*: "#e60b0f17"/u,
     );
+    expect(main).toContain(
+      "readonly property bool showWindowLabels: showWindowLabelsFromConfig()",
+    );
+    expect(main).toContain(
+      "readonly property bool showApplicationIdentity: showApplicationIdentityFromConfig()",
+    );
+    for (const [property, reader] of [
+      ["ShowWindowLabels", "showWindowLabelsFromConfig"],
+      ["ShowApplicationIdentity", "showApplicationIdentityFromConfig"],
+    ] as const) {
+      const configReader = main.slice(
+        main.indexOf(`function ${reader}()`),
+        main.indexOf("\n    }", main.indexOf(`function ${reader}()`)) + 6,
+      );
+      expect(configReader).toContain(`configuration.${property}`);
+      expect(configReader).toContain(
+        'return typeof value === "boolean" ? value : true;',
+      );
+    }
   });
 
   it("keeps a fixed scene-effect proxy over the cache-busted controller", () => {
     expect(createHash("sha256").update(main, "utf8").digest("hex")).toBe(
-      "a316fd1b56a2f355a8c08e6f7ae80219a02ba28c59e7575ccb113fb105d54f11",
+      "cba05d3cfda91979b1def4705b88f5f14afaf21eef9d524777893fdb1fcb9b54",
     );
     expect(main).toContain("KWin.SceneEffect {");
     expect(main).toContain("Date.now().toString(36)");
@@ -1432,8 +1463,8 @@ describe("overview effect package", () => {
     expect(thumbnailFooter).toMatch(
       /id: thumbnailLabelFooter[\s\S]*anchors\.left: parent\.left[\s\S]*anchors\.right: parent\.right[\s\S]*anchors\.bottom: parent\.bottom[\s\S]*anchors\.leftMargin: 5[\s\S]*anchors\.rightMargin: 5/u,
     );
-    expect(thumbnailFooter).toContain(
-      "visible: windowPresentation.windowLabel !== null && thumbnailShell.width >= 120",
+    expect(thumbnailFooter).toMatch(
+      /visible: card\.showWindowLabels && windowPresentation\.windowLabel !== null\s*&& thumbnailShell\.width >= 120/u,
     );
     expect(thumbnailFooter).toContain(
       "&& thumbnailShell.height >= (hasSecondary ? 72 : 52)",
@@ -1500,7 +1531,21 @@ describe("overview effect package", () => {
       'if (!planned || Array.isArray(planned) || typeof planned !== "object")',
     );
     expect(planner).toMatch(
-      /runtime\.planOverviewWindowLabel\(\{[\s\S]*!boundedPlainWindowLabel\(primary\)[\s\S]*secondary !== null && !boundedPlainWindowLabel\(secondary\)/u,
+      /runtime\.planOverviewWindowLabel\(\{[\s\S]*\}, card\.showApplicationIdentity\);[\s\S]*!boundedPlainWindowLabel\(primary\)[\s\S]*secondary !== null && !boundedPlainWindowLabel\(secondary\)/u,
+    );
+    expect(scene).toContain(
+      'typeof sceneEffect.showWindowLabels === "boolean"',
+    );
+    expect(scene).toContain(
+      'typeof sceneEffect.showApplicationIdentity === "boolean"',
+    );
+    expect(scene).toContain("showWindowLabels: root.showWindowLabels");
+    expect(scene).toContain(
+      "showApplicationIdentity: root.showApplicationIdentity",
+    );
+    expect(desktopCard).toContain("required property bool showWindowLabels");
+    expect(desktopCard).toContain(
+      "required property bool showApplicationIdentity",
     );
     expect(planner).toContain(
       'typeof value !== "string" || value.length === 0 || value.length > 192',

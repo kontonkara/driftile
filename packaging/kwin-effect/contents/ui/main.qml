@@ -15,6 +15,8 @@ KWin.SceneEffect {
     readonly property int configuredTouchpadGestureFingerCount: touchpadGestureFingerCountFromConfig()
     readonly property int configuredScreenEdge: screenEdgeFromConfig()
     readonly property color backdropColor: backdropColorFromConfig()
+    readonly property bool showWindowLabels: showWindowLabelsFromConfig()
+    readonly property bool showApplicationIdentity: showApplicationIdentityFromConfig()
 
     readonly property bool active: controller ? controller.active : false
     readonly property bool loading: controller ? controller.loading : false
@@ -110,6 +112,16 @@ KWin.SceneEffect {
         }
 
         return value;
+    }
+
+    function showWindowLabelsFromConfig() {
+        const value = configuration ? configuration.ShowWindowLabels : undefined;
+        return typeof value === "boolean" ? value : true;
+    }
+
+    function showApplicationIdentityFromConfig() {
+        const value = configuration ? configuration.ShowApplicationIdentity : undefined;
+        return typeof value === "boolean" ? value : true;
     }
 
     function validColorChannel(value) {

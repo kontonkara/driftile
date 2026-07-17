@@ -16,6 +16,13 @@ Rectangle {
         ? KWin.SceneView.currentDesktop
         : KWin.Workspace.currentDesktop
     readonly property var overviewModel: sceneEffect ? sceneEffect.overviewModel : null
+    readonly property bool showWindowLabels: sceneEffect && typeof sceneEffect.showWindowLabels === "boolean"
+        ? sceneEffect.showWindowLabels
+        : true
+    readonly property bool showApplicationIdentity: sceneEffect
+        && typeof sceneEffect.showApplicationIdentity === "boolean"
+        ? sceneEffect.showApplicationIdentity
+        : true
     readonly property string outputId: outputIdForScreen()
     readonly property var desktopIds: outputId.length > 0 ? orderedDesktopIds() : []
     readonly property real outerMargin: Math.max(20, Math.min(width, height) * 0.035)
@@ -195,6 +202,8 @@ Rectangle {
             keyboardSelectionId: root.keyboardSelectionId
             searchQuery: root.searchQuery
             screen: root.targetScreen
+            showApplicationIdentity: root.showApplicationIdentity
+            showWindowLabels: root.showWindowLabels
             onDesktopReorderCanceled: expectedDesktopId => root.cancelDesktopReorder(expectedDesktopId)
             onDesktopReorderGrabbed: (candidate, expectedDesktopId, expectedScreen, sceneX, sceneY) =>
                                          root.beginDesktopReorder(candidate, expectedDesktopId, expectedScreen,

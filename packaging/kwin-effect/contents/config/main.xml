@@ -23,5 +23,13 @@
       <label>Overview backdrop color</label>
       <default>#e60b0f17</default>
     </entry>
+    <entry name="ShowWindowLabels" type="Bool">
+      <label>Show window labels</label>
+      <default>true</default>
+    </entry>
+    <entry name="ShowApplicationIdentity" type="Bool">
+      <label>Show application identity</label>
+      <default>true</default>
+    </entry>
   </group>
 </kcfg>
