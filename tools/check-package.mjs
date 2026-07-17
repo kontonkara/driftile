@@ -41,6 +41,7 @@ const expectedOverviewPackageEntries = [
 const expectedOverviewRuntimeEntries = [
   "code/main.js",
   "ui/DesktopCard.qml",
+  "ui/KeyboardHelpCloseButton.qml",
   "ui/LayoutStateReader.qml",
   "ui/OutputIdentityBadge.qml",
   "ui/OverviewScene.qml",
