@@ -41611,7 +41611,23 @@ describe("RuntimeController", () => {
 
 describe("RuntimeController desktop transfers", () => {
   it("sends one window while retaining the source desktop and focus", () => {
-    const transfer = createDesktopTransferFixture({ sourceStack: true });
+    const transfer = createDesktopTransferFixture({
+      sourcePeerCount: 2,
+      sourceStack: true,
+    });
+    const focusTarget = transfer.sources[1];
+
+    if (!focusTarget) {
+      throw new Error("missing desktop send focus target");
+    }
+
+    transfer.moved.setDesktopWriteBehavior((next, commit) => {
+      commit();
+
+      if (next[0]?.id === transfer.desktops[1].id) {
+        transfer.fixture.workspace.activeWindow = transfer.source.window;
+      }
+    });
     const destinationWrites = transfer.destination.writeCount;
     const movedWrites = transfer.moved.writeCount;
     const sourceWrites = transfer.source.writeCount;
@@ -41623,9 +41639,7 @@ describe("RuntimeController desktop transfers", () => {
       transfer.fixture.workspace.currentDesktopForScreen?.(transfer.output),
     ).toBe(transfer.desktops[0]);
     expect(transfer.fixture.desktopSwitchCount).toBe(0);
-    expect(transfer.fixture.workspace.activeWindow).toBe(
-      transfer.source.window,
-    );
+    expect(transfer.fixture.workspace.activeWindow).toBe(focusTarget.window);
     expect(transfer.source.writeCount).toBeGreaterThan(sourceWrites);
     expect(transfer.destination.writeCount).toBe(destinationWrites);
     expect(transfer.moved.writeCount).toBe(movedWrites);
@@ -41635,7 +41649,7 @@ describe("RuntimeController desktop transfers", () => {
         transfer.output,
         transfer.desktops[0],
       ),
-    ).toEqual([{ id: "column:source", windowIds: ["source"] }]);
+    ).toEqual([{ id: "column:source", windowIds: ["source", "source-2"] }]);
     expect(
       testLayoutColumns(
         transfer.controller,

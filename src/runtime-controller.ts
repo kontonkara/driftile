@@ -8528,10 +8528,11 @@ export class RuntimeController {
     target: DesktopSendFocusTarget | null,
   ): boolean {
     const active = this.workspace.activeWindow;
+    let activeLayer: WindowLayer | null = null;
 
     if (active) {
       const activeId = windowId(String(active.internalId));
-      const layer = movingIds.has(activeId)
+      activeLayer = movingIds.has(activeId)
         ? null
         : this.windowRemovalFocusCandidateLayer(
             activeId,
@@ -8539,17 +8540,17 @@ export class RuntimeController {
             sourceContextKey,
           );
 
-      if (layer) {
-        this.rememberLayerFocus(activeId, active);
-        return true;
-      }
-
-      if (!movingIds.has(activeId)) {
+      if (!activeLayer && !movingIds.has(activeId)) {
         return false;
       }
     }
 
     if (target) {
+      if (active === target.window && activeLayer === target.layer) {
+        this.rememberLayerFocus(target.id, target.window);
+        return true;
+      }
+
       let focusRequestFailed = false;
 
       this.focusRequestDepth += 1;
@@ -8576,6 +8577,11 @@ export class RuntimeController {
       }
 
       this.rememberLayerFocus(target.id, target.window);
+      return true;
+    }
+
+    if (active && activeLayer) {
+      this.rememberLayerFocus(windowId(String(active.internalId)), active);
       return true;
     }
 
