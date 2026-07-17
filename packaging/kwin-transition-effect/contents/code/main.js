@@ -526,6 +526,19 @@ class DriftileTransitionsEffect {
       );
     const positionChanged = absolutePositionChanged || translationChanged;
     const state = this.windowAnimationState(window);
+    const activePositionTargetChanged =
+      (state[POSITION_ANIMATION] !== undefined &&
+        !this.animationTargetsEqual(
+          state[ANIMATION_TARGET_PROPERTIES[POSITION_ANIMATION]],
+          newPositionComponents.absolute,
+        )) ||
+      (state[TRANSLATION_ANIMATION] !== undefined &&
+        !this.animationTargetsEqual(
+          state[ANIMATION_TARGET_PROPERTIES[TRANSLATION_ANIMATION]],
+          newPositionComponents.translation,
+        ));
+    const positionRetargetNeeded =
+      positionChanged || activePositionTargetChanged;
     this.retargetChangedAnimation(
       state,
       SIZE_ANIMATION,
@@ -536,13 +549,13 @@ class DriftileTransitionsEffect {
       state,
       POSITION_ANIMATION,
       newPositionComponents.absolute,
-      positionChanged,
+      positionRetargetNeeded,
     );
     this.retargetPositionAnimation(
       state,
       TRANSLATION_ANIMATION,
       newPositionComponents.translation,
-      positionChanged,
+      positionRetargetNeeded,
     );
 
     const animations = [];

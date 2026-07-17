@@ -554,18 +554,27 @@ describe("transition effect package", () => {
   });
 
   it("retargets a small resize correction without interrupting movement", () => {
-    const harness = createHarness();
+    const window = createWindow({
+      geometry: { x: -600, y: 30, width: 300, height: 200 },
+    });
+    const harness = createHarness({ window });
     changeGeometry(harness.window, {
-      x: 40,
+      x: -420,
       y: 50,
       width: 400,
       height: 250,
     });
     changeGeometry(harness.window, {
-      x: 60,
+      x: -400,
       y: 70,
       width: 408,
       height: 255,
+    });
+    changeGeometry(harness.window, {
+      x: -400,
+      y: 70,
+      width: 416,
+      height: 260,
     });
 
     expect(harness.retargetCalls).toEqual([
@@ -576,7 +585,27 @@ describe("transition effect package", () => {
       },
       {
         animationId: 2,
-        target: { value1: 264, value2: 197.5 },
+        target: { value1: 0, value2: 197.5 },
+        duration: 180,
+      },
+      {
+        animationId: 3,
+        target: { value1: -196, value2: 0 },
+        duration: 180,
+      },
+      {
+        animationId: 1,
+        target: { value1: 416, value2: 260 },
+        duration: 180,
+      },
+      {
+        animationId: 2,
+        target: { value1: 0, value2: 200 },
+        duration: 180,
+      },
+      {
+        animationId: 3,
+        target: { value1: -192, value2: 0 },
         duration: 180,
       },
     ]);
@@ -2117,6 +2146,34 @@ describe("transition effect package", () => {
     harness.finishAnimations(window);
     expect(harness.activeAnimationIds()).toHaveLength(0);
     expect("driftileTransitionAnimation" in window).toBe(false);
+
+    const leftColumn = createWindow({
+      geometry: { x: -330, y: 30, width: 640, height: 900 },
+    });
+    const middleColumn = createWindow({
+      geometry: { x: 324, y: 30, width: 640, height: 900 },
+    });
+    const rightColumn = createWindow({
+      geometry: { x: 978, y: 30, width: 640, height: 900 },
+    });
+    const columnsHarness = createHarness({ window: leftColumn });
+    columnsHarness.effects.windowAdded.emit(middleColumn);
+    columnsHarness.effects.windowAdded.emit(rightColumn);
+
+    for (const offset of [-654, 0, -654, 0, -654, 0]) {
+      for (const [column, x] of [
+        [leftColumn, -330 + offset],
+        [middleColumn, 324 + offset],
+        [rightColumn, 978 + offset],
+      ] as const) {
+        changeGeometry(column, { x, y: 30, width: 640, height: 900 });
+      }
+    }
+
+    expect(columnsHarness.animationRequests).toHaveLength(3);
+    expect(columnsHarness.retargetCalls).toHaveLength(20);
+    expect(columnsHarness.activeAnimationIds()).toEqual([1, 2, 3, 4]);
+    expect(columnsHarness.cancelledAnimations).toHaveLength(0);
   });
 
   it("retires completed animation state before the next geometry change", () => {
