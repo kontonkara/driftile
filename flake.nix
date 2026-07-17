@@ -196,12 +196,14 @@
             test -x "$shortcut_editor/bin/driftile-shortcut-editor"
             test -x "$shortcut_editor/bin/.driftile-shortcut-editor-wrapped"
             test -f "$shortcut_editor/share/applications/io.github.kontonkara.driftile.shortcuts.desktop"
+            test -f "$shortcut_editor/share/metainfo/io.github.kontonkara.driftile.shortcuts.metainfo.xml"
             test ! -e "$shortcut_editor/share/kwin"
             test ! -e "$shortcut_editor/libexec"
             test "$(find "$shortcut_editor" -mindepth 1 -maxdepth 1 | wc -l)" -eq 2
             test "$(find "$shortcut_editor/bin" -mindepth 1 -maxdepth 1 | wc -l)" -eq 2
-            test "$(find "$shortcut_editor/share" -mindepth 1 -maxdepth 1 | wc -l)" -eq 1
+            test "$(find "$shortcut_editor/share" -mindepth 1 -maxdepth 1 | wc -l)" -eq 2
             test "$(find "$shortcut_editor/share/applications" -mindepth 1 -maxdepth 1 | wc -l)" -eq 1
+            test "$(find "$shortcut_editor/share/metainfo" -mindepth 1 -maxdepth 1 | wc -l)" -eq 1
 
             touch "$out"
           '';
