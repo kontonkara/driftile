@@ -121,6 +121,7 @@ export function init(
     applicationInitialFocused: settings.applicationInitialFocused,
     applicationInitialUnfocused: settings.applicationInitialUnfocused,
     applicationInitialFloating: settings.applicationInitialFloating,
+    applicationInitialLayouts: settings.applicationInitialLayouts,
     applicationInitialFullWidth: settings.applicationInitialFullWidth,
     applicationInitialFullscreen: settings.applicationInitialFullscreen,
     applicationInitialMaximized: settings.applicationInitialMaximized,
@@ -133,6 +134,7 @@ export function init(
     defaultFloatingPosition: settings.defaultFloatingPosition,
     defaultInitialDestination: settings.defaultInitialDestination,
     defaultInitialFocus: settings.defaultInitialFocus,
+    defaultInitialLayout: settings.defaultInitialLayout,
     defaultWindowHeight: settings.defaultWindowHeight,
     emptyDesktopAboveFirst: settings.emptyDesktopAboveFirst,
     gap: settings.gap,
@@ -231,6 +233,7 @@ export function applySettings(settingsSnapshot: unknown): boolean {
     settings.applicationInitialUnfocused,
   );
   controller.setApplicationInitialFloating(settings.applicationInitialFloating);
+  controller.setApplicationInitialLayouts(settings.applicationInitialLayouts);
   controller.setApplicationInitialFullWidth(
     settings.applicationInitialFullWidth,
   );
@@ -254,6 +257,7 @@ export function applySettings(settingsSnapshot: unknown): boolean {
   controller.setDefaultFloatingPosition(settings.defaultFloatingPosition);
   controller.setDefaultInitialDestination(settings.defaultInitialDestination);
   controller.setDefaultInitialFocus(settings.defaultInitialFocus);
+  controller.setDefaultInitialLayout(settings.defaultInitialLayout);
   controller.setDefaultWindowHeight(settings.defaultWindowHeight);
   controller.setEmptyDesktopAboveFirst(settings.emptyDesktopAboveFirst);
   controller.setNumberedDesktopTargets(settings.numberedDesktopTargets);

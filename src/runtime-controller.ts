@@ -24,6 +24,14 @@ import {
   type ApplicationInitialFloating,
 } from "./application-initial-floating";
 import {
+  DEFAULT_INITIAL_LAYOUT,
+  EMPTY_APPLICATION_INITIAL_LAYOUTS,
+  sameApplicationInitialLayouts,
+  sameInitialLayouts,
+  type ApplicationInitialLayouts,
+  type InitialLayout,
+} from "./application-initial-layouts";
+import {
   EMPTY_APPLICATION_INITIAL_DESTINATIONS,
   sameApplicationInitialDestinations,
   type ApplicationInitialDestination,
@@ -990,6 +998,12 @@ interface FreshInitialFocusPolicy {
   readonly unfocused: ApplicationInitialUnfocused;
 }
 
+interface FreshInitialLayoutPolicy {
+  readonly applications: ApplicationInitialLayouts;
+  readonly defaultLayout: InitialLayout;
+  readonly legacyFloating: ApplicationInitialFloating;
+}
+
 export interface RuntimeControllerOptions {
   readonly alwaysCenterSingleColumn?: boolean;
   readonly applicationBorderlessExclusions?: ApplicationBorderlessExclusions;
@@ -1000,6 +1014,7 @@ export interface RuntimeControllerOptions {
   readonly applicationFloatingPositions?: ApplicationFloatingPositions;
   readonly applicationInitialDestinations?: ApplicationInitialDestinations;
   readonly applicationInitialFloating?: ApplicationInitialFloating;
+  readonly applicationInitialLayouts?: ApplicationInitialLayouts;
   readonly applicationInitialFullWidth?: ApplicationInitialFullWidth;
   readonly applicationInitialFullscreen?: ApplicationInitialFullscreen;
   readonly applicationInitialFocused?: ApplicationInitialFocused;
@@ -1017,6 +1032,7 @@ export interface RuntimeControllerOptions {
   readonly defaultFloatingPosition?: ApplicationFloatingPosition | null;
   readonly defaultInitialDestination?: ApplicationInitialDestination | null;
   readonly defaultInitialFocus?: DefaultInitialFocus;
+  readonly defaultInitialLayout?: InitialLayout;
   readonly defaultWindowHeight?: DefaultWindowHeight;
   readonly emptyDesktopAboveFirst?: boolean;
   readonly gap?: number;
@@ -1054,6 +1070,8 @@ export class RuntimeController {
   private applicationFloatingPositions: ApplicationFloatingPositions;
   private applicationInitialDestinations: ApplicationInitialDestinations;
   private applicationInitialFloating: ApplicationInitialFloating;
+  private applicationInitialLayouts: ApplicationInitialLayouts;
+  private applicationInitialLayoutsCanFloat: boolean;
   private applicationInitialFullWidth: ApplicationInitialFullWidth;
   private applicationInitialFullscreen: ApplicationInitialFullscreen;
   private applicationInitialFocused: ApplicationInitialFocused;
@@ -1131,9 +1149,9 @@ export class RuntimeController {
   private readonly geometry: KWinGeometryAdapter;
   private gap: number;
   private hydrationInProgress = false;
-  private readonly initialFloatingPolicyByWindow = new Map<
+  private readonly initialLayoutPolicyByWindow = new Map<
     WindowId,
-    ApplicationInitialFloating
+    FreshInitialLayoutPolicy
   >();
   private readonly initialDestinationOperations = new Set<WindowId>();
   private readonly initialDestinationPolicyByWindow = new Map<
@@ -1270,6 +1288,7 @@ export class RuntimeController {
   private defaultFloatingPosition: ApplicationFloatingPosition | null;
   private defaultInitialDestination: ApplicationInitialDestination | null;
   private defaultInitialFocus: DefaultInitialFocus;
+  private defaultInitialLayout: InitialLayout;
   private defaultWindowHeight: DefaultWindowHeight;
   private useInitialWindowWidth: boolean;
   private windowHeightStep = DEFAULT_WINDOW_HEIGHT_STEP_PERCENT / 100;
@@ -1366,6 +1385,11 @@ export class RuntimeController {
       EMPTY_APPLICATION_INITIAL_DESTINATIONS;
     this.applicationInitialFloating =
       options.applicationInitialFloating ?? EMPTY_APPLICATION_INITIAL_FLOATING;
+    this.applicationInitialLayouts =
+      options.applicationInitialLayouts ?? EMPTY_APPLICATION_INITIAL_LAYOUTS;
+    this.applicationInitialLayoutsCanFloat = initialLayoutsCanFloat(
+      this.applicationInitialLayouts,
+    );
     this.applicationInitialFullWidth =
       options.applicationInitialFullWidth ??
       EMPTY_APPLICATION_INITIAL_FULL_WIDTH;
@@ -1380,6 +1404,8 @@ export class RuntimeController {
     this.applicationInitialMaximized =
       options.applicationInitialMaximized ??
       EMPTY_APPLICATION_INITIAL_MAXIMIZED;
+    this.defaultInitialLayout =
+      options.defaultInitialLayout ?? DEFAULT_INITIAL_LAYOUT;
     this.applicationTilingExclusions =
       options.applicationTilingExclusions ??
       EMPTY_APPLICATION_TILING_EXCLUSIONS;
@@ -2328,6 +2354,33 @@ export class RuntimeController {
     }
 
     this.applicationInitialFloating = applications;
+    return true;
+  }
+
+  setApplicationInitialLayouts(
+    applications: ApplicationInitialLayouts,
+  ): boolean {
+    if (
+      sameApplicationInitialLayouts(
+        this.applicationInitialLayouts,
+        applications,
+      )
+    ) {
+      return false;
+    }
+
+    this.applicationInitialLayouts = applications;
+    this.applicationInitialLayoutsCanFloat =
+      initialLayoutsCanFloat(applications);
+    return true;
+  }
+
+  setDefaultInitialLayout(layout: InitialLayout): boolean {
+    if (sameInitialLayouts(this.defaultInitialLayout, layout)) {
+      return false;
+    }
+
+    this.defaultInitialLayout = layout;
     return true;
   }
 
@@ -4409,7 +4462,7 @@ export class RuntimeController {
       this.floatingPositionAdmissionHistory.clear();
       this.initialDestinationOperations.clear();
       this.initialDestinationPolicyByWindow.clear();
-      this.initialFloatingPolicyByWindow.clear();
+      this.initialLayoutPolicyByWindow.clear();
       this.initialFullWidthPolicyByWindow.clear();
       this.initialFullscreenPolicyByWindow.clear();
       this.initialFocusPolicyByWindow.clear();
@@ -4912,12 +4965,18 @@ export class RuntimeController {
 
     if (
       this.initialWindowDiscoveryComplete &&
-      source &&
-      this.applicationInitialFloating.canonicalEntries.length > 0
+      source?.normalWindow &&
+      (this.applicationInitialLayoutsCanFloat ||
+        this.applicationInitialFloating.canonicalEntries.length > 0 ||
+        this.defaultInitialLayout === "floating")
     ) {
-      this.initialFloatingPolicyByWindow.set(
+      this.initialLayoutPolicyByWindow.set(
         trackedId,
-        this.applicationInitialFloating,
+        Object.freeze({
+          applications: this.applicationInitialLayouts,
+          defaultLayout: this.defaultInitialLayout,
+          legacyFloating: this.applicationInitialFloating,
+        }),
       );
     }
 
@@ -7859,7 +7918,7 @@ export class RuntimeController {
     this.topologyColumnByWindow.delete(managedId);
     this.borderlessClaimBackoffs.delete(managedId);
     this.borderlessSettlementTokens.delete(managedId);
-    this.initialFloatingPolicyByWindow.delete(managedId);
+    this.initialLayoutPolicyByWindow.delete(managedId);
     this.initialFullWidthPolicyByWindow.delete(managedId);
     this.initialFullscreenPolicyByWindow.delete(managedId);
     this.initialFocusPolicyByWindow.delete(managedId);
@@ -24571,7 +24630,7 @@ export class RuntimeController {
 
       for (const id of candidate.hydratedWindowIds) {
         this.initialDestinationPolicyByWindow.delete(id);
-        this.initialFloatingPolicyByWindow.delete(id);
+        this.initialLayoutPolicyByWindow.delete(id);
         this.initialFullWidthPolicyByWindow.delete(id);
         this.initialFullscreenPolicyByWindow.delete(id);
         this.initialFocusPolicyByWindow.delete(id);
@@ -26868,7 +26927,7 @@ export class RuntimeController {
         }
 
         this.windowAdmissionHistory.add(candidate.id);
-        this.initialFloatingPolicyByWindow.delete(candidate.id);
+        this.initialLayoutPolicyByWindow.delete(candidate.id);
         this.initialFullWidthPolicyByWindow.delete(candidate.id);
         this.initialFullscreenPolicyByWindow.delete(candidate.id);
         this.initialFocusPolicyByWindow.delete(candidate.id);
@@ -28443,18 +28502,6 @@ export class RuntimeController {
     );
   }
 
-  private applicationInitialFloatingApplies(
-    source: KWinWindow,
-    applications: ApplicationInitialFloating,
-  ): boolean {
-    if (!source.normalWindow || applications.canonicalEntries.length === 0) {
-      return false;
-    }
-
-    const applicationId = applicationRuleIdentity(source);
-    return applicationId !== null && applications.excludes(applicationId);
-  }
-
   private applicationFloatingPosition(
     source: KWinWindow,
   ): ApplicationFloatingPosition | undefined {
@@ -28533,12 +28580,34 @@ export class RuntimeController {
     id: WindowId,
     source: KWinWindow,
   ): boolean {
-    const policy = this.initialFloatingPolicyByWindow.get(id);
-    return Boolean(
-      policy &&
-      !this.windowAdmissionHistory.has(id) &&
-      this.applicationInitialFloatingApplies(source, policy),
-    );
+    const policy = this.initialLayoutPolicyByWindow.get(id);
+
+    if (
+      !policy ||
+      this.windowAdmissionHistory.has(id) ||
+      !source.normalWindow
+    ) {
+      return false;
+    }
+
+    const applicationId = applicationRuleIdentity(source);
+    const applicationLayout =
+      applicationId === null
+        ? undefined
+        : policy.applications.initialLayoutFor(applicationId);
+
+    if (applicationLayout !== undefined) {
+      return applicationLayout === "floating";
+    }
+
+    if (
+      applicationId !== null &&
+      policy.legacyFloating.excludes(applicationId)
+    ) {
+      return true;
+    }
+
+    return policy.defaultLayout === "floating";
   }
 
   private applicationInitialFullWidthApplies(
@@ -29359,7 +29428,7 @@ export class RuntimeController {
     const initiallyFullscreen = this.freshInitialFullscreenApplies(id, source);
     this.automaticFloatingWindows.add(id);
     this.floatingPositionAdmissionHistory.add(id);
-    this.initialFloatingPolicyByWindow.delete(id);
+    this.initialLayoutPolicyByWindow.delete(id);
     this.initialFullWidthPolicyByWindow.delete(id);
     const affectedContextKeys = new Set<string>();
     const floating = this.floatingWindows.get(id);
@@ -29811,7 +29880,7 @@ export class RuntimeController {
     const borderRestore = this.windowBorderRestore.get(id);
     const firstAdmission = !this.windowAdmissionHistory.has(id);
     this.windowAdmissionHistory.add(id);
-    this.initialFloatingPolicyByWindow.delete(id);
+    this.initialLayoutPolicyByWindow.delete(id);
     this.initialFullWidthPolicyByWindow.delete(id);
     this.initialFullscreenPolicyByWindow.delete(id);
     this.initialFocusPolicyByWindow.delete(id);
@@ -33093,6 +33162,18 @@ function floorToPhysicalPixel(value: number, devicePixelRatio: number): number {
     Math.floor(physicalValue + floatingPointTolerance(physicalValue)) /
     devicePixelRatio
   );
+}
+
+function initialLayoutsCanFloat(
+  applications: ApplicationInitialLayouts,
+): boolean {
+  for (const entry of applications.canonicalEntries) {
+    if (entry.endsWith("=floating")) {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 function floatingPointTolerance(...values: readonly number[]): number {

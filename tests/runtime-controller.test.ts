@@ -4,6 +4,7 @@ import { decodeApplicationColumnPresentations } from "../src/application-column-
 import { decodeApplicationInitialDestinations } from "../src/application-initial-destinations";
 import { decodeDefaultInitialDestination } from "../src/default-initial-destination";
 import { decodeApplicationInitialFloating } from "../src/application-initial-floating";
+import { decodeApplicationInitialLayouts } from "../src/application-initial-layouts";
 import { decodeApplicationInitialFocused } from "../src/application-initial-focused";
 import { decodeApplicationInitialUnfocused } from "../src/application-initial-unfocused";
 import { decodeApplicationInitialFullWidth } from "../src/application-initial-full-width";
@@ -9883,6 +9884,177 @@ describe("RuntimeController", () => {
         )
         .columns.flatMap((column) => column.windowIds),
     ).toEqual([windowId("existing"), windowId("added")]);
+  });
+
+  it("applies fresh initial layout precedence from the policy captured at tracking", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const existing = createTrackedWindow("existing", output, desktop, {
+      desktopFileName: "org.example.Startup",
+    });
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [existing.window],
+    );
+    let geometryAvailable = true;
+    Object.defineProperty(fixture.workspace, "clientArea", {
+      configurable: true,
+      value: () => {
+        if (!geometryAvailable) {
+          throw new Error("client area unavailable");
+        }
+
+        return { height: 800, width: 1000, x: 0, y: 0 };
+      },
+    });
+    const scheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      applicationInitialFloating: requiredApplicationInitialFloating(
+        "org.example.ExactTiled\norg.example.Legacy",
+      ),
+      applicationInitialLayouts: requiredApplicationInitialLayouts(
+        "org.example.ExactFloating=floating\norg.example.ExactTiled=tiled",
+      ),
+      clientAreaOption: 2,
+      defaultInitialLayout: "floating",
+      gap: 10,
+      schedule: scheduler.schedule,
+      scheduleResume: scheduler.schedule,
+    });
+
+    expect(controller.start()).toBe(true);
+    flushManualScheduler(scheduler);
+    expect(controller.managedCount).toBe(1);
+    expect(controller.floatingCount).toBe(0);
+
+    const exactTiled = createTrackedWindow("exact-tiled", output, desktop, {
+      desktopFileName: "org.example.ExactTiled",
+    });
+    const exactFloating = createTrackedWindow(
+      "exact-floating",
+      output,
+      desktop,
+      { desktopFileName: "org.example.ExactFloating" },
+    );
+    const legacy = createTrackedWindow("legacy", output, desktop, {
+      desktopFileName: "org.example.Legacy",
+    });
+    const fallback = createTrackedWindow("fallback", output, desktop, {
+      desktopFileName: "org.example.Fallback",
+    });
+
+    for (const tracked of [exactTiled, exactFloating, legacy, fallback]) {
+      fixture.windowAdded.emit(tracked.window);
+      flushManualScheduler(scheduler);
+    }
+
+    expect(controller.managedCount).toBe(2);
+    expect(controller.floatingCount).toBe(3);
+    expect(controller.automaticFloatingCount).toBe(0);
+
+    const captured = createTrackedWindow("captured", output, desktop, {
+      desktopFileName: "org.example.Captured",
+    });
+    geometryAvailable = false;
+    fixture.windowAdded.emit(captured.window);
+    const writesBeforeSettings = [
+      existing,
+      exactTiled,
+      exactFloating,
+      legacy,
+      fallback,
+      captured,
+    ].reduce((writes, tracked) => writes + tracked.writeCount, 0);
+    const pendingBeforeSettings = scheduler.pendingCount;
+    const nextLayouts = requiredApplicationInitialLayouts(
+      "org.example.Captured=tiled\norg.example.FutureExact=floating",
+    );
+    const noLegacyFloating = requiredApplicationInitialFloating("");
+
+    expect(controller.setApplicationInitialLayouts(nextLayouts)).toBe(true);
+    expect(controller.setApplicationInitialLayouts(nextLayouts)).toBe(false);
+    expect(controller.setDefaultInitialLayout("tiled")).toBe(true);
+    expect(controller.setDefaultInitialLayout("tiled")).toBe(false);
+    expect(controller.setApplicationInitialFloating(noLegacyFloating)).toBe(
+      true,
+    );
+    expect(scheduler.pendingCount).toBe(pendingBeforeSettings);
+    expect(
+      [existing, exactTiled, exactFloating, legacy, fallback, captured].reduce(
+        (writes, tracked) => writes + tracked.writeCount,
+        0,
+      ),
+    ).toBe(writesBeforeSettings);
+
+    geometryAvailable = true;
+    fixture.currentDesktopChanged.emit(desktop, desktop, output);
+    flushManualScheduler(scheduler);
+    expect(controller.floatingCount).toBe(4);
+
+    const futureCaptured = createTrackedWindow(
+      "future-captured",
+      output,
+      desktop,
+      { desktopFileName: "org.example.Captured" },
+    );
+    const futureExact = createTrackedWindow("future-exact", output, desktop, {
+      desktopFileName: "org.example.FutureExact",
+    });
+    fixture.windowAdded.emit(futureCaptured.window);
+    flushManualScheduler(scheduler);
+    fixture.windowAdded.emit(futureExact.window);
+    flushManualScheduler(scheduler);
+
+    expect(controller.managedCount).toBe(3);
+    expect(controller.floatingCount).toBe(5);
+    expect(controller.automaticFloatingCount).toBe(0);
+  });
+
+  it("keeps automatic floating safety and application exclusions authoritative", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const existing = createTrackedWindow("existing", output, desktop);
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [existing.window],
+    );
+    const controller = new RuntimeController(fixture.workspace, {
+      applicationInitialFloating: requiredApplicationInitialFloating(
+        "org.example.Excluded\norg.example.Fixed",
+      ),
+      applicationInitialLayouts: requiredApplicationInitialLayouts(
+        "org.example.Excluded=tiled\norg.example.Fixed=tiled",
+      ),
+      applicationTilingExclusions: requiredApplicationTilingExclusions(
+        "org.example.Excluded",
+      ),
+      clientAreaOption: 2,
+      defaultInitialLayout: "floating",
+      gap: 10,
+    });
+
+    expect(controller.start()).toBe(true);
+    const fixed = createTrackedWindow("fixed", output, desktop, {
+      desktopFileName: "org.example.Fixed",
+      maxSize: { height: 200, width: 300 },
+      minSize: { height: 200, width: 300 },
+    });
+    const excluded = createTrackedWindow("excluded", output, desktop, {
+      desktopFileName: "org.example.Excluded",
+    });
+    fixture.windowAdded.emit(fixed.window);
+    fixture.windowAdded.emit(excluded.window);
+
+    expect(controller.managedCount).toBe(1);
+    expect(controller.floatingCount).toBe(0);
+    expect(controller.automaticFloatingCount).toBe(2);
+    expect(fixed.writeCount + excluded.writeCount).toBe(0);
   });
 
   it("requests focus once for fresh exact application matches", () => {
@@ -49864,6 +50036,16 @@ function requiredApplicationInitialFloating(value: string) {
 
   if (!applications) {
     throw new Error("application initial floating fixture is invalid");
+  }
+
+  return applications;
+}
+
+function requiredApplicationInitialLayouts(value: string) {
+  const applications = decodeApplicationInitialLayouts(value);
+
+  if (!applications) {
+    throw new Error("application initial layouts fixture is invalid");
   }
 
   return applications;

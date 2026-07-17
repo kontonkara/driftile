@@ -9,6 +9,10 @@ import type {
 import type { ApplicationInitialFocused } from "../src/application-initial-focused";
 import type { ApplicationInitialUnfocused } from "../src/application-initial-unfocused";
 import type { ApplicationInitialFloating } from "../src/application-initial-floating";
+import type {
+  ApplicationInitialLayouts,
+  InitialLayout,
+} from "../src/application-initial-layouts";
 import type { ApplicationInitialFullWidth } from "../src/application-initial-full-width";
 import type { ApplicationInitialFullscreen } from "../src/application-initial-fullscreen";
 import type { ApplicationInitialMaximized } from "../src/application-initial-maximized";
@@ -38,6 +42,7 @@ interface DeliveredSettings {
   readonly applicationInitialFocused: readonly string[];
   readonly applicationInitialUnfocused: readonly string[];
   readonly applicationInitialFloating: readonly string[];
+  readonly applicationInitialLayouts: readonly string[];
   readonly applicationInitialFullWidth: readonly string[];
   readonly applicationInitialFullscreen: readonly string[];
   readonly applicationInitialMaximized: readonly string[];
@@ -55,6 +60,7 @@ interface DeliveredSettings {
   readonly defaultFloatingPosition: ApplicationFloatingPosition | null;
   readonly defaultInitialDestination: ApplicationInitialDestination | null;
   readonly defaultInitialFocus: DefaultInitialFocus;
+  readonly defaultInitialLayout: InitialLayout;
   readonly defaultWindowHeight: string;
   readonly emptyDesktopAboveFirst: boolean;
   readonly gap: number;
@@ -89,6 +95,7 @@ interface RuntimeControllerOptions {
   readonly applicationInitialFocused: ApplicationInitialFocused;
   readonly applicationInitialUnfocused: ApplicationInitialUnfocused;
   readonly applicationInitialFloating: ApplicationInitialFloating;
+  readonly applicationInitialLayouts: ApplicationInitialLayouts;
   readonly applicationInitialFullWidth: ApplicationInitialFullWidth;
   readonly applicationInitialFullscreen: ApplicationInitialFullscreen;
   readonly applicationInitialMaximized: ApplicationInitialMaximized;
@@ -99,6 +106,7 @@ interface RuntimeControllerOptions {
   readonly defaultFloatingPosition: ApplicationFloatingPosition | null;
   readonly defaultInitialDestination: ApplicationInitialDestination | null;
   readonly defaultInitialFocus: DefaultInitialFocus;
+  readonly defaultInitialLayout: InitialLayout;
   readonly defaultWindowHeight: DefaultWindowHeight;
   readonly emptyDesktopAboveFirst: boolean;
   readonly gap: number;
@@ -144,6 +152,8 @@ class RuntimeControllerDouble {
         options.applicationInitialUnfocused.canonicalEntries,
       applicationInitialFloating:
         options.applicationInitialFloating.canonicalEntries,
+      applicationInitialLayouts:
+        options.applicationInitialLayouts.canonicalEntries,
       applicationInitialFullWidth:
         options.applicationInitialFullWidth.canonicalEntries,
       applicationInitialFullscreen:
@@ -165,6 +175,7 @@ class RuntimeControllerDouble {
       defaultFloatingPosition: options.defaultFloatingPosition,
       defaultInitialDestination: options.defaultInitialDestination,
       defaultInitialFocus: options.defaultInitialFocus,
+      defaultInitialLayout: options.defaultInitialLayout,
       defaultWindowHeight: options.defaultWindowHeight.canonicalValue,
       emptyDesktopAboveFirst: options.emptyDesktopAboveFirst,
       gap: options.gap,
@@ -294,6 +305,17 @@ class RuntimeControllerDouble {
     this.state = {
       ...this.state,
       applicationInitialFloating: applications.canonicalEntries,
+    };
+    return true;
+  }
+
+  setApplicationInitialLayouts(
+    applications: ApplicationInitialLayouts,
+  ): boolean {
+    this.calls.push("applicationInitialLayouts");
+    this.state = {
+      ...this.state,
+      applicationInitialLayouts: applications.canonicalEntries,
     };
     return true;
   }
@@ -446,6 +468,12 @@ class RuntimeControllerDouble {
     return true;
   }
 
+  setDefaultInitialLayout(value: InitialLayout): boolean {
+    this.calls.push("defaultInitialLayout");
+    this.state = { ...this.state, defaultInitialLayout: value };
+    return true;
+  }
+
   setDefaultWindowHeight(value: DefaultWindowHeight): boolean {
     this.calls.push("defaultWindowHeight");
     this.state = {
@@ -536,6 +564,8 @@ describe("runtime settings delivery", () => {
       applicationInitialFocused: "org.example.InitialDialog",
       applicationInitialUnfocused: "org.example.InitialBackground",
       applicationInitialFloating: "org.example.InitialFloat",
+      applicationInitialLayouts:
+        "org.example.InitialEditor=tiled\norg.example.InitialPanel=floating",
       applicationInitialFullWidth: "org.example.InitialWide",
       applicationInitialFullscreen: "org.example.InitialGame",
       applicationInitialMaximized: "org.example.InitialMail",
@@ -544,6 +574,7 @@ describe("runtime settings delivery", () => {
       defaultFloatingPosition: "top-left,12,8",
       defaultInitialDestination: "desktop:2,output:DP-1",
       defaultInitialFocus: "focused",
+      defaultInitialLayout: "floating",
       useInitialWindowWidth: true,
       emptyDesktopAboveFirst: true,
       numberedDesktopTargets: "1=Web\n9=Archive",
@@ -574,6 +605,10 @@ describe("runtime settings delivery", () => {
     ]);
     expect(controller.deliveredSettings.applicationInitialFloating).toEqual([
       "org.example.InitialFloat",
+    ]);
+    expect(controller.deliveredSettings.applicationInitialLayouts).toEqual([
+      "org.example.InitialEditor=tiled",
+      "org.example.InitialPanel=floating",
     ]);
     expect(controller.deliveredSettings.applicationInitialDestinations).toEqual(
       ["org.example.InitialChat=desktop:2,output:DP-1"],
@@ -611,6 +646,7 @@ describe("runtime settings delivery", () => {
       output: "DP-1",
     });
     expect(controller.deliveredSettings.defaultInitialFocus).toBe("focused");
+    expect(controller.deliveredSettings.defaultInitialLayout).toBe("floating");
     expect(controller.deliveredSettings.alwaysCenterSingleColumn).toBe(true);
     expect(controller.deliveredSettings.emptyDesktopAboveFirst).toBe(true);
     expect(controller.deliveredSettings.numberedDesktopTargets).toEqual([
@@ -642,6 +678,8 @@ describe("runtime settings delivery", () => {
       applicationInitialFocused: "org.example.NewDialog",
       applicationInitialUnfocused: "org.example.NewBackground",
       applicationInitialFloating: "org.example.NewFloat",
+      applicationInitialLayouts:
+        "org.example.Editor=floating\norg.example.Panel=tiled",
       applicationInitialFullWidth: "org.example.NewWide",
       applicationInitialFullscreen: "org.example.NewGame",
       applicationInitialMaximized: "org.example.NewMail",
@@ -660,6 +698,7 @@ describe("runtime settings delivery", () => {
       defaultFloatingPosition: "bottom-right,24,16",
       defaultInitialDestination: "desktop-name:Work,output:HDMI-A-1",
       defaultInitialFocus: "unfocused",
+      defaultInitialLayout: "tiled",
       defaultWindowHeight: "60%",
       emptyDesktopAboveFirst: false,
       gap: 7.5,
@@ -686,6 +725,10 @@ describe("runtime settings delivery", () => {
       applicationInitialFocused: ["org.example.NewDialog"],
       applicationInitialUnfocused: ["org.example.NewBackground"],
       applicationInitialFloating: ["org.example.NewFloat"],
+      applicationInitialLayouts: [
+        "org.example.Editor=floating",
+        "org.example.Panel=tiled",
+      ],
       applicationInitialFullWidth: ["org.example.NewWide"],
       applicationInitialFullscreen: ["org.example.NewGame"],
       applicationInitialMaximized: ["org.example.NewMail"],
@@ -710,6 +753,7 @@ describe("runtime settings delivery", () => {
         output: "HDMI-A-1",
       },
       defaultInitialFocus: "unfocused",
+      defaultInitialLayout: "tiled",
       defaultWindowHeight: "60",
       emptyDesktopAboveFirst: false,
       gap: 7.5,
@@ -737,6 +781,7 @@ describe("runtime settings delivery", () => {
       "applicationInitialFocused",
       "applicationInitialUnfocused",
       "applicationInitialFloating",
+      "applicationInitialLayouts",
       "applicationInitialFullWidth",
       "applicationInitialFullscreen",
       "applicationInitialMaximized",
@@ -750,6 +795,7 @@ describe("runtime settings delivery", () => {
       "defaultFloatingPosition",
       "defaultInitialDestination",
       "defaultInitialFocus",
+      "defaultInitialLayout",
       "defaultWindowHeight",
       "emptyDesktopAboveFirst",
       "numberedDesktopTargets",
@@ -843,6 +889,7 @@ describe("runtime settings delivery", () => {
       "applicationInitialFocused",
       "applicationInitialUnfocused",
       "applicationInitialFloating",
+      "applicationInitialLayouts",
       "applicationInitialFullWidth",
       "applicationInitialFullscreen",
       "applicationInitialMaximized",
@@ -856,6 +903,7 @@ describe("runtime settings delivery", () => {
       "defaultFloatingPosition",
       "defaultInitialDestination",
       "defaultInitialFocus",
+      "defaultInitialLayout",
       "defaultWindowHeight",
       "emptyDesktopAboveFirst",
       "numberedDesktopTargets",
@@ -897,6 +945,7 @@ function settings(
     applicationInitialFocused: "",
     applicationInitialUnfocused: "",
     applicationInitialFloating: "",
+    applicationInitialLayouts: "",
     applicationInitialFullWidth: "",
     applicationInitialFullscreen: "",
     applicationInitialMaximized: "",
@@ -915,6 +964,7 @@ function settings(
     defaultFloatingPosition: "",
     defaultInitialDestination: "",
     defaultInitialFocus: "default",
+    defaultInitialLayout: "tiled",
     defaultWindowHeight: "auto",
     emptyDesktopAboveFirst: false,
     gap: 16,
@@ -953,6 +1003,7 @@ function snapshot(settingsValue: DeliveredSettings): DeliveredSettings {
     applicationInitialFocused: [...settingsValue.applicationInitialFocused],
     applicationInitialUnfocused: [...settingsValue.applicationInitialUnfocused],
     applicationInitialFloating: [...settingsValue.applicationInitialFloating],
+    applicationInitialLayouts: [...settingsValue.applicationInitialLayouts],
     applicationInitialFullWidth: [...settingsValue.applicationInitialFullWidth],
     applicationInitialFullscreen: [
       ...settingsValue.applicationInitialFullscreen,
