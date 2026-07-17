@@ -2821,7 +2821,12 @@ describe("RuntimeController", () => {
         fixture.workspace.activeWindow = replacement.window;
       }
 
+      const pendingBeforeRemoval = scheduler.pendingCount;
       fixture.windowRemoved.emit(removed.window);
+
+      if (handoffTiming === "before-removal") {
+        expect(scheduler.pendingCount).toBe(pendingBeforeRemoval);
+      }
 
       if (handoffTiming === "during-settlement") {
         fixture.workspace.activeWindow = replacement.window;

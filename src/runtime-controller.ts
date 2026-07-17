@@ -7879,9 +7879,13 @@ export class RuntimeController {
     const automaticFloating = this.automaticFloatingWindows.has(managedId);
     const transition = this.toggleGeometryTransitions.get(managedId);
     const removalFocus = this.windowRemovalFocus(managedId, floating);
+    const settledFocusTargetId = removalFocus
+      ? this.settledWindowRemovalFocusTargetId(managedId, removalFocus)
+      : null;
     const recoverFocus =
       removalFocus !== null &&
-      this.shouldRecoverWindowRemovalFocus(managedId, removalFocus);
+      (settledFocusTargetId !== null ||
+        this.shouldRecoverWindowRemovalFocus(managedId, removalFocus));
 
     if (floating) {
       affectedContextKeys.add(floating.sourceContextKey);
@@ -7945,7 +7949,11 @@ export class RuntimeController {
       (!automaticFloating ||
         this.windowRemovalFocusTarget(removalFocus, managedId))
     ) {
-      this.scheduleWindowRemovalFocusRecovery(managedId, removalFocus);
+      this.scheduleWindowRemovalFocusRecovery(
+        managedId,
+        removalFocus,
+        settledFocusTargetId,
+      );
     }
 
     if (endedInteractiveResize && this.borderlessReconciliationPending) {
@@ -8049,7 +8057,7 @@ export class RuntimeController {
     }
 
     if (this.activeWindowResolvesRemovalFocus(id, focus)) {
-      return this.removedWindowWasPreviousActivation(id);
+      return false;
     }
 
     const remembered =
@@ -8062,16 +8070,22 @@ export class RuntimeController {
   private scheduleWindowRemovalFocusRecovery(
     id: WindowId,
     focus: WindowRemovalFocus,
+    settledTargetId: WindowId | null,
   ): void {
     const recovery: PendingWindowRemovalFocusRecovery = {
       focus,
       generation: this.runGeneration,
-      phase: "settling",
-      requestedWindowId: null,
+      phase: settledTargetId === null ? "settling" : "waiting",
+      requestedWindowId: settledTargetId,
       removedId: id,
       topologyRevision: this.topologyRevision,
     };
     this.pendingWindowRemovalFocusRecovery = recovery;
+
+    if (settledTargetId !== null) {
+      return;
+    }
+
     const finishSettlement = (): void => {
       if (!this.pendingWindowRemovalFocusRecoveryIsCurrent(recovery)) {
         return;
@@ -8282,6 +8296,19 @@ export class RuntimeController {
       this.previousActivatedWindow &&
       String(this.previousActivatedWindow.internalId) === String(id),
     );
+  }
+
+  private settledWindowRemovalFocusTargetId(
+    id: WindowId,
+    focus: WindowRemovalFocus,
+  ): WindowId | null {
+    const active = this.workspace.activeWindow;
+
+    return active &&
+      this.activeWindowResolvesRemovalFocus(id, focus) &&
+      this.removedWindowWasPreviousActivation(id)
+      ? windowId(String(active.internalId))
+      : null;
   }
 
   private activeWindowLegitimateRemovalFocusCandidateContext(
