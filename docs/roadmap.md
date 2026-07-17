@@ -1,12 +1,11 @@
 # Roadmap
 
-Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.52.0 are
+Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.53.0 are
 released. The delivered milestones and release criteria below are a historical
 record. Later direction is not a committed release schedule.
 
-Stable 1.52.0 adds fresh-window tiled or floating defaults and exact application
-overrides while preserving automatic floating and exclusion ownership. Logical
-persistence remains v4.
+Stable 1.53.0 adds read-only attention cues and attention-aware search to the
+optional Overview. Logical persistence remains v4.
 
 ## Foundation (delivered)
 
@@ -2014,7 +2013,7 @@ Release criteria (met):
 The batch changes no action, binding, layout persistence schema, or private
 API.
 
-### 1.53.0 (in development)
+### 1.53.0 (released)
 
 - Project public KWin attention requests into the optional Overview as static,
   non-animated per-window or tab accents.
@@ -2023,7 +2022,7 @@ API.
 - Keep the projection event-driven and read-only, with no focus, layout,
   setting, action, or persistence change.
 
-Release criteria:
+Release criteria (met):
 
 - A requesting window has one cue in its visible thumbnail or tab, and its
   owning desktop card has the matching gutter marker.
