@@ -31,5 +31,9 @@
       <label>Show application identity</label>
       <default>true</default>
     </entry>
+    <entry name="ShowWindowCloseButtons" type="Bool">
+      <label>Show window close buttons</label>
+      <default>true</default>
+    </entry>
   </group>
 </kcfg>

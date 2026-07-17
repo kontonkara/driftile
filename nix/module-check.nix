@@ -365,6 +365,7 @@ let
           backdropColor = "#CC112233";
           showWindowLabels = false;
           showApplicationIdentity = true;
+          showWindowCloseButtons = false;
         };
       }
       { };
@@ -380,6 +381,7 @@ let
           backdropColor = null;
           showWindowLabels = null;
           showApplicationIdentity = null;
+          showWindowCloseButtons = null;
         };
       }
       { };
@@ -395,6 +397,7 @@ let
           backdropColor = "#80aBcD01";
           showWindowLabels = true;
           showApplicationIdentity = false;
+          showWindowCloseButtons = true;
         };
       }
       {
@@ -1950,6 +1953,7 @@ assert homeManagerOptionSurface.options.programs.driftile.overview ? screenEdge;
 assert homeManagerOptionSurface.options.programs.driftile.overview ? backdropColor;
 assert homeManagerOptionSurface.options.programs.driftile.overview ? showWindowLabels;
 assert homeManagerOptionSurface.options.programs.driftile.overview ? showApplicationIdentity;
+assert homeManagerOptionSurface.options.programs.driftile.overview ? showWindowCloseButtons;
 assert homeManagerOptionSurface.options.programs.driftile.overview ? touchpadGesture;
 assert homeManagerOptionSurface.options.programs.driftile ? transitions;
 assert homeManagerOptionSurface.options.programs.driftile.transitions ? duration;
@@ -1966,6 +1970,7 @@ assert !(nixosOptionSurface.options.programs.driftile.overview ? screenEdge);
 assert !(nixosOptionSurface.options.programs.driftile.overview ? backdropColor);
 assert !(nixosOptionSurface.options.programs.driftile.overview ? showWindowLabels);
 assert !(nixosOptionSurface.options.programs.driftile.overview ? showApplicationIdentity);
+assert !(nixosOptionSurface.options.programs.driftile.overview ? showWindowCloseButtons);
 assert !(nixosOptionSurface.options.programs.driftile.overview ? touchpadGesture);
 assert !(nixosOptionSurface.options.programs.driftile.transitions ? duration);
 assert !(nixosOptionSurface.options.programs.driftile.transitions ? animatePosition);
@@ -2015,6 +2020,7 @@ assert
       BackdropColor = "#CC112233";
       ShowWindowLabels = false;
       ShowApplicationIdentity = true;
+      ShowWindowCloseButtons = false;
     };
   };
 assert homeManagerOverviewSettingsUnmanaged.config.qt.kde.settings == { };
@@ -2025,6 +2031,7 @@ assert
       BackdropColor = "#80aBcD01";
       ShowWindowLabels = true;
       ShowApplicationIdentity = false;
+      ShowWindowCloseButtons = true;
     };
   };
 assert homeManagerOverviewSettingsWithSystemInstall.config.assertions == [ ];
@@ -2037,6 +2044,7 @@ assert invalidOverviewSettingRejected { backdropColor = "#GG112233"; };
 assert invalidOverviewSettingRejected { backdropColor = 4279312947; };
 assert invalidOverviewSettingRejected { showWindowLabels = "true"; };
 assert invalidOverviewSettingRejected { showApplicationIdentity = 1; };
+assert invalidOverviewSettingRejected { showWindowCloseButtons = "true"; };
 assert packagePaths [ "home" "packages" ] homeManagerTransitionDurationMinimum == [ ];
 assert packagePaths [ "home" "packages" ] homeManagerTransitionDurationMaximum == [ ];
 assert

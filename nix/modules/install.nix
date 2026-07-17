@@ -499,6 +499,12 @@ in
           description = "Whether overview labels include application identity; null leaves the KConfig value unmanaged.";
         };
 
+        showWindowCloseButtons = lib.mkOption {
+          type = lib.types.nullOr lib.types.bool;
+          default = null;
+          description = "Whether overview thumbnails show window close buttons; null leaves the KConfig value unmanaged.";
+        };
+
         touchpadGesture = lib.mkOption {
           type = lib.types.nullOr (
             lib.types.submodule {
@@ -1008,6 +1014,7 @@ in
           || cfg.overview.backdropColor != null
           || cfg.overview.showWindowLabels != null
           || cfg.overview.showApplicationIdentity != null
+          || cfg.overview.showWindowCloseButtons != null
           || cfg.overview.touchpadGesture != null
         )
         {
@@ -1023,6 +1030,9 @@ in
             }
             // lib.optionalAttrs (cfg.overview.showApplicationIdentity != null) {
               ShowApplicationIdentity = cfg.overview.showApplicationIdentity;
+            }
+            // lib.optionalAttrs (cfg.overview.showWindowCloseButtons != null) {
+              ShowWindowCloseButtons = cfg.overview.showWindowCloseButtons;
             }
             // lib.optionalAttrs (cfg.overview.touchpadGesture != null) {
               TouchpadGesture = cfg.overview.touchpadGesture.enable;

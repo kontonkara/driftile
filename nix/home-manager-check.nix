@@ -235,6 +235,7 @@ let
       backdropColor = "#CC112233";
       showWindowLabels = false;
       showApplicationIdentity = true;
+      showWindowCloseButtons = false;
     };
   } { };
   overviewSettingsUnmanaged = evaluateHome {
@@ -243,6 +244,7 @@ let
       backdropColor = null;
       showWindowLabels = null;
       showApplicationIdentity = null;
+      showWindowCloseButtons = null;
     };
   } { };
   overviewSettingsWithSystemInstall = evaluateHome {
@@ -251,6 +253,7 @@ let
       backdropColor = "#80aBcD01";
       showWindowLabels = true;
       showApplicationIdentity = false;
+      showWindowCloseButtons = true;
     };
   } systemOverviewConfiguration.config;
   invalidOverviewTouchpadGestureRejected =
@@ -689,6 +692,7 @@ assert
       BackdropColor = "#CC112233";
       ShowWindowLabels = false;
       ShowApplicationIdentity = true;
+      ShowWindowCloseButtons = false;
     };
   };
 assert overviewSettingsUnmanaged.config.qt.kde.settings == { };
@@ -699,6 +703,7 @@ assert
       BackdropColor = "#80aBcD01";
       ShowWindowLabels = true;
       ShowApplicationIdentity = false;
+      ShowWindowCloseButtons = true;
     };
   };
 assert lib.all (assertion: assertion.assertion) overviewSettingsWithSystemInstall.config.assertions;
@@ -711,6 +716,7 @@ assert invalidOverviewSettingRejected { backdropColor = "#GG112233"; };
 assert invalidOverviewSettingRejected { backdropColor = 4279312947; };
 assert invalidOverviewSettingRejected { showWindowLabels = "true"; };
 assert invalidOverviewSettingRejected { showApplicationIdentity = 1; };
+assert invalidOverviewSettingRejected { showWindowCloseButtons = "true"; };
 assert packageCount transitionsOverride == 0;
 assert overviewPackageCount transitionsOverride == 0;
 assert transitionsPackageCount transitionsOverride == 0;

@@ -23,6 +23,10 @@ Rectangle {
         && typeof sceneEffect.showApplicationIdentity === "boolean"
         ? sceneEffect.showApplicationIdentity
         : true
+    readonly property bool showWindowCloseButtons: sceneEffect
+        && typeof sceneEffect.showWindowCloseButtons === "boolean"
+        ? sceneEffect.showWindowCloseButtons
+        : true
     readonly property string outputId: outputIdForScreen()
     readonly property var desktopIds: outputId.length > 0 ? orderedDesktopIds() : []
     readonly property real outerMargin: Math.max(20, Math.min(width, height) * 0.035)
@@ -203,6 +207,7 @@ Rectangle {
             searchQuery: root.searchQuery
             screen: root.targetScreen
             showApplicationIdentity: root.showApplicationIdentity
+            showWindowCloseButtons: root.showWindowCloseButtons
             showWindowLabels: root.showWindowLabels
             onDesktopReorderCanceled: expectedDesktopId => root.cancelDesktopReorder(expectedDesktopId)
             onDesktopReorderGrabbed: (candidate, expectedDesktopId, expectedScreen, sceneX, sceneY) =>
