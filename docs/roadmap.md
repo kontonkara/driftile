@@ -1,12 +1,12 @@
 # Roadmap
 
-Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.67.0 are
+Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.68.0 are
 released. The delivered milestones and release criteria below are a historical
 record. Later direction is not a committed release schedule.
 
-Stable 1.67.0 synchronizes rapid split-position retargets, preserves bounded
-close-focus handoffs through interim null activations, and adds desktop sends
-without following. Logical persistence remains v4.
+Stable 1.68.0 keeps corrected moving-column centers synchronized and restores
+same-context focus when KWin clears a provisional close handoff. Logical
+persistence remains v4.
 
 ## Foundation (delivered)
 
@@ -2403,7 +2403,7 @@ Release criteria (met):
   persistence v4, and schemas remain unchanged.
 - The implementation uses public Plasma 6.7+ APIs and introduces no KWin fork.
 
-### 1.68.0 (in progress)
+### 1.68.0 (released)
 
 - Retarget both active position components when a corrective resize changes a
   moving window's center without changing its frame origin.
@@ -2415,7 +2415,7 @@ Release criteria (met):
   recovery target remains confined to the correct desktop, output, activity,
   and layer.
 
-Release criteria:
+Release criteria (met):
 
 - A corrective resize cannot leave one column on an older position target or
   expose a persistent wallpaper slot between otherwise adjacent columns.

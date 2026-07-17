@@ -1,7 +1,7 @@
 # Driftile 1.68.0
 
-Driftile 1.68.0 will keep rapid three-column motion visually continuous and
-restore focus when KWin clears a provisional replacement during window close.
+Driftile 1.68.0 keeps rapid three-column motion visually continuous and
+restores focus when KWin clears a provisional replacement during window close.
 
 ## Highlights
 
