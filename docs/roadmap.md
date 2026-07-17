@@ -1,11 +1,12 @@
 # Roadmap
 
-Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.71.0 are
+Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.72.0 are
 released. The delivered milestones and release criteria below are a historical
 record. Later direction is not a committed release schedule.
 
-Stable 1.71.0 adds an adaptive in-Overview keyboard and search reference with
-keyboard and pointer dismissal. Logical persistence remains v4.
+Stable 1.72.0 restores every registered shortcut action's runtime dispatch and
+improves selector and Overview-help discoverability. Logical persistence
+remains v4.
 
 ## Foundation (delivered)
 
@@ -2485,3 +2486,25 @@ Release criteria (met):
   cannot change desktop-card geometry.
 - The batch adds no global binding, setting, timer, animation, persistence
   field, private API, or KWin fork.
+
+### 1.72.0 (released)
+
+- Route all 30 previously disconnected registered shortcut actions through
+  their existing runtime-controller transactions.
+- Restore configurable boundary focus, numbered focus and placement, window
+  swaps, output-aware moves, direct stacked or tabbed presentation, and
+  previous or next output transfers without adding action IDs or defaults.
+- Explain valid role-qualified application selectors directly in the KCM while
+  preserving malformed stored text for user correction and ignoring it at
+  runtime.
+- Open the existing F1 Overview reference by left click or touch on its hint,
+  with bounded hover and pressed feedback and no background card dispatch.
+
+Release criteria (met):
+
+- Every runtime function named by a registered shortcut exists and delegates
+  to an existing controller method; ordinary non-shortcut QML runtime calls
+  remain complete.
+- Selector feedback changes no stored value, schema, or runtime matching rule.
+- Pointer help access adds no global binding, setting, timer, animation,
+  persistence field, private API, or KWin fork.
