@@ -1,16 +1,12 @@
 # Roadmap
 
-Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.58.0 are
+Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.59.0 are
 released. The delivered milestones and release criteria below are a historical
 record. Later direction is not a committed release schedule.
 
-Stable 1.58.0 adds guarded close buttons to eligible Overview thumbnails, tabs,
-and minimized placeholders, with a live presentation preference. Logical
-persistence remains v4.
-
-The 1.59.0 development baseline adds read-only window-state badges and state
-search terms to the optional Overview. Its scope is limited to the milestone
-below.
+Stable 1.59.0 adds bounded static window-state badges and state search terms to
+the optional Overview, with a live presentation preference. Logical persistence
+remains v4.
 
 ## Foundation (delivered)
 
@@ -2170,7 +2166,7 @@ Release criteria (met):
 The batch adds no KWin action, binding, layout or persistence write, timer,
 animation, private API, or compositor fork.
 
-### 1.59.0 (in development)
+### 1.59.0 (released)
 
 - Show one static `Fullscreen`, `Maximized`, or `Floating` badge on a
   sufficiently large selected ordinary thumbnail.
@@ -2182,7 +2178,7 @@ animation, private API, or compositor fork.
 - Add a default-enabled live KConfig setting and nullable per-user Home Manager
   option. Malformed values retain the enabled presentation.
 
-Completion criteria:
+Release criteria (met):
 
 - Badge visibility changes no window target, state, input path, layout, or
   persistence data.
