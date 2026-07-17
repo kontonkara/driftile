@@ -1,7 +1,29 @@
 # Migration
 
-The latest stable release is 1.51.0. Use the steps below when changing release
+The latest stable release is 1.52.0. Use the steps below when changing release
 generations, and never combine files from different releases.
+
+## Upgrade from 1.51.0 to 1.52.0
+
+1. Release a helper-owned shortcut profile with the installed helper.
+2. Disable Driftile and both optional effects in System Settings.
+3. Install matching 1.52.0 artifacts, or pin the Nix input to `v1.52.0` and
+   rebuild.
+4. Re-enable Driftile and only the optional effects you use, then reclaim the
+   helper profile if needed.
+
+Logical layout state remains v4, and action IDs and default bindings are
+unchanged. `DefaultInitialLayout` defaults to `tiled`, so existing configuration
+keeps its admission behavior. The exact application map is empty by default;
+live changes affect only windows first tracked afterward.
+
+## Roll back from 1.52.0 to 1.51.0
+
+Release a helper-owned profile, disable Driftile and both optional effects,
+then restore matching verified 1.51.0 artifacts or pin the Nix input to
+`v1.51.0` and rebuild. Both versions use logical layout state v4 with the same
+actions. Driftile 1.51.0 ignores the two newer initial-layout KConfig keys;
+remove them if the older settings page should show only supported values.
 
 ## Upgrade from 1.50.0 to 1.51.0
 

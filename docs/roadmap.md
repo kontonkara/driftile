@@ -1,12 +1,12 @@
 # Roadmap
 
-Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.51.0 are
+Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.52.0 are
 released. The delivered milestones and release criteria below are a historical
 record. Later direction is not a committed release schedule.
 
-Stable 1.51.0 makes the separately installed native shortcut editor easier to
-discover and operate, including safe restoration of registered defaults.
-Logical persistence remains v4.
+Stable 1.52.0 adds fresh-window tiled or floating defaults and exact application
+overrides while preserving automatic floating and exclusion ownership. Logical
+persistence remains v4.
 
 ## Foundation (delivered)
 
@@ -1991,7 +1991,7 @@ Release criteria (met):
 The batch changes no KWin action, default binding, setting, layout schema, or
 private API.
 
-### 1.52.0 (in development)
+### 1.52.0 (released)
 
 - Add `DefaultInitialLayout` with a behavior-preserving `tiled` default and an
   optional `floating` policy for genuinely new normal windows.
@@ -2003,7 +2003,7 @@ private API.
 - Expose both settings through KConfig and typed Home Manager options. Live
   changes affect future windows without moving existing ones.
 
-Release criteria:
+Release criteria (met):
 
 - The default configuration keeps current tiled admission behavior.
 - Exact matching remains case-sensitive and malformed, duplicate, control, or
