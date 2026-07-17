@@ -276,11 +276,6 @@ ShortcutBackend::OperationResult ShortcutBackend::validate(const QList<ShortcutA
 
 ShortcutBackend::OperationResult ShortcutBackend::apply(const QList<ShortcutAction> &actions) const
 {
-    const OperationResult validation = validate(actions);
-    if (!validation.succeeded()) {
-        return validation;
-    }
-
     QList<Mutation> mutations;
     for (const ShortcutAction &action : actions) {
         if (!sequenceListsEqual(action.baseline, action.edited)) {
@@ -292,17 +287,32 @@ ShortcutBackend::OperationResult ShortcutBackend::apply(const QList<ShortcutActi
         return {};
     }
 
-    for (Mutation &mutation : mutations) {
-        QString error;
-        const QList<QKeySequence> current = shortcutKeys(mutation.action.dbusId, &error);
-        if (!error.isEmpty()) {
-            return {.error = error};
+    const LoadResult current = loadActions();
+    if (!current.succeeded()) {
+        return {.error = current.error};
+    }
+
+    QHash<QString, QList<QKeySequence>> currentShortcuts;
+    currentShortcuts.reserve(current.actions.size());
+    for (const ShortcutAction &action : current.actions) {
+        currentShortcuts.insert(actionKey(action), action.baseline);
+    }
+
+    for (const ShortcutAction &action : actions) {
+        const auto iterator = currentShortcuts.constFind(actionKey(action));
+        if (iterator == currentShortcuts.cend()) {
+            return {.error = QStringLiteral("%1 is no longer active. Reload before applying changes.")
+                                 .arg(action.friendlyName)};
         }
-        if (!sequenceListsEqual(current, mutation.before)) {
+        if (!sequenceListsEqual(iterator.value(), action.baseline)) {
             return {.error = QStringLiteral("%1 changed outside this editor. Reload before applying changes.")
-                                 .arg(mutation.action.friendlyName)};
+                                 .arg(action.friendlyName)};
         }
-        mutation.before = current;
+    }
+
+    const OperationResult validation = validate(actions);
+    if (!validation.succeeded()) {
+        return validation;
     }
 
     for (const Mutation &mutation : mutations) {
