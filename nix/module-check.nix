@@ -368,6 +368,7 @@ let
           showWindowCloseButtons = false;
           showWindowStateBadges = false;
           showDesktopNames = false;
+          showApplicationIcons = false;
         };
       }
       { };
@@ -386,6 +387,7 @@ let
           showWindowCloseButtons = null;
           showWindowStateBadges = null;
           showDesktopNames = null;
+          showApplicationIcons = null;
         };
       }
       { };
@@ -404,6 +406,7 @@ let
           showWindowCloseButtons = true;
           showWindowStateBadges = true;
           showDesktopNames = true;
+          showApplicationIcons = true;
         };
       }
       {
@@ -1962,6 +1965,7 @@ assert homeManagerOptionSurface.options.programs.driftile.overview ? showApplica
 assert homeManagerOptionSurface.options.programs.driftile.overview ? showWindowCloseButtons;
 assert homeManagerOptionSurface.options.programs.driftile.overview ? showWindowStateBadges;
 assert homeManagerOptionSurface.options.programs.driftile.overview ? showDesktopNames;
+assert homeManagerOptionSurface.options.programs.driftile.overview ? showApplicationIcons;
 assert homeManagerOptionSurface.options.programs.driftile.overview ? touchpadGesture;
 assert homeManagerOptionSurface.options.programs.driftile ? transitions;
 assert homeManagerOptionSurface.options.programs.driftile.transitions ? duration;
@@ -1981,6 +1985,7 @@ assert !(nixosOptionSurface.options.programs.driftile.overview ? showApplication
 assert !(nixosOptionSurface.options.programs.driftile.overview ? showWindowCloseButtons);
 assert !(nixosOptionSurface.options.programs.driftile.overview ? showWindowStateBadges);
 assert !(nixosOptionSurface.options.programs.driftile.overview ? showDesktopNames);
+assert !(nixosOptionSurface.options.programs.driftile.overview ? showApplicationIcons);
 assert !(nixosOptionSurface.options.programs.driftile.overview ? touchpadGesture);
 assert !(nixosOptionSurface.options.programs.driftile.transitions ? duration);
 assert !(nixosOptionSurface.options.programs.driftile.transitions ? animatePosition);
@@ -2033,6 +2038,7 @@ assert
       ShowWindowCloseButtons = false;
       ShowWindowStateBadges = false;
       ShowDesktopNames = false;
+      ShowApplicationIcons = false;
     };
   };
 assert homeManagerOverviewSettingsUnmanaged.config.qt.kde.settings == { };
@@ -2046,6 +2052,7 @@ assert
       ShowWindowCloseButtons = true;
       ShowWindowStateBadges = true;
       ShowDesktopNames = true;
+      ShowApplicationIcons = true;
     };
   };
 assert homeManagerOverviewSettingsWithSystemInstall.config.assertions == [ ];
@@ -2061,6 +2068,7 @@ assert invalidOverviewSettingRejected { showApplicationIdentity = 1; };
 assert invalidOverviewSettingRejected { showWindowCloseButtons = "true"; };
 assert invalidOverviewSettingRejected { showWindowStateBadges = "true"; };
 assert invalidOverviewSettingRejected { showDesktopNames = "true"; };
+assert invalidOverviewSettingRejected { showApplicationIcons = "true"; };
 assert packagePaths [ "home" "packages" ] homeManagerTransitionDurationMinimum == [ ];
 assert packagePaths [ "home" "packages" ] homeManagerTransitionDurationMaximum == [ ];
 assert

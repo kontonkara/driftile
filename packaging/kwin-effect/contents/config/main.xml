@@ -43,5 +43,9 @@
       <label>Show desktop names</label>
       <default>true</default>
     </entry>
+    <entry name="ShowApplicationIcons" type="Bool">
+      <label>Show application icons</label>
+      <default>true</default>
+    </entry>
   </group>
 </kcfg>

@@ -517,6 +517,12 @@ in
           description = "Whether the overview shows desktop names; null leaves the KConfig value unmanaged.";
         };
 
+        showApplicationIcons = lib.mkOption {
+          type = lib.types.nullOr lib.types.bool;
+          default = null;
+          description = "Whether overview window previews show application icons; null leaves the KConfig value unmanaged.";
+        };
+
         touchpadGesture = lib.mkOption {
           type = lib.types.nullOr (
             lib.types.submodule {
@@ -1029,6 +1035,7 @@ in
           || cfg.overview.showWindowCloseButtons != null
           || cfg.overview.showWindowStateBadges != null
           || cfg.overview.showDesktopNames != null
+          || cfg.overview.showApplicationIcons != null
           || cfg.overview.touchpadGesture != null
         )
         {
@@ -1053,6 +1060,9 @@ in
             }
             // lib.optionalAttrs (cfg.overview.showDesktopNames != null) {
               ShowDesktopNames = cfg.overview.showDesktopNames;
+            }
+            // lib.optionalAttrs (cfg.overview.showApplicationIcons != null) {
+              ShowApplicationIcons = cfg.overview.showApplicationIcons;
             }
             // lib.optionalAttrs (cfg.overview.touchpadGesture != null) {
               TouchpadGesture = cfg.overview.touchpadGesture.enable;
