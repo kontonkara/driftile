@@ -85,6 +85,12 @@ keyboard, close, and search paths through their existing tabs. Activating one
 restores its exact public KWin minimized state before focusing it. Stacked and
 floating minimized windows remain outside this slice.
 
+Version 1.55.0 (in development) gives eligible minimized stacked tiled members
+and tracked floating windows without a tab one compact caption placeholder.
+Each placeholder stays inside the visible intersection of its projected slot or
+frame, retains its attention cue, and joins the existing pointer, keyboard,
+close, and search paths. Existing minimized tab behavior is unchanged.
+
 The companion is disabled by default. When enabled with a fresh shortcut
 record, `Meta+O` toggles it. KGlobalAccel preserves an existing assignment
 across upgrades, including an explicitly unbound action, so review it in
@@ -127,24 +133,27 @@ desktop, then the first actionable target in visual order. Arrow keys move
 spatially in the requested direction without wrapping.
 
 `Enter`, `Return`, and `Space` run the selected target's guarded public KWin
-window-focus or desktop-selection path. Activating a minimized member tab first
-restores that exact window and then focuses it. `Escape` closes the
-effect without an action. In a tabbed column, the selected ordinary member is
-represented only by its large thumbnail and its duplicate tab remains inert;
-each other actionable member is represented by its tab. Exact minimized member
-tabs also participate, while invalid, ineligible, and fully clipped items are
-excluded. A partially clipped target remains actionable, and spatial navigation
-uses only its visible intersection. The number gutter of every non-current live
-desktop, including the shared empty tail, is also a target; the current
-desktop's gutter is not.
+window-focus or desktop-selection path. Activating a minimized member tab or
+placeholder first restores that exact window and then focuses it. `Escape`
+closes the effect without an action. In a tabbed column, the selected ordinary
+member is represented only by its large thumbnail and its duplicate tab remains
+inert; each other actionable member is represented by its tab. Exact minimized
+member tabs retain that behavior. An eligible minimized stacked tiled member or
+tracked floating window without a tab is represented by one compact caption
+placeholder. Invalid, ineligible, malformed, tiny, fully clipped, and offscreen
+projections are excluded. A partially clipped target remains actionable, and
+spatial navigation uses only its visible intersection. The number gutter of
+every non-current live desktop, including the shared empty tail, is also a
+target; the current desktop's gutter is not.
 `Tab` and `Shift+Tab` cycle through targets in visual order, while `Home` and
 `End` select the first or last target. Sequential navigation wraps and the
 selected desktop gutter uses the same visible keyboard highlight as a window.
 `Delete` requests closure of the selected live window, including an exact
-closeable minimized tab. Desktop targets and stale or non-closeable windows are
-no-ops; the overview stays open until KWin actually removes the window, so an
-application prompt remains usable. A middle click on a visible thumbnail or
-closeable tab uses the same guarded path without restoring a minimized window.
+closeable minimized tab or placeholder. Desktop targets and stale or
+non-closeable windows are no-ops; the overview stays open until KWin actually
+removes the window, so an application prompt remains usable. A middle click on
+a visible thumbnail, closeable tab, or closeable placeholder uses the same
+guarded path without restoring a minimized window.
 
 Typing filters visible windows by title and application identity. Matching is
 case-insensitive and every typed term must match. Arrow navigation immediately
@@ -155,9 +164,9 @@ query is session-only and is discarded when the effect closes. Its plain-text
 feedback reports the unique matching-window count or `No matching windows`.
 
 The special search terms `urgent` and `attention` match windows with a current
-public KWin attention request. `minimized` matches an exact minimized member
-tab. These terms combine with title and application terms under the same
-every-term rule.
+public KWin attention request. `minimized` matches an exact minimized member tab
+or placeholder. These terms combine with title and application terms under the
+same every-term rule.
 
 An unmodified vertical mouse wheel cycles the current actionable targets in
 visual order. An active search limits the cycle to matching windows; otherwise
@@ -177,12 +186,30 @@ or close input remain separate.
 ## Attention cues
 
 A public KWin attention request adds a static, non-animated accent to the
-window's Overview thumbnail or tab. Its desktop card also shows a marker in the
-number gutter, so attention remains visible when the window itself is outside
-the current card.
+window's Overview thumbnail, tab, or minimized placeholder. Its desktop card
+also shows a marker in the number gutter, so attention remains visible when the
+window itself is outside the current card.
 
 The cues follow public KWin events and are read-only. They do not request focus,
 change layout, add a setting or action, or write persistent state.
+
+## Minimized placeholders
+
+A minimized stacked tiled member uses the visible intersection of its projected
+slot, while a tracked floating window without a tab uses the visible
+intersection of its projected frame. Each eligible window gets at most one
+compact caption placeholder. A current attention request remains visible on
+that placeholder.
+
+A left click, `Enter`, `Return`, or `Space` restores the exact window and then
+focuses it through the existing guarded public KWin path. `Delete` and middle
+click use the existing guarded close path without restoring it. Placeholders
+participate in title, application, attention, and `minimized` search, but cannot
+start or receive minimized drag and drop.
+
+The projection is read-only. Malformed, tiny, fully clipped, or offscreen frames
+produce no placeholder and no action. The interaction adds no geometry, layout,
+setting, persistence, action, binding, or private API write.
 
 ## Desktop reordering
 
@@ -207,8 +234,8 @@ Drag a selected thumbnail or a non-minimized tab onto another desktop card.
 The final empty desktop is a valid target. A card on another output moves the
 window to that output and desktop while preserving its activity. Same-card
 drops, all-desktop windows, transients, modal windows, and ambiguous model
-ownership are rejected. Minimized tabs remain visible but cannot start a drag
-or otherwise participate in drag and drop.
+ownership are rejected. Minimized tabs and placeholders remain visible but
+cannot start a drag or otherwise participate in drag and drop.
 
 Release revalidates the active effect, immutable overview model, output,
 source and target desktop objects, current activity, and exact live window.
@@ -344,9 +371,17 @@ Activation revalidates that snapshot, writes only the public minimized state,
 confirms restoration, and then focuses the same exact window. The effect closes
 only after focus is confirmed. `Delete` and middle click instead revalidate the
 exact closeable window and request its public close path without restoring it.
-Minimized stacked and floating windows, drag and drop, deleted or stale windows,
-and ineligible targets remain outside this path. The interaction adds no
-setting, action, binding, persistence field, layout write, or private API.
+Existing minimized member tabs retain this behavior unchanged.
+
+An eligible minimized placeholder additionally requires an exact tracked
+stacked tiled member or tracked floating window without a tab. Its caption is
+clipped to the visible intersection of the validated projected slot or frame;
+malformed, tiny, fully clipped, or offscreen projections fail closed. Activation
+and closure reuse the same exact restore, focus, and close paths as minimized
+tabs. Minimized drag and drop, deleted or stale windows, and ineligible targets
+remain outside both paths. The interaction retains public attention cues and
+adds no geometry, layout, setting, action, binding, persistence field, or
+private API write.
 
 A non-current thumbnail first revalidates the exact active effect, model, live
 screen, projected output, direct desktop object and ID, direct window object and

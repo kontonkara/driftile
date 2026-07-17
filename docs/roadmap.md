@@ -2059,3 +2059,29 @@ Release criteria (met):
 The batch uses only public KWin state and keeps the Overview read-only with
 respect to layout ownership. It adds no setting, action, binding, persistence
 field, layout write, or private API.
+
+### 1.55.0 (in development)
+
+- Give eligible minimized stacked tiled members and tracked floating windows
+  without a tab one compact caption placeholder inside the visible intersection
+  of their projected slot or frame.
+- Include each placeholder in pointer, keyboard, close, title, application,
+  attention, and `minimized` search paths while retaining its attention cue.
+- Restore and then focus the exact window on click, `Enter`, `Return`, or
+  `Space` through the existing guarded public KWin path.
+- Close an exact closeable placeholder with `Delete` or middle click without
+  restoring it.
+- Keep existing minimized tab behavior unchanged and exclude every minimized
+  target from drag and drop.
+
+Release criteria:
+
+- Malformed, tiny, fully clipped, offscreen, stale, or ineligible projections
+  fail closed without exposing an actionable placeholder.
+- Each eligible minimized window has at most one target inside its visible
+  projected slot or frame.
+- Activation and closure revalidate the same exact live window and reuse the
+  existing public restore, focus, and close paths.
+
+The batch adds no geometry, layout, setting, action, binding, persistence field,
+or private API write.
