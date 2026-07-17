@@ -2316,3 +2316,20 @@ Release criteria (met):
 - The slice uses public Plasma 6.7+ state and adds no action, binding, setting,
   timer, animation, geometry write, persistence field, private API, or KWin
   fork.
+
+### 1.65.0 (prepared)
+
+- Let `Ctrl+Backspace` remove the complete trailing Overview search clause,
+  including bare, scoped, excluded, and quoted forms.
+- Treat an unfinished trailing quoted clause as one removable unit so the
+  shortcut can repair an invalid query without closing the Overview.
+- Let `Ctrl+U` clear a non-empty query while keeping the Overview open.
+- Preserve the existing unmodified `Backspace` and `Escape` behavior.
+
+Release criteria (prepared):
+
+- Clause deletion stays bounded and follows the same structured-search syntax
+  used for matching.
+- Empty-query shortcuts are safe no-ops and never close the Overview.
+- Search editing remains session-only and adds no global binding, setting,
+  KWin request, layout or persistence write, private API, or KWin fork.

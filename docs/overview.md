@@ -124,6 +124,9 @@ Version 1.64.0 adds quoted phrases, exclusions, and field scopes to window
 search. Invalid structured queries fail closed and are reported in the
 Overview instead of being interpreted partially.
 
+Version 1.65.0 adds session-local shortcuts for editing the active Overview
+search without adding a global binding or setting.
+
 The companion is disabled by default. When enabled with a fresh shortcut
 record, `Meta+O` toggles it. KGlobalAccel preserves an existing assignment
 across upgrades, including an explicitly unbound action, so review it in
@@ -214,10 +217,15 @@ quoted phrase, such as `title:` or `app:"firefox`, matches no windows and the
 Overview reports an invalid query instead of applying a partial filter.
 
 Arrow navigation immediately repairs its selection within the filtered
-results; `Backspace` removes one Unicode code point and `Escape` clears a
+results. `Backspace` removes one Unicode code point, while `Ctrl+Backspace`
+removes the complete trailing structured clause: a bare, scoped, excluded, or
+quoted clause. It also removes an unfinished trailing quoted clause, making an
+invalid query editable again without closing the Overview. `Ctrl+U` clears a
+non-empty query. `Escape` keeps its existing two-step behavior: it clears a
 non-empty query before it can close the effect. Desktop-gutter targets stay
 hidden while a search query is active. The query is session-only and is
-discarded when the effect closes.
+discarded when the effect closes. `Ctrl+Backspace` and `Ctrl+U` act only while
+the Overview is open and add no global binding or setting.
 
 One bounded pass over the current navigation targets supplies the unique global
 window total, the exact count for each desktop, and one visual-order ordinal for
