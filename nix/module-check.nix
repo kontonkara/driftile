@@ -580,6 +580,7 @@ let
           defaultColumnPresentation = "tabbed";
           defaultColumnWidthPercent = 65;
           defaultColumnWidthPixels = 960;
+          useInitialWindowWidth = true;
           defaultFloatingPosition = {
             anchor = "right";
             x = -36;
@@ -1419,6 +1420,7 @@ let
     { defaultColumnWidthPixels = 16385; }
     { defaultColumnWidthPixels = 1.5; }
     { defaultColumnWidthPixels = "960"; }
+    { useInitialWindowWidth = "true"; }
     { defaultWindowHeight = 9; }
     { defaultWindowHeight = 101; }
     { defaultWindowHeight = 10.5; }
@@ -1773,6 +1775,7 @@ let
       DefaultColumnPresentation = "tabbed";
       DefaultColumnWidthPercent = 65;
       DefaultColumnWidthPixels = 960;
+      UseInitialWindowWidth = true;
       DefaultFloatingPosition = "right,-36,48";
       DefaultInitialDestination = "desktop:4,output:DP-4";
       DefaultInitialFocus = "unfocused";
@@ -1818,6 +1821,7 @@ let
       DefaultColumnPresentation = "stacked";
       DefaultColumnWidthPercent = 33;
       DefaultColumnWidthPixels = 0;
+      UseInitialWindowWidth = false;
       DefaultFloatingPosition = "";
       DefaultInitialDestination = "";
       DefaultInitialFocus = "default";
@@ -2013,11 +2017,11 @@ assert homeManagerSettings.config.qt.kde.settings == expectedSettings;
 assert homeManagerDefaultSettings.config.qt.kde.settings == expectedDefaultSettings;
 assert
   builtins.length (builtins.attrNames expectedSettings.kwinrc."Script-io.github.kontonkara.driftile")
-  == 40;
+  == 41;
 assert
   builtins.length (
     builtins.attrNames expectedDefaultSettings.kwinrc."Script-io.github.kontonkara.driftile"
-  ) == 37;
+  ) == 38;
 assert
   homeManagerMaximumDefaultColumnWidthPixels.config.qt.kde.settings.kwinrc."Script-io.github.kontonkara.driftile".DefaultColumnWidthPixels
   == 16384;
@@ -2229,6 +2233,7 @@ assert
       DefaultColumnPresentation = "stacked";
       DefaultColumnWidthPercent = 33;
       DefaultColumnWidthPixels = 0;
+      UseInitialWindowWidth = false;
       DefaultFloatingPosition = "";
       DefaultInitialDestination = "";
       DefaultInitialFocus = "default";

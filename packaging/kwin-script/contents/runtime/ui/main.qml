@@ -1178,6 +1178,7 @@ QtObject {
             defaultColumnPresentation: KWin.readConfig("DefaultColumnPresentation", "stacked"),
             defaultColumnWidthPercent: KWin.readConfig("DefaultColumnWidthPercent", 33),
             defaultColumnWidthPixels: KWin.readConfig("DefaultColumnWidthPixels", 0),
+            useInitialWindowWidth: KWin.readConfig("UseInitialWindowWidth", false),
             defaultFloatingPosition: KWin.readConfig("DefaultFloatingPosition", ""),
             defaultInitialDestination: KWin.readConfig("DefaultInitialDestination", ""),
             defaultInitialFocus: KWin.readConfig("DefaultInitialFocus", "default"),

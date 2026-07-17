@@ -50,6 +50,7 @@ interface DeliveredSettings {
   readonly columnWidthStepPixels: number;
   readonly columnWidthStepPercent: number;
   readonly defaultColumnWidth: ColumnWidth;
+  readonly useInitialWindowWidth: boolean;
   readonly defaultColumnPresentation: "stacked" | "tabbed";
   readonly defaultFloatingPosition: ApplicationFloatingPosition | null;
   readonly defaultInitialDestination: ApplicationInitialDestination | null;
@@ -104,6 +105,7 @@ interface RuntimeControllerOptions {
   readonly numberedDesktopTargets: NumberedDesktopTargets;
   readonly schedule: (callback: () => void) => void;
   readonly workspaceAutoBackAndForth: boolean;
+  readonly useInitialWindowWidth: boolean;
 }
 
 const controllerInstances: RuntimeControllerDouble[] = [];
@@ -158,6 +160,7 @@ class RuntimeControllerDouble {
       columnWidthStepPixels: 0,
       columnWidthStepPercent: 1,
       defaultColumnWidth: { ...options.columnWidth },
+      useInitialWindowWidth: options.useInitialWindowWidth,
       defaultColumnPresentation: options.defaultColumnPresentation,
       defaultFloatingPosition: options.defaultFloatingPosition,
       defaultInitialDestination: options.defaultInitialDestination,
@@ -403,6 +406,12 @@ class RuntimeControllerDouble {
     return true;
   }
 
+  setUseInitialWindowWidth(value: boolean): boolean {
+    this.calls.push("useInitialWindowWidth");
+    this.state = { ...this.state, useInitialWindowWidth: value };
+    return true;
+  }
+
   setDefaultColumnPresentation(value: "stacked" | "tabbed"): boolean {
     this.calls.push("defaultColumnPresentation");
     this.state = { ...this.state, defaultColumnPresentation: value };
@@ -535,6 +544,7 @@ describe("runtime settings delivery", () => {
       defaultFloatingPosition: "top-left,12,8",
       defaultInitialDestination: "desktop:2,output:DP-1",
       defaultInitialFocus: "focused",
+      useInitialWindowWidth: true,
       emptyDesktopAboveFirst: true,
       numberedDesktopTargets: "1=Web\n9=Archive",
       windowHeightPresets: "30,640px,60,960px,90",
@@ -590,6 +600,7 @@ describe("runtime settings delivery", () => {
       kind: "proportion",
       value: 0.5,
     });
+    expect(controller.deliveredSettings.useInitialWindowWidth).toBe(true);
     expect(controller.deliveredSettings.defaultFloatingPosition).toEqual({
       anchor: "top-left",
       x: 12,
@@ -645,6 +656,7 @@ describe("runtime settings delivery", () => {
       defaultColumnPresentation: "tabbed",
       defaultColumnWidthPercent: 65,
       defaultColumnWidthPixels: 720,
+      useInitialWindowWidth: false,
       defaultFloatingPosition: "bottom-right,24,16",
       defaultInitialDestination: "desktop-name:Work,output:HDMI-A-1",
       defaultInitialFocus: "unfocused",
@@ -686,6 +698,7 @@ describe("runtime settings delivery", () => {
       columnWidthStepPixels: 144,
       columnWidthStepPercent: 13,
       defaultColumnWidth: { kind: "fixed", value: 720 },
+      useInitialWindowWidth: false,
       defaultColumnPresentation: "tabbed",
       defaultFloatingPosition: {
         anchor: "bottom-right",
@@ -733,6 +746,7 @@ describe("runtime settings delivery", () => {
       "centerFocusedColumnOnOverflow",
       "defaultColumnPresentation",
       "defaultColumnWidth",
+      "useInitialWindowWidth",
       "defaultFloatingPosition",
       "defaultInitialDestination",
       "defaultInitialFocus",
@@ -838,6 +852,7 @@ describe("runtime settings delivery", () => {
       "centerFocusedColumnOnOverflow",
       "defaultColumnPresentation",
       "defaultColumnWidth",
+      "useInitialWindowWidth",
       "defaultFloatingPosition",
       "defaultInitialDestination",
       "defaultInitialFocus",
@@ -896,6 +911,7 @@ function settings(
     defaultColumnPresentation: "stacked",
     defaultColumnWidthPercent: 50,
     defaultColumnWidthPixels: 0,
+    useInitialWindowWidth: false,
     defaultFloatingPosition: "",
     defaultInitialDestination: "",
     defaultInitialFocus: "default",

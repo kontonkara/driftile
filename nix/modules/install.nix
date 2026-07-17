@@ -744,6 +744,12 @@ in
               description = "Fixed default column width in logical pixels; zero uses defaultColumnWidthPercent.";
             };
 
+            useInitialWindowWidth = lib.mkOption {
+              type = lib.types.bool;
+              default = false;
+              description = "Whether genuinely new singleton tiled columns may adopt the live window frame width when no exact application width rule matches.";
+            };
+
             defaultFloatingPosition = lib.mkOption {
               type = lib.types.nullOr floatingPositionType;
               default = null;
@@ -894,6 +900,7 @@ in
           DefaultColumnPresentation = cfg.settings.defaultColumnPresentation;
           DefaultColumnWidthPercent = cfg.settings.defaultColumnWidthPercent;
           DefaultColumnWidthPixels = cfg.settings.defaultColumnWidthPixels;
+          UseInitialWindowWidth = cfg.settings.useInitialWindowWidth;
           DefaultFloatingPosition = renderDefaultFloatingPosition cfg.settings.defaultFloatingPosition;
           DefaultInitialDestination = renderInitialDestination cfg.settings.defaultInitialDestination;
           DefaultInitialFocus = cfg.settings.defaultInitialFocus;

@@ -967,6 +967,7 @@ describe("KWin shortcut handlers", () => {
       "kcfg_DefaultColumnPresentation",
       "kcfg_DefaultColumnWidthPercent",
       "kcfg_DefaultColumnWidthPixels",
+      "kcfg_UseInitialWindowWidth",
       "kcfg_DefaultWindowHeight",
       "kcfg_ColumnWidthStepPercent",
       "kcfg_ColumnWidthStepPixels",
@@ -1316,6 +1317,12 @@ describe("KWin shortcut handlers", () => {
     const fixedWidthWidget = configurationUi.match(
       /<widget class="QSpinBox" name="kcfg_DefaultColumnWidthPixels">([\s\S]*?)<\/widget>/,
     )?.[1];
+    const initialWidthEntry = configuration.match(
+      /<entry name="UseInitialWindowWidth" type="Bool">([\s\S]*?)<\/entry>/,
+    )?.[1];
+    const initialWidthWidget = configurationUi.match(
+      /<widget class="QCheckBox" name="kcfg_UseInitialWindowWidth">([\s\S]*?)<\/widget>/,
+    )?.[1];
     const heightEntry = configuration.match(
       /<entry name="DefaultWindowHeight" type="String">([\s\S]*?)<\/entry>/,
     )?.[1];
@@ -1411,6 +1418,31 @@ describe("KWin shortcut handlers", () => {
     );
     expect(qml).toContain(
       `defaultColumnWidthPixels: KWin.readConfig("DefaultColumnWidthPixels", ${String(DEFAULT_DRIFTILE_SETTINGS.defaultColumnWidthPixels)})`,
+    );
+    expect(initialWidthEntry).toContain(
+      "<label>Use the initial window frame width for new singleton tiled columns</label>",
+    );
+    expect(initialWidthEntry).toContain("<default>false</default>");
+    expect(initialWidthWidget).toContain(
+      "<string>Use the initial window frame width for new singleton tiled columns</string>",
+    );
+    expect(initialWidthWidget).toContain(
+      "genuinely new singleton tiled column",
+    );
+    expect(initialWidthWidget).toContain(
+      "An exact application width rule takes precedence.",
+    );
+    expect(initialWidthWidget).toContain(
+      "The default 33% width and existing columns remain unchanged.",
+    );
+    expect(qml).toContain(
+      `useInitialWindowWidth: KWin.readConfig("UseInitialWindowWidth", ${String(DEFAULT_DRIFTILE_SETTINGS.useInitialWindowWidth)})`,
+    );
+    expect(runtime).toContain(
+      "useInitialWindowWidth: settings.useInitialWindowWidth",
+    );
+    expect(runtime).toContain(
+      "controller.setUseInitialWindowWidth(settings.useInitialWindowWidth)",
     );
     expect(heightEntry).toContain(
       "<label>Default initial tiled client height</label>",

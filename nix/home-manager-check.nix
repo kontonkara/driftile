@@ -128,6 +128,7 @@ let
         defaultColumnPresentation = "tabbed";
         defaultColumnWidthPercent = 65;
         defaultColumnWidthPixels = 960;
+        useInitialWindowWidth = true;
         defaultFloatingPosition = {
           anchor = "right";
           x = -36;
@@ -962,6 +963,7 @@ assert
       DefaultColumnPresentation = "tabbed";
       DefaultColumnWidthPercent = 65;
       DefaultColumnWidthPixels = 960;
+      UseInitialWindowWidth = true;
       DefaultFloatingPosition = "right,-36,48";
       DefaultInitialDestination = "desktop:4,output:DP-4";
       DefaultInitialFocus = "unfocused";
@@ -986,7 +988,7 @@ assert
 assert
   builtins.length (
     builtins.attrNames standalone.config.qt.kde.settings.kwinrc."Script-io.github.kontonkara.driftile"
-  ) == 40;
+  ) == 41;
 assert
   standalone.config.xdg.configFile."driftile/shortcuts.json".text == ''
     {"bindings":{"driftile_focus_column_left":["Meta+A"],"driftile_reset_column_width":[]},"version":1}
@@ -1028,6 +1030,7 @@ assert
       DefaultColumnPresentation = "stacked";
       DefaultColumnWidthPercent = 33;
       DefaultColumnWidthPixels = 0;
+      UseInitialWindowWidth = false;
       DefaultFloatingPosition = "";
       DefaultInitialDestination = "";
       DefaultInitialFocus = "default";

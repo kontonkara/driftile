@@ -1040,6 +1040,7 @@ export interface RuntimeControllerOptions {
     ownerToken?: string,
   ) => void;
   readonly startupStabilizationProbes?: number;
+  readonly useInitialWindowWidth?: boolean;
   readonly workspaceAutoBackAndForth?: boolean;
 }
 
@@ -1270,6 +1271,7 @@ export class RuntimeController {
   private defaultInitialDestination: ApplicationInitialDestination | null;
   private defaultInitialFocus: DefaultInitialFocus;
   private defaultWindowHeight: DefaultWindowHeight;
+  private useInitialWindowWidth: boolean;
   private windowHeightStep = DEFAULT_WINDOW_HEIGHT_STEP_PERCENT / 100;
   private windowHeightStepPixels = 0;
   private windowHeightPresetCycle: readonly WindowHeightPresetCycleEntry[] =
@@ -1405,6 +1407,7 @@ export class RuntimeController {
       decodeDefaultWindowHeight(
         options.defaultWindowHeight?.canonicalValue ?? "auto",
       ) ?? AUTOMATIC_DEFAULT_WINDOW_HEIGHT;
+    this.useInitialWindowWidth = options.useInitialWindowWidth ?? false;
     this.gap = normalizeGap(options.gap ?? DEFAULT_GAP) ?? DEFAULT_GAP;
     this.initialLayoutHydrationQuietSamples = normalizeProbeCount(
       options.layoutHydrationQuietSamples ?? 2,
@@ -2050,6 +2053,32 @@ export class RuntimeController {
 
     this.pendingDefaultColumnWidth = normalized;
     this.scheduleDeferredRuntimeWork();
+    return true;
+  }
+
+  setUseInitialWindowWidth(enabled: boolean): boolean {
+    if (
+      typeof enabled !== "boolean" ||
+      this.useInitialWindowWidth === enabled
+    ) {
+      return false;
+    }
+
+    this.useInitialWindowWidth = enabled;
+    this.invalidatePointerExternalEmptyPreviewPolicy();
+
+    if (!this.started) {
+      return true;
+    }
+
+    for (const key of this.waitingWindowIds.keys()) {
+      this.pendingAdmissionContexts.add(key);
+    }
+
+    if (this.pendingAdmissionContexts.size > 0) {
+      this.scheduleDeferredRuntimeWork();
+    }
+
     return true;
   }
 
@@ -31676,7 +31705,7 @@ export class RuntimeController {
       return null;
     }
 
-    const width = this.initialColumnWidth(sources);
+    const width = this.initialColumnWidth(sources, devicePixelRatio);
     let requestedWidth: number;
 
     if (width.kind === "fixed") {
@@ -31713,22 +31742,41 @@ export class RuntimeController {
     return { ...width };
   }
 
-  private initialColumnWidth(sources: readonly KWinWindow[]): ColumnWidth {
+  private initialColumnWidth(
+    sources: readonly KWinWindow[],
+    devicePixelRatio: number,
+  ): ColumnWidth {
     if (sources.length !== 1) {
       return this.defaultColumnWidth;
     }
 
-    const applicationId = sources[0]
-      ? applicationRuleIdentity(sources[0])
-      : null;
+    const source = sources[0];
+    const applicationId = source ? applicationRuleIdentity(source) : null;
+    const applicationWidth =
+      applicationId === null
+        ? undefined
+        : this.applicationColumnWidths.columnWidthFor(applicationId);
 
-    if (applicationId === null) {
+    if (applicationWidth !== undefined) {
+      return { ...applicationWidth };
+    }
+
+    const frameWidth = source?.frameGeometry.width;
+
+    if (
+      !this.useInitialWindowWidth ||
+      !Number.isFinite(frameWidth) ||
+      frameWidth === undefined ||
+      frameWidth <= 0
+    ) {
       return this.defaultColumnWidth;
     }
 
-    const width = this.applicationColumnWidths.columnWidthFor(applicationId);
+    const width = roundToPhysicalPixel(frameWidth, devicePixelRatio);
 
-    return width === undefined ? this.defaultColumnWidth : { ...width };
+    return Number.isFinite(width) && width > 0
+      ? { kind: "fixed", value: width }
+      : this.defaultColumnWidth;
   }
 
   private initialWindowHeight(source: KWinWindow): WindowHeight | undefined {

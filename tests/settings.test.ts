@@ -231,6 +231,7 @@ const validSettings: DriftileSettings = {
   defaultColumnPresentation: "tabbed",
   defaultColumnWidthPercent: 75,
   defaultColumnWidthPixels: 960,
+  useInitialWindowWidth: true,
   defaultFloatingPosition: validDefaultFloatingPosition.floatingPosition,
   defaultInitialDestination: validDefaultInitialDestination.initialDestination,
   defaultInitialFocus: "focused",
@@ -277,6 +278,7 @@ const validSettingsInput = {
   defaultColumnPresentation: validSettings.defaultColumnPresentation,
   defaultColumnWidthPercent: validSettings.defaultColumnWidthPercent,
   defaultColumnWidthPixels: validSettings.defaultColumnWidthPixels,
+  useInitialWindowWidth: validSettings.useInitialWindowWidth,
   defaultFloatingPosition: validDefaultFloatingPosition.canonicalValue,
   defaultInitialDestination: validDefaultInitialDestination.canonicalValue,
   defaultInitialFocus: validSettings.defaultInitialFocus,
@@ -308,6 +310,7 @@ describe("Driftile settings", () => {
       defaultColumnPresentation: "stacked",
       defaultColumnWidthPercent: 33,
       defaultColumnWidthPixels: 0,
+      useInitialWindowWidth: false,
       defaultFloatingPosition: null,
       defaultInitialDestination: null,
       defaultInitialFocus: DEFAULT_INITIAL_FOCUS,
@@ -413,6 +416,7 @@ describe("Driftile settings", () => {
       defaultColumnPresentation: validSettings.defaultColumnPresentation,
       defaultColumnWidthPercent: validSettings.defaultColumnWidthPercent,
       defaultColumnWidthPixels: validSettings.defaultColumnWidthPixels,
+      useInitialWindowWidth: validSettings.useInitialWindowWidth,
       defaultFloatingPosition: validSettings.defaultFloatingPosition,
       defaultInitialDestination: validSettings.defaultInitialDestination,
       defaultInitialFocus: validSettings.defaultInitialFocus,
@@ -571,6 +575,7 @@ describe("Driftile settings", () => {
       defaultColumnPresentation: "stacked",
       defaultColumnWidthPercent: 10,
       defaultColumnWidthPixels: 0,
+      useInitialWindowWidth: false,
       defaultFloatingPosition: "",
       defaultInitialDestination: "",
       defaultInitialFocus: "default",
@@ -613,6 +618,7 @@ describe("Driftile settings", () => {
       defaultColumnPresentation: "tabbed",
       defaultColumnWidthPercent: 100,
       defaultColumnWidthPixels: 16_384,
+      useInitialWindowWidth: true,
       defaultFloatingPosition: "right,16384,-16384",
       defaultInitialDestination: "desktop:25,output:DP-1",
       defaultInitialFocus: "unfocused",
@@ -709,6 +715,7 @@ describe("Driftile settings", () => {
       defaultColumnPresentation: settings.defaultColumnPresentation,
       defaultColumnWidthPercent: settings.defaultColumnWidthPercent,
       defaultColumnWidthPixels: settings.defaultColumnWidthPixels,
+      useInitialWindowWidth: settings.useInitialWindowWidth,
       emptyDesktopAboveFirst: settings.emptyDesktopAboveFirst,
       gap: settings.gap,
       showTabIndicator: settings.showTabIndicator,
@@ -736,6 +743,7 @@ describe("Driftile settings", () => {
       "a non-boolean overflow centering setting",
       { centerFocusedColumnOnOverflow: 1 },
     ],
+    ["a non-boolean initial-width setting", { useInitialWindowWidth: 1 }],
     ["a non-boolean tab-indicator setting", { showTabIndicator: 1 }],
     ["a non-boolean touchpad setting", { touchpadNavigation: 1 }],
     [
@@ -928,7 +936,7 @@ describe("Driftile settings", () => {
     },
   );
 
-  it("rejects an incomplete forty-field snapshot", () => {
+  it("rejects an incomplete forty-one-field snapshot", () => {
     const incomplete: Record<string, unknown> = { ...validSettingsInput };
     delete incomplete["defaultColumnWidthPixels"];
 
@@ -1119,6 +1127,7 @@ describe("Driftile settings", () => {
       { defaultColumnPresentation: "stacked" as const },
       { defaultColumnWidthPercent: 76 },
       { defaultColumnWidthPixels: 961 },
+      { useInitialWindowWidth: false },
       { defaultFloatingPosition: changedDefaultFloatingPosition },
       { defaultInitialDestination: changedDefaultInitialDestination },
       { defaultInitialFocus: "unfocused" as const },

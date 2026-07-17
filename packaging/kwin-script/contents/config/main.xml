@@ -72,6 +72,10 @@
       <min>0</min>
       <max>16384</max>
     </entry>
+    <entry name="UseInitialWindowWidth" type="Bool">
+      <label>Use the initial window frame width for new singleton tiled columns</label>
+      <default>false</default>
+    </entry>
     <entry name="DefaultWindowHeight" type="String">
       <label>Default initial tiled client height</label>
       <default>auto</default>

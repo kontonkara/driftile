@@ -147,6 +147,7 @@ export function init(
     ...indicatorCallbacks,
     ...previewCallbacks,
     startupStabilizationProbes: STARTUP_STABILIZATION_PROBES,
+    useInitialWindowWidth: settings.useInitialWindowWidth,
     workspaceAutoBackAndForth: settings.workspaceAutoBackAndForth,
     ...(layoutPersistence.onStateChanged === undefined
       ? {}
@@ -249,6 +250,7 @@ export function applySettings(settingsSnapshot: unknown): boolean {
   );
   controller.setDefaultColumnPresentation(settings.defaultColumnPresentation);
   controller.setDefaultColumnWidth(defaultColumnWidthForSettings(settings));
+  controller.setUseInitialWindowWidth(settings.useInitialWindowWidth);
   controller.setDefaultFloatingPosition(settings.defaultFloatingPosition);
   controller.setDefaultInitialDestination(settings.defaultInitialDestination);
   controller.setDefaultInitialFocus(settings.defaultInitialFocus);

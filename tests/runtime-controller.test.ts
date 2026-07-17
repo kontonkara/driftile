@@ -27,6 +27,7 @@ import {
 import {
   columnWindowHeights,
   LayoutEngine,
+  type ColumnWidth,
   type WindowHeight,
 } from "../src/core/layout-engine";
 import {
@@ -43,6 +44,7 @@ import type {
 } from "../src/platform/kwin/api";
 import { FALLBACK_ACTIVITY_ID } from "../src/platform/kwin/activity-adapter";
 import { DesktopLifecycle } from "../src/platform/kwin/desktop-lifecycle";
+import type { ContextGeometry } from "../src/platform/kwin/geometry-adapter";
 import { RuntimeController } from "../src/runtime-controller";
 
 const PERFORMANCE_REFERENCE = Object.freeze({
@@ -8920,6 +8922,189 @@ describe("RuntimeController", () => {
           column.windowIds.includes(windowId("browser-constrained")),
         )?.width,
     ).toEqual({ kind: "fixed", value: 249.6 });
+  });
+
+  it("uses constrained initial frame widths only without an exact application override", () => {
+    const output = {
+      ...createOutput("DP-1", 0),
+      devicePixelRatio: 1.25,
+    } satisfies KWinOutput;
+    const desktop = { id: "desktop-1" };
+    const initial = createTrackedWindow("initial", output, desktop, {
+      frameGeometry: { height: 200, width: 347.3, x: 0, y: 0 },
+    });
+    const overridden = createTrackedWindow("overridden", output, desktop, {
+      desktopFileName: "org.example.Editor",
+      frameGeometry: { height: 200, width: 620, x: 0, y: 0 },
+    });
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [initial.window, overridden.window],
+    );
+    const applicationWidths = decodeApplicationColumnWidthOverrides(
+      "org.example.Editor=40%",
+    );
+
+    if (!applicationWidths) {
+      throw new Error("application override fixture is invalid");
+    }
+
+    const controller = new RuntimeController(fixture.workspace, {
+      applicationColumnWidths: applicationWidths,
+      clientAreaOption: 2,
+      columnWidth: { kind: "proportion", value: 0.33 },
+      gap: 10,
+      useInitialWindowWidth: true,
+    });
+
+    expect(controller.start()).toBe(true);
+    const columns = runtimeLayout(controller).snapshot(
+      outputId(output.name),
+      desktopId(desktop.id),
+      FALLBACK_ACTIVITY_ID,
+    ).columns;
+    expect(
+      columns.find((column) => column.windowIds.includes(windowId("initial")))
+        ?.width,
+    ).toEqual({ kind: "fixed", value: 347.2 });
+    expect(
+      columns.find((column) =>
+        column.windowIds.includes(windowId("overridden")),
+      )?.width,
+    ).toEqual({ kind: "proportion", value: 0.4 });
+
+    const runtime = controller as unknown as {
+      constrainedDefaultColumnWidth(
+        sources: readonly KWinWindow[],
+        geometry: ContextGeometry,
+      ): ColumnWidth | null;
+      readonly geometry: {
+        contextGeometry(
+          output: ReturnType<typeof outputId>,
+          desktop: ReturnType<typeof desktopId>,
+        ): ContextGeometry | null;
+      };
+      initialColumnWidth(
+        sources: readonly KWinWindow[],
+        devicePixelRatio: number,
+      ): ColumnWidth;
+    };
+    const geometry = runtime.geometry.contextGeometry(
+      outputId(output.name),
+      desktopId(desktop.id),
+    );
+
+    if (!geometry) {
+      throw new Error("context geometry fixture is unavailable");
+    }
+
+    const minimum = createTrackedWindow("minimum", output, desktop, {
+      frameGeometry: { height: 200, width: 240, x: 0, y: 0 },
+      minSize: { height: 1, width: 360.1 },
+    });
+    const maximum = createTrackedWindow("maximum", output, desktop, {
+      frameGeometry: { height: 200, width: 700, x: 0, y: 0 },
+      maxSize: { height: 10_000, width: 459.9 },
+    });
+    expect(
+      runtime.constrainedDefaultColumnWidth([minimum.window], geometry),
+    ).toEqual({ kind: "fixed", value: 360.8 });
+    expect(
+      runtime.constrainedDefaultColumnWidth([maximum.window], geometry),
+    ).toEqual({ kind: "fixed", value: 459.2 });
+
+    const invalid = createTrackedWindow("invalid", output, desktop);
+    invalid.window.frameGeometry = {
+      ...invalid.window.frameGeometry,
+      width: Number.NaN,
+    };
+    expect(runtime.initialColumnWidth([invalid.window], 1.25)).toEqual({
+      kind: "proportion",
+      value: 0.33,
+    });
+    expect(
+      runtime.initialColumnWidth([initial.window, overridden.window], 1.25),
+    ).toEqual({ kind: "proportion", value: 0.33 });
+  });
+
+  it("applies initial-width setting changes only to future columns", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const existing = createTrackedWindow("existing", output, desktop, {
+      frameGeometry: { height: 200, width: 420, x: 0, y: 0 },
+    });
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [existing.window],
+    );
+    const scheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      columnWidth: { kind: "proportion", value: 0.25 },
+      gap: 10,
+      schedule: scheduler.schedule,
+    });
+
+    expect(controller.start()).toBe(true);
+    expect(activeColumnWidth(controller, output, desktop)).toEqual({
+      kind: "proportion",
+      value: 0.25,
+    });
+    const existingFrame = { ...existing.window.frameGeometry };
+    const existingWrites = existing.writeCount;
+
+    expect(controller.setUseInitialWindowWidth(true)).toBe(true);
+    expect(controller.setUseInitialWindowWidth(true)).toBe(false);
+    expect(
+      controller.setUseInitialWindowWidth("true" as unknown as boolean),
+    ).toBe(false);
+    expect(existing.window.frameGeometry).toEqual(existingFrame);
+    expect(existing.writeCount).toBe(existingWrites);
+
+    const initial = createTrackedWindow("initial", output, desktop, {
+      frameGeometry: { height: 200, width: 360, x: 0, y: 0 },
+    });
+    fixture.windowAdded.emit(initial.window);
+    flushManualScheduler(scheduler);
+    expect(
+      runtimeLayout(controller)
+        .snapshot(
+          outputId(output.name),
+          desktopId(desktop.id),
+          FALLBACK_ACTIVITY_ID,
+        )
+        .columns.find((column) =>
+          column.windowIds.includes(windowId("initial")),
+        )?.width,
+    ).toEqual({ kind: "fixed", value: 360 });
+
+    const settled = captureTrackedWindowState([existing, initial]);
+    expect(controller.setUseInitialWindowWidth(false)).toBe(true);
+    expect(controller.setUseInitialWindowWidth(false)).toBe(false);
+    expectTrackedWindowState([existing, initial], settled);
+
+    const fallback = createTrackedWindow("fallback", output, desktop, {
+      frameGeometry: { height: 200, width: 430, x: 0, y: 0 },
+    });
+    fixture.windowAdded.emit(fallback.window);
+    flushManualScheduler(scheduler);
+    expect(
+      runtimeLayout(controller)
+        .snapshot(
+          outputId(output.name),
+          desktopId(desktop.id),
+          FALLBACK_ACTIVITY_ID,
+        )
+        .columns.find((column) =>
+          column.windowIds.includes(windowId("fallback")),
+        )?.width,
+    ).toEqual({ kind: "proportion", value: 0.25 });
   });
 
   it("applies initial height policies only to fresh singleton admissions", () => {

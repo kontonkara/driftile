@@ -135,7 +135,7 @@ const MIN_RESIZE_STEP_PIXELS = 0;
 const MAX_RESIZE_STEP_PIXELS = 16_384;
 const MIN_TOUCHPAD_NAVIGATION_FINGER_COUNT = 3;
 const MAX_TOUCHPAD_NAVIGATION_FINGER_COUNT = 5;
-const SETTINGS_FIELD_COUNT = 40;
+const SETTINGS_FIELD_COUNT = 41;
 
 export interface DriftileSettings {
   readonly applicationBorderlessExclusions: ApplicationBorderlessExclusions;
@@ -162,6 +162,7 @@ export interface DriftileSettings {
   readonly defaultColumnPresentation: ColumnPresentation;
   readonly defaultColumnWidthPercent: number;
   readonly defaultColumnWidthPixels: number;
+  readonly useInitialWindowWidth: boolean;
   readonly defaultFloatingPosition: ApplicationFloatingPosition | null;
   readonly defaultInitialDestination: ApplicationInitialDestination | null;
   readonly defaultInitialFocus: DefaultInitialFocus;
@@ -205,6 +206,7 @@ export const DEFAULT_DRIFTILE_SETTINGS: DriftileSettings = Object.freeze({
   defaultColumnPresentation: "stacked",
   defaultColumnWidthPercent: 33,
   defaultColumnWidthPixels: 0,
+  useInitialWindowWidth: false,
   defaultFloatingPosition: null,
   defaultInitialDestination: null,
   defaultInitialFocus: DEFAULT_INITIAL_FOCUS,
@@ -258,6 +260,7 @@ export function decodeDriftileSettings(
     !owns(candidate, "defaultColumnPresentation") ||
     !owns(candidate, "defaultColumnWidthPercent") ||
     !owns(candidate, "defaultColumnWidthPixels") ||
+    !owns(candidate, "useInitialWindowWidth") ||
     !owns(candidate, "defaultFloatingPosition") ||
     !owns(candidate, "defaultInitialDestination") ||
     !owns(candidate, "defaultInitialFocus") ||
@@ -333,6 +336,7 @@ export function decodeDriftileSettings(
   const defaultColumnPresentation = candidate["defaultColumnPresentation"];
   const defaultColumnWidthPercent = candidate["defaultColumnWidthPercent"];
   const defaultColumnWidthPixels = candidate["defaultColumnWidthPixels"];
+  const useInitialWindowWidth = candidate["useInitialWindowWidth"];
   const decodedDefaultFloatingPosition = decodeDefaultFloatingPosition(
     candidate["defaultFloatingPosition"],
   );
@@ -404,6 +408,7 @@ export function decodeDriftileSettings(
       MIN_DEFAULT_COLUMN_WIDTH_PIXELS,
       MAX_DEFAULT_COLUMN_WIDTH_PIXELS,
     ) ||
+    typeof useInitialWindowWidth !== "boolean" ||
     !decodedDefaultFloatingPosition ||
     !decodedDefaultInitialDestination ||
     !defaultInitialFocus ||
@@ -461,6 +466,7 @@ export function decodeDriftileSettings(
     defaultColumnPresentation,
     defaultColumnWidthPercent,
     defaultColumnWidthPixels,
+    useInitialWindowWidth,
     defaultFloatingPosition: decodedDefaultFloatingPosition.floatingPosition,
     defaultInitialDestination:
       decodedDefaultInitialDestination.initialDestination,
@@ -556,6 +562,7 @@ export function sameDriftileSettings(
     left.defaultColumnPresentation === right.defaultColumnPresentation &&
     left.defaultColumnWidthPercent === right.defaultColumnWidthPercent &&
     left.defaultColumnWidthPixels === right.defaultColumnWidthPixels &&
+    left.useInitialWindowWidth === right.useInitialWindowWidth &&
     sameDefaultFloatingPositions(
       left.defaultFloatingPosition,
       right.defaultFloatingPosition,
