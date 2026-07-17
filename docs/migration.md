@@ -1,7 +1,33 @@
 # Migration
 
-The latest stable release is 1.55.0. Use the steps below when changing release
+The latest stable release is 1.56.0. Use the steps below when changing release
 generations, and never combine files from different releases.
+
+## Upgrade from 1.55.0 to 1.56.0
+
+1. Release a helper-owned shortcut profile with the installed helper.
+2. Disable Driftile and both optional effects in System Settings.
+3. Install matching 1.56.0 artifacts, or pin the Nix input to `v1.56.0` and
+   rebuild.
+4. Re-enable Driftile and only the optional effects you use, then reclaim the
+   helper profile if needed.
+
+Logical layout state remains v4, and settings, schemas, actions, default
+bindings, layout, and input behavior are unchanged. Upgrade the optional
+Overview package to show static labels on ordinary large thumbnails. A
+normalized caption is primary; the application identity is its fallback or a
+distinct secondary line. Tabs and minimized placeholders share the normalized
+text, while small thumbnails keep their existing presentation without a
+footer. The main script and transition effect retain their 1.55.0 behavior.
+
+## Roll back from 1.56.0 to 1.55.0
+
+Release a helper-owned profile, disable Driftile and both optional effects,
+then restore matching verified 1.55.0 artifacts or pin the Nix input to
+`v1.55.0` and rebuild. Both versions use logical layout state v4 with the same
+settings, schemas, actions, default bindings, layout, and input behavior. The
+older Overview safely omits the static labels while retaining actionable
+minimized tabs and placeholders.
 
 ## Upgrade from 1.54.0 to 1.55.0
 
