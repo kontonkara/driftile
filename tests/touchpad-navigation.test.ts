@@ -143,6 +143,10 @@ class RuntimeControllerDouble {
     return true;
   }
 
+  setUseInitialWindowWidth(): boolean {
+    return true;
+  }
+
   setDefaultColumnPresentation(): boolean {
     return true;
   }
@@ -498,6 +502,7 @@ function settings(
     defaultColumnPresentation: "stacked",
     defaultColumnWidthPercent: 50,
     defaultColumnWidthPixels: 0,
+    useInitialWindowWidth: false,
     defaultFloatingPosition: "",
     defaultInitialDestination: "",
     defaultInitialFocus: "default",
