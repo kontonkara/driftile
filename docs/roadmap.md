@@ -2108,3 +2108,28 @@ Release criteria (met):
 - Labels remain static and read-only with no new pointer or keyboard input,
   timer, animation, layout or settings write, action, binding, persistence field,
   or private API.
+
+### 1.57.0 (in development)
+
+- Add a live `ShowWindowLabels` preference with the existing labeled
+  presentation as its default.
+- Hide only the ordinary large-thumbnail footer when disabled; keep tab and
+  minimized-placeholder labels and targets intact.
+- Add a live `ShowApplicationIdentity` preference that retains captions while
+  suppressing application fallback and secondary text.
+- Avoid reading application identity fields when that presentation is disabled.
+- Expose both nullable per-user preferences through Home Manager without
+  changing system package ownership or the NixOS option surface.
+
+Release criteria:
+
+- Malformed external values fall back to the existing enabled presentation.
+- Both preferences update through KConfig without restarting KWin and preserve
+  search, pointer, keyboard, close, layout, and persistence behavior.
+- Caption-only planning remains bounded and does not access hidden identity
+  fields.
+- One grouped package, Nix, Wayland, X11, and hidden VM gate passes before
+  publication.
+
+The batch adds no action, binding, input handler, geometry or layout write,
+persistence field, animation, timer, private API, or KWin fork.

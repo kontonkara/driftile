@@ -97,6 +97,10 @@ fallback or as a distinct secondary line. Tabs and minimized placeholders use
 the same bounded caption and application-identity normalization. Small frames
 keep their existing presentation without a footer.
 
+Version 1.57.0 adds live presentation controls for the ordinary thumbnail
+footer and application identity. Both preserve the 1.56.0 presentation by
+default and change no window target or search result.
+
 The companion is disabled by default. When enabled with a fresh shortcut
 record, `Meta+O` toggles it. KGlobalAccel preserves an existing assignment
 across upgrades, including an explicitly unbound action, so review it in
@@ -210,8 +214,14 @@ from the same normalized caption and identity fields.
 Control characters and repeated whitespace are removed before display, and QML
 elides text that does not fit. A small thumbnail hides the complete footer;
 malformed, empty, or inaccessible identity fields fail closed. Labels are
-plain text and add no pointer target, input path, animation, timer, setting,
-action, binding, layout or persistence write, or private API.
+plain text and add no pointer target, input path, animation, timer, action,
+binding, layout or persistence write, or private API.
+
+The effect settings can hide ordinary thumbnail footers while retaining the
+labels needed by tabs and minimized placeholders. Application identity can be
+disabled independently; captions remain normalized, and a missing caption then
+uses the existing tab or placeholder fallback. Both settings update live and
+do not alter search matching.
 
 ## Minimized placeholders
 
@@ -344,6 +354,8 @@ package ownership:
 ```nix
 programs.driftile.overview.screenEdge = "top-left";
 programs.driftile.overview.backdropColor = "#E60B0F17";
+programs.driftile.overview.showWindowLabels = true;
+programs.driftile.overview.showApplicationIdentity = true;
 programs.driftile.overview.touchpadGesture = {
   enable = true;
   fingerCount = 4;
@@ -373,6 +385,10 @@ and tracked floating placeholders without adding drag or layout ownership.
 Version 1.56.0 adds focused normalization and QML contract coverage for static
 thumbnail, tab, and minimized-placeholder labels without changing their input
 or layout behavior.
+
+Version 1.57.0 adds focused KConfig, QML, normalization, NixOS-surface, and Home
+Manager coverage for live label presentation preferences without changing
+window targets or search behavior.
 
 ## Safety boundary
 
