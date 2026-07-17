@@ -21,9 +21,7 @@ function required<T>(value: T | undefined): T {
 
 const leftAction = action("driftile_focus_column_left");
 const rightAction = action("driftile_focus_column_right");
-const catalogUnboundAction = required(
-  shortcutActions.find((candidate) => candidate.defaultSequence === undefined),
-);
+const catalogUnboundAction = action("driftile_send_window_to_next_desktop");
 
 function action(name: string): ShortcutAction {
   return required(shortcutActions.find((candidate) => candidate.name === name));

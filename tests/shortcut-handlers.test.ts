@@ -434,37 +434,64 @@ const expectedHandlers: Readonly<
     activated: "Runtime.DriftileRuntime.moveColumnToDesktop(1)",
     sequence: "Meta+Ctrl+1",
   },
+  driftile_send_column_to_desktop_1: {
+    activated: "Runtime.DriftileRuntime.sendColumnToDesktop(1)",
+  },
   driftile_move_column_to_desktop_2: {
     activated: "Runtime.DriftileRuntime.moveColumnToDesktop(2)",
     sequence: "Meta+Ctrl+2",
+  },
+  driftile_send_column_to_desktop_2: {
+    activated: "Runtime.DriftileRuntime.sendColumnToDesktop(2)",
   },
   driftile_move_column_to_desktop_3: {
     activated: "Runtime.DriftileRuntime.moveColumnToDesktop(3)",
     sequence: "Meta+Ctrl+3",
   },
+  driftile_send_column_to_desktop_3: {
+    activated: "Runtime.DriftileRuntime.sendColumnToDesktop(3)",
+  },
   driftile_move_column_to_desktop_4: {
     activated: "Runtime.DriftileRuntime.moveColumnToDesktop(4)",
     sequence: "Meta+Ctrl+4",
+  },
+  driftile_send_column_to_desktop_4: {
+    activated: "Runtime.DriftileRuntime.sendColumnToDesktop(4)",
   },
   driftile_move_column_to_desktop_5: {
     activated: "Runtime.DriftileRuntime.moveColumnToDesktop(5)",
     sequence: "Meta+Ctrl+5",
   },
+  driftile_send_column_to_desktop_5: {
+    activated: "Runtime.DriftileRuntime.sendColumnToDesktop(5)",
+  },
   driftile_move_column_to_desktop_6: {
     activated: "Runtime.DriftileRuntime.moveColumnToDesktop(6)",
     sequence: "Meta+Ctrl+6",
+  },
+  driftile_send_column_to_desktop_6: {
+    activated: "Runtime.DriftileRuntime.sendColumnToDesktop(6)",
   },
   driftile_move_column_to_desktop_7: {
     activated: "Runtime.DriftileRuntime.moveColumnToDesktop(7)",
     sequence: "Meta+Ctrl+7",
   },
+  driftile_send_column_to_desktop_7: {
+    activated: "Runtime.DriftileRuntime.sendColumnToDesktop(7)",
+  },
   driftile_move_column_to_desktop_8: {
     activated: "Runtime.DriftileRuntime.moveColumnToDesktop(8)",
     sequence: "Meta+Ctrl+8",
   },
+  driftile_send_column_to_desktop_8: {
+    activated: "Runtime.DriftileRuntime.sendColumnToDesktop(8)",
+  },
   driftile_move_column_to_desktop_9: {
     activated: "Runtime.DriftileRuntime.moveColumnToDesktop(9)",
     sequence: "Meta+Ctrl+9",
+  },
+  driftile_send_column_to_desktop_9: {
+    activated: "Runtime.DriftileRuntime.sendColumnToDesktop(9)",
   },
   driftile_move_column_to_first: {
     activated: "Runtime.DriftileRuntime.moveColumnToFirst()",
@@ -504,6 +531,9 @@ const expectedHandlers: Readonly<
   driftile_move_column_to_next_desktop: {
     activated: "Runtime.DriftileRuntime.moveColumnToNextDesktop()",
     sequence: "Meta+Ctrl+U",
+  },
+  driftile_send_column_to_next_desktop: {
+    activated: "Runtime.DriftileRuntime.sendColumnToNextDesktop()",
   },
   driftile_move_column_to_next_desktop_page_down: {
     activated: "Runtime.DriftileRuntime.moveColumnToNextDesktop()",
@@ -551,6 +581,9 @@ const expectedHandlers: Readonly<
     activated: "Runtime.DriftileRuntime.moveColumnToPreviousDesktop()",
     sequence: "Meta+Ctrl+I",
   },
+  driftile_send_column_to_previous_desktop: {
+    activated: "Runtime.DriftileRuntime.sendColumnToPreviousDesktop()",
+  },
   driftile_move_column_to_previous_desktop_page_up: {
     activated: "Runtime.DriftileRuntime.moveColumnToPreviousDesktop()",
     sequence: "Meta+Ctrl+PgUp",
@@ -580,35 +613,65 @@ const expectedHandlers: Readonly<
   driftile_move_window_to_desktop_1: {
     activated: "Runtime.DriftileRuntime.moveWindowToDesktop(1)",
   },
+  driftile_send_window_to_desktop_1: {
+    activated: "Runtime.DriftileRuntime.sendWindowToDesktop(1)",
+  },
   driftile_move_window_to_desktop_2: {
     activated: "Runtime.DriftileRuntime.moveWindowToDesktop(2)",
+  },
+  driftile_send_window_to_desktop_2: {
+    activated: "Runtime.DriftileRuntime.sendWindowToDesktop(2)",
   },
   driftile_move_window_to_desktop_3: {
     activated: "Runtime.DriftileRuntime.moveWindowToDesktop(3)",
   },
+  driftile_send_window_to_desktop_3: {
+    activated: "Runtime.DriftileRuntime.sendWindowToDesktop(3)",
+  },
   driftile_move_window_to_desktop_4: {
     activated: "Runtime.DriftileRuntime.moveWindowToDesktop(4)",
+  },
+  driftile_send_window_to_desktop_4: {
+    activated: "Runtime.DriftileRuntime.sendWindowToDesktop(4)",
   },
   driftile_move_window_to_desktop_5: {
     activated: "Runtime.DriftileRuntime.moveWindowToDesktop(5)",
   },
+  driftile_send_window_to_desktop_5: {
+    activated: "Runtime.DriftileRuntime.sendWindowToDesktop(5)",
+  },
   driftile_move_window_to_desktop_6: {
     activated: "Runtime.DriftileRuntime.moveWindowToDesktop(6)",
+  },
+  driftile_send_window_to_desktop_6: {
+    activated: "Runtime.DriftileRuntime.sendWindowToDesktop(6)",
   },
   driftile_move_window_to_desktop_7: {
     activated: "Runtime.DriftileRuntime.moveWindowToDesktop(7)",
   },
+  driftile_send_window_to_desktop_7: {
+    activated: "Runtime.DriftileRuntime.sendWindowToDesktop(7)",
+  },
   driftile_move_window_to_desktop_8: {
     activated: "Runtime.DriftileRuntime.moveWindowToDesktop(8)",
   },
+  driftile_send_window_to_desktop_8: {
+    activated: "Runtime.DriftileRuntime.sendWindowToDesktop(8)",
+  },
   driftile_move_window_to_desktop_9: {
     activated: "Runtime.DriftileRuntime.moveWindowToDesktop(9)",
+  },
+  driftile_send_window_to_desktop_9: {
+    activated: "Runtime.DriftileRuntime.sendWindowToDesktop(9)",
   },
   driftile_move_window_to_floating: {
     activated: "Runtime.DriftileRuntime.moveWindowToFloating()",
   },
   driftile_move_window_to_next_desktop: {
     activated: "Runtime.DriftileRuntime.moveWindowToNextDesktop()",
+  },
+  driftile_send_window_to_next_desktop: {
+    activated: "Runtime.DriftileRuntime.sendWindowToNextDesktop()",
   },
   driftile_move_window_to_next_desktop_page_down: {
     activated: "Runtime.DriftileRuntime.moveWindowToNextDesktop()",
@@ -645,6 +708,9 @@ const expectedHandlers: Readonly<
   },
   driftile_move_window_to_previous_desktop: {
     activated: "Runtime.DriftileRuntime.moveWindowToPreviousDesktop()",
+  },
+  driftile_send_window_to_previous_desktop: {
+    activated: "Runtime.DriftileRuntime.sendWindowToPreviousDesktop()",
   },
   driftile_move_window_to_previous_desktop_page_up: {
     activated: "Runtime.DriftileRuntime.moveWindowToPreviousDesktop()",
@@ -746,7 +812,7 @@ describe("KWin shortcut handlers", () => {
   });
 
   it("keeps the canonical action catalog synchronized with QML", () => {
-    expect(shortcutActions).toHaveLength(190);
+    expect(shortcutActions).toHaveLength(212);
     expect(shortcutActions).toEqual(
       handlers.map(({ name, sequence, text }) => ({
         name,
@@ -759,7 +825,7 @@ describe("KWin shortcut handlers", () => {
     ).toHaveLength(88);
     expect(
       shortcutActions.filter((action) => action.defaultSequence === undefined),
-    ).toHaveLength(102);
+    ).toHaveLength(124);
   });
 
   it("uses unique lowercase action identifiers and key sequences", () => {
@@ -910,6 +976,28 @@ describe("KWin shortcut handlers", () => {
       "driftile_move_window_up_or_to_output_up",
       "driftile_move_window_up_or_to_previous_desktop",
       "driftile_reset_column_width",
+      "driftile_send_column_to_desktop_1",
+      "driftile_send_column_to_desktop_2",
+      "driftile_send_column_to_desktop_3",
+      "driftile_send_column_to_desktop_4",
+      "driftile_send_column_to_desktop_5",
+      "driftile_send_column_to_desktop_6",
+      "driftile_send_column_to_desktop_7",
+      "driftile_send_column_to_desktop_8",
+      "driftile_send_column_to_desktop_9",
+      "driftile_send_column_to_next_desktop",
+      "driftile_send_column_to_previous_desktop",
+      "driftile_send_window_to_desktop_1",
+      "driftile_send_window_to_desktop_2",
+      "driftile_send_window_to_desktop_3",
+      "driftile_send_window_to_desktop_4",
+      "driftile_send_window_to_desktop_5",
+      "driftile_send_window_to_desktop_6",
+      "driftile_send_window_to_desktop_7",
+      "driftile_send_window_to_desktop_8",
+      "driftile_send_window_to_desktop_9",
+      "driftile_send_window_to_next_desktop",
+      "driftile_send_window_to_previous_desktop",
       "driftile_set_column_stacked_display",
       "driftile_set_column_tabbed_display",
       "driftile_swap_window_left",

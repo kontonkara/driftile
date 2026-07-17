@@ -508,6 +508,10 @@ const shortcutActionCatalog = [
     defaultSequence: "Meta+Ctrl+I",
   },
   {
+    name: "driftile_send_column_to_previous_desktop",
+    text: "Driftile: Send column to previous desktop",
+  },
+  {
     name: "driftile_move_column_to_previous_desktop_page_up",
     text: "Driftile: Move column to previous desktop (Page Up)",
     defaultSequence: "Meta+Ctrl+PgUp",
@@ -516,6 +520,10 @@ const shortcutActionCatalog = [
     name: "driftile_move_column_to_next_desktop",
     text: "Driftile: Move column to next desktop",
     defaultSequence: "Meta+Ctrl+U",
+  },
+  {
+    name: "driftile_send_column_to_next_desktop",
+    text: "Driftile: Send column to next desktop",
   },
   {
     name: "driftile_move_column_to_next_desktop_page_down",
@@ -528,9 +536,17 @@ const shortcutActionCatalog = [
     defaultSequence: "Meta+Ctrl+1",
   },
   {
+    name: "driftile_send_column_to_desktop_1",
+    text: "Driftile: Send column to desktop 1",
+  },
+  {
     name: "driftile_move_column_to_desktop_2",
     text: "Driftile: Move column to desktop 2",
     defaultSequence: "Meta+Ctrl+2",
+  },
+  {
+    name: "driftile_send_column_to_desktop_2",
+    text: "Driftile: Send column to desktop 2",
   },
   {
     name: "driftile_move_column_to_desktop_3",
@@ -538,9 +554,17 @@ const shortcutActionCatalog = [
     defaultSequence: "Meta+Ctrl+3",
   },
   {
+    name: "driftile_send_column_to_desktop_3",
+    text: "Driftile: Send column to desktop 3",
+  },
+  {
     name: "driftile_move_column_to_desktop_4",
     text: "Driftile: Move column to desktop 4",
     defaultSequence: "Meta+Ctrl+4",
+  },
+  {
+    name: "driftile_send_column_to_desktop_4",
+    text: "Driftile: Send column to desktop 4",
   },
   {
     name: "driftile_move_column_to_desktop_5",
@@ -548,9 +572,17 @@ const shortcutActionCatalog = [
     defaultSequence: "Meta+Ctrl+5",
   },
   {
+    name: "driftile_send_column_to_desktop_5",
+    text: "Driftile: Send column to desktop 5",
+  },
+  {
     name: "driftile_move_column_to_desktop_6",
     text: "Driftile: Move column to desktop 6",
     defaultSequence: "Meta+Ctrl+6",
+  },
+  {
+    name: "driftile_send_column_to_desktop_6",
+    text: "Driftile: Send column to desktop 6",
   },
   {
     name: "driftile_move_column_to_desktop_7",
@@ -558,9 +590,17 @@ const shortcutActionCatalog = [
     defaultSequence: "Meta+Ctrl+7",
   },
   {
+    name: "driftile_send_column_to_desktop_7",
+    text: "Driftile: Send column to desktop 7",
+  },
+  {
     name: "driftile_move_column_to_desktop_8",
     text: "Driftile: Move column to desktop 8",
     defaultSequence: "Meta+Ctrl+8",
+  },
+  {
+    name: "driftile_send_column_to_desktop_8",
+    text: "Driftile: Send column to desktop 8",
   },
   {
     name: "driftile_move_column_to_desktop_9",
@@ -568,8 +608,16 @@ const shortcutActionCatalog = [
     defaultSequence: "Meta+Ctrl+9",
   },
   {
+    name: "driftile_send_column_to_desktop_9",
+    text: "Driftile: Send column to desktop 9",
+  },
+  {
     name: "driftile_move_window_to_previous_desktop",
     text: "Driftile: Move window to previous desktop",
+  },
+  {
+    name: "driftile_send_window_to_previous_desktop",
+    text: "Driftile: Send window to previous desktop",
   },
   {
     name: "driftile_move_window_to_previous_desktop_page_up",
@@ -580,6 +628,10 @@ const shortcutActionCatalog = [
     text: "Driftile: Move window to next desktop",
   },
   {
+    name: "driftile_send_window_to_next_desktop",
+    text: "Driftile: Send window to next desktop",
+  },
+  {
     name: "driftile_move_window_to_next_desktop_page_down",
     text: "Driftile: Move window to next desktop (Page Down)",
   },
@@ -588,36 +640,72 @@ const shortcutActionCatalog = [
     text: "Driftile: Move window to desktop 1",
   },
   {
+    name: "driftile_send_window_to_desktop_1",
+    text: "Driftile: Send window to desktop 1",
+  },
+  {
     name: "driftile_move_window_to_desktop_2",
     text: "Driftile: Move window to desktop 2",
+  },
+  {
+    name: "driftile_send_window_to_desktop_2",
+    text: "Driftile: Send window to desktop 2",
   },
   {
     name: "driftile_move_window_to_desktop_3",
     text: "Driftile: Move window to desktop 3",
   },
   {
+    name: "driftile_send_window_to_desktop_3",
+    text: "Driftile: Send window to desktop 3",
+  },
+  {
     name: "driftile_move_window_to_desktop_4",
     text: "Driftile: Move window to desktop 4",
+  },
+  {
+    name: "driftile_send_window_to_desktop_4",
+    text: "Driftile: Send window to desktop 4",
   },
   {
     name: "driftile_move_window_to_desktop_5",
     text: "Driftile: Move window to desktop 5",
   },
   {
+    name: "driftile_send_window_to_desktop_5",
+    text: "Driftile: Send window to desktop 5",
+  },
+  {
     name: "driftile_move_window_to_desktop_6",
     text: "Driftile: Move window to desktop 6",
+  },
+  {
+    name: "driftile_send_window_to_desktop_6",
+    text: "Driftile: Send window to desktop 6",
   },
   {
     name: "driftile_move_window_to_desktop_7",
     text: "Driftile: Move window to desktop 7",
   },
   {
+    name: "driftile_send_window_to_desktop_7",
+    text: "Driftile: Send window to desktop 7",
+  },
+  {
     name: "driftile_move_window_to_desktop_8",
     text: "Driftile: Move window to desktop 8",
   },
   {
+    name: "driftile_send_window_to_desktop_8",
+    text: "Driftile: Send window to desktop 8",
+  },
+  {
     name: "driftile_move_window_to_desktop_9",
     text: "Driftile: Move window to desktop 9",
+  },
+  {
+    name: "driftile_send_window_to_desktop_9",
+    text: "Driftile: Send window to desktop 9",
   },
   {
     name: "driftile_focus_output_left",

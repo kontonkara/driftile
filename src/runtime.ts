@@ -532,6 +532,20 @@ export function moveWindowToDesktop(index: number): void {
   runCommand((activeController) => activeController.moveWindowToDesktop(index));
 }
 
+export function sendWindowToPreviousDesktop(): void {
+  runCommand((activeController) =>
+    activeController.sendWindowToPreviousDesktop(),
+  );
+}
+
+export function sendWindowToNextDesktop(): void {
+  runCommand((activeController) => activeController.sendWindowToNextDesktop());
+}
+
+export function sendWindowToDesktop(index: number): void {
+  runCommand((activeController) => activeController.sendWindowToDesktop(index));
+}
+
 export function moveColumnToPreviousDesktop(): void {
   runCommand((activeController) =>
     activeController.moveColumnToPreviousDesktop(),
@@ -544,6 +558,20 @@ export function moveColumnToNextDesktop(): void {
 
 export function moveColumnToDesktop(index: number): void {
   runCommand((activeController) => activeController.moveColumnToDesktop(index));
+}
+
+export function sendColumnToPreviousDesktop(): void {
+  runCommand((activeController) =>
+    activeController.sendColumnToPreviousDesktop(),
+  );
+}
+
+export function sendColumnToNextDesktop(): void {
+  runCommand((activeController) => activeController.sendColumnToNextDesktop());
+}
+
+export function sendColumnToDesktop(index: number): void {
+  runCommand((activeController) => activeController.sendColumnToDesktop(index));
 }
 
 export function moveWindowToOutputLeft(): void {
