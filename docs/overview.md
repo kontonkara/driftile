@@ -75,7 +75,7 @@ Version 1.48.0 leaves overview behavior unchanged.
 
 Version 1.49.0 leaves overview behavior unchanged.
 
-Version 1.50.0 leaves overview behavior unchanged.
+Version 1.51.0 leaves overview behavior unchanged.
 
 The companion is disabled by default. When enabled with a fresh shortcut
 record, `Meta+O` toggles it. KGlobalAccel preserves an existing assignment
@@ -218,8 +218,8 @@ activation, and normal close remain silent.
 
 ## Install a release
 
-Download `driftile-overview-1.50.0.kwineffect` and `SHA256SUMS` from the stable
-[1.50.0 release](release-notes-1.50.0.md), then verify the archive:
+Download `driftile-overview-1.51.0.kwineffect` and `SHA256SUMS` from the stable
+[1.51.0 release](release-notes-1.51.0.md), then verify the archive:
 
 ```console
 $ sha256sum --check --ignore-missing SHA256SUMS
@@ -229,7 +229,7 @@ Install the overview package as the desktop user:
 
 ```bash
 kpackagetool6 --type=KWin/Effect \
-  --install ./driftile-overview-1.50.0.kwineffect
+  --install ./driftile-overview-1.51.0.kwineffect
 ```
 
 To build the same versioned archive from source, run `npm ci` followed by
@@ -254,7 +254,7 @@ uninstalling the package.
 
 ## NixOS and Home Manager
 
-The 1.50.0 flake exposes the effect separately as
+The 1.51.0 flake exposes the effect separately as
 `packages.<system>.driftile-overview`. The NixOS and Home Manager modules keep
 it opt-in:
 
@@ -284,7 +284,7 @@ in another scope; `null` leaves their KConfig values untouched.
 
 ## Validation
 
-Version 1.50.0 validates its gesture, same- and cross-output transfer, search,
+Version 1.51.0 validates its gesture, same- and cross-output transfer, search,
 keyboard, pointer, and close paths without giving the companion ownership of
 layout state.
 

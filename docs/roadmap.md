@@ -1,12 +1,12 @@
 # Roadmap
 
-Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.50.0 are
+Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.51.0 are
 released. The delivered milestones and release criteria below are a historical
 record. Later direction is not a committed release schedule.
 
-Stable 1.50.0 can preserve a new singleton window's initial width without
-changing the public `33%` default and provides a separately installed native
-shortcut editor. Logical persistence remains v4.
+Stable 1.51.0 makes the separately installed native shortcut editor easier to
+discover and operate, including safe restoration of registered defaults.
+Logical persistence remains v4.
 
 ## Foundation (delivered)
 
@@ -1966,7 +1966,7 @@ Release criteria:
 - Ordinary CMake installation and both declarative module scopes install the
   editor independently of the main KWin package.
 
-### 1.51.0 (in development)
+### 1.51.0 (released)
 
 - Show every active action's registered KGlobalAccel defaults alongside its
   current primary and alternate assignments.
@@ -1980,7 +1980,7 @@ Release criteria:
 - Provide `--help` and `--version`, a searchable desktop launcher, and valid
   AppStream metadata for ordinary distribution packaging.
 
-Release criteria:
+Release criteria (met):
 
 - Restoring defaults writes nothing before Apply and a rejected batch leaves
   every active assignment unchanged.
