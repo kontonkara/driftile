@@ -233,18 +233,24 @@ let
     programs.driftile.overview = {
       screenEdge = "bottom-right";
       backdropColor = "#CC112233";
+      showWindowLabels = false;
+      showApplicationIdentity = true;
     };
   } { };
   overviewSettingsUnmanaged = evaluateHome {
     programs.driftile.overview = {
       screenEdge = null;
       backdropColor = null;
+      showWindowLabels = null;
+      showApplicationIdentity = null;
     };
   } { };
   overviewSettingsWithSystemInstall = evaluateHome {
     programs.driftile.overview = {
       screenEdge = "top-left";
       backdropColor = "#80aBcD01";
+      showWindowLabels = true;
+      showApplicationIdentity = false;
     };
   } systemOverviewConfiguration.config;
   invalidOverviewTouchpadGestureRejected =
@@ -681,6 +687,8 @@ assert
     kwinrc."Effect-io.github.kontonkara.driftile.overview" = {
       ScreenEdge = "bottom-right";
       BackdropColor = "#CC112233";
+      ShowWindowLabels = false;
+      ShowApplicationIdentity = true;
     };
   };
 assert overviewSettingsUnmanaged.config.qt.kde.settings == { };
@@ -689,6 +697,8 @@ assert
     kwinrc."Effect-io.github.kontonkara.driftile.overview" = {
       ScreenEdge = "top-left";
       BackdropColor = "#80aBcD01";
+      ShowWindowLabels = true;
+      ShowApplicationIdentity = false;
     };
   };
 assert lib.all (assertion: assertion.assertion) overviewSettingsWithSystemInstall.config.assertions;
@@ -699,6 +709,8 @@ assert invalidOverviewSettingRejected { backdropColor = "#FF11223"; };
 assert invalidOverviewSettingRejected { backdropColor = "#FF1122334"; };
 assert invalidOverviewSettingRejected { backdropColor = "#GG112233"; };
 assert invalidOverviewSettingRejected { backdropColor = 4279312947; };
+assert invalidOverviewSettingRejected { showWindowLabels = "true"; };
+assert invalidOverviewSettingRejected { showApplicationIdentity = 1; };
 assert packageCount transitionsOverride == 0;
 assert overviewPackageCount transitionsOverride == 0;
 assert transitionsPackageCount transitionsOverride == 0;

@@ -32,6 +32,8 @@ them independently of package installation:
 ```nix
 programs.driftile.overview.screenEdge = "top-left";
 programs.driftile.overview.backdropColor = "#E60B0F17";
+programs.driftile.overview.showWindowLabels = true;
+programs.driftile.overview.showApplicationIdentity = true;
 programs.driftile.overview.touchpadGesture = {
   enable = true;
   fingerCount = 4;
@@ -41,7 +43,9 @@ programs.driftile.overview.touchpadGesture = {
 `screenEdge` accepts `none` or one of the eight named edges and corners.
 `backdropColor` uses strict `#AARRGGBB` form. Set either option to `null` to
 leave its existing KConfig value untouched; use `none` to manage and disable
-screen-edge activation.
+screen-edge activation. `showWindowLabels` controls thumbnail captions, while
+`showApplicationIdentity` controls the application line or fallback. Both are
+nullable and leave their existing KConfig values untouched by default.
 
 Use a different count from vertical desktop navigation and Plasma's built-in
 Overview, or disable the overlapping gesture, so each global direction has one

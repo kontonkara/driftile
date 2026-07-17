@@ -487,6 +487,18 @@ in
           description = "Overview backdrop color in strict #AARRGGBB form; null leaves the KConfig value unmanaged.";
         };
 
+        showWindowLabels = lib.mkOption {
+          type = lib.types.nullOr lib.types.bool;
+          default = null;
+          description = "Whether overview thumbnails show window labels; null leaves the KConfig value unmanaged.";
+        };
+
+        showApplicationIdentity = lib.mkOption {
+          type = lib.types.nullOr lib.types.bool;
+          default = null;
+          description = "Whether overview labels include application identity; null leaves the KConfig value unmanaged.";
+        };
+
         touchpadGesture = lib.mkOption {
           type = lib.types.nullOr (
             lib.types.submodule {
@@ -994,6 +1006,8 @@ in
         (
           cfg.overview.screenEdge != null
           || cfg.overview.backdropColor != null
+          || cfg.overview.showWindowLabels != null
+          || cfg.overview.showApplicationIdentity != null
           || cfg.overview.touchpadGesture != null
         )
         {
@@ -1003,6 +1017,12 @@ in
             }
             // lib.optionalAttrs (cfg.overview.backdropColor != null) {
               BackdropColor = cfg.overview.backdropColor;
+            }
+            // lib.optionalAttrs (cfg.overview.showWindowLabels != null) {
+              ShowWindowLabels = cfg.overview.showWindowLabels;
+            }
+            // lib.optionalAttrs (cfg.overview.showApplicationIdentity != null) {
+              ShowApplicationIdentity = cfg.overview.showApplicationIdentity;
             }
             // lib.optionalAttrs (cfg.overview.touchpadGesture != null) {
               TouchpadGesture = cfg.overview.touchpadGesture.enable;
