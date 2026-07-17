@@ -152,8 +152,10 @@ Events travel from KWin through the bridge into the runtime. Commands and result
   focus, and anchor deletion cannot consume the target lease.
 - Retargets eligible size and one bounded absolute-position/translation pair
   with the configured Plasma-scaled duration, preserving KWin's interpolated
-  value through rapid commands and negative-coordinate crossings. An ending ID
-  that rejects retargeting is detached from its property while its pending end
+  value through rapid commands and negative-coordinate crossings. Every logical
+  position change retargets both active components, even when one numeric target
+  is unchanged, so their KWin timelines remain coupled. An ending ID that
+  rejects retargeting is detached from its property while its pending end
   remains counted; the independently tracked replacement survives that end
   notification without clearing a live sibling or retaining a stale transform.
 - Follows Plasma's global animation-speed factor and exposes independent
@@ -231,6 +233,11 @@ Events travel from KWin through the bridge into the runtime. Commands and result
 - Resolves numbered desktop targets against KWin's global list, clamps to the shared empty tail, and reuses either the transactional whole-column or single-window transfer path.
 - Focuses adjacent desktops on the active output, with a global fallback and no wrapping.
 - Accepts a desktop reorder only when KWin produces the exact expected same-ID permutation. The operation leaves selections and window memberships unchanged, and the shared empty tail remains pinned.
+- Sends one tiled window, one complete tiled column, or one relation-free
+  manually floating window to an adjacent or numbered desktop without changing
+  the selected source desktop. The destination model commits without hidden
+  frame writes and reflows when that desktop becomes visible; only the visible
+  source layout may be applied during the transaction.
 - Releases explicitly floating windows from continuous geometry ownership.
   Toggle-back restores a surviving anchored slot; guarded direct insertion
   attaches to the selected target stack.
@@ -244,6 +251,9 @@ Events travel from KWin through the bridge into the runtime. Commands and result
   private API.
 - Transfers one active relation-free floating window between desktops through a dedicated KWin transaction without changing tiled state or frame geometry.
 - Remembers the last non-minimized tiled and floating focus per context, switches layers, and resolves floating navigation from live frame geometry without changing frames during floating navigation.
+- Keeps the ordinary activation pair separate from a two-entry non-null pair
+  used by close recovery, so an interim null cannot erase a provisional
+  same-context handoff. Updating this history schedules no work.
 - Skips minimized tiled slots, fully minimized columns, and minimized floating candidates during focus resolution without taking ownership of KWin's minimize mechanism.
 - Extracts a regular stack member transactionally before requesting native fullscreen through KWin; application-driven fullscreen commits for the active window use the same persistent singleton model without writing the fullscreen frame.
 - Extracts a regular stack member transactionally before requesting native maximize-to-edges through KWin; rejected requests restore the exact model, frames, focus, and runtime ownership.
@@ -442,6 +452,10 @@ path.
 
 Transient runtime state is never durable: expected layout frames, decoration ownership, focus caches, waiting and suspension state, schedulers, probes, and transaction tokens are excluded. A context fingerprint is stored only with original client and frame restore baselines; a mismatch discards those baselines without rejecting the logical layout. A window `liveId` is an exact same-session reload hint only. The pure matcher gives that identity precedence, then accepts public KWin session descriptors only when both sides are globally unique; missing, duplicate, or overlapping matches remain unmatched. Output matching prefers a unique display serial tuple and otherwise requires the available connector metadata exactly. Desktops require their exact KWin IDs.
 
+Desktop send intent, its focus handoff, and its rollback ownership are transient.
+The operation reuses canonical v4 layout state and adds no persistence field or
+schema migration.
+
 The horizontal-resize intent is also transient. It adds no persistence
 schema field, setting, action, binding, feedback surface, or compositor
 mechanism.
@@ -626,6 +640,13 @@ inspected safely within the codec bound.
   with captured rollback frames, release after 20 exact rollback samples, and
   defer ordinary recovery when rollback is not confirmed within 40 probes.
 - Transfer either the active column or one secondary window between adjacent or numbered desktops through an immutable two-context preview, then commit only after KWin accepts every desktop mechanism, focus, and destination geometry.
+- Send either the active column or one active window to an adjacent or numbered
+  desktop through a two-context preview without selecting the destination.
+  Preserve minimized passive source peers and focus an eligible source window.
+  Commit hidden destination ownership without frame writes, apply only the
+  visible source geometry, and reflow the destination when it becomes visible.
+  Same-target and unsafe commands are no-ops; rollback requires exact captured
+  mechanism, model, focus, and frame ownership.
 - Transfer either the active tiled column or one secondary tiled window between outputs through the same preview, then commit only after KWin accepts every output and desktop mechanism plus both visible layouts. Route an active floating layer through a separate single-window mechanism transaction that never mutates layout or frame geometry.
 - Preserve whole-column member order and width, apply the active member last, and restore all owned mechanisms and frames if any batch step fails.
 - Apply floating transitions from immutable previews, commit ownership only after every geometry request succeeds, and defer later context writes until asynchronous frames settle.

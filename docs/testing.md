@@ -364,7 +364,7 @@ Horizontal-focus cases verify live overflow policy, fitting and overflowing
 neighbors, non-adjacent edge jumps, stacked and minimized members, and the
 priority of always-center and exact application policies.
 
-The prepared 1.66 transition cases drive rapid alternating cross-edge targets
+The 1.66 transition cases drive rapid alternating cross-edge targets
 through one absolute-position/translation pair and require every retarget to
 use the configured Plasma-scaled duration. They cover workspace handoff anchor
 and target selection, duplicate activation, transient null focus, anchor
@@ -373,6 +373,20 @@ and stale-transform cleanup. Focus-recovery cases cover same-context KWin
 replacements immediately before and during close settlement: a surviving
 replacement keeps focus, while a cleared handoff triggers the bounded final
 retry.
+
+The 1.67 focused slice requires every rapid logical position change to retarget
+both active KWin Position and Translation components, including sequences where
+one component target is unchanged, so their timelines cannot diverge across
+negative global coordinates. It also covers the separate two-entry non-null
+activation chain across an interim null without adding scheduler callbacks.
+Desktop-send cases cover previous, next, and numbered targets for tiled
+single-window extraction, whole columns, and manual floating windows;
+source-desktop selection and eligible source focus; minimized passive peers;
+same-target no-ops; and ownership-safe rollback. Hidden-destination cases
+require logical state without frame writes and deferred reflow when shown.
+Shortcut coverage requires all 22 new actions to remain unbound while the
+existing move/follow actions and bundled 88-action default profile stay
+unchanged.
 
 Cross-desktop unit cases cover the 2x2 matrix of output-local or global desktop
 resolution and membership-before-finish or finish-before-membership event

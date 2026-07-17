@@ -8,6 +8,8 @@ Stable 1.66.0 keeps rapid transition retargeting continuous across workspace
 handoffs and retains bounded close-focus recovery through transient KWin focus
 handoffs. Logical persistence remains v4.
 
+The 1.67.0 focus and desktop-send package is in progress.
+
 ## Foundation (delivered)
 
 - Build and package a declarative KWin script with a TypeScript runtime.
@@ -2376,3 +2378,29 @@ Release criteria (met):
   retry and cannot steal focus across outputs, desktops, or activities.
 - Settings, shortcuts, logical persistence v4, package identities, and public
   Plasma 6.7+ API use remain unchanged.
+
+### 1.67.0 (in progress)
+
+- Retarget the coupled KWin Position and Translation components together on
+  every rapid logical position change across negative global coordinates, even
+  when one component target is unchanged.
+- Preserve a provisional same-context close-focus handoff through an interim
+  null activation with a separate two-entry non-null activation chain.
+- Add 22 unbound actions that send one active window or one complete active
+  column to the previous, next, or a numbered desktop without following it.
+- Keep source-desktop selection and eligible source focus. Preserve tiled
+  single-window extraction, whole-column state, relation-free manual-floating
+  frames, and settled minimized passive peers.
+- Commit hidden destination ownership without frame writes and reflow it only
+  after that desktop becomes visible. Write only the visible source geometry
+  during the send transaction.
+
+Release criteria:
+
+- Coupled position timelines cannot diverge, jerk adjacent columns apart, or
+  briefly expose wallpaper between them during rapid navigation.
+- Same-target and unsafe commands perform no mutation, and partial failure
+  rolls back only while exact captured ownership remains valid.
+- Existing move/follow behavior, default 88 bindings, settings, logical
+  persistence v4, and schemas remain unchanged.
+- The implementation uses public Plasma 6.7+ APIs and introduces no KWin fork.

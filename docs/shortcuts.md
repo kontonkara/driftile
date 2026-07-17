@@ -38,9 +38,10 @@ arrow keys are interchangeable unless noted otherwise.
 | Cycle preset window height forward               | `Meta+Ctrl+Shift+R`                                  |
 | Reset active window height to automatic          | `Meta+Ctrl+R`                                        |
 
-Single-window desktop/output transfer, direct insertion into the nearest
-existing stack, one-way tiled/floating layer focus, contextual width reset, and
-reverse height preset cycling are registered without default keys.
+Single-window desktop/output transfer, desktop send-without-follow, direct
+insertion into the nearest existing stack, one-way tiled/floating layer focus,
+contextual width reset, and reverse height preset cycling are registered
+without default keys.
 Assign them in **System Settings > Keyboard > Shortcuts** if needed.
 
 ## Editing shortcuts
@@ -209,6 +210,25 @@ assignments. Fresh records use `Meta+R` and `Meta+Shift+R` for width, and
 `driftile_move_window_to_desktop_9` directly transfer one active window to a
 numbered desktop and are also unbound by default. They do not change the
 helper-owned default profile.
+
+Twenty-two send-without-follow actions leave the source desktop selected:
+
+- `driftile_send_window_to_previous_desktop`,
+  `driftile_send_window_to_next_desktop`, and
+  `driftile_send_window_to_desktop_1` through
+  `driftile_send_window_to_desktop_9` send only the active window.
+- `driftile_send_column_to_previous_desktop`,
+  `driftile_send_column_to_next_desktop`, and
+  `driftile_send_column_to_desktop_1` through
+  `driftile_send_column_to_desktop_9` send the complete active tiled column.
+
+Sending one tiled window extracts it from its column; sending one manually
+floating window preserves its frame. A remaining eligible source window
+receives focus. Hidden destination state is arranged without writing its
+frames and is reflowed when that desktop becomes visible. Same-target, blocked,
+or rejected operations are no-ops or restore the exact owned source state. The
+existing move actions still follow their destination, and the bundled 88-action
+default profile is unchanged.
 
 `driftile_insert_window_into_stack_left` and
 `driftile_insert_window_into_stack_right` remain unbound. With one active

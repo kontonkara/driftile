@@ -444,6 +444,26 @@ The ownership rule is strict:
 - The optional companion projects the current activity only and closes when the
   activity selection or activity set changes.
 
+## 1.67 focus and desktop-send slice
+
+- Close recovery retains a separate two-entry non-null activation chain, so an
+  interim null cannot erase a provisional same-context KWin handoff. It adds no
+  scheduler work.
+- Twenty-two unbound actions send one active window or one complete active
+  tiled column to the previous, next, or a numbered desktop without selecting
+  the destination. Existing move/follow actions and the bundled 88-action
+  default profile are unchanged.
+- A tiled single-window send extracts the active member. A whole-column send
+  preserves column state and settled minimized passive peers. A relation-free
+  manually floating send preserves its frame. An eligible remaining source
+  window receives focus.
+- The hidden destination receives logical ownership only and reflows when
+  visible. Only the visible source layout receives geometry writes during the
+  command. Same-target and unsafe operations are no-ops; partial failure rolls
+  back only under exact captured ownership.
+- The slice uses public Plasma 6.7+ APIs and changes no setting, persistence v4
+  field, or schema.
+
 ## Compatibility
 
 - Plasma 6.7 or newer is the primary target.

@@ -164,6 +164,12 @@ application policies retain priority. The destination receives its target
 frame before the other changed columns, while focus commits only after the
 complete geometry transaction succeeds.
 
+The optional transition companion represents movement across negative global
+coordinates with coupled KWin Position and Translation components. Every rapid
+logical position change retargets both active timelines, even when one
+component's target is unchanged. Columns therefore remain synchronized instead
+of jerking apart or briefly exposing wallpaper between them.
+
 Optional single-column centering is a geometry invariant rather than a focus
 action. When a context contains exactly one tiled column, including a
 multi-window stack, it keeps that column centered through reflow. Floating
@@ -228,12 +234,24 @@ Closing the active tiled, manually floating, or automatic-floating window
 restores the latest eligible MRU entry from the same visible output, desktop,
 and activity after KWin settles removal. Automatic dialogs, transients, and
 application exclusions remain outside layout ownership. Two scheduled probes
-cover ordinary settlement. A same-context KWin focus handoff immediately before
-or during those probes remains protected: if it stays active, Driftile leaves it
-focused; if KWin clears it, one final event-driven retry restores the captured
-handoff or prior MRU target. A close with no eligible target schedules no work.
-An unrelated legitimate replacement or a context change cancels recovery,
-preventing a stale focus steal.
+cover ordinary settlement. A separate two-entry non-null activation chain keeps
+a provisional same-context KWin handoff available when an interim null
+activation arrives. If the handoff stays active, Driftile leaves it focused; if
+KWin clears it, one final event-driven retry restores the captured handoff or
+prior MRU target. This tracking adds no scheduled work. A close with no eligible
+target schedules no work. An unrelated legitimate replacement or a context
+change cancels recovery, preventing a stale focus steal.
+
+Unbound send-without-follow actions transfer either the active window or its
+complete tiled column to the previous, next, or a numbered desktop while the
+source desktop remains selected. A tiled single-window send extracts that
+member; a manual-floating send preserves its frame. Driftile focuses an
+eligible window left on the source desktop. The hidden destination receives
+logical ownership and column state only, then reflows when it becomes visible;
+during the command, only the visible source may receive layout geometry writes.
+Existing move actions continue to follow the destination. Same-target and
+unsafe commands are no-ops, and a rejected partial transfer rolls back only
+while the captured source still owns every affected field and frame.
 
 The existing center-column action is contextual. With an active manually
 floating window, it centers each non-oversized dimension at the exact logical
