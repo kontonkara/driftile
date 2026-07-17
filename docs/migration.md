@@ -1,7 +1,37 @@
 # Migration
 
-The latest stable release is 1.58.0. Use the steps below when changing release
+The latest stable release is 1.59.0. Use the steps below when changing release
 generations, and never combine files from different releases.
+
+## Upgrade from 1.58.0 to 1.59.0
+
+1. Release a helper-owned shortcut profile with the installed helper.
+2. Disable Driftile and both optional effects in System Settings.
+3. Install matching 1.59.0 artifacts, or pin the Nix input to `v1.59.0` and
+   rebuild.
+4. Re-enable Driftile and only the optional effects you use, then reclaim the
+   helper profile if needed.
+
+Logical layout state remains v4. Layout, persistence, actions, default
+bindings, and existing input paths are unchanged. The optional Overview adds a
+default-enabled static badge that reads `Fullscreen`, `Maximized`, or
+`Floating` on sufficiently large selected ordinary thumbnails. Only full
+two-axis maximize produces `Maximized`; tabs and minimized placeholders remain
+unbadged. Every true lowercase state term joins all-term search even when
+badges are hidden. Use the Overview effect's configure button, or the nullable
+Home Manager option `overview.showWindowStateBadges`; `null` leaves KConfig
+unmanaged, while a malformed value falls back to enabled. The main script and
+transition effect retain their 1.58.0 behavior.
+
+## Roll back from 1.59.0 to 1.58.0
+
+Release a helper-owned profile, disable Driftile and both optional effects,
+then restore matching verified 1.58.0 artifacts or pin the Nix input to
+`v1.58.0` and rebuild. Remove `overview.showWindowStateBadges` before
+evaluating the 1.58.0 Home Manager module. Both releases use logical layout
+state v4 with the same layout and persistence behavior. The older Overview
+ignores a retained `ShowWindowStateBadges` KConfig value and omits state badges
+and state search terms.
 
 ## Upgrade from 1.57.0 to 1.58.0
 
