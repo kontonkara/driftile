@@ -160,6 +160,7 @@ import {
   type OutputDirection,
   type SequentialOutputDirection,
 } from "./core/output-navigation";
+import { planPointerEmptyDestinationPreview } from "./core/pointer-empty-destination";
 import { diffWindowGeometries } from "./core/reconcile";
 import {
   planPointerColumnDrop,
@@ -590,6 +591,21 @@ type PointerExternalInsertionTarget =
 interface PointerExternalSettledContext {
   readonly contextGeometry: ContextGeometry;
   readonly runtimeContext: RuntimeContext;
+}
+
+interface PointerExternalEmptyDestination {
+  readonly contextGeometry: ContextGeometry;
+  readonly runtimeContext: RuntimeContext | undefined;
+}
+
+interface PointerExternalEmptyPreviewContext {
+  readonly destinationGeometryFingerprint: string;
+  readonly frame: Readonly<Rect> | null;
+  readonly policyRevision: number;
+  readonly runtimeContext: RuntimeContext | undefined;
+  readonly sourceContext: RuntimeContext;
+  readonly sourceStateRevision: number;
+  readonly visibleArea: Readonly<Rect>;
 }
 
 interface PointerExternalPreviewContext {
@@ -1202,6 +1218,11 @@ export class RuntimeController {
     null;
   private pointerExternalPreviewCapture: PointerExternalPreviewCapture | null =
     null;
+  private readonly pointerExternalEmptyPreviewContexts =
+    new PointerPreviewContextCache<PointerExternalEmptyPreviewContext>();
+  private pointerExternalEmptyPreviewLease: PointerPreviewContextLease<PointerExternalEmptyPreviewContext> | null =
+    null;
+  private pointerExternalEmptyPreviewPolicyRevision = 0;
   private readonly pointerExternalPreviewContexts =
     new PointerPreviewContextCache<PointerExternalPreviewContext | null>();
   private pointerExternalPreviewLease: PointerPreviewContextLease<PointerExternalPreviewContext | null> | null =
@@ -2022,6 +2043,7 @@ export class RuntimeController {
 
     if (!this.started) {
       this.defaultColumnWidth = normalized;
+      this.invalidatePointerExternalEmptyPreviewPolicy();
       return true;
     }
 
@@ -2041,6 +2063,7 @@ export class RuntimeController {
     }
 
     this.defaultWindowHeight = normalized;
+    this.invalidatePointerExternalEmptyPreviewPolicy();
 
     if (!this.started) {
       return true;
@@ -2070,6 +2093,7 @@ export class RuntimeController {
     }
 
     this.applicationColumnWidths = overrides;
+    this.invalidatePointerExternalEmptyPreviewPolicy();
 
     if (!this.started) {
       return true;
@@ -2099,6 +2123,7 @@ export class RuntimeController {
     }
 
     this.applicationWindowHeights = overrides;
+    this.invalidatePointerExternalEmptyPreviewPolicy();
 
     if (!this.started) {
       return true;
@@ -2128,6 +2153,7 @@ export class RuntimeController {
     }
 
     this.applicationColumnPresentations = presentations;
+    this.invalidatePointerExternalEmptyPreviewPolicy();
 
     if (!this.started) {
       return true;
@@ -2150,6 +2176,7 @@ export class RuntimeController {
     }
 
     this.defaultColumnPresentation = presentation;
+    this.invalidatePointerExternalEmptyPreviewPolicy();
 
     if (!this.started) {
       return true;
@@ -2522,6 +2549,7 @@ export class RuntimeController {
     }
 
     this.alwaysCenterSingleColumn = enabled;
+    this.invalidatePointerExternalEmptyPreviewPolicy();
 
     if (!this.started || !enabled) {
       return true;
@@ -5711,6 +5739,11 @@ export class RuntimeController {
     cursor: Point,
     external: PointerExternalDropIntent,
   ): void {
+    if (this.showEmptyExternalPointerDropPreview(intent, cursor, external)) {
+      this.clearPointerExternalPreviewContext();
+      return;
+    }
+
     let lease = this.reusableExternalPointerPreviewLease(external);
 
     if (!lease) {
@@ -5827,6 +5860,280 @@ export class RuntimeController {
       intent.contextKey,
       intent.previewOwnerToken,
     );
+  }
+
+  private showEmptyExternalPointerDropPreview(
+    intent: PointerMoveIntent,
+    cursor: Point,
+    external: PointerExternalDropIntent,
+  ): boolean {
+    let lease = this.reusableEmptyExternalPointerPreviewLease(intent, external);
+
+    if (!lease) {
+      this.clearPointerExternalEmptyPreviewContext();
+      const sourceContext =
+        this.settledEmptyExternalPointerPreviewSource(intent);
+      const destination = this.settledEmptyExternalPointerDestination(external);
+
+      if (!sourceContext || !destination) {
+        return false;
+      }
+
+      const sourceStateRevision =
+        this.windowStateRevisions.get(intent.draggedWindowId) ?? 0;
+      const policyRevision = this.pointerExternalEmptyPreviewPolicyRevision;
+      const { contextGeometry } = destination;
+      lease = this.pointerExternalEmptyPreviewContexts.acquire(
+        {
+          activityId: external.context.activityId,
+          desktopId: external.context.desktopId,
+          gap: this.gap,
+          geometryFingerprint: [
+            contextGeometry.fingerprint,
+            String(sourceStateRevision),
+            String(policyRevision),
+          ].join("\u0000"),
+          outputId: external.context.outputId,
+          topologyRevision: this.topologyRevision,
+        },
+        () => ({
+          destinationGeometryFingerprint: contextGeometry.fingerprint,
+          frame: this.planEmptyExternalPointerDropPreview(
+            intent,
+            contextGeometry,
+          ),
+          policyRevision,
+          runtimeContext: destination.runtimeContext,
+          sourceContext,
+          sourceStateRevision,
+          visibleArea: snapshotRect(contextGeometry.workArea),
+        }),
+      );
+    }
+
+    this.pointerExternalEmptyPreviewLease = lease;
+    this.pointerExternalPreviewPresentedContextKey = null;
+    const preview = lease.preview;
+
+    if (!preview.frame || !rectContainsPoint(preview.visibleArea, cursor)) {
+      return false;
+    }
+
+    this.clearPointerExternalPreviewContext();
+    return this.showPointerDropPreviewFrame(
+      preview.frame,
+      external.contextKey,
+      intent.previewOwnerToken,
+    );
+  }
+
+  private reusableEmptyExternalPointerPreviewLease(
+    intent: PointerMoveIntent,
+    external: PointerExternalDropIntent,
+  ): PointerPreviewContextLease<PointerExternalEmptyPreviewContext> | null {
+    const lease = this.pointerExternalEmptyPreviewLease;
+    const preview = lease?.preview;
+    const sourceContext = this.contexts.get(intent.contextKey);
+    const destinationContext = this.contexts.get(external.contextKey);
+
+    if (
+      !lease ||
+      !preview ||
+      !this.pointerExternalEmptyPreviewContexts.owns(lease) ||
+      lease.key.outputId !== external.context.outputId ||
+      lease.key.desktopId !== external.context.desktopId ||
+      lease.key.activityId !== external.context.activityId ||
+      lease.key.topologyRevision !== this.topologyRevision ||
+      lease.key.gap !== this.gap ||
+      preview.policyRevision !==
+        this.pointerExternalEmptyPreviewPolicyRevision ||
+      preview.sourceStateRevision !==
+        (this.windowStateRevisions.get(intent.draggedWindowId) ?? 0) ||
+      sourceContext !== preview.sourceContext ||
+      sourceContext.geometryFingerprint !== intent.contextFingerprint ||
+      this.pointerMoveIntent !== intent ||
+      intent.phase !== "dragging" ||
+      intent.floating !== null ||
+      this.observer.source(intent.draggedWindowId) !== intent.source ||
+      this.managedWindows.get(intent.draggedWindowId)?.contextKey !==
+        sourceContext.key ||
+      this.workspace.activeWindow !== intent.source ||
+      !this.interactiveMoveSourceIsEligible(intent.source) ||
+      this.pendingWindowSyncs.has(intent.draggedWindowId) ||
+      this.dirtyContexts.has(intent.contextKey) ||
+      this.pendingAdmissionContexts.has(intent.contextKey) ||
+      this.hasPendingCapacityState(intent.contextKey) ||
+      this.waitingWindowIds.has(intent.contextKey) ||
+      this.toggleTransitionPending(intent.contextKey) ||
+      !this.pointerExternalDestinationIsCurrent(external) ||
+      this.dirtyContexts.has(external.contextKey) ||
+      this.pendingAdmissionContexts.has(external.contextKey) ||
+      this.hasPendingCapacityState(external.contextKey) ||
+      this.waitingWindowIds.has(external.contextKey) ||
+      this.toggleTransitionPending(external.contextKey) ||
+      destinationContext !== preview.runtimeContext ||
+      (destinationContext &&
+        (destinationContext.windowIds.size !== 0 ||
+          destinationContext.geometryFingerprint !==
+            preview.destinationGeometryFingerprint))
+    ) {
+      return null;
+    }
+
+    return lease;
+  }
+
+  private settledEmptyExternalPointerPreviewSource(
+    intent: PointerMoveIntent,
+  ): RuntimeContext | null {
+    const sourceContext = this.contexts.get(intent.contextKey);
+
+    if (
+      this.pointerMoveIntent !== intent ||
+      intent.phase !== "dragging" ||
+      intent.floating !== null ||
+      !sourceContext ||
+      sourceContext.geometryFingerprint !== intent.contextFingerprint ||
+      this.contexts.get(sourceContext.key) !== sourceContext ||
+      this.observer.source(intent.draggedWindowId) !== intent.source ||
+      this.workspace.activeWindow !== intent.source ||
+      !this.interactiveMoveSourceIsEligible(intent.source) ||
+      !this.pointerMoveParticipantsAreCurrent(intent, sourceContext, true)
+    ) {
+      return null;
+    }
+
+    try {
+      return layoutContextSnapshotsEqual(
+        this.layout.snapshot(
+          sourceContext.outputId,
+          sourceContext.desktopId,
+          sourceContext.activityId,
+        ),
+        intent.before,
+      )
+        ? sourceContext
+        : null;
+    } catch {
+      return null;
+    }
+  }
+
+  private settledEmptyExternalPointerDestination(
+    external: PointerExternalDropIntent,
+  ): PointerExternalEmptyDestination | null {
+    if (!this.pointerExternalDestinationIsCurrent(external)) {
+      return null;
+    }
+
+    const { context, contextKey: key } = external;
+
+    if (
+      this.dirtyContexts.has(key) ||
+      this.pendingAdmissionContexts.has(key) ||
+      this.hasPendingCapacityState(key) ||
+      this.waitingWindowIds.has(key) ||
+      this.toggleTransitionPending(key)
+    ) {
+      return null;
+    }
+
+    const runtimeContext = this.contexts.get(key);
+
+    if (
+      runtimeContext &&
+      (runtimeContext.key !== key ||
+        runtimeContext.outputId !== context.outputId ||
+        runtimeContext.desktopId !== context.desktopId ||
+        runtimeContext.activityId !== context.activityId ||
+        runtimeContext.windowIds.size !== 0)
+    ) {
+      return null;
+    }
+
+    if (!runtimeContext) {
+      for (const owner of this.managedWindows.values()) {
+        if (owner.contextKey === key) {
+          return null;
+        }
+      }
+    }
+
+    let layout: LayoutContextSnapshot;
+    let contextGeometry: ContextGeometry | null;
+
+    try {
+      layout = this.layout.snapshot(
+        context.outputId,
+        context.desktopId,
+        context.activityId,
+      );
+      contextGeometry = this.geometry.contextGeometry(
+        context.outputId,
+        context.desktopId,
+      );
+    } catch {
+      return null;
+    }
+
+    if (
+      layout.columns.length !== 0 ||
+      !contextGeometry ||
+      (runtimeContext &&
+        runtimeContext.geometryFingerprint !== contextGeometry.fingerprint)
+    ) {
+      return null;
+    }
+
+    return { contextGeometry, runtimeContext };
+  }
+
+  private planEmptyExternalPointerDropPreview(
+    intent: PointerMoveIntent,
+    contextGeometry: ContextGeometry,
+  ): Readonly<Rect> | null {
+    const width = this.constrainedDefaultColumnWidth(
+      [intent.source],
+      contextGeometry,
+    );
+    const windowHeight = this.initialWindowHeight(intent.source);
+    const bounds = frameSizeConstraintBounds(intent.source);
+    const decorationHeight = validDecorationExtent(
+      intent.source.frameGeometry.height,
+      intent.source.clientGeometry.height,
+    );
+
+    if (!width || !bounds || decorationHeight === null) {
+      return null;
+    }
+
+    const frame = planPointerEmptyDestinationPreview({
+      centerSingleColumn: this.alwaysCenterSingleColumn,
+      column: {
+        presentation: this.initialColumnPresentation(intent.source),
+        selected: true,
+        width,
+        ...(windowHeight === undefined ? {} : { windowHeight }),
+      },
+      constraints: {
+        decorationHeight,
+        maximumClientHeight: Number.isFinite(bounds.maximumHeight)
+          ? bounds.maximumHeight - decorationHeight
+          : Number.POSITIVE_INFINITY,
+        maximumFrameWidth: bounds.maximumWidth,
+        minimumClientHeight: bounds.minimumHeight - decorationHeight,
+        minimumFrameWidth: bounds.minimumWidth,
+      },
+      devicePixelRatio: contextGeometry.devicePixelRatio,
+      gap: this.gap,
+      pixelGridOrigin: contextGeometry.pixelGridOrigin,
+      windowHeightPresetResolver: resolveWindowHeightPresetPolicy,
+      workArea: contextGeometry.workArea,
+    });
+
+    return frame && respectsSizeConstraints(frame, intent.source)
+      ? frame
+      : null;
   }
 
   private reusableExternalPointerPreviewLease(
@@ -6141,6 +6448,29 @@ export class RuntimeController {
     this.pointerExternalPreviewContexts.clear();
   }
 
+  private clearPointerExternalEmptyPreviewContext(): void {
+    this.pointerExternalEmptyPreviewLease = null;
+    this.pointerExternalEmptyPreviewContexts.clear();
+  }
+
+  private invalidatePointerExternalEmptyPreviewPolicy(): void {
+    this.pointerExternalEmptyPreviewPolicyRevision =
+      this.pointerExternalEmptyPreviewPolicyRevision >= Number.MAX_SAFE_INTEGER
+        ? 1
+        : this.pointerExternalEmptyPreviewPolicyRevision + 1;
+    const lease = this.pointerExternalEmptyPreviewLease;
+    const destinationKey = lease ? contextKey(lease.key) : null;
+    this.clearPointerExternalEmptyPreviewContext();
+
+    if (
+      destinationKey &&
+      this.pointerDropPreviewDestinationKey === destinationKey
+    ) {
+      this.clearPointerDropPreview();
+      this.schedulePointerDropPreview();
+    }
+  }
+
   private invalidatePointerExternalPreviewContext(
     key: string,
     preserveExpectedSourceTransition = false,
@@ -6149,10 +6479,16 @@ export class RuntimeController {
     const leasedKey = lease ? contextKey(lease.key) : null;
     const capturedKey =
       this.pointerExternalPreviewCapture?.context.runtimeContext.key ?? null;
+    const emptyLease = this.pointerExternalEmptyPreviewLease;
+    const emptyDestinationKey = emptyLease ? contextKey(emptyLease.key) : null;
+    const emptySourceKey = emptyLease?.preview.sourceContext.key ?? null;
+    const emptyPreviewAffected =
+      emptyDestinationKey === key || emptySourceKey === key;
 
     if (
       leasedKey !== key &&
       capturedKey !== key &&
+      !emptyPreviewAffected &&
       this.pointerDropPreviewDestinationKey !== key
     ) {
       return;
@@ -6166,8 +6502,9 @@ export class RuntimeController {
     }
 
     this.clearPointerExternalPreviewContext();
+    this.clearPointerExternalEmptyPreviewContext();
 
-    if (this.pointerDropPreviewDestinationKey === key) {
+    if (emptyPreviewAffected || this.pointerDropPreviewDestinationKey === key) {
       this.clearPointerDropPreview();
     }
 
@@ -6218,10 +6555,14 @@ export class RuntimeController {
     output?: KWinOutput,
   ): void {
     const lease = this.pointerExternalPreviewLease;
+    const emptyLease = this.pointerExternalEmptyPreviewLease;
     const key = lease
       ? contextKey(lease.key)
-      : (this.pointerExternalPreviewCapture?.context.runtimeContext.key ??
-        this.pointerExternalPreviewPresentedContextKey);
+      : emptyLease
+        ? contextKey(emptyLease.key)
+        : (this.pointerExternalPreviewCapture?.context.runtimeContext.key ??
+          this.pointerExternalPreviewPresentedContextKey ??
+          this.pointerDropPreviewDestinationKey);
 
     if (!key) {
       return;
@@ -6282,6 +6623,7 @@ export class RuntimeController {
 
     this.pointerMoveIntent = null;
     this.clearPointerExternalPreviewContext();
+    this.clearPointerExternalEmptyPreviewContext();
     this.pointerExternalPreviewPresentedContextKey = null;
     this.stopPointerDropPreviewTracking();
     this.clearPointerDropPreview();
@@ -25454,6 +25796,7 @@ export class RuntimeController {
     }
 
     this.defaultColumnWidth = width;
+    this.invalidatePointerExternalEmptyPreviewPolicy();
 
     for (const key of this.waitingWindowIds.keys()) {
       this.pendingAdmissionContexts.add(key);

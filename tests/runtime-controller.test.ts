@@ -32926,6 +32926,184 @@ describe("RuntimeController", () => {
     expect(setup.previews[0]?.ownerToken).toMatch(/^\d+:\d+$/u);
   });
 
+  it.each([
+    { name: "cross-output", sameOutputCrossDesktop: false },
+    { name: "same-output cross-desktop", sameOutputCrossDesktop: true },
+  ])(
+    "previews an empty $name destination without a runtime context",
+    ({ sameOutputCrossDesktop }) => {
+      const setup = createEmptyExternalPointerDropRuntimeFixture({
+        sameOutputCrossDesktop,
+      });
+
+      beginEmptyExternalPointerDrop(setup);
+      flushManualScheduler(setup.scheduler);
+
+      const preview = setup.previews[setup.previews.length - 1];
+
+      expect(preview).toMatchObject({
+        destinationKey: setup.destinationKey,
+        frame: {
+          height: 780,
+          width: 320,
+          x: sameOutputCrossDesktop ? 10 : 1010,
+          y: 10,
+        },
+      });
+      expect(preview?.ownerToken).toMatch(/^\d+:\d+$/u);
+      expect(
+        emptyExternalPointerRuntime(setup).contexts.has(setup.destinationKey),
+      ).toBe(false);
+    },
+  );
+
+  it("previews a valid zero-member destination runtime context", () => {
+    const setup = createEmptyExternalPointerDropRuntimeFixture({
+      emptyRuntimeContext: true,
+    });
+
+    beginEmptyExternalPointerDrop(setup);
+    flushManualScheduler(setup.scheduler);
+
+    expect(setup.previews[setup.previews.length - 1]).toMatchObject({
+      destinationKey: setup.destinationKey,
+      frame: { height: 780, width: 320, x: 1010, y: 10 },
+    });
+    expect(
+      emptyExternalPointerRuntime(setup).contexts.get(setup.destinationKey)
+        ?.windowIds.size,
+    ).toBe(0);
+    expect(
+      runtimeLayout(setup.controller).snapshot(
+        outputId(setup.targetOutput.name),
+        desktopId(setup.targetDesktop.id),
+        FALLBACK_ACTIVITY_ID,
+      ).columns,
+    ).toEqual([]);
+  });
+
+  it("reuses one empty destination plan across cursor motion", () => {
+    const setup = createEmptyExternalPointerDropRuntimeFixture();
+    const runtime = emptyExternalPointerRuntime(setup);
+    const settle = vi.spyOn(runtime, "settledEmptyExternalPointerDestination");
+    const plan = vi.spyOn(runtime, "planEmptyExternalPointerDropPreview");
+
+    beginEmptyExternalPointerDrop(setup);
+    flushManualScheduler(setup.scheduler);
+
+    for (const x of [1501, 1502, 1503]) {
+      setup.fixture.setCursorPosition(x, 400);
+      flushManualScheduler(setup.scheduler);
+    }
+
+    expect(settle).toHaveBeenCalledTimes(1);
+    expect(plan).toHaveBeenCalledTimes(1);
+    expect(setup.previews).toHaveLength(1);
+  });
+
+  it("uses application size and presentation policy for an empty destination preview", () => {
+    const setup = createEmptyExternalPointerDropRuntimeFixture({
+      applicationPolicy: true,
+      targetScale: 1.25,
+    });
+
+    beginEmptyExternalPointerDrop(setup);
+    flushManualScheduler(setup.scheduler);
+
+    const preview = setup.previews[setup.previews.length - 1];
+
+    expect(preview).toMatchObject({
+      destinationKey: setup.destinationKey,
+      frame: { height: 260, width: 420 },
+    });
+    expect(preview?.frame.x).toBeCloseTo(1290.4, 8);
+    expect(preview?.frame.y).toBeCloseTo(10.4, 8);
+    expect(preview && Number.isInteger(preview.frame.x * 1.25)).toBe(true);
+    expect(preview && Number.isInteger(preview.frame.y * 1.25)).toBe(true);
+
+    const updatedWidths = decodeApplicationColumnWidthOverrides(
+      "org.example.Editor=460px",
+    );
+
+    if (!updatedWidths) {
+      throw new Error("updated empty destination policy is invalid");
+    }
+
+    expect(setup.controller.setApplicationColumnWidths(updatedWidths)).toBe(
+      true,
+    );
+    flushManualScheduler(setup.scheduler);
+    const updated = setup.previews[setup.previews.length - 1];
+
+    expect(updated?.frame.width).toBe(460);
+    expect(updated?.ownerToken).not.toBe(preview?.ownerToken);
+  });
+
+  it("hides an empty destination preview outside its work area and while admission is pending", () => {
+    const setup = createEmptyExternalPointerDropRuntimeFixture({
+      insetTargetWorkArea: true,
+    });
+
+    beginEmptyExternalPointerDrop(setup);
+    flushManualScheduler(setup.scheduler);
+    const first = setup.previews[setup.previews.length - 1];
+
+    setup.fixture.setCursorPosition(setup.targetOutput.geometry.x + 5, 5);
+    flushManualScheduler(setup.scheduler);
+    expect(setup.hiddenPreviewOwners).toContain(first?.ownerToken);
+
+    setup.fixture.setCursorPosition(setup.targetOutput.geometry.x + 500, 400);
+    flushManualScheduler(setup.scheduler);
+    const second = setup.previews[setup.previews.length - 1];
+
+    emptyExternalPointerRuntime(setup).pendingAdmissionContexts.add(
+      setup.destinationKey,
+    );
+    setup.fixture.setCursorPosition(setup.targetOutput.geometry.x + 501, 400);
+    flushManualScheduler(setup.scheduler);
+
+    expect(second?.ownerToken).not.toBe(first?.ownerToken);
+    expect(setup.hiddenPreviewOwners).toContain(second?.ownerToken);
+  });
+
+  it("keeps an empty preview non-authoritative and admits the released window normally", () => {
+    const setup = createEmptyExternalPointerDropRuntimeFixture({
+      applicationPolicy: true,
+      targetScale: 1.25,
+    });
+
+    beginEmptyExternalPointerDrop(setup);
+    emptyExternalPointerRuntime(
+      setup,
+    ).pointerExternalPreviewPresentedContextKey = setup.destinationKey;
+    flushManualScheduler(setup.scheduler);
+    const preview = setup.previews[setup.previews.length - 1];
+
+    expect(
+      emptyExternalPointerRuntime(setup)
+        .pointerExternalPreviewPresentedContextKey,
+    ).toBeNull();
+
+    finishEmptyExternalPointerDrop(setup);
+
+    expect(
+      testLayoutColumns(
+        setup.controller,
+        setup.sourceOutput,
+        setup.sourceDesktop,
+      ),
+    ).toEqual([]);
+    expect(
+      testLayoutColumns(
+        setup.controller,
+        setup.targetOutput,
+        setup.targetDesktop,
+      ),
+    ).toEqual([{ id: "column:dragged", windowIds: ["dragged"] }]);
+    expect(setup.dragged.window.frameGeometry).toEqual(preview?.frame);
+    expect(setup.fixture.workspace.activeWindow).toBe(setup.dragged.window);
+  });
+
   it("rotates the preview owner when the external target frame changes", () => {
     const setup = createExternalPointerDropRuntimeFixture();
     const targetFrame = { ...setup.target.window.frameGeometry };
@@ -46457,6 +46635,276 @@ interface ExternalPointerDropRuntimeFixture {
   readonly targetOutput: KWinOutput;
   readonly unrelated: TrackedWindow | null;
   readonly unrelatedDesktop: KWinVirtualDesktop | null;
+}
+
+interface EmptyExternalPointerRuntimeContext {
+  readonly activityId: ReturnType<typeof activityId>;
+  readonly desktopId: ReturnType<typeof desktopId>;
+  geometryFingerprint: string;
+  readonly key: string;
+  readonly outputId: ReturnType<typeof outputId>;
+  readonly windowIds: Set<WindowId>;
+}
+
+interface EmptyExternalPointerRuntimeAccess {
+  readonly contexts: Map<string, EmptyExternalPointerRuntimeContext>;
+  readonly geometry: {
+    contextGeometry(
+      output: ReturnType<typeof outputId>,
+      desktop: ReturnType<typeof desktopId>,
+    ): { readonly fingerprint: string } | null;
+  };
+  readonly pendingAdmissionContexts: Set<string>;
+  planEmptyExternalPointerDropPreview(): unknown;
+  pointerExternalPreviewPresentedContextKey: string | null;
+  settledEmptyExternalPointerDestination(): unknown;
+}
+
+interface EmptyExternalPointerDropRuntimeFixture {
+  readonly controller: RuntimeController;
+  readonly destinationKey: string;
+  readonly dragged: TrackedWindow;
+  readonly fixture: WorkspaceFixture;
+  readonly hiddenPreviewOwners: readonly string[];
+  readonly previews: readonly {
+    readonly destinationKey: string;
+    readonly frame: KWinWindow["frameGeometry"];
+    readonly ownerToken: string;
+  }[];
+  readonly sameOutputCrossDesktop: boolean;
+  readonly scheduler: ManualScheduler;
+  readonly sourceDesktop: KWinVirtualDesktop;
+  readonly sourceOutput: KWinOutput;
+  readonly targetDesktop: KWinVirtualDesktop;
+  readonly targetOutput: KWinOutput;
+}
+
+function createEmptyExternalPointerDropRuntimeFixture(
+  options: {
+    readonly applicationPolicy?: boolean;
+    readonly emptyRuntimeContext?: boolean;
+    readonly insetTargetWorkArea?: boolean;
+    readonly sameOutputCrossDesktop?: boolean;
+    readonly targetScale?: number;
+  } = {},
+): EmptyExternalPointerDropRuntimeFixture {
+  const sameOutputCrossDesktop = options.sameOutputCrossDesktop ?? false;
+  const sourceOutput = createOutput("DP-1", 0);
+  const targetOutput = sameOutputCrossDesktop
+    ? sourceOutput
+    : {
+        ...createOutput("HDMI-A-1", 1000),
+        devicePixelRatio: options.targetScale ?? 1,
+      };
+  const sourceDesktop = { id: "desktop-1" };
+  const targetDesktop = sameOutputCrossDesktop
+    ? { id: "desktop-2" }
+    : sourceDesktop;
+  const applicationPolicy = options.applicationPolicy ?? false;
+  const dragged = createTrackedWindow(
+    "dragged",
+    sourceOutput,
+    sourceDesktop,
+    applicationPolicy
+      ? {
+          clientGeometry: { height: 200, width: 280, x: 10, y: 20 },
+          desktopFileName: "org.example.Editor",
+          frameGeometry: { height: 220, width: 300, x: 0, y: 0 },
+          maxSize: { height: 500, width: 500 },
+          minSize: { height: 100, width: 250 },
+        }
+      : {},
+  );
+  const fixture = createWorkspace(
+    sourceOutput,
+    sourceDesktop,
+    sameOutputCrossDesktop ? [sourceOutput] : [sourceOutput, targetOutput],
+    sameOutputCrossDesktop ? [sourceDesktop, targetDesktop] : [sourceDesktop],
+    [dragged.window],
+  );
+
+  if (options.insetTargetWorkArea) {
+    const baseClientArea = fixture.workspace.clientArea.bind(fixture.workspace);
+    Object.defineProperty(fixture.workspace, "clientArea", {
+      configurable: true,
+      value: (
+        option: number,
+        output: KWinOutput,
+        desktop: KWinVirtualDesktop,
+      ) =>
+        output.name === targetOutput.name
+          ? {
+              height: output.geometry.height - 40,
+              width: output.geometry.width - 40,
+              x: output.geometry.x + 20,
+              y: output.geometry.y + 20,
+            }
+          : baseClientArea(option, output, desktop),
+    });
+  }
+
+  const scheduler = new ManualScheduler();
+  const hiddenPreviewOwners: string[] = [];
+  const previews: Array<{
+    destinationKey: string;
+    frame: KWinWindow["frameGeometry"];
+    ownerToken: string;
+  }> = [];
+  const applicationWidths = applicationPolicy
+    ? decodeApplicationColumnWidthOverrides("org.example.Editor=420px")
+    : null;
+  const applicationHeights = applicationPolicy
+    ? decodeApplicationWindowHeightOverrides("org.example.Editor=240px")
+    : null;
+  const applicationPresentations = applicationPolicy
+    ? decodeApplicationColumnPresentations("org.example.Editor=stacked")
+    : null;
+  const globalHeight = applicationPolicy
+    ? decodeDefaultWindowHeight("60%")
+    : null;
+
+  if (
+    applicationPolicy &&
+    (!applicationWidths ||
+      !applicationHeights ||
+      !applicationPresentations ||
+      !globalHeight)
+  ) {
+    throw new Error("empty destination application policy is invalid");
+  }
+
+  const controller = new RuntimeController(fixture.workspace, {
+    alwaysCenterSingleColumn: applicationPolicy,
+    ...(applicationWidths
+      ? { applicationColumnWidths: applicationWidths }
+      : {}),
+    ...(applicationHeights
+      ? { applicationWindowHeights: applicationHeights }
+      : {}),
+    ...(applicationPresentations
+      ? { applicationColumnPresentations: applicationPresentations }
+      : {}),
+    clientAreaOption: 2,
+    columnWidth: {
+      kind: "proportion",
+      value: applicationPolicy ? 0.2 : 1 / 3,
+    },
+    defaultColumnPresentation: applicationPolicy ? "tabbed" : "stacked",
+    ...(globalHeight ? { defaultWindowHeight: globalHeight } : {}),
+    gap: 10,
+    hidePointerDropPreview: (ownerToken) => {
+      hiddenPreviewOwners.push(ownerToken ?? "");
+    },
+    schedule: scheduler.schedule,
+    scheduleResume: scheduler.schedule,
+    showPointerDropPreview: (frame, destinationKey, ownerToken) => {
+      previews.push({
+        destinationKey: destinationKey ?? "",
+        frame: { ...frame },
+        ownerToken: ownerToken ?? "",
+      });
+    },
+  });
+
+  if (!controller.start()) {
+    throw new Error("empty external pointer drop fixture did not start");
+  }
+
+  if (scheduler.pendingCount > 0) {
+    flushManualScheduler(scheduler);
+  }
+
+  const destinationKey = [
+    targetOutput.name,
+    targetDesktop.id,
+    String(FALLBACK_ACTIVITY_ID),
+  ].join("\u0000");
+  const setup: EmptyExternalPointerDropRuntimeFixture = {
+    controller,
+    destinationKey,
+    dragged,
+    fixture,
+    hiddenPreviewOwners,
+    previews,
+    sameOutputCrossDesktop,
+    scheduler,
+    sourceDesktop,
+    sourceOutput,
+    targetDesktop,
+    targetOutput,
+  };
+
+  if (options.emptyRuntimeContext) {
+    const runtime = emptyExternalPointerRuntime(setup);
+    const geometry = runtime.geometry.contextGeometry(
+      outputId(targetOutput.name),
+      desktopId(targetDesktop.id),
+    );
+
+    if (!geometry) {
+      throw new Error("empty destination geometry is unavailable");
+    }
+
+    runtime.contexts.set(destinationKey, {
+      activityId: FALLBACK_ACTIVITY_ID,
+      desktopId: desktopId(targetDesktop.id),
+      geometryFingerprint: geometry.fingerprint,
+      key: destinationKey,
+      outputId: outputId(targetOutput.name),
+      windowIds: new Set(),
+    });
+  }
+
+  return setup;
+}
+
+function emptyExternalPointerRuntime(
+  setup: EmptyExternalPointerDropRuntimeFixture,
+): EmptyExternalPointerRuntimeAccess {
+  return setup.controller as unknown as EmptyExternalPointerRuntimeAccess;
+}
+
+function beginEmptyExternalPointerDrop(
+  setup: EmptyExternalPointerDropRuntimeFixture,
+): void {
+  Object.defineProperty(setup.dragged.window, "move", {
+    configurable: true,
+    value: true,
+  });
+  setup.dragged.moveResizedChanged.emit();
+  setup.dragged.interactiveMoveResizeStarted.emit();
+  const cursor = {
+    x: setup.targetOutput.geometry.x + setup.targetOutput.geometry.width / 2,
+    y: setup.targetOutput.geometry.y + setup.targetOutput.geometry.height / 2,
+  };
+  setup.dragged.setFrameGeometry({
+    ...setup.dragged.window.frameGeometry,
+    x: cursor.x - setup.dragged.window.frameGeometry.width / 2,
+    y: cursor.y - setup.dragged.window.frameGeometry.height / 2,
+  });
+  setup.fixture.setCursorPosition(cursor.x, cursor.y);
+
+  if (setup.sameOutputCrossDesktop) {
+    setup.fixture.setCurrentDesktop(setup.targetOutput, setup.targetDesktop);
+  }
+}
+
+function finishEmptyExternalPointerDrop(
+  setup: EmptyExternalPointerDropRuntimeFixture,
+): void {
+  if (setup.sameOutputCrossDesktop) {
+    setup.dragged.setExternalDesktops([setup.targetDesktop]);
+  } else {
+    setup.dragged.setOutput(setup.targetOutput);
+  }
+
+  Object.defineProperty(setup.dragged.window, "move", {
+    configurable: true,
+    value: false,
+  });
+  setup.dragged.moveResizedChanged.emit();
+  setup.dragged.interactiveMoveResizeFinished.emit();
+  flushManualScheduler(setup.scheduler);
 }
 
 function createExternalPointerDropRuntimeFixture(
