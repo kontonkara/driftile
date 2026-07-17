@@ -486,6 +486,7 @@ describe("overview effect package", () => {
         .join("\n")
         .match(/(?:model\.window|candidate)\.[A-Za-z0-9_]+\s*=(?!=)/gu) ?? [];
     expect(windowWrites.map((write) => write.replace(/\s*=$/u, ""))).toEqual([
+      "candidate.minimized",
       "candidate.desktops",
       "candidate.desktops",
       "candidate.desktops",
@@ -504,6 +505,10 @@ describe("overview effect package", () => {
     );
     const windowContext = scene.slice(
       scene.indexOf("function windowContextIsExact("),
+      scene.indexOf("function windowFocusStateIsExact("),
+    );
+    const windowFocusState = scene.slice(
+      scene.indexOf("function windowFocusStateIsExact("),
       scene.indexOf("function windowUsesDesktop("),
     );
     const desktopMembership = scene.slice(
@@ -554,9 +559,16 @@ describe("overview effect package", () => {
     expect(tab).toContain(
       "acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad",
     );
-    expect(tab).toContain("enabled: tabShell.visible");
-    expect(tab).toContain("!windowPresentation.tiledPresentation.selected");
-    expect(tab).toContain("!windowPresentation.minimizedWindow");
+    expect(tab).toContain(
+      "enabled: tabShell.visible && tabShell.activationEligible && card.desktop && card.screen",
+    );
+    expect(tab).toContain(
+      "? card.windowSnapshotCanActivateMinimizedTab(windowPresentation)",
+    );
+    expect(tab).toContain(": !windowPresentation.tiledPresentation.selected");
+    expect(tab).toContain(
+      "readonly property bool keyboardTarget: activationEligible && windowPresentation.matchesSearch",
+    );
     expect(tab).toContain("visible: frame !== null && model.window");
     expect(tab).toContain(
       "opacity: windowPresentation.minimizedWindow ? 0.6 : 1",
@@ -590,8 +602,11 @@ describe("overview effect package", () => {
     expect(focusHandler).toContain(
       "const expectedActivityId = String(KWin.Workspace.currentActivity);",
     );
+    expect(focusHandler).toContain(
+      "const expectedMinimized = candidate !== null && candidate !== undefined && candidate.minimized === true;",
+    );
     expect(focusHandler).toMatch(
-      /desktopContextIsExact\(effect, model, liveScreen, expectedOutput, expectedOutputId, liveDesktop,\s*expectedDesktopId\) \|\| !windowContextIsExact\(candidate, expectedWindowId,\s*liveScreen, liveDesktop,\s*expectedDesktopId,\s*expectedActivityId, false\)/u,
+      /desktopContextIsExact\(effect, model, liveScreen, expectedOutput, expectedOutputId, liveDesktop,\s*expectedDesktopId\) \|\| !windowContextIsExact\(candidate, expectedWindowId,\s*liveScreen, liveDesktop,\s*expectedDesktopId,\s*expectedActivityId\)\s*\|\| !windowFocusStateIsExact\(candidate, expectedMinimized, false\)\s*\|\| \(expectedMinimized && candidate\.managed !== true\)/u,
     );
     expect(focusHandler).toContain("const activeDesktop = currentDesktop;");
     expect(focusHandler).toMatch(
@@ -603,7 +618,7 @@ describe("overview effect package", () => {
       "String(selectedDesktop.id) === expectedDesktopId",
     );
     expect(focusHandler).toMatch(
-      /windowContextIsExact\(candidate, expectedWindowId, liveScreen, liveDesktop, expectedDesktopId,\s*expectedActivityId, true\)/u,
+      /windowContextIsExact\(candidate, expectedWindowId, liveScreen, liveDesktop, expectedDesktopId,\s*expectedActivityId\)\s*&& windowFocusStateIsExact\(candidate, false, true\)/u,
     );
     expect(focusHandler).toContain("catch (error)");
     expect(focusHandler).toContain("focusConfirmed = false;");
@@ -628,9 +643,7 @@ describe("overview effect package", () => {
     );
 
     expect(windowContext).toContain("!candidate.deleted");
-    expect(windowContext).toContain("!candidate.minimized");
     expect(windowContext).toContain("candidate.wantsInput === true");
-    expect(windowContext).toContain("(!rejectHidden || !candidate.hidden)");
     expect(windowContext).toContain("expectedWindowId.length > 0");
     expect(windowContext).toContain(
       "String(candidate.internalId) === expectedWindowId",
@@ -645,6 +658,12 @@ describe("overview effect package", () => {
     expect(windowContext).toContain(
       "windowUsesActivity(candidate, expectedActivityId)",
     );
+    expect(windowContext).not.toContain("candidate.minimized");
+    expect(windowContext).not.toContain("candidate.hidden");
+    expect(windowFocusState).toContain(
+      "candidate.minimized === expectedMinimized",
+    );
+    expect(windowFocusState).toContain("(!rejectHidden || !candidate.hidden)");
     expect(desktopMembership).toContain("const desktops = candidate.desktops");
     expect(desktopMembership).toMatch(
       /if \(desktops\.length === 0\) \{\s*return true;/u,
@@ -666,18 +685,27 @@ describe("overview effect package", () => {
     ).toHaveLength(1);
     expect(focusHandler.match(/effect\.deactivate\(\)/gu)).toHaveLength(1);
     expect(focusHandler).toMatch(
-      /if \(focusConfirmed \|\| desktopSelectionConfirmed\) \{\s*effect\.deactivate\(\);\s*\}/u,
+      /if \(focusConfirmed \|\| \(!expectedMinimized && desktopSelectionConfirmed\)\) \{\s*effect\.deactivate\(\);\s*\}/u,
     );
 
+    const minimizedSnapshot = focusHandler.indexOf(
+      "const expectedMinimized = candidate !== null",
+    );
     const preSelectionValidation = focusHandler.indexOf(
-      "expectedActivityId, false",
+      "windowFocusStateIsExact(candidate, expectedMinimized, false)",
     );
     const desktopRequest = focusHandler.indexOf("requestDesktopSelection(");
     const selectedFlag = focusHandler.indexOf(
       "desktopSelectionConfirmed = true;",
     );
-    const postSelectionValidation = focusHandler.lastIndexOf(
-      "expectedActivityId, true",
+    const minimizedBranch = focusHandler.indexOf("if (expectedMinimized) {");
+    const preRestoreValidation = focusHandler.indexOf(
+      "windowFocusStateIsExact(candidate, true, false)",
+    );
+    const restoreWrite = focusHandler.indexOf("candidate.minimized = false");
+    const postRestoreValidation = focusHandler.indexOf(
+      "windowFocusStateIsExact(candidate, false, true)",
+      restoreWrite,
     );
     const activeWindowWrite = focusHandler.indexOf(
       "KWin.Workspace.activeWindow = candidate",
@@ -685,15 +713,30 @@ describe("overview effect package", () => {
     const focusConfirmation = focusHandler.indexOf(
       "focusConfirmed = KWin.Workspace.activeWindow === candidate;",
     );
+    const postFocusValidation = focusHandler.lastIndexOf(
+      "windowFocusStateIsExact(candidate, false, true)",
+    );
     const deactivate = focusHandler.indexOf("effect.deactivate()");
+    expect(minimizedSnapshot).toBeGreaterThan(0);
     expect(preSelectionValidation).toBeGreaterThan(0);
+    expect(preSelectionValidation).toBeGreaterThan(minimizedSnapshot);
     expect(desktopRequest).toBeGreaterThan(preSelectionValidation);
     expect(selectedFlag).toBeGreaterThan(desktopRequest);
-    expect(postSelectionValidation).toBeGreaterThan(selectedFlag);
-    expect(activeWindowWrite).toBeGreaterThan(postSelectionValidation);
+    expect(minimizedBranch).toBeGreaterThan(selectedFlag);
+    expect(preRestoreValidation).toBeGreaterThan(minimizedBranch);
+    expect(restoreWrite).toBeGreaterThan(preRestoreValidation);
+    expect(postRestoreValidation).toBeGreaterThan(restoreWrite);
+    expect(activeWindowWrite).toBeGreaterThan(postRestoreValidation);
     expect(focusConfirmation).toBeGreaterThan(activeWindowWrite);
+    expect(postFocusValidation).toBeGreaterThan(focusConfirmation);
     expect(deactivate).toBeGreaterThan(focusConfirmation);
     expect(deactivate).toBeGreaterThan(activeWindowWrite);
+    expect(focusHandler.match(/candidate\.minimized = false/gu)).toHaveLength(
+      1,
+    );
+    expect(
+      focusHandler.match(/windowFocusStateIsExact\(candidate, false, true\)/gu),
+    ).toHaveLength(3);
 
     expect(scene).not.toContain("KWin.Workspace.stackingOrder");
     expect(`${scene}\n${desktopCard}`).not.toMatch(
@@ -721,6 +764,10 @@ describe("overview effect package", () => {
     const snapshotClose = desktopCard.slice(
       desktopCard.indexOf("function windowSnapshotCanRequestClose("),
       desktopCard.indexOf("function windowCanDrag("),
+    );
+    const liveDrag = desktopCard.slice(
+      desktopCard.indexOf("function windowCanDrag("),
+      desktopCard.indexOf("function requestCrossOutputWindowDrop("),
     );
     const snapshotDrop = desktopCard.slice(
       desktopCard.indexOf("function windowDropSourceIsEligible("),
@@ -779,9 +826,18 @@ describe("overview effect package", () => {
     }
     expect(snapshotDrag).toContain("snapshot.transient !== false");
     expect(snapshotDrag).toContain("snapshot.transientFor !== null");
+    expect(snapshotDrag).toContain("snapshot.minimized");
     expect(snapshotDrag).toContain("desktops && desktops.length === 1");
+    expect(liveDrag).toContain("candidate.minimized");
+    expect(liveDrag).toContain("presentation.minimizedWindow");
     expect(snapshot).toContain("let desktops = null");
     expect(snapshotClose).toContain("if (!snapshot.desktops)");
+    expect(snapshotClose).toContain(
+      "snapshot.minimized !== (presentation.minimizedWindow === true)",
+    );
+    expect(snapshotClose).toContain(
+      "candidate.minimized !== snapshot.minimized",
+    );
     expect(snapshotDrop).toContain("source.dragEligible === true");
     expect(snapshotDrop).not.toContain("windowCanDrag(");
     expect(desktopCard).toContain(
@@ -1254,6 +1310,10 @@ describe("overview effect package", () => {
       desktopCard.indexOf("function anyWindowDemandsAttention("),
       desktopCard.indexOf("function windowMatchesSearch("),
     );
+    const minimizedActivation = desktopCard.slice(
+      desktopCard.indexOf("function windowSnapshotCanActivateMinimizedTab("),
+      desktopCard.indexOf("function anyWindowDemandsAttention("),
+    );
 
     expect(scene).toContain('import "../code/main.js" as OverviewRuntime');
     expect(scene).toContain('property string keyboardSelectionId: ""');
@@ -1328,7 +1388,13 @@ describe("overview effect package", () => {
     expect(desktopCard).toContain("id: windowRepeater");
     expect(cardTargets).toContain("windowRepeater.itemAt(index)");
     expect(cardTargets).toContain(
-      "presentation.tiledPresentation && !presentation.tiledPresentation.selected",
+      "!presentation.matchesSearch || !windowCanNavigate(presentation)",
+    );
+    expect(cardTargets).toContain(
+      "const visual = presentation.minimizedWindow ? presentation.tabTarget",
+    );
+    expect(cardTargets).toContain(
+      "&& !presentation.tiledPresentation.selected",
     );
     expect(cardTargets).toContain("presentation.tabTarget");
     expect(cardTargets).toContain("presentation.thumbnailTarget");
@@ -1364,7 +1430,55 @@ describe("overview effect package", () => {
     expect(thumbnail).toContain(
       "windowPresentation.tiledPresentation.selected",
     );
-    expect(tab).toContain("!windowPresentation.tiledPresentation.selected");
+    expect(thumbnail).toContain("!windowPresentation.minimizedWindow");
+    expect(tab).toContain(
+      "readonly property bool activationEligible: windowPresentation.tiledPresentation",
+    );
+    expect(tab).toContain("windowPresentation.minimizedWindow");
+    expect(tab).toContain(
+      "? card.windowSnapshotCanActivateMinimizedTab(windowPresentation)",
+    );
+    expect(tab).toContain(": !windowPresentation.tiledPresentation.selected");
+    expect(tab).toContain(
+      "readonly property bool keyboardTarget: activationEligible && windowPresentation.matchesSearch",
+    );
+    expect(tab).toContain(
+      "enabled: tabShell.visible && tabShell.activationEligible && card.desktop && card.screen",
+    );
+    expect(tab).toContain(
+      "visible: frame !== null && model.window && windowPresentation.matchesSearch",
+    );
+    for (const condition of [
+      "presentation.matchesSearch !== true",
+      "presentation.minimizedWindow !== true",
+      "!tiled || !tiled.tabFrame",
+      "snapshot.deleted",
+      "snapshot.minimized !== true",
+      "snapshot.managed !== true",
+      "snapshot.wantsInput !== true",
+      "snapshot.windowId.length === 0",
+      "snapshot.windowId !== presentation.windowId",
+      "candidate.deleted === true",
+      "candidate.minimized !== true",
+      "candidate.managed !== true",
+      "candidate.wantsInput !== true",
+      "String(candidate.internalId) !== snapshot.windowId",
+      "snapshot.output !== expectedScreen",
+      "candidate.output !== expectedScreen",
+    ]) {
+      expect(minimizedActivation).toContain(condition);
+    }
+    expect(minimizedActivation).toContain("const desktops = snapshot.desktops");
+    expect(minimizedActivation).toContain("if (!desktops)");
+    expect(minimizedActivation).toMatch(
+      /if \(desktops\.length === 0\) \{\s*return true;/u,
+    );
+    expect(minimizedActivation).toContain(
+      "desktops[index] === expectedDesktop && snapshot.desktopIds[index] === expectedDesktopId",
+    );
+    expect(minimizedActivation).not.toMatch(
+      /\b(?:Timer|Behavior|Animation|ShortcutHandler)\s*\{|org\.kde\.kwin\.private|\bsequence\s*:|(?:candidate|snapshot|presentation)\.[A-Za-z0-9_]+\s*=(?!=)/u,
+    );
     for (const visual of [thumbnail, tab]) {
       expect(visual).toContain(
         "card.keyboardSelectionId === card.navigationTargetId(windowPresentation.windowId)",
@@ -1598,9 +1712,16 @@ describe("overview effect package", () => {
     ]) {
       expect(matcher).toContain(`${field}:`);
     }
+    expect(matcher).toContain("state: card.windowSearchState(candidate)");
+    expect(matcher).toContain("function windowSearchState(candidate)");
+    expect(matcher).toContain("if (windowDemandsAttention(candidate))");
+    expect(matcher).toContain('states.push("urgent attention")');
     expect(matcher).toContain(
-      'state: card.windowDemandsAttention(candidate) ? "urgent attention" : ""',
+      "candidate && candidate.deleted !== true && candidate.minimized === true",
     );
+    expect(matcher).toContain('states.push("minimized")');
+    expect(matcher.match(/states\.push\(/gu)).toHaveLength(2);
+    expect(matcher).toContain('return states.join(" ")');
     expect(matcher).toContain(
       'typeof runtime.matchesOverviewWindowSearch !== "function"',
     );
@@ -1636,6 +1757,10 @@ describe("overview effect package", () => {
     expect(transaction.match(/closeWindowContextIsExact\(/gu)).toHaveLength(3);
     expect(transaction).toContain("desktopContextIsExact(");
     expect(transaction).toContain("windowContextIsExact(");
+    expect(transaction).toContain(
+      "const expectedMinimized = candidate !== null && candidate !== undefined && candidate.minimized === true;",
+    );
+    expect(transaction).toContain("candidate.minimized === expectedMinimized");
     expect(transaction).toContain("candidate.managed === true");
     expect(transaction).toContain("candidate.closeable === true");
     expect(transaction).toContain(
@@ -1693,11 +1818,26 @@ describe("overview effect package", () => {
 
     expect(eligibility).toContain("presentation.matchesSearch !== true");
     expect(eligibility).toContain("snapshot.deleted");
-    expect(eligibility).toContain("snapshot.minimized");
     expect(eligibility).toContain("snapshot.managed !== true");
     expect(eligibility).toContain("snapshot.closeable !== true");
     expect(eligibility).toContain("snapshot.windowId.length === 0");
+    expect(eligibility).toContain(
+      "snapshot.windowId !== presentation.windowId",
+    );
+    expect(eligibility).toContain(
+      "snapshot.minimized !== (presentation.minimizedWindow === true)",
+    );
+    expect(eligibility).not.toMatch(
+      /\|\|\s*snapshot\.minimized\s*(?:\|\||\n)/u,
+    );
+    expect(eligibility).toContain("candidate.managed !== true");
+    expect(eligibility).toContain("candidate.closeable !== true");
+    expect(eligibility).toContain("candidate.minimized !== snapshot.minimized");
+    expect(eligibility).toContain(
+      "String(candidate.internalId) !== snapshot.windowId",
+    );
     expect(eligibility).toContain("snapshot.output !== expectedScreen");
+    expect(eligibility).toContain("candidate.output !== expectedScreen");
     expect(eligibility).toContain(
       "snapshot.desktops[index] === expectedDesktop",
     );
