@@ -12,6 +12,8 @@ export {
 } from "./navigation";
 export type { OverviewWheelNavigationPlan } from "./navigation";
 export { planOverviewDesktopDrop } from "./desktop-drop";
+export { planOverviewMinimizedPlaceholder } from "./minimized-placeholder";
+export type { OverviewMinimizedPlaceholderRect } from "./minimized-placeholder";
 export { planOverviewWindowDesktopDrop } from "./window-drop";
 export {
   appendOverviewSearchText,
