@@ -1183,6 +1183,7 @@ export class RuntimeController {
   private lastActivatedWindow: KWinWindow | null = null;
   private previousActivatedWindow: KWinWindow | null = null;
   private readonly windowFocusHistory = new Set<WindowId>();
+  private readonly windowRemovalFocusHistory = new Set<WindowId>();
   private pendingWindowRemovalFocusRecovery: PendingWindowRemovalFocusRecovery | null =
     null;
   private focusRequestDepth = 0;
@@ -4390,6 +4391,7 @@ export class RuntimeController {
       this.lastActivatedWindow = null;
       this.previousActivatedWindow = null;
       this.windowFocusHistory.clear();
+      this.windowRemovalFocusHistory.clear();
       this.pendingWindowRemovalFocusRecovery = null;
       this.managedWindows.clear();
       this.pendingAdmissionContexts.clear();
@@ -7772,6 +7774,7 @@ export class RuntimeController {
   private readonly handleWindowRemoved = (id: string): void => {
     const managedId = windowId(id);
     this.windowFocusHistory.delete(managedId);
+    this.windowRemovalFocusHistory.delete(managedId);
     const endedInteractiveResize =
       String(this.interactiveResizeSource?.internalId) === id;
 
@@ -8140,7 +8143,7 @@ export class RuntimeController {
     }
 
     const targetId = windowId(String(target.internalId));
-    const layer = this.focusAvailableWindowLayer(
+    const layer = this.windowRemovalFocusCandidateLayer(
       targetId,
       target,
       focus.contextKey,
@@ -8152,7 +8155,9 @@ export class RuntimeController {
 
     recovery.requestedWindowId = targetId;
 
-    if (this.requestWindowFocus(targetId, target, focus.contextKey, layer)) {
+    if (
+      this.requestWindowRemovalFocus(targetId, target, focus.contextKey, layer)
+    ) {
       this.rememberLayerFocus(targetId, target);
     }
   }
@@ -8225,7 +8230,11 @@ export class RuntimeController {
       previousId &&
       previousId !== removedId &&
       previous &&
-      this.focusAvailableWindowLayer(previousId, previous, focus.contextKey)
+      this.windowRemovalFocusCandidateLayer(
+        previousId,
+        previous,
+        focus.contextKey,
+      )
     ) {
       return previous;
     }
@@ -8246,12 +8255,12 @@ export class RuntimeController {
   private previousWindowRemovalFocusTargetId(key: string): WindowId | null {
     let previous: WindowId | null = null;
 
-    for (const candidateId of this.windowFocusHistory) {
+    for (const candidateId of this.windowRemovalFocusHistory) {
       const candidate = this.observer.source(candidateId);
 
       if (
         candidate &&
-        this.focusAvailableWindowLayer(candidateId, candidate, key)
+        this.windowRemovalFocusCandidateLayer(candidateId, candidate, key)
       ) {
         previous = candidateId;
       }
@@ -8827,6 +8836,60 @@ export class RuntimeController {
     return isGeometryWritable(source) ? layer : null;
   }
 
+  private windowRemovalFocusCandidateLayer(
+    id: WindowId,
+    source: KWinWindow,
+    key: string,
+  ): WindowLayer | null {
+    if (
+      this.observer.source(id) !== source ||
+      !source.managed ||
+      source.deleted ||
+      source.minimized ||
+      source.desktopWindow ||
+      source.dock ||
+      source.specialWindow ||
+      source.onAllDesktops ||
+      (!source.normalWindow && !source.dialog) ||
+      this.suspendedWindows.has(id) ||
+      this.requestedSuspensions.has(id)
+    ) {
+      return null;
+    }
+
+    return this.windowLayer(id, source, key);
+  }
+
+  private requestWindowRemovalFocus(
+    targetId: WindowId,
+    target: KWinWindow,
+    key: string,
+    layer: WindowLayer,
+  ): boolean {
+    let focusRequestFailed = false;
+
+    this.focusRequestDepth += 1;
+
+    try {
+      this.workspace.activeWindow = target;
+    } catch {
+      focusRequestFailed = true;
+    } finally {
+      this.focusRequestDepth -= 1;
+    }
+
+    return (
+      !focusRequestFailed &&
+      this.started &&
+      !this.windowTransferOperation &&
+      this.startupStabilizationToken === null &&
+      !this.hasTopologyBarrier() &&
+      this.workspace.activeWindow === target &&
+      this.observer.source(targetId) === target &&
+      this.windowRemovalFocusCandidateLayer(targetId, target, key) === layer
+    );
+  }
+
   private focusFloatingTarget(
     targetId: WindowId,
     target: KWinWindow,
@@ -9024,6 +9087,17 @@ export class RuntimeController {
   }
 
   private recordWindowFocus(id: WindowId, source: KWinWindow): void {
+    const context = this.resolveLayerFocusContext(source);
+
+    if (context) {
+      const key = contextKey(context);
+
+      if (this.windowRemovalFocusCandidateLayer(id, source, key)) {
+        this.windowRemovalFocusHistory.delete(id);
+        this.windowRemovalFocusHistory.add(id);
+      }
+    }
+
     if (!this.windowIsFocusHistoryEligible(id, source)) {
       return;
     }

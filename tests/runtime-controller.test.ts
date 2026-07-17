@@ -2190,6 +2190,40 @@ describe("RuntimeController", () => {
     controller.stop();
   });
 
+  it("restores previous focus after closing an active manual-floating window", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const previous = createTrackedWindow("previous", output, desktop);
+    const removed = createTrackedWindow("removed", output, desktop);
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [previous.window, removed.window],
+    );
+    const scheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      schedule: scheduler.schedule,
+    });
+
+    expect(controller.start()).toBe(true);
+    expect(controller.toggleFloating()).toBe(true);
+    fixture.workspace.activeWindow = previous.window;
+    fixture.workspace.activeWindow = removed.window;
+    fixture.workspace.activeWindow = null;
+    flushManualScheduler(scheduler);
+    const activationCount = fixture.activationCount;
+
+    fixture.windowRemoved.emit(removed.window);
+    flushManualScheduler(scheduler);
+
+    expect(fixture.workspace.activeWindow).toBe(previous.window);
+    expect(fixture.activationCount).toBe(activationCount + 1);
+    controller.stop();
+  });
+
   it.each(["dialog", "application-excluded"] as const)(
     "restores previous focus after closing an active automatic-floating %s window",
     (kind) => {
@@ -2226,6 +2260,57 @@ describe("RuntimeController", () => {
 
       expect(controller.start()).toBe(true);
       expect(controller.automaticFloatingCount).toBe(1);
+      fixture.workspace.activeWindow = previous.window;
+      fixture.workspace.activeWindow = removed.window;
+      fixture.workspace.activeWindow = null;
+      flushManualScheduler(scheduler);
+      const activationCount = fixture.activationCount;
+
+      fixture.windowRemoved.emit(removed.window);
+      flushManualScheduler(scheduler);
+
+      expect(fixture.workspace.activeWindow).toBe(previous.window);
+      expect(fixture.activationCount).toBe(activationCount + 1);
+      controller.stop();
+    },
+  );
+
+  it.each(["dialog", "application-excluded"] as const)(
+    "restores a previously focused automatic-floating %s after a tiled window closes",
+    (kind) => {
+      const output = createOutput("DP-1", 0);
+      const desktop = { id: "desktop-1" };
+      const previous = createTrackedWindow(
+        "previous",
+        output,
+        desktop,
+        kind === "dialog"
+          ? { dialog: true, normalWindow: false }
+          : { desktopFileName: "org.example.Excluded" },
+      );
+      const adjacent = createTrackedWindow("adjacent", output, desktop);
+      const removed = createTrackedWindow("removed", output, desktop);
+      const fixture = createWorkspace(
+        output,
+        desktop,
+        [output],
+        [desktop],
+        [previous.window, adjacent.window, removed.window],
+      );
+      const scheduler = new ManualScheduler();
+      const controller = new RuntimeController(fixture.workspace, {
+        ...(kind === "application-excluded"
+          ? {
+              applicationTilingExclusions: requiredApplicationTilingExclusions(
+                "org.example.Excluded",
+              ),
+            }
+          : {}),
+        clientAreaOption: 2,
+        schedule: scheduler.schedule,
+      });
+
+      expect(controller.start()).toBe(true);
       fixture.workspace.activeWindow = previous.window;
       fixture.workspace.activeWindow = removed.window;
       fixture.workspace.activeWindow = null;
@@ -2317,6 +2402,46 @@ describe("RuntimeController", () => {
     expect(controller.increaseColumnWidth()).toBe(true);
     expect(delayedFrameCommit).not.toBeNull();
     removed.setWriteBehavior(null);
+    fixture.workspace.activeWindow = null;
+    const activationCount = fixture.activationCount;
+
+    fixture.windowRemoved.emit(removed.window);
+    flushManualScheduler(scheduler);
+
+    expect(fixture.workspace.activeWindow).toBe(previous.window);
+    expect(fixture.activationCount).toBe(activationCount + 1);
+    controller.stop();
+  });
+
+  it("restores previous manual-floating focus while its geometry is still settling", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const previous = createTrackedWindow("previous", output, desktop);
+    const adjacent = createTrackedWindow("adjacent", output, desktop);
+    const removed = createTrackedWindow("removed", output, desktop);
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [previous.window, adjacent.window, removed.window],
+    );
+    const scheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      schedule: scheduler.schedule,
+    });
+    let delayedFrameCommit: (() => void) | null = null;
+
+    expect(controller.start()).toBe(true);
+    fixture.workspace.activeWindow = previous.window;
+    previous.setWriteBehavior((_frame, commit) => {
+      delayedFrameCommit = commit;
+    });
+    expect(controller.toggleFloating()).toBe(true);
+    expect(delayedFrameCommit).not.toBeNull();
+    previous.setWriteBehavior(null);
+    fixture.workspace.activeWindow = removed.window;
     fixture.workspace.activeWindow = null;
     const activationCount = fixture.activationCount;
 
