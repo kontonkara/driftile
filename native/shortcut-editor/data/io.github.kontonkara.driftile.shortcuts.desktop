@@ -10,4 +10,5 @@ Exec=driftile-shortcut-editor
 Icon=preferences-desktop-keyboard-shortcuts
 Terminal=false
 Categories=Settings;DesktopSettings;Qt;KDE;
+Keywords=shortcut;shortcuts;hotkey;hotkeys;keyboard;keybinding;KWin;Driftile;
 StartupNotify=true

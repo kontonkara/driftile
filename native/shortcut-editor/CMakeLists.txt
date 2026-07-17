@@ -65,3 +65,7 @@ install(
     FILES data/io.github.kontonkara.driftile.shortcuts.desktop
     DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/applications
 )
+install(
+    FILES data/io.github.kontonkara.driftile.shortcuts.metainfo.xml
+    DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/metainfo
+)

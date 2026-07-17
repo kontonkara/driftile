@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+SPDX-FileCopyrightText: 2026 Nikita Konton
+SPDX-License-Identifier: CC0-1.0
+-->
+<component type="desktop-application">
+  <id>io.github.kontonkara.driftile.shortcuts</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-or-later</project_license>
+  <name>Driftile Shortcuts</name>
+  <summary>Configure global shortcuts for Driftile</summary>
+  <description>
+    <p>
+      Review and edit the primary and alternate global shortcuts exposed by
+      Driftile in KDE Plasma.
+    </p>
+    <p>
+      Changes are written only when Apply is pressed, and failed updates are
+      rolled back to the previous assignments.
+    </p>
+  </description>
+  <launchable type="desktop-id">io.github.kontonkara.driftile.shortcuts.desktop</launchable>
+  <icon type="stock">preferences-desktop-keyboard-shortcuts</icon>
+  <provides>
+    <binary>driftile-shortcut-editor</binary>
+  </provides>
+  <url type="homepage">https://github.com/kontonkara/driftile</url>
+  <url type="bugtracker">https://github.com/kontonkara/driftile/issues</url>
+  <developer id="io.github.kontonkara">
+    <name>Nikita Konton</name>
+  </developer>
+  <categories>
+    <category>Settings</category>
+    <category>DesktopSettings</category>
+    <category>Qt</category>
+    <category>KDE</category>
+  </categories>
+  <content_rating type="oars-1.1"/>
+</component>
