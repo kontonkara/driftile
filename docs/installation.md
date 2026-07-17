@@ -1,6 +1,6 @@
 # Installation
 
-Driftile 1.49.0 is the latest stable release. It requires KDE Plasma with KWin
+Driftile 1.50.0 is the latest stable release. It requires KDE Plasma with KWin
 6.7 or newer and `kpackagetool6`, and targets Wayland, XWayland, and a
 single-output native X11 session.
 Touchpad navigation is available only on native Wayland. Run all commands as
@@ -18,15 +18,15 @@ the desktop user, not with `sudo`.
 ## Install a release
 
 Download these files from the
-[`v1.49.0` release](https://github.com/kontonkara/driftile/releases/tag/v1.49.0):
+[`v1.50.0` release](https://github.com/kontonkara/driftile/releases/tag/v1.50.0):
 
-- `driftile-1.49.0.kwinscript`
-- `driftile-overview-1.49.0.kwineffect` if using the optional overview
-- `driftile-transitions-1.49.0.kwineffect` if using optional geometry
+- `driftile-1.50.0.kwinscript`
+- `driftile-overview-1.50.0.kwineffect` if using the optional overview
+- `driftile-transitions-1.50.0.kwineffect` if using optional geometry
   transitions
 - `SHA256SUMS`
 - `LICENSE`
-- `driftile-shortcuts-1.49.0.mjs` if using the optional shortcut helper
+- `driftile-shortcuts-1.50.0.mjs` if using the optional shortcut helper
 
 Verify every downloaded release asset before installing it:
 
@@ -38,7 +38,7 @@ Install the KWin package:
 
 ```bash
 kpackagetool6 --type=KWin/Script \
-  --install ./driftile-1.49.0.kwinscript
+  --install ./driftile-1.50.0.kwinscript
 ```
 
 Open **System Settings > Window Management > KWin Scripts**, enable
@@ -52,7 +52,7 @@ Install the optional transition effect separately:
 
 ```bash
 kpackagetool6 --type=KWin/Effect \
-  --install ./driftile-transitions-1.49.0.kwineffect
+  --install ./driftile-transitions-1.50.0.kwineffect
 ```
 
 Enable **Driftile Transitions** under **System Settings > Window Management >
@@ -64,7 +64,7 @@ default.
 
 ## Configure shortcuts
 
-Driftile works without the companion helper. The 1.49.0 helper claims the
+Driftile works without the companion helper. The 1.50.0 helper claims the
 bundled defaults and accepts custom profiles. Any action can instead be
 assigned manually.
 
@@ -75,8 +75,8 @@ Driftile before running it, and keep the helper until its saved claim has been
 released.
 
 ```bash
-node ./driftile-shortcuts-1.49.0.mjs claim
-node ./driftile-shortcuts-1.49.0.mjs check
+node ./driftile-shortcuts-1.50.0.mjs claim
+node ./driftile-shortcuts-1.50.0.mjs check
 ```
 
 `claim` transactionally saves and replaces active conflicting assignments.
@@ -84,7 +84,7 @@ node ./driftile-shortcuts-1.49.0.mjs check
 after the claim:
 
 ```bash
-node ./driftile-shortcuts-1.49.0.mjs release
+node ./driftile-shortcuts-1.50.0.mjs release
 ```
 
 If `release` reports assignments edited after the claim, stop and resolve them
@@ -96,9 +96,9 @@ Pass the same custom file to `claim` and `check`. `release` reads the saved
 transaction and rejects `--profile`:
 
 ```bash
-node ./driftile-shortcuts-1.49.0.mjs claim --profile ./shortcuts.json
-node ./driftile-shortcuts-1.49.0.mjs check --profile ./shortcuts.json
-node ./driftile-shortcuts-1.49.0.mjs release
+node ./driftile-shortcuts-1.50.0.mjs claim --profile ./shortcuts.json
+node ./driftile-shortcuts-1.50.0.mjs check --profile ./shortcuts.json
+node ./driftile-shortcuts-1.50.0.mjs release
 ```
 
 Release the current claim before claiming a changed profile.
@@ -112,7 +112,7 @@ restore displaced assignments automatically.
 
 ### Optional native shortcut editor
 
-The 1.50 development line provides **Driftile Shortcuts**, an optional Qt/KDE
+Driftile 1.50.0 provides **Driftile Shortcuts**, an optional Qt/KDE
 editor for the active extension's primary and alternate assignments. Enable
 Driftile before starting it; an inactive extension has no registered actions to
 edit. Changes remain local to the window until **Apply** is pressed. Apply
@@ -121,22 +121,21 @@ conflicts or external changes, then writes and verifies the changed actions as
 one rollback-capable transaction.
 
 The editor is separate from the KWin package, so ordinary installations remain
-lightweight. To build it from a 1.50 development checkout, install CMake 3.22 or
+lightweight. To build it from a 1.50.0 checkout, install CMake 3.22 or
 newer, a C++20 compiler, Qt 6.7 development files for Core, DBus, and Widgets,
 and KDE Frameworks 6 development files for GlobalAccel and XmlGui. Then run:
 
 ```bash
 cmake -S native/shortcut-editor -B build/shortcut-editor \
   -DCMAKE_BUILD_TYPE=Release \
-  -DDRIFTILE_VERSION=1.50.0-dev.0 \
+  -DDRIFTILE_VERSION=1.50.0 \
   -DCMAKE_INSTALL_PREFIX="$HOME/.local"
 cmake --build build/shortcut-editor --parallel
 cmake --install build/shortcut-editor
 "$HOME/.local/bin/driftile-shortcut-editor"
 ```
 
-The current development flake exposes the separate
-`driftile-shortcut-editor` package:
+The flake exposes the separate `driftile-shortcut-editor` package:
 
 ```bash
 nix build .#driftile-shortcut-editor
@@ -266,7 +265,7 @@ The flake exposes packages and installation modules for `x86_64-linux` and
 `aarch64-linux`. Add Driftile as an input:
 
 ```nix
-inputs.driftile.url = "github:kontonkara/driftile/v1.49.0";
+inputs.driftile.url = "github:kontonkara/driftile/v1.50.0";
 ```
 
 ### NixOS
@@ -298,7 +297,7 @@ modules = [
 
 ### Shared options
 
-The 1.49.0 module exposes the optional overview as a separate package. It
+The 1.50.0 module exposes the optional overview as a separate package. It
 remains disabled unless requested:
 
 ```nix
@@ -336,12 +335,12 @@ and the bounded exact `windowClass` list are nullable too. Each default is
 `null`, which leaves that KWin setting untouched. These options can manage an
 effect installed in another scope without setting `transitions.enable`.
 
-Main-script, overview, and transition ownership are independent. NixOS may
-install one while Home Manager installs another, but the modules reject
-installing the same package ID in both scopes for one user. The overview module
-does not enable its effect in KWin. On a fresh shortcut record, the enabled
-overview offers `Meta+O`; upgrades preserve the current KGlobalAccel
-assignment. See [Overview companion](overview.md).
+Main-script, overview, transition, and shortcut-editor ownership are
+independent. NixOS may install one while Home Manager installs another, but the
+modules reject installing the same package ID in both scopes for one user. The
+overview module does not enable its effect in KWin. On a fresh shortcut record,
+the enabled overview offers `Meta+O`; upgrades preserve the current
+KGlobalAccel assignment. See [Overview companion](overview.md).
 
 The current Home Manager module exposes a complete settings profile:
 
@@ -394,6 +393,7 @@ programs.driftile.settings = {
   showTabIndicator = true;
   defaultColumnWidthPercent = 33;
   defaultColumnWidthPixels = 0;
+  useInitialWindowWidth = false;
   columnWidthStepPercent = 10;
   touchpadNavigation = false;
   touchpadWorkspaceNavigation = false;
@@ -426,7 +426,7 @@ already installed by NixOS or another system module, keep
 Manager. See [Configuration](configuration.md#home-manager) for ownership and
 reload behavior.
 
-The 1.49.0 Home Manager module can also generate a custom shortcut profile:
+The 1.50.0 Home Manager module can also generate a custom shortcut profile:
 
 ```nix
 programs.driftile.shortcuts = {

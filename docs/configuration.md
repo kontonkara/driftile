@@ -270,8 +270,8 @@ Open **System Settings > Keyboard > Shortcuts** and search for **Driftile** to
 change any registered action. KGlobalAccel stores and applies assignments live;
 the KWin-script settings page does not maintain a second copy.
 
-The 1.50 development line also offers an optional native **Driftile Shortcuts**
-editor. Driftile must be active before it opens. Edits remain pending until
+The optional native **Driftile Shortcuts** editor is available separately.
+Driftile must be active before it opens. Edits remain pending until
 **Apply** validates the complete assignment against KGlobalAccel; conflicts,
 stale external changes, and failed writes are rejected. Applied changes are
 verified, and a failed transaction attempts exact rollback and reports any

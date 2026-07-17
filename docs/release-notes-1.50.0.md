@@ -1,7 +1,7 @@
 # Driftile 1.50.0
 
-Driftile 1.50.0 is in development. Its current slice adds an opt-in initial
-width policy and a separately installed native shortcut editor.
+Driftile 1.50.0 adds an opt-in initial-width policy and a separately installed
+native shortcut editor.
 
 ## Highlights
 
@@ -24,7 +24,7 @@ width policy and a separately installed native shortcut editor.
   `programs.driftile.shortcutEditor.enable` in the current NixOS or Home Manager
   module. The main package gains no GUI dependency.
 
-Build and installation instructions for the development editor are in
+Build and installation instructions for the native editor are in
 [Optional native shortcut editor](installation.md#optional-native-shortcut-editor).
 
 ## Compatibility

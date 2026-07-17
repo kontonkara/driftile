@@ -45,8 +45,8 @@ Assign them in **System Settings > Keyboard > Shortcuts** if needed.
 
 ## Editing shortcuts
 
-The optional native **Driftile Shortcuts** editor on the 1.50 development line
-shows the active extension's registered actions. Nothing is written until
+The optional native **Driftile Shortcuts** editor shows the active extension's
+registered actions. Nothing is written until
 **Apply** validates the complete pending assignment. Internal or global
 conflicts, unavailable KGlobalAccel, and assignments changed elsewhere fail
 safely; writes are verified and exact rollback is attempted on failure.

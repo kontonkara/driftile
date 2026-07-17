@@ -1,17 +1,12 @@
 # Roadmap
 
-Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.49.0 are
+Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.50.0 are
 released. The delivered milestones and release criteria below are a historical
 record. Later direction is not a committed release schedule.
 
-Stable 1.49.0 restores eligible same-context focus after more close paths and
-retains immediate transition presentation after workspace handoffs. Logical
-persistence remains v4.
-
-Version 1.50.0 is in development. Its current slice adds an opt-in,
-future-admission policy that can preserve a new singleton window's live frame
-width without changing the public `33%` default, plus a separately installed
-native shortcut editor.
+Stable 1.50.0 can preserve a new singleton window's initial width without
+changing the public `33%` default and provides a separately installed native
+shortcut editor. Logical persistence remains v4.
 
 ## Foundation (delivered)
 
@@ -1940,7 +1935,7 @@ The batch changes no setting, action, schema, default binding, or private API.
 
 The batch changes no setting, action, schema, binding, or private API.
 
-### 1.50.0 (in development)
+### 1.50.0 (released)
 
 - Add `useInitialWindowWidth`, disabled by default, for newly admitted singleton
   tiled columns without an exact application-width rule.

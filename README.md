@@ -17,7 +17,7 @@ compositor and window manager.
   stable minimized-window slots.
 - Configurable gaps, sizing presets, application rules, borders, overview,
   transitions, shortcuts, and layout restoration. An optional native KDE
-  shortcut editor is available on the 1.50 development line.
+  shortcut editor is available separately.
 
 ## Installation
 
