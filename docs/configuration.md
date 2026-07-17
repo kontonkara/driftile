@@ -348,6 +348,11 @@ Windows with an empty, unavailable, or malformed role use only the ordinary
 application identifier. There is no partial, case-folded, `resourceName`, or
 caption match.
 
+A qualified selector must contain exactly one `|` and nonempty text on both
+sides. Malformed entries such as `|dialog`, `app|`, or `app|main|dialog` remain
+stored so the configuration editor does not rewrite user input, but Driftile
+ignores them.
+
 ## Horizontal focus centering
 
 **Center tiled columns after horizontal focus navigation** is disabled by

@@ -603,7 +603,17 @@
        <item>
         <widget class="QLabel" name="applicationIdentifierHint">
          <property name="text">
-          <string>Rules use an exact, case-sensitive application identifier: KWin desktopFileName when available, otherwise resourceClass. The optional application-id|windowRole selector is more specific and takes precedence; neither component may contain |.</string>
+          <string>Rules use an exact, case-sensitive application identifier: KWin desktopFileName when available, otherwise resourceClass. The optional application-id|windowRole selector is more specific and takes precedence.</string>
+         </property>
+         <property name="wordWrap">
+          <bool>true</bool>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QLabel" name="applicationIdentifierValidationHint">
+         <property name="text">
+          <string>Selector validation: a qualified selector must contain exactly one | with nonempty text on both sides. Invalid entries such as |dialog, app|, or app|main|dialog remain saved but are ignored.</string>
          </property>
          <property name="wordWrap">
           <bool>true</bool>

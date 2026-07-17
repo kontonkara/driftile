@@ -36,7 +36,9 @@ const configurationUi = readFileSync(
   "utf8",
 );
 const applicationIdentifierDescription =
-  "Rules use an exact, case-sensitive application identifier: KWin desktopFileName when available, otherwise resourceClass. The optional application-id|windowRole selector is more specific and takes precedence; neither component may contain |.";
+  "Rules use an exact, case-sensitive application identifier: KWin desktopFileName when available, otherwise resourceClass. The optional application-id|windowRole selector is more specific and takes precedence.";
+const applicationIdentifierValidationDescription =
+  "Selector validation: a qualified selector must contain exactly one | with nonempty text on both sides. Invalid entries such as |dialog, app|, or app|main|dialog remain saved but are ignored.";
 const runtime = readFileSync(
   new URL("../src/runtime.ts", import.meta.url),
   "utf8",
@@ -1103,6 +1105,12 @@ describe("KWin shortcut handlers", () => {
       /<attribute name="title">\s*<string>Applications<\/string>/,
     );
     expect(applicationsTab).toContain(applicationIdentifierDescription);
+    expect(applicationsTab).toContain(
+      applicationIdentifierValidationDescription,
+    );
+    expect(applicationsTab).toContain(
+      'name="applicationIdentifierValidationHint"',
+    );
     expect(configurationUi.match(/application-id\|windowRole/gu)).toHaveLength(
       1,
     );
