@@ -44,6 +44,7 @@ const expectedOverviewRuntimeEntries = [
   "ui/LayoutStateReader.qml",
   "ui/OverviewScene.qml",
   "ui/OverviewTouchpadGesture.qml",
+  "ui/WindowCloseButton.qml",
   "ui/main.qml",
 ];
 const expectedTransitionPackageEntries = [

@@ -39,6 +39,10 @@ const desktopCard = readFileSync(
   new URL("contents/runtime/ui/DesktopCard.qml", effectRoot),
   "utf8",
 );
+const windowCloseButton = readFileSync(
+  new URL("contents/runtime/ui/WindowCloseButton.qml", effectRoot),
+  "utf8",
+);
 const overviewRuntimeIndex = readFileSync(
   new URL("../src/overview/runtime.ts", import.meta.url),
   "utf8",
@@ -50,6 +54,7 @@ const qmlSources = [
   reader,
   scene,
   desktopCard,
+  windowCloseButton,
 ];
 
 describe("overview effect package", () => {
@@ -336,7 +341,7 @@ describe("overview effect package", () => {
 
   it("keeps a fixed scene-effect proxy over the cache-busted controller", () => {
     expect(createHash("sha256").update(main, "utf8").digest("hex")).toBe(
-      "cba05d3cfda91979b1def4705b88f5f14afaf21eef9d524777893fdb1fcb9b54",
+      "42f3363fff9733934186fb347568f33bc8108b9bbb11c64dda24c37a948ac147",
     );
     expect(main).toContain("KWin.SceneEffect {");
     expect(main).toContain("Date.now().toString(36)");
@@ -1487,11 +1492,15 @@ describe("overview effect package", () => {
     expect(thumbnailFooter).toContain(
       "anchors.bottomMargin: windowPresentation.attentionRequested ? 8 : 5",
     );
+    expect(tabLabel).toContain("anchors.rightMargin: tabCloseButton.visible");
     expect(tabLabel).toContain(
-      "anchors.rightMargin: windowPresentation.attentionRequested ? 18 : 4",
+      ": (windowPresentation.attentionRequested ? 18 : 4)",
     );
     expect(placeholderLabel).toContain(
-      "anchors.rightMargin: windowPresentation.attentionRequested",
+      "anchors.rightMargin: minimizedPlaceholderCloseButton.visible",
+    );
+    expect(placeholderLabel).toContain(
+      ": (windowPresentation.attentionRequested",
     );
     for (const [visual, attentionBadge, keyboardBorder] of [
       [thumbnail, "thumbnailAttentionBadge", "thumbnailShell.keyboardSelected"],
@@ -2141,6 +2150,128 @@ describe("overview effect package", () => {
     expect(desktopDelegate).toMatch(
       /onWindowCloseRequested:[\s\S]*=> root\.closeWindow\(candidate, expectedWindowId,[\s\S]*expectedDesktop, expectedDesktopId,[\s\S]*expectedScreen\)/u,
     );
+  });
+
+  it("offers exact close buttons without activating or dragging their windows", () => {
+    const thumbnail = desktopCard.slice(
+      desktopCard.indexOf("id: thumbnailShell"),
+      desktopCard.indexOf("id: tabShell"),
+    );
+    const tab = desktopCard.slice(
+      desktopCard.indexOf("id: tabShell"),
+      desktopCard.indexOf("id: minimizedPlaceholderShell"),
+    );
+    const placeholder = desktopCard.slice(
+      desktopCard.indexOf("id: minimizedPlaceholderShell"),
+      desktopCard.indexOf("id: activeColumnBadge"),
+    );
+
+    expect(desktopCard).toContain(
+      "required property bool showWindowCloseButtons",
+    );
+    expect(windowCloseButton).toMatch(
+      /required property bool closeEligible[\s\S]*required property bool keyboardSelected[\s\S]*required property bool settingEnabled[\s\S]*required property bool surfaceHovered[\s\S]*required property bool surfaceLargeEnough/u,
+    );
+    expect(windowCloseButton).toContain(
+      "visible: settingEnabled && closeEligible && surfaceLargeEnough && (surfaceHovered || keyboardSelected)",
+    );
+    expect(windowCloseButton).toMatch(
+      /acceptedButtons: Qt\.LeftButton[\s\S]*acceptedDevices: PointerDevice\.Mouse \| PointerDevice\.TouchPad[\s\S]*gesturePolicy: TapHandler\.ReleaseWithinBounds[\s\S]*grabPermissions: PointerHandler\.CanTakeOverFromAnything[\s\S]*onTapped: button\.closeRequested\(\)/u,
+    );
+
+    for (const visual of [
+      {
+        buttonId: "thumbnailCloseButton",
+        hoverId: "thumbnailHoverHandler",
+        keyboardSelection: "thumbnailShell.keyboardSelected",
+        minimum: "width >= 52 && height >= 40",
+        source: thumbnail,
+        surface: "thumbnailShell",
+      },
+      {
+        buttonId: "tabCloseButton",
+        hoverId: "tabHoverHandler",
+        keyboardSelection: "tabShell.keyboardSelected",
+        minimum: "width >= 52 && height >= 18",
+        source: tab,
+        surface: "tabShell",
+      },
+      {
+        buttonId: "minimizedPlaceholderCloseButton",
+        hoverId: "minimizedPlaceholderHoverHandler",
+        keyboardSelection: "minimizedPlaceholderShell.keyboardSelected",
+        minimum: "width >= 72 && height >= 20",
+        source: placeholder,
+        surface: "minimizedPlaceholderShell",
+      },
+    ] as const) {
+      expect(visual.source).toContain(
+        `readonly property bool closeButtonLargeEnough: ${visual.minimum}`,
+      );
+      expect(visual.source).toContain(`id: ${visual.buttonId}`);
+      expect(visual.source).toContain(
+        "settingEnabled: card.showWindowCloseButtons",
+      );
+      expect(visual.source).toContain(
+        "closeEligible: windowPresentation.closeEligible",
+      );
+      expect(visual.source).toContain(
+        `surfaceHovered: ${visual.hoverId}.hovered`,
+      );
+      expect(visual.source).toContain(
+        `keyboardSelected: ${visual.keyboardSelection}`,
+      );
+      expect(visual.source).toContain(
+        `surfaceLargeEnough: ${visual.surface}.closeButtonLargeEnough`,
+      );
+      expect(visual.source).toMatch(
+        new RegExp(
+          `id: ${visual.buttonId}[\\s\\S]*onCloseRequested: card\\.windowCloseRequested\\(windowPresentation\\.candidate,[\\s\\S]*windowPresentation\\.windowId,[\\s\\S]*windowPresentation\\.sourceDesktop,[\\s\\S]*windowPresentation\\.sourceDesktopId,[\\s\\S]*windowPresentation\\.sourceScreen\\)`,
+          "u",
+        ),
+      );
+      expect(visual.source).toContain(`id: ${visual.hoverId}`);
+      expect(visual.source).toMatch(
+        new RegExp(
+          `onTapped: point => \\{[\\s\\S]*card\\.closeButtonContainsPoint\\(${visual.buttonId},[\\s\\S]*point\\.position\\)[\\s\\S]*return;[\\s\\S]*card\\.windowTapped\\(`,
+          "u",
+        ),
+      );
+      const buttonStart = visual.source.indexOf(`id: ${visual.buttonId}`);
+      const buttonEnd = visual.source.indexOf(
+        `id: ${visual.hoverId}`,
+        buttonStart,
+      );
+      const button = visual.source.slice(buttonStart, buttonEnd);
+      expect(button).not.toMatch(
+        /\b(?:Timer|Behavior|Animation|DragHandler)\s*\{|windowTapped|activeWindow\s*=|candidate\.minimized\s*=|\.setValue\s*\(|org\.kde\.kwin\.private/u,
+      );
+    }
+
+    expect(thumbnail).toContain(
+      "anchors.rightMargin: windowPresentation.attentionRequested ? 24 : 5",
+    );
+    expect(tab).toContain(
+      "anchors.rightMargin: windowPresentation.attentionRequested ? 18 : 3",
+    );
+    expect(placeholder).toContain(
+      "anchors.rightMargin: windowPresentation.attentionRequested ? 19 : 4",
+    );
+    expect(windowCloseButton).not.toMatch(
+      /\b(?:Timer|Behavior|Animation|DragHandler)\s*\{|windowTapped|activeWindow\s*=|candidate\.minimized\s*=|\.setValue\s*\(|org\.kde\.kwin\.private/u,
+    );
+    expect(windowCloseButton).not.toContain(
+      "ApprovesTakeOverByHandlersOfDifferentType",
+    );
+    const containmentGuard = desktopCard.slice(
+      desktopCard.indexOf("function closeButtonContainsPoint("),
+      desktopCard.indexOf(
+        "\n    }",
+        desktopCard.indexOf("function closeButtonContainsPoint("),
+      ) + 6,
+    );
+    expect(containmentGuard).toContain("button.mapFromItem(surface");
+    expect(containmentGuard).toContain("return true;");
   });
 
   it("selects only an exact live non-current desktop from its number gutter", () => {

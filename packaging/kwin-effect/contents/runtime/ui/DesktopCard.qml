@@ -15,6 +15,7 @@ Rectangle {
     required property var screen
     required property string searchQuery
     required property bool showApplicationIdentity
+    required property bool showWindowCloseButtons
     required property bool showWindowLabels
     property string keyboardSelectionId: ""
 
@@ -367,6 +368,7 @@ Rectangle {
                         && (!windowPresentation.tiledPresentation || windowPresentation.tiledPresentation.selected)
                     readonly property bool keyboardSelected: keyboardTarget
                         && card.keyboardSelectionId === card.navigationTargetId(windowPresentation.windowId)
+                    readonly property bool closeButtonLargeEnough: width >= 52 && height >= 40
 
                     x: windowPresentation.frame ? windowPresentation.frame.x : 0
                     y: windowPresentation.frame ? windowPresentation.frame.y : 0
@@ -507,12 +509,46 @@ Rectangle {
                         z: 3
                     }
 
+                    WindowCloseButton {
+                        id: thumbnailCloseButton
+
+                        anchors.top: parent.top
+                        anchors.right: parent.right
+                        anchors.topMargin: 5
+                        anchors.rightMargin: windowPresentation.attentionRequested ? 24 : 5
+                        width: 18
+                        height: 18
+                        settingEnabled: card.showWindowCloseButtons
+                        closeEligible: windowPresentation.closeEligible
+                        surfaceHovered: thumbnailHoverHandler.hovered
+                        keyboardSelected: thumbnailShell.keyboardSelected
+                        surfaceLargeEnough: thumbnailShell.closeButtonLargeEnough
+                        z: 4
+                        onCloseRequested: card.windowCloseRequested(windowPresentation.candidate,
+                                                                    windowPresentation.windowId,
+                                                                    windowPresentation.sourceDesktop,
+                                                                    windowPresentation.sourceDesktopId,
+                                                                    windowPresentation.sourceScreen)
+                    }
+
+                    HoverHandler {
+                        id: thumbnailHoverHandler
+
+                        acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
+                    }
+
                     TapHandler {
                         acceptedButtons: Qt.LeftButton
                         acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
                         enabled: thumbnailShell.visible && card.desktop && card.screen
-                        onTapped: card.windowTapped(model.window, windowPresentation.windowId, card.desktop,
-                                                    card.desktopId, card.screen)
+                        onTapped: point => {
+                            if (card.closeButtonContainsPoint(thumbnailCloseButton, thumbnailShell,
+                                                              point.position)) {
+                                return;
+                            }
+                            card.windowTapped(model.window, windowPresentation.windowId, card.desktop,
+                                              card.desktopId, card.screen);
+                        }
                     }
 
                     TapHandler {
@@ -572,6 +608,7 @@ Rectangle {
                     readonly property bool keyboardTarget: activationEligible && windowPresentation.matchesSearch
                     readonly property bool keyboardSelected: keyboardTarget
                         && card.keyboardSelectionId === card.navigationTargetId(windowPresentation.windowId)
+                    readonly property bool closeButtonLargeEnough: width >= 52 && height >= 18
 
                     x: frame ? frame.x : 0
                     y: frame ? frame.y : 0
@@ -602,7 +639,9 @@ Rectangle {
                     Text {
                         anchors.fill: parent
                         anchors.leftMargin: 4
-                        anchors.rightMargin: windowPresentation.attentionRequested ? 18 : 4
+                        anchors.rightMargin: tabCloseButton.visible
+                            ? (windowPresentation.attentionRequested ? 34 : 20)
+                            : (windowPresentation.attentionRequested ? 18 : 4)
                         text: windowPresentation.windowLabel ? windowPresentation.windowLabel.primary
                                                              : windowPresentation.tiledPresentation
                                                                ? String(windowPresentation.tiledPresentation.memberIndex + 1)
@@ -658,12 +697,44 @@ Rectangle {
                         z: 3
                     }
 
+                    WindowCloseButton {
+                        id: tabCloseButton
+
+                        anchors.right: parent.right
+                        anchors.verticalCenter: parent.verticalCenter
+                        anchors.rightMargin: windowPresentation.attentionRequested ? 18 : 3
+                        width: 14
+                        height: 14
+                        settingEnabled: card.showWindowCloseButtons
+                        closeEligible: windowPresentation.closeEligible
+                        surfaceHovered: tabHoverHandler.hovered
+                        keyboardSelected: tabShell.keyboardSelected
+                        surfaceLargeEnough: tabShell.closeButtonLargeEnough
+                        z: 4
+                        onCloseRequested: card.windowCloseRequested(windowPresentation.candidate,
+                                                                    windowPresentation.windowId,
+                                                                    windowPresentation.sourceDesktop,
+                                                                    windowPresentation.sourceDesktopId,
+                                                                    windowPresentation.sourceScreen)
+                    }
+
+                    HoverHandler {
+                        id: tabHoverHandler
+
+                        acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
+                    }
+
                     TapHandler {
                         acceptedButtons: Qt.LeftButton
                         acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
                         enabled: tabShell.visible && tabShell.activationEligible && card.desktop && card.screen
-                        onTapped: card.windowTapped(model.window, windowPresentation.windowId, card.desktop,
-                                                    card.desktopId, card.screen)
+                        onTapped: point => {
+                            if (card.closeButtonContainsPoint(tabCloseButton, tabShell, point.position)) {
+                                return;
+                            }
+                            card.windowTapped(model.window, windowPresentation.windowId, card.desktop,
+                                              card.desktopId, card.screen);
+                        }
                     }
 
                     TapHandler {
@@ -720,6 +791,7 @@ Rectangle {
                     readonly property bool keyboardTarget: activationEligible && windowPresentation.matchesSearch
                     readonly property bool keyboardSelected: keyboardTarget
                         && card.keyboardSelectionId === card.navigationTargetId(windowPresentation.windowId)
+                    readonly property bool closeButtonLargeEnough: width >= 72 && height >= 20
 
                     x: frame ? frame.x : 0
                     y: frame ? frame.y : 0
@@ -736,8 +808,10 @@ Rectangle {
                     Text {
                         anchors.fill: parent
                         anchors.leftMargin: 7
-                        anchors.rightMargin: windowPresentation.attentionRequested
-                            ? Math.min(18, minimizedPlaceholderShell.width * 0.42) : 7
+                        anchors.rightMargin: minimizedPlaceholderCloseButton.visible
+                            ? (windowPresentation.attentionRequested ? 35 : 22)
+                            : (windowPresentation.attentionRequested
+                                ? Math.min(18, minimizedPlaceholderShell.width * 0.42) : 7)
                         text: windowPresentation.windowLabel
                             ? `Minimized · ${windowPresentation.windowLabel.primary}` : "Minimized"
                         color: "#d9e2ef"
@@ -791,13 +865,46 @@ Rectangle {
                         z: 3
                     }
 
+                    WindowCloseButton {
+                        id: minimizedPlaceholderCloseButton
+
+                        anchors.right: parent.right
+                        anchors.verticalCenter: parent.verticalCenter
+                        anchors.rightMargin: windowPresentation.attentionRequested ? 19 : 4
+                        width: 14
+                        height: 14
+                        settingEnabled: card.showWindowCloseButtons
+                        closeEligible: windowPresentation.closeEligible
+                        surfaceHovered: minimizedPlaceholderHoverHandler.hovered
+                        keyboardSelected: minimizedPlaceholderShell.keyboardSelected
+                        surfaceLargeEnough: minimizedPlaceholderShell.closeButtonLargeEnough
+                        z: 4
+                        onCloseRequested: card.windowCloseRequested(windowPresentation.candidate,
+                                                                    windowPresentation.windowId,
+                                                                    windowPresentation.sourceDesktop,
+                                                                    windowPresentation.sourceDesktopId,
+                                                                    windowPresentation.sourceScreen)
+                    }
+
+                    HoverHandler {
+                        id: minimizedPlaceholderHoverHandler
+
+                        acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
+                    }
+
                     TapHandler {
                         acceptedButtons: Qt.LeftButton
                         acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
                         enabled: minimizedPlaceholderShell.visible && minimizedPlaceholderShell.activationEligible
                                  && card.desktop && card.screen
-                        onTapped: card.windowTapped(model.window, windowPresentation.windowId, card.desktop,
-                                                    card.desktopId, card.screen)
+                        onTapped: point => {
+                            if (card.closeButtonContainsPoint(minimizedPlaceholderCloseButton,
+                                                              minimizedPlaceholderShell, point.position)) {
+                                return;
+                            }
+                            card.windowTapped(model.window, windowPresentation.windowId, card.desktop,
+                                              card.desktopId, card.screen);
+                        }
                     }
 
                     TapHandler {
@@ -962,6 +1069,25 @@ Rectangle {
         const localPoint = visual.mapFromItem(emptyContentInput, point.x, point.y);
         return localPoint.x >= 0 && localPoint.y >= 0
             && localPoint.x < visual.width && localPoint.y < visual.height;
+    }
+
+    function closeButtonContainsPoint(button, surface, point) {
+        if (!button || !button.visible) {
+            return false;
+        }
+        if (!surface || !point || !Number.isFinite(point.x) || !Number.isFinite(point.y)
+                || button.width <= 0 || button.height <= 0) {
+            return true;
+        }
+
+        try {
+            const localPoint = button.mapFromItem(surface, point.x, point.y);
+            return Number.isFinite(localPoint.x) && Number.isFinite(localPoint.y)
+                && localPoint.x >= 0 && localPoint.y >= 0
+                && localPoint.x < button.width && localPoint.y < button.height;
+        } catch (error) {
+            return true;
+        }
     }
 
     function desktopNavigationTargetId() {
