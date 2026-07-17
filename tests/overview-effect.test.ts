@@ -1594,9 +1594,13 @@ describe("overview effect package", () => {
       "resourceClass",
       "resourceName",
       "desktopFileName",
+      "state",
     ]) {
       expect(matcher).toContain(`${field}:`);
     }
+    expect(matcher).toContain(
+      'state: card.windowDemandsAttention(candidate) ? "urgent attention" : ""',
+    );
     expect(matcher).toContain(
       'typeof runtime.matchesOverviewWindowSearch !== "function"',
     );

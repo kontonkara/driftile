@@ -1010,7 +1010,8 @@ Rectangle {
                 resourceName: candidate && candidate.resourceName !== undefined && candidate.resourceName !== null
                     ? String(candidate.resourceName) : "",
                 desktopFileName: candidate && candidate.desktopFileName !== undefined
-                    && candidate.desktopFileName !== null ? String(candidate.desktopFileName) : ""
+                    && candidate.desktopFileName !== null ? String(candidate.desktopFileName) : "",
+                state: card.windowDemandsAttention(candidate) ? "urgent attention" : ""
             }) === true;
         } catch (error) {
             return query.length === 0;
