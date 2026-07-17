@@ -1,12 +1,12 @@
 # Roadmap
 
-Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.59.0 are
+Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.60.0 are
 released. The delivered milestones and release criteria below are a historical
 record. Later direction is not a committed release schedule.
 
-Stable 1.59.0 adds bounded static window-state badges and state search terms to
-the optional Overview, with a live presentation preference. Logical persistence
-remains v4.
+Stable 1.60.0 adds bounded adaptive virtual-desktop names and owning-desktop
+search to the optional Overview, with a live presentation preference. Logical
+persistence remains v4.
 
 ## Foundation (delivered)
 
@@ -2190,7 +2190,7 @@ Release criteria (met):
 
 No other feature belongs to 1.59.0.
 
-### 1.60.0 (in development)
+### 1.60.0 (released)
 
 - Show each normalized virtual-desktop name beside the fixed number gutter on
   sufficiently large Overview cards.
@@ -2205,6 +2205,15 @@ No other feature belongs to 1.59.0.
   per-user effect setting.
 - Treat desktop names as a bounded, normalized, read-only projection of public
   KWin state. Missing or hostile names fail closed.
+
+Release criteria (met):
+
+- Desktop names expand only eligible large cards and leave compact cards on
+  the fixed numbered gutter.
+- Search includes each window's owning desktop name independently of label
+  visibility.
+- KConfig changes apply live, Home Manager can leave the value unmanaged, and
+  the NixOS option surface remains unchanged.
 
 The batch adds no pointer or keyboard input, action, binding, timer, animation,
 desktop selection, focus, geometry, layout or persistence write, private API,
