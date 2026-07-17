@@ -44,12 +44,13 @@ programs.driftile.overview.touchpadGesture = {
 `screenEdge` accepts `none` or one of the eight named edges and corners.
 `backdropColor` uses strict `#AARRGGBB` form. Set either option to `null` to
 leave its existing KConfig value untouched; use `none` to manage and disable
-screen-edge activation. `showWindowLabels` controls thumbnail captions, while
-`showApplicationIdentity` controls the application line or fallback. Both are
-nullable and leave their existing KConfig values untouched by default.
-`showWindowCloseButtons` controls the hover and keyboard-selection close
-affordance for eligible Overview window previews and follows the same nullable
-ownership rule.
+screen-edge activation. `showWindowLabels` controls the ordinary large
+thumbnail footer, while `showApplicationIdentity` controls the application
+line or fallback. `showWindowCloseButtons` controls the hover and
+keyboard-selection close affordance for eligible Overview window previews.
+All three boolean settings update live and default to enabled in the effect;
+their nullable Home Manager options leave existing KConfig values untouched
+when set to `null`.
 
 Use a different count from vertical desktop navigation and Plasma's built-in
 Overview, or disable the overlapping gesture, so each global direction has one

@@ -1,7 +1,37 @@
 # Migration
 
-The latest stable release is 1.57.0. Use the steps below when changing release
+The latest stable release is 1.58.0. Use the steps below when changing release
 generations, and never combine files from different releases.
+
+## Upgrade from 1.57.0 to 1.58.0
+
+1. Release a helper-owned shortcut profile with the installed helper.
+2. Disable Driftile and both optional effects in System Settings.
+3. Install matching 1.58.0 artifacts, or pin the Nix input to `v1.58.0` and
+   rebuild.
+4. Re-enable Driftile and only the optional effects you use, then reclaim the
+   helper profile if needed.
+
+Logical layout state remains v4. Layout, persistence, actions, default
+bindings, search, and existing close paths are unchanged. The optional
+Overview adds a live close button preference. It defaults to enabled and shows
+a compact button on an eligible thumbnail, tab, or minimized placeholder only
+while that preview is hovered or selected from the keyboard. The button uses
+the existing guarded close path without focusing, restoring, or dragging the
+window first. Use the Overview effect's configure button, or the nullable Home
+Manager option `overview.showWindowCloseButtons`; `null` leaves the KConfig
+value unmanaged. The main script and transition effect retain their 1.57.0
+behavior.
+
+## Roll back from 1.58.0 to 1.57.0
+
+Release a helper-owned profile, disable Driftile and both optional effects,
+then restore matching verified 1.57.0 artifacts or pin the Nix input to
+`v1.57.0` and rebuild. Remove `overview.showWindowCloseButtons` before
+evaluating the 1.57.0 Home Manager module. Both releases use logical layout
+state v4 with the same layout and persistence behavior. The older Overview
+ignores a retained `ShowWindowCloseButtons` KConfig value and omits the button;
+its existing `Delete` and middle-click close paths remain available.
 
 ## Upgrade from 1.56.0 to 1.57.0
 
