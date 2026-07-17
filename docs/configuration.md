@@ -336,10 +336,17 @@ column state or shortcuts.
 All exact application rules use one case-sensitive KWin application ID.
 Driftile uses a nonempty `desktopFileName` when available and otherwise falls
 back to a nonempty `resourceClass`. Once `desktopFileName` becomes available,
-it takes priority. There is no partial, case-folded, `resourceName`, role, or
-caption match. Use KWin's debug console to inspect both fields; XWayland
+it takes priority. Use KWin's debug console to inspect both fields; XWayland
 applications without a desktop-file ID can be configured by their exact
 `resourceClass` without changing the settings format.
+
+Append `|windowRole` to any application identifier for a more specific exact
+match, for example `org.example.editor|settings`. A role-specific rule takes
+precedence over the application-only rule; the application rule remains the
+fallback. Both components are case-sensitive and must not contain `|`.
+Windows with an empty, unavailable, or malformed role use only the ordinary
+application identifier. There is no partial, case-folded, `resourceName`, or
+caption match.
 
 ## Horizontal focus centering
 
@@ -669,6 +676,7 @@ over-limit rules reject the complete settings update.
 programs.driftile.settings = {
   defaultInitialLayout = "tiled";
   applicationInitialLayouts."org.kde.kcalc" = "floating";
+  applicationInitialLayouts."org.example.editor|preferences" = "floating";
 };
 ```
 

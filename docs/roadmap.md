@@ -2446,3 +2446,22 @@ Release criteria (met):
   policy without restarting KWin.
 - The batch adds no action, binding, geometry write, layout or persistence
   field, private API, or KWin fork.
+
+### 1.70.0 (in development)
+
+- Let every exact application rule use an optional
+  `application-id|windowRole` selector for one specific window role.
+- Prefer the role-specific selector, then retain the ordinary application ID
+  as the fallback for layout, sizing, placement, destination, focus,
+  presentation, exclusion, and initial-state policies.
+- Keep plain application rules and all existing configuration values fully
+  compatible without adding a setting or changing default behavior.
+
+Release criteria:
+
+- Composite matching remains exact and case-sensitive, and rejects ambiguous
+  components containing the `|` separator.
+- Empty, unavailable, non-string, or throwing role properties fall back safely
+  to the existing application-only identity.
+- Role lookup is skipped when the relevant rule collection is empty, and the
+  batch adds no binding, persistence field, private API, or KWin fork.
