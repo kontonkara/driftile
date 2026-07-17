@@ -813,6 +813,25 @@ describe("KWin shortcut handlers", () => {
     ).toEqual(expectedHandlers);
   });
 
+  it("exports every runtime action invoked by a shortcut", () => {
+    const runtimeExports = new Set(
+      Array.from(
+        runtime.matchAll(/export function ([A-Za-z][A-Za-z0-9]*)\(/gu),
+        (match) => match[1] ?? "",
+      ),
+    );
+
+    for (const handler of handlers) {
+      const runtimeAction = handler.activated.match(
+        /^Runtime\.DriftileRuntime\.([A-Za-z][A-Za-z0-9]*)\(/u,
+      )?.[1];
+
+      if (runtimeAction !== undefined) {
+        expect(runtimeExports, handler.name).toContain(runtimeAction);
+      }
+    }
+  });
+
   it("keeps the canonical action catalog synchronized with QML", () => {
     expect(shortcutActions).toHaveLength(212);
     expect(shortcutActions).toEqual(

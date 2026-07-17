@@ -350,6 +350,22 @@ export function focusRight(): void {
   runCommand((activeController) => activeController.focusRight());
 }
 
+export function focusColumnRightOrFirst(): void {
+  runCommand((activeController) => activeController.focusColumnRightOrFirst());
+}
+
+export function focusColumnLeftOrLast(): void {
+  runCommand((activeController) => activeController.focusColumnLeftOrLast());
+}
+
+export function focusColumnOrOutputLeft(): void {
+  runCommand((activeController) => activeController.focusColumnOrOutputLeft());
+}
+
+export function focusColumnOrOutputRight(): void {
+  runCommand((activeController) => activeController.focusColumnOrOutputRight());
+}
+
 export function focusFirstColumn(): void {
   runCommand((activeController) => activeController.focusFirstColumn());
 }
@@ -358,12 +374,72 @@ export function focusLastColumn(): void {
   runCommand((activeController) => activeController.focusLastColumn());
 }
 
+export function focusColumn(index: number): void {
+  runCommand((activeController) => activeController.focusColumn(index));
+}
+
 export function focusUp(): void {
   runCommand((activeController) => activeController.focusUp());
 }
 
 export function focusDown(): void {
   runCommand((activeController) => activeController.focusDown());
+}
+
+export function focusWindowInColumn(index: number): void {
+  runCommand((activeController) => activeController.focusWindowInColumn(index));
+}
+
+export function focusWindowDownOrColumnLeft(): void {
+  runCommand((activeController) =>
+    activeController.focusWindowDownOrColumnLeft(),
+  );
+}
+
+export function focusWindowDownOrColumnRight(): void {
+  runCommand((activeController) =>
+    activeController.focusWindowDownOrColumnRight(),
+  );
+}
+
+export function focusWindowUpOrColumnLeft(): void {
+  runCommand((activeController) =>
+    activeController.focusWindowUpOrColumnLeft(),
+  );
+}
+
+export function focusWindowUpOrColumnRight(): void {
+  runCommand((activeController) =>
+    activeController.focusWindowUpOrColumnRight(),
+  );
+}
+
+export function focusWindowTop(): void {
+  runCommand((activeController) => activeController.focusWindowTop());
+}
+
+export function focusWindowBottom(): void {
+  runCommand((activeController) => activeController.focusWindowBottom());
+}
+
+export function focusWindowDownOrTop(): void {
+  runCommand((activeController) => activeController.focusWindowDownOrTop());
+}
+
+export function focusWindowUpOrBottom(): void {
+  runCommand((activeController) => activeController.focusWindowUpOrBottom());
+}
+
+export function focusWindowOrOutputUp(): void {
+  runCommand((activeController) => activeController.focusWindowOrOutputUp());
+}
+
+export function focusWindowOrOutputDown(): void {
+  runCommand((activeController) => activeController.focusWindowOrOutputDown());
+}
+
+export function focusWindowPrevious(): void {
+  runCommand((activeController) => activeController.focusWindowPrevious());
 }
 
 export function focusUpOrPreviousDesktop(): void {
@@ -422,6 +498,18 @@ export function moveColumnRight(): void {
   runCommand((activeController) => activeController.moveColumnRight());
 }
 
+export function moveColumnLeftOrToOutputLeft(): void {
+  runCommand((activeController) =>
+    activeController.moveColumnLeftOrToOutputLeft(),
+  );
+}
+
+export function moveColumnRightOrToOutputRight(): void {
+  runCommand((activeController) =>
+    activeController.moveColumnRightOrToOutputRight(),
+  );
+}
+
 export function moveColumnToFirst(): void {
   runCommand((activeController) => activeController.moveColumnToFirst());
 }
@@ -430,12 +518,24 @@ export function moveColumnToLast(): void {
   runCommand((activeController) => activeController.moveColumnToLast());
 }
 
+export function moveColumnToIndex(index: number): void {
+  runCommand((activeController) => activeController.moveColumnToIndex(index));
+}
+
 export function moveWindowLeft(): void {
   runCommand((activeController) => activeController.moveWindowLeft());
 }
 
 export function moveWindowRight(): void {
   runCommand((activeController) => activeController.moveWindowRight());
+}
+
+export function swapWindowLeft(): void {
+  runCommand((activeController) => activeController.swapWindowLeft());
+}
+
+export function swapWindowRight(): void {
+  runCommand((activeController) => activeController.swapWindowRight());
 }
 
 export function moveWindowUp(): void {
@@ -455,6 +555,16 @@ export function moveWindowUpOrToPreviousDesktop(): void {
 export function moveWindowDownOrToNextDesktop(): void {
   runCommand((activeController) =>
     activeController.moveWindowDownOrToNextDesktop(),
+  );
+}
+
+export function moveWindowUpOrToOutputUp(): void {
+  runCommand((activeController) => activeController.moveWindowUpOrToOutputUp());
+}
+
+export function moveWindowDownOrToOutputDown(): void {
+  runCommand((activeController) =>
+    activeController.moveWindowDownOrToOutputDown(),
   );
 }
 
@@ -516,6 +626,14 @@ export function toggleColumnTabbedDisplay(): void {
   runCommand((activeController) =>
     activeController.toggleColumnTabbedDisplay(),
   );
+}
+
+export function setColumnStackedDisplay(): void {
+  runCommand((activeController) => activeController.setColumnStackedDisplay());
+}
+
+export function setColumnTabbedDisplay(): void {
+  runCommand((activeController) => activeController.setColumnTabbedDisplay());
 }
 
 export function moveWindowToPreviousDesktop(): void {
@@ -590,6 +708,16 @@ export function moveWindowToOutputDown(): void {
   runCommand((activeController) => activeController.moveWindowToOutputDown());
 }
 
+export function moveWindowToOutputPrevious(): void {
+  runCommand((activeController) =>
+    activeController.moveWindowToPreviousOutput(),
+  );
+}
+
+export function moveWindowToOutputNext(): void {
+  runCommand((activeController) => activeController.moveWindowToNextOutput());
+}
+
 export function moveColumnToOutputLeft(): void {
   runCommand((activeController) => activeController.moveColumnToOutputLeft());
 }
@@ -604,6 +732,16 @@ export function moveColumnToOutputUp(): void {
 
 export function moveColumnToOutputDown(): void {
   runCommand((activeController) => activeController.moveColumnToOutputDown());
+}
+
+export function moveColumnToOutputPrevious(): void {
+  runCommand((activeController) =>
+    activeController.moveColumnToPreviousOutput(),
+  );
+}
+
+export function moveColumnToOutputNext(): void {
+  runCommand((activeController) => activeController.moveColumnToNextOutput());
 }
 
 export function decreaseColumnWidth(): void {
