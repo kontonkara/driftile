@@ -2319,6 +2319,15 @@ Release criteria (met):
 
 ### 1.65.0 (prepared)
 
+- Let one standalone unquoted `|` separate AND-connected search clauses into
+  up to four alternative groups; a window matches when any complete group
+  matches.
+- Keep quoted and attached pipes literal, including `title:"release | notes"`
+  and `title:foo|bar`.
+- Reject leading, trailing, consecutive, and fifth alternative groups through
+  the existing invalid-query feedback without exposing partial results.
+- Cap the total query at 128 Unicode code points and share one eight-clause
+  budget across all alternatives.
 - Let `Ctrl+Backspace` remove the complete trailing Overview search clause,
   including bare, scoped, excluded, and quoted forms.
 - Treat an unfinished trailing quoted clause as one removable unit so the
@@ -2328,6 +2337,12 @@ Release criteria (met):
 
 Release criteria (prepared):
 
+- Existing queries retain their case-insensitive AND behavior, while each
+  valid alternative independently composes scopes, phrases, and exclusions.
+- Malformed alternative syntax fails closed, and literal pipes cannot create
+  an unintended group.
+- Four groups, the 128-code-point query cap, and the shared clause and field
+  limits bound parsing and matching work.
 - Clause deletion stays bounded and follows the same structured-search syntax
   used for matching.
 - Empty-query shortcuts are safe no-ops and never close the Overview.

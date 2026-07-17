@@ -124,8 +124,8 @@ Version 1.64.0 adds quoted phrases, exclusions, and field scopes to window
 search. Invalid structured queries fail closed and are reported in the
 Overview instead of being interpreted partially.
 
-Version 1.65.0 adds session-local shortcuts for editing the active Overview
-search without adding a global binding or setting.
+Version 1.65.0 adds bounded alternative groups and session-local shortcuts for
+editing the active Overview search without adding a global binding or setting.
 
 The companion is disabled by default. When enabled with a fresh shortcut
 record, `Meta+O` toggles it. KGlobalAccel preserves an existing assignment
@@ -211,6 +211,22 @@ any searchable field. `title:"build log" -state:minimized` requires that title
 phrase and excludes minimized windows. `desktop:"Web 2" output:HDMI` searches
 one named desktop on a matching output. Scopes and matching are
 case-insensitive.
+
+A standalone unquoted `|` separates up to four alternative groups. Terms remain
+AND-connected inside each group, while a window matches when any complete group
+matches. For example,
+`app:firefox title:"release notes" -state:minimized | app:konsole "build log"`
+finds either a non-minimized Firefox release-notes window or a Konsole window
+containing the `build log` phrase. `desktop:"Web 2" output:HDMI | state:urgent
+-app:telegram` combines desktop and output scopes in one alternative with an
+urgent non-Telegram alternative.
+
+A pipe inside a quoted phrase or attached to another token stays literal, as in
+`title:"release | notes"` or `title:foo|bar`. Leading, trailing, consecutive, or
+fifth alternative groups are invalid and use the existing invalid-query
+feedback without exposing partial results. The entire query is capped at 128
+Unicode code points, and its shared eight-clause and field limits apply across
+all groups rather than separately to each group.
 
 Unknown prefixes remain ordinary search text. A malformed recognized scope or
 quoted phrase, such as `title:` or `app:"firefox`, matches no windows and the
