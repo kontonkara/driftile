@@ -4,6 +4,10 @@ import {
   matchesOverviewWindowSearch,
   removeLastOverviewSearchCharacter,
 } from "../../src/overview/runtime";
+import {
+  matchesOverviewWindowSearchPlan,
+  planOverviewWindowSearchQuery,
+} from "../../src/overview/window-search";
 
 describe("overview window search text editing", () => {
   it("appends text while preserving ordinary whitespace", () => {
@@ -89,6 +93,122 @@ describe("matchesOverviewWindowSearch", () => {
     expect(matchesOverviewWindowSearch("web missing", fields)).toBe(false);
   });
 
+  it("matches quoted phrases within one field", () => {
+    expect(
+      matchesOverviewWindowSearch('"PROJECT notes"', {
+        caption: "Project Notes — Firefox",
+      }),
+    ).toBe(true);
+    expect(
+      matchesOverviewWindowSearch('"project notes"', {
+        caption: "Project",
+        resourceName: "notes",
+      }),
+    ).toBe(false);
+  });
+
+  it("combines positive clauses with bare and scoped exclusions", () => {
+    const fields = {
+      caption: "Project Notes",
+      resourceClass: "firefox",
+      state: "floating urgent",
+    };
+
+    expect(matchesOverviewWindowSearch("project -private", fields)).toBe(true);
+    expect(matchesOverviewWindowSearch("project -notes", fields)).toBe(false);
+    expect(
+      matchesOverviewWindowSearch(
+        'title:"project notes" -state:minimized',
+        fields,
+      ),
+    ).toBe(true);
+    expect(
+      matchesOverviewWindowSearch('title:project -"project notes"', fields),
+    ).toBe(false);
+  });
+
+  it("allows negative-only queries when no excluded clause matches", () => {
+    expect(
+      matchesOverviewWindowSearch("-state:minimized -private", {
+        caption: "Project Notes",
+        state: "floating",
+      }),
+    ).toBe(true);
+    expect(
+      matchesOverviewWindowSearch("-state:minimized", {
+        caption: "Project Notes",
+      }),
+    ).toBe(true);
+    expect(matchesOverviewWindowSearch("-state:minimized", {})).toBe(true);
+    expect(
+      matchesOverviewWindowSearch("-state:minimized", {
+        state: "minimized urgent",
+      }),
+    ).toBe(false);
+  });
+
+  it.each([
+    ["TITLE:browser", { caption: "Browser" }],
+    ["app:firefox", { resourceClass: "Firefox" }],
+    ["app:firefox", { resourceName: "firefox" }],
+    ["app:firefox", { desktopFileName: "org.mozilla.firefox.desktop" }],
+    ["desktop:development", { desktopName: "Web Development" }],
+    ["output:dp-2", { outputName: "DP-2" }],
+    ["state:urgent", { state: "floating urgent" }],
+  ])("matches recognized scoped query %s", (query, fields) => {
+    expect(matchesOverviewWindowSearch(query, fields)).toBe(true);
+  });
+
+  it("keeps scoped values inside their requested fields", () => {
+    expect(
+      matchesOverviewWindowSearch("title:firefox", {
+        caption: "Browser",
+        resourceName: "firefox",
+      }),
+    ).toBe(false);
+    expect(
+      matchesOverviewWindowSearch("app:browser", {
+        caption: "Browser",
+        resourceName: "firefox",
+      }),
+    ).toBe(false);
+    expect(
+      matchesOverviewWindowSearch('title:"project notes"', {
+        caption: "Project Notes",
+      }),
+    ).toBe(true);
+  });
+
+  it("keeps unknown prefixes as ordinary bare text", () => {
+    expect(
+      matchesOverviewWindowSearch("kind:dialog", {
+        caption: "kind:dialog",
+      }),
+    ).toBe(true);
+    expect(
+      matchesOverviewWindowSearch("kind:dialog", { caption: "dialog" }),
+    ).toBe(false);
+    expect(
+      matchesOverviewWindowSearch('kind:"project notes"', {
+        caption: "kind:project notes",
+      }),
+    ).toBe(true);
+  });
+
+  it.each([
+    '"unclosed phrase',
+    'title:"unclosed phrase',
+    'title:"project"notes',
+    "title:",
+    "title: notes",
+    'title:""',
+  ])("fails closed for malformed structured query %j", (query) => {
+    expect(
+      matchesOverviewWindowSearch(query, { caption: "Project Notes" }),
+    ).toBe(false);
+    expect(planOverviewWindowSearchQuery(query)).toBeNull();
+  });
+
   it("treats empty, whitespace-only, and non-string queries as unfiltered", () => {
     expect(matchesOverviewWindowSearch("", null)).toBe(true);
     expect(matchesOverviewWindowSearch("   \u00a0 ", null)).toBe(true);
@@ -104,6 +224,15 @@ describe("matchesOverviewWindowSearch", () => {
         fields,
       ),
     ).toBe(true);
+  });
+
+  it("still validates malformed syntax after the eighth clause", () => {
+    expect(
+      matchesOverviewWindowSearch(
+        'one two three four five six seven eight title:"unclosed',
+        { caption: "one two three four five six seven eight" },
+      ),
+    ).toBe(false);
   });
 
   it("scans each supported field through 512 Unicode code points", () => {
@@ -248,5 +377,201 @@ describe("matchesOverviewWindowSearch", () => {
     });
 
     expect(matchesOverviewWindowSearch("  ", hostile)).toBe(true);
+  });
+
+  it("reads only scoped fields unless a bare clause requests all fields", () => {
+    let captionReads = 0;
+    const scoped = Object.defineProperties(
+      { resourceName: "firefox" },
+      {
+        caption: {
+          get(): string {
+            captionReads += 1;
+            return "Project Notes";
+          },
+        },
+        outputName: {
+          get(): never {
+            throw new Error("must not be read");
+          },
+        },
+      },
+    );
+
+    expect(
+      matchesOverviewWindowSearch("title:project title:notes", scoped),
+    ).toBe(true);
+    expect(captionReads).toBe(1);
+    expect(matchesOverviewWindowSearch("app:firefox", scoped)).toBe(true);
+    expect(captionReads).toBe(1);
+    expect(matchesOverviewWindowSearch("project", scoped)).toBe(false);
+  });
+});
+
+describe("planned overview window search", () => {
+  it("creates one deeply immutable bounded query plan", () => {
+    const plan = planOverviewWindowSearchQuery(
+      'Title:"Project Notes" app:firefox -STATE:minimized',
+    );
+
+    expect(plan).toEqual({
+      clauses: [
+        {
+          bare: false,
+          excluded: false,
+          fields: ["caption"],
+          value: "project notes",
+        },
+        {
+          bare: false,
+          excluded: false,
+          fields: ["resourceClass", "resourceName", "desktopFileName"],
+          value: "firefox",
+        },
+        {
+          bare: false,
+          excluded: true,
+          fields: ["state"],
+          value: "minimized",
+        },
+      ],
+      requiredFields: [
+        "caption",
+        "resourceClass",
+        "resourceName",
+        "desktopFileName",
+        "state",
+      ],
+      requiresAllFields: false,
+    });
+    expect(Object.isFrozen(plan)).toBe(true);
+    expect(plan && Object.isFrozen(plan.clauses)).toBe(true);
+    expect(plan && Object.isFrozen(plan.requiredFields)).toBe(true);
+    expect(
+      plan?.clauses.every(
+        (clause) => Object.isFrozen(clause) && Object.isFrozen(clause.fields),
+      ),
+    ).toBe(true);
+  });
+
+  it("reuses a plan across windows without reparsing the query", () => {
+    const plan = planOverviewWindowSearchQuery(
+      'title:"project notes" -state:minimized',
+    );
+
+    expect(
+      matchesOverviewWindowSearchPlan(plan, {
+        caption: "Project Notes",
+        state: "floating",
+      }),
+    ).toBe(true);
+    expect(
+      matchesOverviewWindowSearchPlan(plan, {
+        caption: "Project Notes",
+        state: "minimized",
+      }),
+    ).toBe(false);
+  });
+
+  it("returns an immutable valid empty plan without inspecting fields", () => {
+    const plan = planOverviewWindowSearchQuery(undefined);
+    const hostile = Object.defineProperty({}, "caption", {
+      get(): never {
+        throw new Error("unavailable");
+      },
+    });
+
+    expect(plan).toEqual({
+      clauses: [],
+      requiredFields: [],
+      requiresAllFields: false,
+    });
+    expect(Object.isFrozen(plan)).toBe(true);
+    expect(matchesOverviewWindowSearchPlan(plan, hostile)).toBe(true);
+  });
+
+  it("decodes valid bounded external plans and rejects malformed ones", () => {
+    const fields = ["caption"];
+    const clause = {
+      bare: false,
+      excluded: false,
+      fields,
+      value: "project",
+    };
+    const external = {
+      clauses: [clause],
+      requiredFields: ["caption"],
+      requiresAllFields: false,
+    };
+
+    expect(
+      matchesOverviewWindowSearchPlan(external, { caption: "Project Notes" }),
+    ).toBe(true);
+    expect(
+      matchesOverviewWindowSearchPlan(
+        {
+          clauses: Array.from({ length: 9 }, () => clause),
+          requiredFields: ["caption"],
+          requiresAllFields: false,
+        },
+        { caption: "Project Notes" },
+      ),
+    ).toBe(false);
+    expect(
+      matchesOverviewWindowSearchPlan(
+        {
+          clauses: [clause],
+          requiredFields: ["outputName"],
+          requiresAllFields: false,
+        },
+        { caption: "Project Notes" },
+      ),
+    ).toBe(false);
+    expect(
+      matchesOverviewWindowSearchPlan(
+        {
+          clauses: [
+            {
+              ...clause,
+              value: "x".repeat(100_000),
+            },
+          ],
+          requiredFields: ["caption"],
+          requiresAllFields: false,
+        },
+        { caption: "Project Notes" },
+      ),
+    ).toBe(false);
+  });
+
+  it("fails closed for hostile external plan accessors", () => {
+    const hostile = Object.freeze(
+      Object.defineProperty({}, "clauses", {
+        get(): never {
+          throw new Error("unavailable");
+        },
+      }),
+    );
+
+    expect(matchesOverviewWindowSearchPlan(hostile, {})).toBe(false);
+    expect(matchesOverviewWindowSearchPlan(null, {})).toBe(false);
+  });
+
+  it("stores only the first eight clauses in the bounded plan", () => {
+    const plan = planOverviewWindowSearchQuery(
+      "one two three four five six seven eight nine ten",
+    );
+
+    expect(plan?.clauses).toHaveLength(8);
+    expect(plan?.clauses.map((clause) => clause.value)).toEqual([
+      "one",
+      "two",
+      "three",
+      "four",
+      "five",
+      "six",
+      "seven",
+      "eight",
+    ]);
   });
 });
