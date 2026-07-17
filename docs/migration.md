@@ -1,7 +1,29 @@
 # Migration
 
-The latest stable release is 1.53.0. Use the steps below when changing release
+The latest stable release is 1.54.0. Use the steps below when changing release
 generations, and never combine files from different releases.
+
+## Upgrade from 1.53.0 to 1.54.0
+
+1. Release a helper-owned shortcut profile with the installed helper.
+2. Disable Driftile and both optional effects in System Settings.
+3. Install matching 1.54.0 artifacts, or pin the Nix input to `v1.54.0` and
+   rebuild.
+4. Re-enable Driftile and only the optional effects you use, then reclaim the
+   helper profile if needed.
+
+Logical layout state remains v4, and settings, actions, and default bindings
+are unchanged. Upgrade the optional Overview package to restore, focus, close,
+search, and navigate minimized member tabs; the main script and transition
+effect retain their 1.53.0 behavior.
+
+## Roll back from 1.54.0 to 1.53.0
+
+Release a helper-owned profile, disable Driftile and both optional effects,
+then restore matching verified 1.53.0 artifacts or pin the Nix input to
+`v1.53.0` and rebuild. Both versions use logical layout state v4 with the same
+settings and actions. The older Overview keeps minimized tabs visible but
+non-actionable.
 
 ## Upgrade from 1.52.0 to 1.53.0
 
