@@ -7,6 +7,10 @@ record. Later direction is not a committed release schedule.
 Stable 1.65.0 adds bounded alternative groups and in-session editing shortcuts
 to structured Overview search. Logical persistence remains v4.
 
+Prepared 1.66.0 keeps rapid transition retargeting continuous across workspace
+handoffs and retains bounded close-focus recovery through transient KWin focus
+handoffs. It changes no setting, shortcut, schema, or public API.
+
 ## Foundation (delivered)
 
 - Build and package a declarative KWin script with a TypeScript runtime.
@@ -2347,3 +2351,31 @@ Release criteria (met):
 - Empty-query shortcuts are safe no-ops and never close the Overview.
 - Search editing remains session-only and adds no global binding, setting,
   KWin request, layout or persistence write, private API, or KWin fork.
+
+### 1.66.0 (prepared)
+
+- Retarget active movement and size interpolation with the configured
+  Plasma-scaled duration instead of a separate short interval.
+- Keep rapid positive- and negative-coordinate motion on one bounded absolute
+  position and translation pair while preserving the current interpolated
+  position.
+- Retain the first different same-context focus target after workspace-effect
+  ownership ends, despite duplicate anchor activation, transient null focus,
+  or anchor deletion.
+- Detach an already-ending animation ID while its pending end remains counted,
+  then track the replacement independently so that end notification cannot
+  clear a live sibling or successor or leave a stale transform.
+- Preserve close-focus recovery through a transient same-context KWin handoff:
+  keep a surviving replacement focused, or restore the captured handoff or MRU
+  target if KWin clears it during settlement.
+
+Release criteria (prepared):
+
+- Rapid alternating focus commands remain bounded and continue from KWin's
+  interpolated position under the configured Plasma animation scale.
+- Immediate focus after a workspace switch can animate before delayed
+  visibility state settles, without leasing an unrelated window.
+- Close recovery performs at most the existing bounded settlement and final
+  retry and cannot steal focus across outputs, desktops, or activities.
+- Settings, shortcuts, logical persistence v4, package identities, and public
+  Plasma 6.7+ API use remain unchanged.

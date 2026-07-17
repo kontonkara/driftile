@@ -95,12 +95,14 @@ The effect animates automatic position and size changes without writing window
 geometry. Manual move or resize and fullscreen remain ineligible. Geometry
 changes received while another fullscreen or workspace transition owns
 presentation are coalesced per window and replayed once when that ownership
-ends. A rapid focus handoff retains a one-shot visibility lease for both the
-previous and new active window, so their first replay can start before delayed
-visibility flags settle. The lease expires when the animation, visibility, or
-desktop context settles. Other temporarily hidden windows keep the first
-captured frame until a public visibility, desktop, activity, or later geometry
-signal makes replay safe.
+ends. After a workspace effect releases presentation, the then-active window
+becomes the handoff anchor. Repeated activation of that anchor cannot consume
+the lease; the first different active window in the current context becomes
+the target. The target lease survives a transient null active window or anchor
+deletion and settles only when that exact target is active and either visible
+or already animating. Other temporarily hidden windows keep the first captured
+frame until a public visibility, desktop, activity, or later geometry signal
+makes replay safe.
 Deletion, configuration reload, or true ineligibility discards the pending
 change. Replay uses no timer or private API and writes neither geometry nor
 persistence. Net-zero deferred movement is discarded, completed animation
@@ -110,14 +112,17 @@ active animation.
 The Plasma shell launcher, switcher-hidden windows, OSDs, outlines, lock-screen
 and internal windows, popups, transient dialogs, frameless shell overlays, and
 other non-movable windows are outside the effect. Consecutive geometry updates
-retarget the active position and size transitions in place. The first transition
-uses the configured duration; later retargets use at most a `100` millisecond
-base interval, follow Plasma's animation-speed setting, and never outlast the
-configured duration. Targets that have not changed are not submitted again.
-Position animation uses a non-negative absolute base plus a signed translation,
-so rapid commands and outputs with negative global coordinates do not restart
-or accumulate transitions. Movement and size animation can be disabled
-independently.
+retarget the active position and size transitions in place with the configured
+Plasma-scaled duration. KWin preserves the interpolated value, so rapid commands
+continue from the visible position instead of restarting on a shorter interval.
+Targets that have not changed are not submitted again. Position animation uses
+one bounded pair: a non-negative absolute base and a signed translation. Rapid
+commands and outputs with negative global coordinates therefore neither restart
+nor accumulate transitions. If an attribute ID is already ending, it is
+detached from the tracked property while its pending end remains counted, then
+the replacement starts independently. The late end notification cannot clear
+that replacement or leave a stale transform. Movement and size animation can
+be disabled independently.
 
 `WindowClassExclusions` accepts at most 128 exact, case-sensitive KWin
 `windowClass` values, one per line and at most 255 UTF-8 bytes each. Use KWin's

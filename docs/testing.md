@@ -364,6 +364,16 @@ Horizontal-focus cases verify live overflow policy, fitting and overflowing
 neighbors, non-adjacent edge jumps, stacked and minimized members, and the
 priority of always-center and exact application policies.
 
+The prepared 1.66 transition cases drive rapid alternating cross-edge targets
+through one absolute-position/translation pair and require every retarget to
+use the configured Plasma-scaled duration. They cover workspace handoff anchor
+and target selection, duplicate activation, transient null focus, anchor
+deletion, ending-ID detachment, pending-end accounting, replacement survival,
+and stale-transform cleanup. Focus-recovery cases cover same-context KWin
+replacements immediately before and during close settlement: a surviving
+replacement keeps focus, while a cleared handoff triggers the bounded final
+retry.
+
 Cross-desktop unit cases cover the 2x2 matrix of output-local or global desktop
 resolution and membership-before-finish or finish-before-membership event
 order. They verify bounded pending-destination settlement, fallback when the

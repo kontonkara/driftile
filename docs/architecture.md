@@ -146,12 +146,19 @@ Events travel from KWin through the bridge into the runtime. Commands and result
   and replayed once when ownership ends. Temporary invisibility retains the
   first captured frame until a public signal permits replay; true ineligibility,
   configuration reload, or deletion discards pending work.
-- Retargets eligible absolute position and size animations and replaces a
-  superseded relative translation with a bounded additive chain so rapid
-  off-output moves preserve their visual position. At most 32 translation IDs
-  are retained per window for cleanup. It follows Plasma's global
-  animation-speed factor and exposes independent movement and size switches,
-  one bounded duration, and a bounded exact `windowClass` exclusion set.
+- Records the active window at workspace-effect completion as a handoff anchor,
+  then leases the first different same-context focus target until that exact
+  target is visible or animating. Duplicate anchor activation, transient null
+  focus, and anchor deletion cannot consume the target lease.
+- Retargets eligible size and one bounded absolute-position/translation pair
+  with the configured Plasma-scaled duration, preserving KWin's interpolated
+  value through rapid commands and negative-coordinate crossings. An ending ID
+  that rejects retargeting is detached from its property while its pending end
+  remains counted; the independently tracked replacement survives that end
+  notification without clearing a live sibling or retaining a stale transform.
+- Follows Plasma's global animation-speed factor and exposes independent
+  movement and size switches, one bounded duration, and a bounded exact
+  `windowClass` exclusion set.
 - Scans the stacking order only once when loaded and tracks later windows by
   signal. It has no timer, persistence, shortcut, layout state, or private API.
 

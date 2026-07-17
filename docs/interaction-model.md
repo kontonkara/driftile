@@ -228,9 +228,11 @@ Closing the active tiled, manually floating, or automatic-floating window
 restores the latest eligible MRU entry from the same visible output, desktop,
 and activity after KWin settles removal. Automatic dialogs, transients, and
 application exclusions remain outside layout ownership. Two scheduled probes
-cover ordinary settlement; a later null or shell activation allows one final
-event-driven retry. A close with no eligible target schedules no work, and any
-legitimate replacement in a visible context cancels the pending recovery,
+cover ordinary settlement. A same-context KWin focus handoff immediately before
+or during those probes remains protected: if it stays active, Driftile leaves it
+focused; if KWin clears it, one final event-driven retry restores the captured
+handoff or prior MRU target. A close with no eligible target schedules no work.
+An unrelated legitimate replacement or a context change cancels recovery,
 preventing a stale focus steal.
 
 The existing center-column action is contextual. With an active manually
