@@ -31480,9 +31480,7 @@ describe("RuntimeController", () => {
     expect(geometryLookupCount).toBe(
       PERFORMANCE_REFERENCE.startupGeometryLookups,
     );
-    expect(applicationOverrideLookupCount).toBe(
-      PERFORMANCE_REFERENCE.startupWindows,
-    );
+    expect(applicationOverrideLookupCount).toBe(0);
     expect(scheduler.executedCount).toBeLessThanOrEqual(
       PERFORMANCE_REFERENCE.startupSchedulerCallbacks,
     );
