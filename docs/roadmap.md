@@ -1990,3 +1990,26 @@ Release criteria (met):
 
 The batch changes no KWin action, default binding, setting, layout schema, or
 private API.
+
+### 1.52.0 (in development)
+
+- Add `DefaultInitialLayout` with a behavior-preserving `tiled` default and an
+  optional `floating` policy for genuinely new normal windows.
+- Add bounded exact `ApplicationInitialLayouts` rules with `tiled` and
+  `floating` values.
+- Resolve an exact map entry before the legacy initial-floating list and the
+  global default, while keeping automatic floating and application tiling
+  exclusions authoritative.
+- Expose both settings through KConfig and typed Home Manager options. Live
+  changes affect future windows without moving existing ones.
+
+Release criteria:
+
+- The default configuration keeps current tiled admission behavior.
+- Exact matching remains case-sensitive and malformed, duplicate, control, or
+  oversized maps fail atomically.
+- Focused settings and admission checks cover precedence and fresh-only
+  behavior without changing actions or layout persistence.
+
+The batch changes no action, binding, layout persistence schema, or private
+API.

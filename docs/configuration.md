@@ -6,11 +6,11 @@ The settings page groups the existing controls into two tabs:
 
 - **General**: window decorations, focus and single-column centering, desktop
   and touchpad navigation, window gap, tab feedback, default column
-  presentation and width, default initial tiled client height, proportional or
-  fixed column-width steps and presets, and proportional or fixed window-height
-  steps and presets.
+  presentation and width, default initial layout and tiled client height,
+  proportional or fixed column-width steps and presets, and proportional or
+  fixed window-height steps and presets.
 - **Applications**: initial column widths, tiled client heights, presentation,
-  focus centering, initial floating state and position, native-state rules,
+  focus centering, exact initial layout, floating position, native-state rules,
   tiling exclusions, and decoration exclusions.
 
 Driftile validates the complete settings snapshot atomically. Applying an
@@ -129,13 +129,14 @@ The activation writes only `ApplicationBorderlessExclusions`,
 `ApplicationInitialDestinations`,
 `ApplicationInitialFocused`,
 `ApplicationInitialUnfocused`,
-`ApplicationInitialFloating`, `ApplicationInitialFullWidth`,
+`ApplicationInitialFloating`, `ApplicationInitialLayouts`,
+`ApplicationInitialFullWidth`,
 `ApplicationInitialFullscreen`, `ApplicationInitialMaximized`,
 `ApplicationTilingExclusions`,
 `BorderlessWindows`, `CenterFocusedColumn`, `Gap`,
 `DefaultColumnPresentation`, `DefaultColumnWidthPercent`,
 `DefaultColumnWidthPixels`, `UseInitialWindowWidth`,
-`DefaultFloatingPosition`, `DefaultWindowHeight`,
+`DefaultFloatingPosition`, `DefaultInitialLayout`, `DefaultWindowHeight`,
 `ColumnWidthPresets`,
 `ColumnWidthStepPercent`, `ColumnWidthStepPixels`,
 `ShowTabIndicator`, `TouchpadNavigation`,
@@ -199,6 +200,11 @@ programs.driftile.settings.applicationInitialFloating = [
   "org.kde.kcalc"
 ];
 
+programs.driftile.settings.applicationInitialLayouts = {
+  "org.kde.kcalc" = "floating";
+  "org.mozilla.firefox" = "tiled";
+};
+
 programs.driftile.settings.applicationFloatingPositions = {
   "org.kde.kcalc" = {
     anchor = "bottom-right";
@@ -231,6 +237,7 @@ programs.driftile.settings.columnWidthStepPixels = 0;
 programs.driftile.settings.defaultColumnPresentation = "stacked";
 programs.driftile.settings.defaultColumnWidthPixels = 0;
 programs.driftile.settings.useInitialWindowWidth = false;
+programs.driftile.settings.defaultInitialLayout = "tiled";
 programs.driftile.settings.defaultFloatingPosition = {
   anchor = "bottom-right";
   x = 24;
@@ -251,7 +258,8 @@ programs.driftile.settings.windowHeightStepPixels = 0;
 Application widths and heights accept legacy integers from `10` through `100`,
 explicit `"10%"`–`"100%"` percentages, or fixed `"1px"`–`"16384px"` logical
 sizes. A fixed application height means client height. Presentations are
-`stacked` or `tabbed`. Attribute set IDs are exact and may not contain `=`.
+`stacked` or `tabbed`; initial layouts are `tiled` or `floating`. Attribute set
+IDs are exact and may not contain `=`.
 List policy IDs may contain `=`. Home Manager accepts at most 128 unique IDs
 per list policy, rejects blank, whitespace-padded, control-containing, or
 over-255-byte IDs, and writes each list in canonical sorted order.
@@ -603,6 +611,36 @@ policy adds no shortcut or persistence field. At most 128 rules are accepted;
 application IDs, virtual desktop names, and output names are each limited to
 255 UTF-8 bytes.
 
+## Default initial layout
+
+`DefaultInitialLayout` controls genuinely new normal windows without an exact
+application rule. `tiled` is the default and preserves existing behavior;
+`floating` starts them in ordinary manual floating. Home Manager exposes the
+same value as `programs.driftile.settings.defaultInitialLayout`.
+
+The policy is fresh-only. A live change affects windows first tracked afterward
+and never moves or reclassifies an existing window.
+
+## Application initial layouts
+
+`ApplicationInitialLayouts` maps an exact, case-sensitive application ID to
+`tiled` or `floating`, one `application-id=layout` rule per line. Home Manager
+exposes the typed map as `programs.driftile.settings.applicationInitialLayouts`.
+Blank lines are ignored; duplicate, malformed, control-containing, or
+over-limit rules reject the complete settings update.
+
+```nix
+programs.driftile.settings = {
+  defaultInitialLayout = "tiled";
+  applicationInitialLayouts."org.kde.kcalc" = "floating";
+};
+```
+
+Precedence is exact application map, legacy **Applications initially
+floating**, then **Default initial layout**. Automatic floating roles and
+**Application tiling exclusions** remain authoritative. Rules are fresh-only;
+live edits affect future windows without moving existing ones.
+
 ## Applications initially floating
 
 **Applications initially floating** starts a matching normal application
@@ -614,8 +652,9 @@ accepted from KWin.
 The policy is fresh-only. It does not reclassify an already admitted window or
 override restored tiled or floating ownership when the setting changes. A
 window snapshots the policy when Driftile first tracks it, including while it
-waits behind a KWin-owned state. Tiling exclusions and automatic floating roles
-such as dialogs, transients, and fixed-size windows take priority.
+waits behind a KWin-owned state. An exact application initial-layout rule takes
+precedence. Tiling exclusions and automatic floating roles such as dialogs,
+transients, and fixed-size windows take priority.
 
 The normal **Toggle floating** action can tile a window that started manually
 floating. Its application-specific initial column width applies at that point.

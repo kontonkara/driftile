@@ -230,14 +230,15 @@ for key in ApplicationBorderlessExclusions ApplicationColumnPresentations \
   ApplicationColumnWidths ApplicationFloatingPositions \
   ApplicationFocusCentering ApplicationInitialDestinations \
   ApplicationInitialFocused ApplicationInitialUnfocused \
-  ApplicationInitialFloating \
+  ApplicationInitialFloating ApplicationInitialLayouts \
   ApplicationInitialFullscreen \
   ApplicationInitialFullWidth ApplicationInitialMaximized \
   ApplicationTilingExclusions ApplicationWindowHeights \
   AlwaysCenterSingleColumn BorderlessWindows CenterFocusedColumn \
   CenterFocusedColumnOnOverflow ColumnWidthPresets ColumnWidthStepPercent \
   ColumnWidthStepPixels DefaultColumnPresentation DefaultColumnWidthPercent \
-  DefaultColumnWidthPixels DefaultWindowHeight EmptyDesktopAboveFirst Gap \
+  DefaultColumnWidthPixels DefaultInitialLayout DefaultWindowHeight \
+  EmptyDesktopAboveFirst Gap \
   NumberedDesktopTargets ShowTabIndicator TouchpadNavigation \
   TouchpadWorkspaceNavigation TouchpadNavigationFingerCount \
   TouchpadNaturalScroll WindowHeightPresets WindowHeightStepPercent \
@@ -372,9 +373,14 @@ programs.driftile.settings = {
     output = "DP-2";
   };
   defaultInitialFocus = "default";
+  defaultInitialLayout = "tiled";
   applicationInitialFocused = [ ];
   applicationInitialUnfocused = [ ];
   applicationInitialFloating = [ ];
+  applicationInitialLayouts = {
+    "org.kde.kcalc" = "floating";
+    "org.mozilla.firefox" = "tiled";
+  };
   applicationFloatingPositions = {
     "org.kde.kcalc" = {
       anchor = "bottom-right";
@@ -417,6 +423,8 @@ keeps the exact built-in `1/3`, `1/2`, and `2/3` cycle. See
 [Application initial destinations](configuration.md#application-initial-destinations),
 [Applications initially focused](configuration.md#applications-initially-focused),
 [Applications initially unfocused](configuration.md#applications-initially-unfocused),
+[Default initial layout](configuration.md#default-initial-layout),
+[Application initial layouts](configuration.md#application-initial-layouts),
 [Applications initially floating](configuration.md#applications-initially-floating),
 [Default floating position](configuration.md#default-floating-position),
 [Application floating positions](configuration.md#application-floating-positions),
