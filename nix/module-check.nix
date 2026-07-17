@@ -493,6 +493,14 @@ let
             "konsole org.kde.konsole"
             "firefox firefox"
           ];
+          windowCaptionExclusions = [
+            "Picture-in-Picture"
+            "Save As"
+          ];
+          windowRoleExclusions = [
+            "toolbox"
+            "pop-up"
+          ];
         };
       }
       { };
@@ -509,6 +517,8 @@ let
           easingCurve = null;
           resizeAnimationThreshold = null;
           windowClassExclusions = null;
+          windowCaptionExclusions = null;
+          windowRoleExclusions = null;
         };
       }
       { };
@@ -1978,6 +1988,8 @@ assert homeManagerOptionSurface.options.programs.driftile.transitions ? animateS
 assert homeManagerOptionSurface.options.programs.driftile.transitions ? easingCurve;
 assert homeManagerOptionSurface.options.programs.driftile.transitions ? resizeAnimationThreshold;
 assert homeManagerOptionSurface.options.programs.driftile.transitions ? windowClassExclusions;
+assert homeManagerOptionSurface.options.programs.driftile.transitions ? windowCaptionExclusions;
+assert homeManagerOptionSurface.options.programs.driftile.transitions ? windowRoleExclusions;
 assert nixosOptionSurface.options.programs.driftile ? transitions;
 assert nixosOptionSurface.options.programs.driftile ? shortcutEditor;
 assert nixosOptionSurface.options.programs.driftile.shortcutEditor ? enable;
@@ -1998,6 +2010,8 @@ assert !(nixosOptionSurface.options.programs.driftile.transitions ? animateSize)
 assert !(nixosOptionSurface.options.programs.driftile.transitions ? easingCurve);
 assert !(nixosOptionSurface.options.programs.driftile.transitions ? resizeAnimationThreshold);
 assert !(nixosOptionSurface.options.programs.driftile.transitions ? windowClassExclusions);
+assert !(nixosOptionSurface.options.programs.driftile.transitions ? windowCaptionExclusions);
+assert !(nixosOptionSurface.options.programs.driftile.transitions ? windowRoleExclusions);
 assert !(nixosOptionSurface.options.programs.driftile ? settings);
 assert packagePaths [ "home" "packages" ] homeManagerOverviewTouchpadGesture == [ ];
 assert packagePaths [ "home" "packages" ] homeManagerOverviewTouchpadGestureDefaults == [ ];
@@ -2109,9 +2123,15 @@ assert
       AnimateSize = true;
       EasingCurve = "out-quart";
       ResizeAnimationThreshold = 12;
+      WindowCaptionExclusions = ''
+        Picture-in-Picture
+        Save As'';
       WindowClassExclusions = ''
         firefox firefox
         konsole org.kde.konsole'';
+      WindowRoleExclusions = ''
+        pop-up
+        toolbox'';
     };
   };
 assert homeManagerTransitionSettingsUnmanaged.config.qt.kde.settings == { };
@@ -2130,6 +2150,12 @@ assert invalidTransitionSettingRejected { resizeAnimationThreshold = 65; };
 assert invalidTransitionSettingRejected { resizeAnimationThreshold = 1.5; };
 assert invalidTransitionSettingRejected { windowClassExclusions = "editor example.Editor"; };
 assert invalidTransitionSettingRejected { windowClassExclusions = [ " konsole org.kde.konsole" ]; };
+assert invalidTransitionSettingRejected { windowCaptionExclusions = "Save As"; };
+assert invalidTransitionSettingRejected { windowCaptionExclusions = [ " Save As" ]; };
+assert invalidTransitionSettingRejected { windowCaptionExclusions = [ "Save\nAs" ]; };
+assert invalidTransitionSettingRejected { windowRoleExclusions = "toolbox"; };
+assert invalidTransitionSettingRejected { windowRoleExclusions = [ "toolbox " ]; };
+assert invalidTransitionSettingRejected { windowRoleExclusions = [ "tool\tbox" ]; };
 assert
   invalidTransitionSettingRejected {
     windowClassExclusions = [
@@ -2138,7 +2164,25 @@ assert
   };
 assert
   invalidTransitionSettingRejected {
+    windowCaptionExclusions = [
+      (builtins.concatStringsSep "" (builtins.genList (_: "é") 128))
+    ];
+  };
+assert
+  invalidTransitionSettingRejected {
+    windowRoleExclusions = [ (builtins.concatStringsSep "" (builtins.genList (_: "a") 256)) ];
+  };
+assert
+  invalidTransitionSettingRejected {
     windowClassExclusions = builtins.genList (index: "app${toString index} example.App${toString index}") 129;
+  };
+assert
+  invalidTransitionSettingRejected {
+    windowCaptionExclusions = builtins.genList (index: "caption-${toString index}") 129;
+  };
+assert
+  invalidTransitionSettingRejected {
+    windowRoleExclusions = builtins.genList (index: "role-${toString index}") 129;
   };
 assert packagePaths [ "home" "packages" ] homeManagerSettings == [ ];
 assert

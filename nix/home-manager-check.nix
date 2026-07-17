@@ -326,6 +326,14 @@ let
         "konsole org.kde.konsole"
         "firefox firefox"
       ];
+      windowCaptionExclusions = [
+        "Picture-in-Picture"
+        "Save As"
+      ];
+      windowRoleExclusions = [
+        "toolbox"
+        "pop-up"
+      ];
     };
   } { };
   transitionSettingsUnmanaged = evaluateHome {
@@ -335,6 +343,8 @@ let
       easingCurve = null;
       resizeAnimationThreshold = null;
       windowClassExclusions = null;
+      windowCaptionExclusions = null;
+      windowRoleExclusions = null;
     };
   } { };
   invalidTransitionDurationRejected =
@@ -776,9 +786,15 @@ assert
       AnimateSize = true;
       EasingCurve = "out-expo";
       ResizeAnimationThreshold = 16;
+      WindowCaptionExclusions = ''
+        Picture-in-Picture
+        Save As'';
       WindowClassExclusions = ''
         firefox firefox
         konsole org.kde.konsole'';
+      WindowRoleExclusions = ''
+        pop-up
+        toolbox'';
     };
   };
 assert transitionSettingsUnmanaged.config.qt.kde.settings == { };
@@ -793,6 +809,12 @@ assert invalidTransitionSettingRejected { resizeAnimationThreshold = 65; };
 assert invalidTransitionSettingRejected { resizeAnimationThreshold = 1.5; };
 assert invalidTransitionSettingRejected { windowClassExclusions = "editor example.Editor"; };
 assert invalidTransitionSettingRejected { windowClassExclusions = [ "konsole org.kde.konsole " ]; };
+assert invalidTransitionSettingRejected { windowCaptionExclusions = "Save As"; };
+assert invalidTransitionSettingRejected { windowCaptionExclusions = [ "" ]; };
+assert invalidTransitionSettingRejected { windowCaptionExclusions = [ "Save\nAs" ]; };
+assert invalidTransitionSettingRejected { windowRoleExclusions = "toolbox"; };
+assert invalidTransitionSettingRejected { windowRoleExclusions = [ "toolbox " ]; };
+assert invalidTransitionSettingRejected { windowRoleExclusions = [ "tool\tbox" ]; };
 assert
   invalidTransitionSettingRejected {
     windowClassExclusions = [
@@ -801,7 +823,25 @@ assert
   };
 assert
   invalidTransitionSettingRejected {
+    windowCaptionExclusions = [
+      (builtins.concatStringsSep "" (builtins.genList (_: "é") 128))
+    ];
+  };
+assert
+  invalidTransitionSettingRejected {
+    windowRoleExclusions = [ (builtins.concatStringsSep "" (builtins.genList (_: "a") 256)) ];
+  };
+assert
+  invalidTransitionSettingRejected {
     windowClassExclusions = builtins.genList (index: "app${toString index} example.App${toString index}") 129;
+  };
+assert
+  invalidTransitionSettingRejected {
+    windowCaptionExclusions = builtins.genList (index: "caption-${toString index}") 129;
+  };
+assert
+  invalidTransitionSettingRejected {
+    windowRoleExclusions = builtins.genList (index: "role-${toString index}") 129;
   };
 assert
   maximumNumberedDesktopTargetName.config.qt.kde.settings.kwinrc."Script-io.github.kontonkara.driftile".NumberedDesktopTargets

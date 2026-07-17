@@ -366,6 +366,10 @@ let
     );
   transitionWindowClassExclusionType = applicationTilingExclusionType;
   renderTransitionWindowClassExclusions = renderApplicationTilingExclusions;
+  transitionWindowCaptionExclusionType = applicationTilingExclusionType;
+  renderTransitionWindowCaptionExclusions = renderApplicationTilingExclusions;
+  transitionWindowRoleExclusionType = applicationTilingExclusionType;
+  renderTransitionWindowRoleExclusions = renderApplicationTilingExclusions;
   validPresetSequence =
     presets:
     let
@@ -605,6 +609,18 @@ in
           type = lib.types.nullOr transitionWindowClassExclusionType;
           default = null;
           description = "Up to 128 exact KWin windowClass strings excluded from transitions; null leaves the KConfig value unmanaged.";
+        };
+
+        windowCaptionExclusions = lib.mkOption {
+          type = lib.types.nullOr transitionWindowCaptionExclusionType;
+          default = null;
+          description = "Up to 128 exact window captions of at most 255 UTF-8 bytes each excluded from transitions; null leaves the KConfig value unmanaged.";
+        };
+
+        windowRoleExclusions = lib.mkOption {
+          type = lib.types.nullOr transitionWindowRoleExclusionType;
+          default = null;
+          description = "Up to 128 exact window roles of at most 255 UTF-8 bytes each excluded from transitions; null leaves the KConfig value unmanaged.";
         };
       };
   }
@@ -1114,6 +1130,18 @@ in
       lib.mkIf (cfg.transitions.windowClassExclusions != null) {
         qt.kde.settings.kwinrc."Effect-${pluginId}.transitions".WindowClassExclusions =
           renderTransitionWindowClassExclusions cfg.transitions.windowClassExclusions;
+      }
+    ))
+    (lib.optionalAttrs homeSettings (
+      lib.mkIf (cfg.transitions.windowCaptionExclusions != null) {
+        qt.kde.settings.kwinrc."Effect-${pluginId}.transitions".WindowCaptionExclusions =
+          renderTransitionWindowCaptionExclusions cfg.transitions.windowCaptionExclusions;
+      }
+    ))
+    (lib.optionalAttrs homeSettings (
+      lib.mkIf (cfg.transitions.windowRoleExclusions != null) {
+        qt.kde.settings.kwinrc."Effect-${pluginId}.transitions".WindowRoleExclusions =
+          renderTransitionWindowRoleExclusions cfg.transitions.windowRoleExclusions;
       }
     ))
   ];
