@@ -1,11 +1,11 @@
 # Roadmap
 
-Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.61.0 are
+Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.62.0 are
 released. The delivered milestones and release criteria below are a historical
 record. Later direction is not a committed release schedule.
 
-Stable 1.61.0 adds lazy application icons to eligible Overview window labels,
-with a live presentation preference. Logical persistence remains v4.
+Stable 1.62.0 identifies outputs in multi-output Overview scenes and makes
+output names available to window search. Logical persistence remains v4.
 
 ## Foundation (delivered)
 
@@ -2243,7 +2243,7 @@ Release criteria (met):
 The batch uses public `Window.icon` and Kirigami presentation and adds no
 private API or KWin fork.
 
-### 1.62.0 (in development)
+### 1.62.0 (released)
 
 - Show one bounded normalized output name on sufficiently large multi-output
   Overview scenes.
@@ -2256,7 +2256,7 @@ private API or KWin fork.
 - Add default-enabled live `ShowOutputNames` KConfig and a nullable Home
   Manager option. Keep the NixOS option surface unchanged.
 
-Release criteria:
+Release criteria (met):
 
 - Multi-output labels remain passive, bounded, adaptive, and outside every
   pointer, keyboard, focus, layout, and persistence path.
