@@ -15,6 +15,8 @@ export { planOverviewDesktopDrop } from "./desktop-drop";
 export { planOverviewMinimizedPlaceholder } from "./minimized-placeholder";
 export type { OverviewMinimizedPlaceholderRect } from "./minimized-placeholder";
 export { planOverviewWindowDesktopDrop } from "./window-drop";
+export { planOverviewWindowLabel } from "./window-label";
+export type { OverviewWindowLabelPlan } from "./window-label";
 export {
   appendOverviewSearchText,
   matchesOverviewWindowSearch,
