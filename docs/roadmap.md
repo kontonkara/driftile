@@ -1,17 +1,13 @@
 # Roadmap
 
-Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.47.0 are
+Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.48.0 are
 released. The delivered milestones and release criteria below are a historical
 record. Later direction is not a committed release schedule.
 
-Stable 1.47.0 previews exact-window and empty-gutter destinations while dragging
-between visible outputs or virtual desktops. Preview and commit share one
-guarded target plan, and stale cleanup cannot hide newer feedback. Logical
-persistence remains v4.
-
-Version 1.48.0 is in development as a focused interaction batch. Its current
-scope covers minimal full-width focus reveals, smoother rapid transition
-retargeting, and predicted singleton previews for selected empty destinations.
+Stable 1.48.0 minimally reveals ordinary columns after full-width predecessors,
+keeps rapid optional transition retargets continuous, and previews predicted
+singleton frames on selected empty destinations. Logical persistence remains
+v4.
 
 ## Foundation (delivered)
 
@@ -1905,7 +1901,7 @@ No unrelated feature belongs to 1.46.0.
 The batch adds no action, binding, setting, persistence field, compositor fork,
 or private API.
 
-### 1.48.0 (in development)
+### 1.48.0 (released)
 
 - Minimally reveal an ordinary column immediately after a full-width column at
   the right edge, retaining a partial view of its predecessor while keeping

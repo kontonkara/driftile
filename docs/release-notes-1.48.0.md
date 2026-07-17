@@ -1,7 +1,7 @@
 # Driftile 1.48.0
 
-Driftile 1.48.0 is in development. This interaction batch improves horizontal
-focus handoffs, optional transition retargeting, and pointer feedback for empty
+Driftile 1.48.0 is the latest stable release. It improves horizontal focus
+handoffs, optional transition retargeting, and pointer feedback for empty
 destinations.
 
 ## Highlights
@@ -26,8 +26,9 @@ single-output native X11 retain the existing compatibility baseline.
 
 ## Install
 
-After `v1.48.0` is published, download the matching artifacts and verify them
-with `SHA256SUMS`:
+Download the matching artifacts from the
+[`v1.48.0` release](https://github.com/kontonkara/driftile/releases/tag/v1.48.0)
+and verify them with `SHA256SUMS`:
 
 - `driftile-1.48.0.kwinscript`
 - `driftile-overview-1.48.0.kwineffect`, if using the optional overview
@@ -36,4 +37,4 @@ with `SHA256SUMS`:
 
 Disable installed Driftile packages, replace every package you use with the
 matching 1.48.0 artifact, then re-enable them. Nix users can pin the input to
-`v1.48.0` after publication and rebuild.
+`v1.48.0` and rebuild.
