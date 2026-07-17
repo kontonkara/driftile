@@ -1,15 +1,11 @@
 # Roadmap
 
-Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.60.0 are
+Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.61.0 are
 released. The delivered milestones and release criteria below are a historical
 record. Later direction is not a committed release schedule.
 
-Stable 1.60.0 adds bounded adaptive virtual-desktop names and owning-desktop
-search to the optional Overview, with a live presentation preference. Logical
-persistence remains v4.
-
-Version 1.61.0 is in development. It adds lazy application icons to eligible
-Overview window labels without changing input, search, focus, or layout.
+Stable 1.61.0 adds lazy application icons to eligible Overview window labels,
+with a live presentation preference. Logical persistence remains v4.
 
 ## Foundation (delivered)
 
@@ -2222,7 +2218,7 @@ The batch adds no pointer or keyboard input, action, binding, timer, animation,
 desktop selection, focus, geometry, layout or persistence write, private API,
 or KWin fork.
 
-### 1.61.0 (in development)
+### 1.61.0 (released)
 
 - Show the public KWin application icon on sufficiently large ordinary label
   footers, tabs, and minimized placeholders.
@@ -2236,7 +2232,7 @@ or KWin fork.
 - Keep the NixOS option surface unchanged; system installations use the same
   per-user effect setting.
 
-Release criteria:
+Release criteria (met):
 
 - Icons reserve label space only when a valid icon is available.
 - Disabling icons restores the existing text-only presentation without reading
