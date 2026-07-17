@@ -1,11 +1,11 @@
 # Roadmap
 
-Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.72.0 are
+Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.73.0 are
 released. The delivered milestones and release criteria below are a historical
 record. Later direction is not a committed release schedule.
 
-Stable 1.72.0 restores every registered shortcut action's runtime dispatch and
-improves selector and Overview-help discoverability. Logical persistence
+Stable 1.73.0 makes overflowing Overview help fully scrollable by keyboard,
+mouse, and touchpad without dispatching background actions. Logical persistence
 remains v4.
 
 ## Foundation (delivered)
@@ -2508,3 +2508,22 @@ Release criteria (met):
 - Selector feedback changes no stored value, schema, or runtime matching rule.
 - Pointer help access adds no global binding, setting, timer, animation,
   persistence field, private API, or KWin fork.
+
+### 1.73.0 (released)
+
+- Scroll overflowing Overview help with unmodified `Up`/`Down`,
+  `Page Up`/`Page Down`, and `Home`/`End` while keeping `F1` and `Escape` as
+  the first modal actions.
+- Accept bounded mouse and touchpad wheel input inside the help viewport while
+  retaining touch drag and suppressing the background Overview wheel path.
+- Share one finite, clamped content-position setter across keyboard and wheel
+  input, and remain a safe no-op when the complete reference fits.
+
+Release criteria (met):
+
+- Help scrolling cannot move beyond the available content or alter Overview
+  selection, focus, desktop, window, layout, or persistence state.
+- All modal wheel input is consumed once and cannot reach background cards or
+  the Overview selection handler.
+- The batch adds no global binding, setting, timer, animation, persistence
+  field, private API, or KWin fork.
