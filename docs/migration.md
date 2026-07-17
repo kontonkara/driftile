@@ -1,7 +1,30 @@
 # Migration
 
-The latest stable release is 1.66.0. Use the steps below when changing release
+The latest stable release is 1.67.0. Use the steps below when changing release
 generations, and never combine files from different releases.
+
+## Upgrade from 1.66.0 to 1.67.0
+
+1. Release a helper-owned shortcut profile with the installed helper.
+2. Disable Driftile and both optional effects in System Settings.
+3. Install matching 1.67.0 artifacts, or pin the Nix input to `v1.67.0` and
+   rebuild.
+4. Re-enable Driftile and only the optional effects you use, then reclaim the
+   helper profile if needed.
+
+Logical layout state remains v4. The transition effect keeps coupled position
+components synchronized during rapid movement. Closing a window preserves a
+valid provisional same-context focus handoff. New unbound actions can send one
+window or column to another desktop without following it. No setting, default
+binding, or schema migration is required.
+
+## Roll back from 1.67.0 to 1.66.0
+
+Release a helper-owned profile, disable Driftile and both optional effects,
+then restore matching verified 1.66.0 artifacts or pin the Nix input to
+`v1.66.0` and rebuild. No option deletion or schema migration is required; the
+new send actions and transition and focus corrections simply become
+unavailable.
 
 ## Upgrade from 1.65.0 to 1.66.0
 
