@@ -5,7 +5,6 @@
 
 const DEFAULT_DURATION = 180;
 const MAXIMUM_DURATION = 1000;
-const MAXIMUM_RETARGET_DURATION = 100;
 const DEFAULT_RESIZE_ANIMATION_THRESHOLD = 10;
 const MAXIMUM_RESIZE_ANIMATION_THRESHOLD = 64;
 const MAXIMUM_EXCLUSION_COUNT = 128;
@@ -28,7 +27,6 @@ const ANIMATION_TARGET_PROPERTIES = {
 class DriftileTransitionsEffect {
   constructor() {
     this.duration = 0;
-    this.retargetDuration = 0;
     this.animatePosition = true;
     this.animateSize = true;
     this.easingCurve = QEasingCurve.OutCubic;
@@ -45,6 +43,8 @@ class DriftileTransitionsEffect {
     this.continuityLeasedWindows = new Set();
     this.fullScreenEffectActive = effects.hasActiveFullScreenEffect;
     this.visibilityHandoffPending = false;
+    this.visibilityHandoffAnchor = null;
+    this.visibilityHandoffTarget = null;
 
     effect.configChanged.connect(this.loadConfig.bind(this));
     if (effect.animationEnded) {
@@ -78,7 +78,7 @@ class DriftileTransitionsEffect {
   }
 
   loadConfig() {
-    this.visibilityHandoffPending = false;
+    this.clearVisibilityHandoff();
     const configuredDuration = Number(
       effect.readConfig("Duration", DEFAULT_DURATION),
     );
@@ -87,17 +87,6 @@ class DriftileTransitionsEffect {
       : DEFAULT_DURATION;
 
     this.duration = animationTime(baseDuration);
-    this.retargetDuration =
-      baseDuration === 0
-        ? 0
-        : Math.min(
-            this.duration,
-            Math.round(
-              (this.duration *
-                Math.min(baseDuration, MAXIMUM_RETARGET_DURATION)) /
-                baseDuration,
-            ),
-          );
     this.animatePosition = this.readBooleanConfig("AnimatePosition", true);
     this.animateSize = this.readBooleanConfig("AnimateSize", true);
     this.easingCurve = this.readEasingCurveConfig();
@@ -150,6 +139,12 @@ class DriftileTransitionsEffect {
     this.clearWindowTransitions(window);
     this.observedWindowGeometries.delete(window);
     this.windowClassClassifications.delete(window);
+    if (this.visibilityHandoffAnchor === window) {
+      this.visibilityHandoffAnchor = null;
+    }
+    if (this.visibilityHandoffTarget === window) {
+      this.visibilityHandoffTarget = null;
+    }
     delete window[MANAGED_PROPERTY];
     const index = this.managedWindows.indexOf(window);
     if (index >= 0) {
@@ -218,6 +213,7 @@ class DriftileTransitionsEffect {
     const visibilityLeaseUsed = this.visibilityLeasedWindows.has(window);
     this.animateWindowTransition(window, previousGeometry, newGeometry);
     this.consumeVisibilityLease(window, visibilityLeaseUsed);
+    this.settleVisibilityHandoff(window);
   }
 
   onFullScreenEffectChanged() {
@@ -228,7 +224,7 @@ class DriftileTransitionsEffect {
     this.fullScreenEffectActive = active;
 
     if (active) {
-      this.visibilityHandoffPending = false;
+      this.clearVisibilityHandoff();
       this.visibilityLeasedWindows.clear();
       this.continuityLeasedWindows.clear();
       this.rememberVisibilityLease(effects.activeWindow);
@@ -239,6 +235,8 @@ class DriftileTransitionsEffect {
     }
 
     this.visibilityHandoffPending = this.duration > 0;
+    this.visibilityHandoffAnchor = effects.activeWindow;
+    this.visibilityHandoffTarget = null;
     this.replayDeferredTransitions();
   }
 
@@ -248,12 +246,12 @@ class DriftileTransitionsEffect {
   }
 
   onWindowActivated(window) {
+    this.captureVisibilityHandoffTarget(window);
     this.rememberVisibilityLease(window);
     if (this.deferredWindows.has(window)) {
       this.replayDeferredTransition(window);
     }
     this.replayDeferredTransitions(window);
-    this.settleVisibilityHandoff(window);
   }
 
   onWindowVisibilityOpportunity(window) {
@@ -279,13 +277,39 @@ class DriftileTransitionsEffect {
   settleVisibilityHandoff(window) {
     if (
       this.visibilityHandoffPending &&
+      this.visibilityHandoffTarget === window &&
       window &&
       effects.activeWindow === window &&
-      window.visible &&
+      (window.visible || this.hasActiveWindowAnimation(window)) &&
       this.isWindowInCurrentVisibilityContext(window)
     ) {
-      this.visibilityHandoffPending = false;
+      this.clearVisibilityHandoff();
     }
+  }
+
+  captureVisibilityHandoffTarget(window) {
+    if (
+      !this.visibilityHandoffPending ||
+      !window ||
+      window === this.visibilityHandoffAnchor ||
+      !this.isWindowInCurrentVisibilityContext(window)
+    ) {
+      return;
+    }
+
+    if (this.visibilityHandoffTarget !== window) {
+      this.visibilityLeasedWindows.delete(this.visibilityHandoffTarget);
+    }
+    this.visibilityHandoffTarget = window;
+    this.visibilityLeasedWindows.add(window);
+  }
+
+  clearVisibilityHandoff() {
+    this.visibilityLeasedWindows.delete(this.visibilityHandoffAnchor);
+    this.visibilityLeasedWindows.delete(this.visibilityHandoffTarget);
+    this.visibilityHandoffPending = false;
+    this.visibilityHandoffAnchor = null;
+    this.visibilityHandoffTarget = null;
   }
 
   deferWindowTransition(window, oldGeometry) {
@@ -358,6 +382,7 @@ class DriftileTransitionsEffect {
     this.deferredWindows.delete(window);
     this.animateWindowTransition(window, oldGeometry, newGeometry);
     this.consumeVisibilityLease(window, visibilityLeaseUsed);
+    this.settleVisibilityHandoff(window);
   }
 
   isDeferredTransitionPresentable(window) {
@@ -863,17 +888,14 @@ class DriftileTransitionsEffect {
       return false;
     }
 
-    if (retarget(animationId, target, this.retargetDuration)) {
+    if (retarget(animationId, target, this.duration)) {
       state[ANIMATION_TARGET_PROPERTIES[property]] =
         this.copyAnimationTarget(target);
       return true;
     }
 
-    this.cancelAnimation(state, property);
-    state[ACTIVE_ANIMATION_COUNT] = Math.min(
-      this.activeAnimationCount(state),
-      this.trackedAnimationCount(state),
-    );
+    delete state[property];
+    delete state[ANIMATION_TARGET_PROPERTIES[property]];
     return false;
   }
 
