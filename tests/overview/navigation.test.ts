@@ -5,6 +5,7 @@ import {
   findOverviewNavigationTarget,
   findOverviewSequentialNavigationTarget,
   planOverviewWheelNavigation,
+  summarizeOverviewWindowNavigationTargets,
 } from "../../src/overview/runtime";
 
 describe("planOverviewWheelNavigation", () => {
@@ -77,6 +78,81 @@ describe("countOverviewWindowNavigationTargets", () => {
         hostile,
       ]),
     ).toBeNull();
+  });
+
+  it("preserves counting when unrelated target fields are hostile", () => {
+    const target = Object.defineProperty(
+      { kind: "window", windowId: "window-a" },
+      "desktopId",
+      {
+        get(): never {
+          throw new Error("unavailable");
+        },
+      },
+    );
+
+    expect(countOverviewWindowNavigationTargets([target])).toBe(1);
+  });
+});
+
+describe("summarizeOverviewWindowNavigationTargets", () => {
+  it("counts unique windows globally and for each exact desktop id", () => {
+    const summary = summarizeOverviewWindowNavigationTargets([
+      { desktopId: "desktop-a", kind: "window", windowId: "window-a" },
+      { desktopId: "desktop-a", kind: "window", windowId: "window-a" },
+      { desktopId: "desktop-a", kind: "window", windowId: "window-b" },
+      { desktopId: "desktop-b", kind: "window", windowId: "window-a" },
+      { desktopId: " desktop-b ", kind: "window", windowId: "window-c" },
+      { desktopId: "desktop-a", kind: "desktop", windowId: "window-d" },
+      { desktopId: "", kind: "window", windowId: "window-e" },
+      { desktopId: 1, kind: "window", windowId: "window-f" },
+      { desktopId: "desktop-a", kind: "window", windowId: "" },
+      null,
+    ]);
+
+    expect(summary).not.toBeNull();
+    expect(summary?.total).toBe(5);
+    expect(summary?.byDesktop).toEqual({
+      " desktop-b ": 1,
+      "desktop-a": 2,
+      "desktop-b": 1,
+    });
+    expect(Object.getPrototypeOf(summary?.byDesktop)).toBeNull();
+    expect(Object.isFrozen(summary?.byDesktop)).toBe(true);
+    expect(Object.isFrozen(summary)).toBe(true);
+  });
+
+  it("returns an immutable empty summary when no window target is valid", () => {
+    const summary = summarizeOverviewWindowNavigationTargets([
+      { desktopId: "desktop-a", kind: "desktop", windowId: "window-a" },
+      { desktopId: "desktop-a", kind: "window", windowId: null },
+    ]);
+
+    expect(summary?.total).toBe(0);
+    expect(summary?.byDesktop).toEqual({});
+    expect(Object.isFrozen(summary?.byDesktop)).toBe(true);
+    expect(Object.isFrozen(summary)).toBe(true);
+  });
+
+  it("bounds the scan and fails closed on hostile valid window targets", () => {
+    const limit =
+      LAYOUT_PERSISTENCE_LIMITS.windows + LAYOUT_PERSISTENCE_LIMITS.contexts;
+    const hostile = Object.defineProperty(
+      { kind: "window", windowId: "window-a" },
+      "desktopId",
+      {
+        get(): never {
+          throw new Error("unavailable");
+        },
+      },
+    );
+
+    expect(
+      summarizeOverviewWindowNavigationTargets(
+        Array.from({ length: limit + 1 }),
+      ),
+    ).toBeNull();
+    expect(summarizeOverviewWindowNavigationTargets([hostile])).toBeNull();
   });
 });
 

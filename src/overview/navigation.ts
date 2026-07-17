@@ -16,6 +16,11 @@ export interface OverviewWheelNavigationPlan {
   readonly steps: number;
 }
 
+export interface OverviewWindowNavigationTargetSummary {
+  readonly byDesktop: Readonly<Record<string, number>>;
+  readonly total: number;
+}
+
 const MAXIMUM_NAVIGATION_TARGETS =
   LAYOUT_PERSISTENCE_LIMITS.windows + LAYOUT_PERSISTENCE_LIMITS.contexts;
 const MAXIMUM_NAVIGATION_TARGET_ID_CHARACTERS =
@@ -66,6 +71,27 @@ export function planOverviewWheelNavigation(
 export function countOverviewWindowNavigationTargets(
   targets: unknown,
 ): number | null {
+  return scanOverviewWindowNavigationTargets(targets, false);
+}
+
+export function summarizeOverviewWindowNavigationTargets(
+  targets: unknown,
+): OverviewWindowNavigationTargetSummary | null {
+  return scanOverviewWindowNavigationTargets(targets, true);
+}
+
+function scanOverviewWindowNavigationTargets(
+  targets: unknown,
+  includeDesktopCounts: false,
+): number | null;
+function scanOverviewWindowNavigationTargets(
+  targets: unknown,
+  includeDesktopCounts: true,
+): OverviewWindowNavigationTargetSummary | null;
+function scanOverviewWindowNavigationTargets(
+  targets: unknown,
+  includeDesktopCounts: boolean,
+): OverviewWindowNavigationTargetSummary | number | null {
   try {
     if (
       !Array.isArray(targets) ||
@@ -75,6 +101,9 @@ export function countOverviewWindowNavigationTargets(
     }
 
     const windowIds = new Set<string>();
+    const desktopWindowIds = includeDesktopCounts
+      ? new Map<string, Set<string>>()
+      : null;
     for (const target of targets) {
       if (!isRecord(target) || target["kind"] !== "window") {
         continue;
@@ -83,10 +112,33 @@ export function countOverviewWindowNavigationTargets(
       const windowId = target["windowId"];
       if (validIdentifier(windowId)) {
         windowIds.add(windowId);
+        if (desktopWindowIds) {
+          const desktopId = target["desktopId"];
+          if (validIdentifier(desktopId)) {
+            const desktopWindows = desktopWindowIds.get(desktopId);
+            if (desktopWindows) {
+              desktopWindows.add(windowId);
+            } else {
+              desktopWindowIds.set(desktopId, new Set([windowId]));
+            }
+          }
+        }
       }
     }
 
-    return windowIds.size;
+    if (!desktopWindowIds) {
+      return windowIds.size;
+    }
+
+    const byDesktop = Object.create(null) as Record<string, number>;
+    for (const [desktopId, desktopWindows] of desktopWindowIds) {
+      byDesktop[desktopId] = desktopWindows.size;
+    }
+
+    return Object.freeze({
+      byDesktop: Object.freeze(byDesktop),
+      total: windowIds.size,
+    });
   } catch {
     return null;
   }

@@ -9,8 +9,12 @@ export {
   findOverviewNavigationTarget,
   findOverviewSequentialNavigationTarget,
   planOverviewWheelNavigation,
+  summarizeOverviewWindowNavigationTargets,
 } from "./navigation";
-export type { OverviewWheelNavigationPlan } from "./navigation";
+export type {
+  OverviewWheelNavigationPlan,
+  OverviewWindowNavigationTargetSummary,
+} from "./navigation";
 export { planOverviewDesktopLabel } from "./desktop-label";
 export type { OverviewDesktopLabelPlan } from "./desktop-label";
 export { planOverviewOutputLabel } from "./output-label";
