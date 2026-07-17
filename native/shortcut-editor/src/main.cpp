@@ -4,6 +4,7 @@
 #include "shortcuteditorwindow.h"
 
 #include <QApplication>
+#include <QCommandLineParser>
 #include <QCoreApplication>
 #include <QIcon>
 
@@ -19,8 +20,15 @@ int main(int argc, char **argv)
     QCoreApplication::setApplicationName(QStringLiteral("driftile-shortcut-editor"));
     QCoreApplication::setApplicationVersion(QString::fromUtf8(DRIFTILE_VERSION));
     QCoreApplication::setOrganizationDomain(QStringLiteral("io.github.kontonkara"));
+    QApplication::setApplicationDisplayName(QStringLiteral("Driftile Shortcuts"));
     QApplication::setDesktopFileName(QLatin1String(desktopFileName));
     QApplication::setWindowIcon(QIcon::fromTheme(QLatin1String(applicationIconName)));
+
+    QCommandLineParser parser;
+    parser.setApplicationDescription(QStringLiteral("Configure global shortcuts for Driftile."));
+    parser.addHelpOption();
+    parser.addVersionOption();
+    parser.process(application);
 
     ShortcutEditorWindow window;
     window.show();
