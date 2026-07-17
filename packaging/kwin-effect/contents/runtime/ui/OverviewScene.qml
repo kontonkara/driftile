@@ -816,11 +816,14 @@ Rectangle {
         const expectedOutputId = expectedOutput ? String(expectedOutput.outputId) : "";
         const liveDesktop = liveDesktopFor(expectedDesktop, expectedDesktopId);
         const expectedActivityId = String(KWin.Workspace.currentActivity);
+        const expectedMinimized = candidate !== null && candidate !== undefined && candidate.minimized === true;
         if (!desktopContextIsExact(effect, model, liveScreen, expectedOutput, expectedOutputId, liveDesktop,
                                    expectedDesktopId) || !windowContextIsExact(candidate, expectedWindowId,
                                                                                liveScreen, liveDesktop,
                                                                                expectedDesktopId,
-                                                                               expectedActivityId, false)) {
+                                                                               expectedActivityId)
+                || !windowFocusStateIsExact(candidate, expectedMinimized, false)
+                || (expectedMinimized && candidate.managed !== true)) {
             return;
         }
 
@@ -838,23 +841,55 @@ Rectangle {
             desktopSelectionConfirmed = true;
         }
 
+        if (expectedMinimized) {
+            if (!desktopContextIsExact(effect, model, liveScreen, expectedOutput, expectedOutputId, liveDesktop,
+                                       expectedDesktopId)
+                    || !windowContextIsExact(candidate, expectedWindowId, liveScreen, liveDesktop,
+                                             expectedDesktopId, expectedActivityId)
+                    || !windowFocusStateIsExact(candidate, true, false) || candidate.managed !== true) {
+                return;
+            }
+
+            try {
+                candidate.minimized = false;
+            } catch (error) {
+                return;
+            }
+
+            if (!desktopContextIsExact(effect, model, liveScreen, expectedOutput, expectedOutputId, liveDesktop,
+                                       expectedDesktopId)
+                    || !windowContextIsExact(candidate, expectedWindowId, liveScreen, liveDesktop,
+                                             expectedDesktopId, expectedActivityId)
+                    || !windowFocusStateIsExact(candidate, false, true) || candidate.managed !== true) {
+                return;
+            }
+        }
+
         let focusConfirmed = false;
         const selectedDesktop = currentDesktop;
         if (selectedDesktop === liveDesktop && String(selectedDesktop.id) === expectedDesktopId && desktopContextIsExact(
                     effect, model, liveScreen, expectedOutput, expectedOutputId, liveDesktop, expectedDesktopId)
                 && windowContextIsExact(candidate, expectedWindowId, liveScreen, liveDesktop, expectedDesktopId,
-                                        expectedActivityId, true)) {
+                                        expectedActivityId)
+                && windowFocusStateIsExact(candidate, false, true)) {
             try {
                 if (KWin.Workspace.activeWindow !== candidate) {
                     KWin.Workspace.activeWindow = candidate;
                 }
                 focusConfirmed = KWin.Workspace.activeWindow === candidate;
+                if (focusConfirmed && expectedMinimized) {
+                    focusConfirmed = desktopContextIsExact(effect, model, liveScreen, expectedOutput,
+                                                           expectedOutputId, liveDesktop, expectedDesktopId)
+                        && windowContextIsExact(candidate, expectedWindowId, liveScreen, liveDesktop,
+                                               expectedDesktopId, expectedActivityId)
+                        && windowFocusStateIsExact(candidate, false, true);
+                }
             } catch (error) {
                 focusConfirmed = false;
             }
         }
 
-        if (focusConfirmed || desktopSelectionConfirmed) {
+        if (focusConfirmed || (!expectedMinimized && desktopSelectionConfirmed)) {
             effect.deactivate();
         }
     }
@@ -907,13 +942,16 @@ Rectangle {
     }
 
     function windowContextIsExact(candidate, expectedWindowId, liveScreen, liveDesktop, expectedDesktopId,
-                                  expectedActivityId, rejectHidden) {
-        return candidate && !candidate.deleted && !candidate.minimized && candidate.wantsInput === true
-                && (!rejectHidden || !candidate.hidden) && expectedWindowId.length > 0
+                                  expectedActivityId) {
+        return candidate && !candidate.deleted && candidate.wantsInput === true && expectedWindowId.length > 0
                 && String(candidate.internalId) === expectedWindowId && candidate.output === liveScreen
                 && String(KWin.Workspace.currentActivity) === expectedActivityId
                 && windowUsesDesktop(candidate, liveDesktop, expectedDesktopId)
                 && windowUsesActivity(candidate, expectedActivityId);
+    }
+
+    function windowFocusStateIsExact(candidate, expectedMinimized, rejectHidden) {
+        return candidate && candidate.minimized === expectedMinimized && (!rejectHidden || !candidate.hidden);
     }
 
     function closeWindow(candidate, expectedWindowId, expectedDesktop, expectedDesktopId, expectedScreen) {
@@ -924,14 +962,17 @@ Rectangle {
         const expectedOutputId = expectedOutput ? String(expectedOutput.outputId) : "";
         const liveDesktop = liveDesktopFor(expectedDesktop, expectedDesktopId);
         const expectedActivityId = String(KWin.Workspace.currentActivity);
+        const expectedMinimized = candidate !== null && candidate !== undefined && candidate.minimized === true;
         if (!closeWindowContextIsExact(effect, model, liveScreen, expectedOutput, expectedOutputId, liveDesktop,
-                                       expectedDesktopId, candidate, expectedWindowId, expectedActivityId)) {
+                                       expectedDesktopId, candidate, expectedWindowId, expectedActivityId,
+                                       expectedMinimized)) {
             return;
         }
 
         try {
             if (!closeWindowContextIsExact(effect, model, liveScreen, expectedOutput, expectedOutputId, liveDesktop,
-                                           expectedDesktopId, candidate, expectedWindowId, expectedActivityId)) {
+                                           expectedDesktopId, candidate, expectedWindowId, expectedActivityId,
+                                           expectedMinimized)) {
                 return;
             }
             candidate.closeWindow();
@@ -941,11 +982,13 @@ Rectangle {
     }
 
     function closeWindowContextIsExact(effect, model, liveScreen, expectedOutput, expectedOutputId, liveDesktop,
-                                       expectedDesktopId, candidate, expectedWindowId, expectedActivityId) {
+                                       expectedDesktopId, candidate, expectedWindowId, expectedActivityId,
+                                       expectedMinimized) {
         return desktopContextIsExact(effect, model, liveScreen, expectedOutput, expectedOutputId, liveDesktop,
                                      expectedDesktopId)
                 && windowContextIsExact(candidate, expectedWindowId, liveScreen, liveDesktop, expectedDesktopId,
-                                        expectedActivityId, false)
+                                        expectedActivityId)
+                && candidate.minimized === expectedMinimized
                 && candidate.managed === true && candidate.closeable === true
                 && typeof candidate.closeWindow === "function";
     }
