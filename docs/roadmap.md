@@ -1915,3 +1915,16 @@ or private API.
   normal post-drop admission.
 
 The batch changes no setting, action, schema, default binding, or private API.
+
+### 1.49.0 (in development)
+
+- Include the most recently focused eligible tiled, manually floating,
+  automatically floating, and application-excluded window in close-focus
+  recovery while preserving existing same-context and visibility guards.
+- Permit recovery focus while an unrelated geometry transaction settles,
+  without taking geometry ownership or writing a window frame.
+- Retain the first immediate focus transition after a workspace effect releases
+  control until an explicit activation or visibility opportunity can present
+  it.
+
+The batch changes no setting, action, schema, binding, or private API.
