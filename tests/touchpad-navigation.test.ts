@@ -91,6 +91,10 @@ class RuntimeControllerDouble {
     return true;
   }
 
+  setApplicationInitialLayouts(): boolean {
+    return true;
+  }
+
   setApplicationInitialFullWidth(): boolean {
     return true;
   }
@@ -160,6 +164,10 @@ class RuntimeControllerDouble {
   }
 
   setDefaultInitialFocus(): boolean {
+    return true;
+  }
+
+  setDefaultInitialLayout(): boolean {
     return true;
   }
 
@@ -353,6 +361,9 @@ describe("touchpad navigation", () => {
       'applicationInitialFloating: KWin.readConfig("ApplicationInitialFloating", "")',
     );
     expect(mainQml).toContain(
+      'applicationInitialLayouts: KWin.readConfig("ApplicationInitialLayouts", "")',
+    );
+    expect(mainQml).toContain(
       'defaultFloatingPosition: KWin.readConfig("DefaultFloatingPosition", "")',
     );
     expect(mainQml).toContain(
@@ -360,6 +371,9 @@ describe("touchpad navigation", () => {
     );
     expect(mainQml).toContain(
       'defaultInitialFocus: KWin.readConfig("DefaultInitialFocus", "default")',
+    );
+    expect(mainQml).toContain(
+      'defaultInitialLayout: KWin.readConfig("DefaultInitialLayout", "tiled")',
     );
     expect(mainQml).toContain("root.refreshTouchpadNavigationHandlers(true)");
     expect(mainQml).toMatch(

@@ -60,6 +60,10 @@ let
           "org.example.Terminal"
           "org.example.Browser"
         ];
+        applicationInitialLayouts = {
+          "org.example.Browser" = "floating";
+          "org.example.Editor" = "tiled";
+        };
         applicationInitialFocused = [
           "org.example.Terminal"
           "org.example.Browser"
@@ -97,6 +101,7 @@ let
           output = "DP-4";
         };
         defaultInitialFocus = "unfocused";
+        defaultInitialLayout = "floating";
         applicationFloatingPositions = {
           "org.example.Browser" = {
             anchor = "bottom-right";
@@ -415,6 +420,26 @@ let
         builtins.deepSeq
           (evaluateHome {
             programs.driftile.settings.defaultInitialFocus = value;
+          } { }).config.qt.kde.settings
+          true
+      );
+    in
+    !evaluated.success;
+  maximumInitialLayouts = evaluateHome {
+    programs.driftile.settings.applicationInitialLayouts = builtins.listToAttrs (
+      builtins.genList (index: {
+        name = "org.example.App${toString index}";
+        value = if index == 0 then "floating" else "tiled";
+      }) 128
+    );
+  } { };
+  invalidInitialLayoutSettingRejected =
+    setting:
+    let
+      evaluated = builtins.tryEval (
+        builtins.deepSeq
+          (evaluateHome {
+            programs.driftile.settings = setting;
           } { }).config.qt.kde.settings
           true
       );
@@ -851,6 +876,26 @@ assert
   ];
 assert invalidDefaultInitialFocusRejected "invalid";
 assert
+  builtins.length (
+    lib.splitString "\n"
+      maximumInitialLayouts.config.qt.kde.settings.kwinrc."Script-io.github.kontonkara.driftile".ApplicationInitialLayouts
+  ) == 128;
+assert invalidInitialLayoutSettingRejected { defaultInitialLayout = "automatic"; };
+assert
+  invalidInitialLayoutSettingRejected {
+    applicationInitialLayouts."org.example.Editor" = "automatic";
+  };
+assert invalidInitialLayoutSettingRejected { applicationInitialLayouts."" = "tiled"; };
+assert
+  invalidInitialLayoutSettingRejected {
+    applicationInitialLayouts = builtins.listToAttrs (
+      builtins.genList (index: {
+        name = "org.example.App${toString index}";
+        value = "tiled";
+      }) 129
+    );
+  };
+assert
   lib.all invalidDefaultInitialDestinationRejected [
     { }
     { desktop = 0; }
@@ -975,6 +1020,9 @@ assert
       ApplicationInitialFloating = ''
         org.example.Browser
         org.example.Terminal'';
+      ApplicationInitialLayouts = ''
+        org.example.Browser=floating
+        org.example.Editor=tiled'';
       ApplicationInitialFocused = ''
         org.example.Browser
         org.example.Terminal'';
@@ -1012,6 +1060,7 @@ assert
       DefaultFloatingPosition = "right,-36,48";
       DefaultInitialDestination = "desktop:4,output:DP-4";
       DefaultInitialFocus = "unfocused";
+      DefaultInitialLayout = "floating";
       DefaultWindowHeight = "720px";
       EmptyDesktopAboveFirst = true;
       Gap = 7.5;
@@ -1033,7 +1082,7 @@ assert
 assert
   builtins.length (
     builtins.attrNames standalone.config.qt.kde.settings.kwinrc."Script-io.github.kontonkara.driftile"
-  ) == 41;
+  ) == 43;
 assert
   standalone.config.xdg.configFile."driftile/shortcuts.json".text == ''
     {"bindings":{"driftile_focus_column_left":["Meta+A"],"driftile_reset_column_width":[]},"version":1}
@@ -1065,6 +1114,7 @@ assert
       ApplicationWindowHeights = "";
       ApplicationFocusCentering = "";
       ApplicationInitialFloating = "";
+      ApplicationInitialLayouts = "";
       ApplicationInitialFocused = "";
       ApplicationInitialUnfocused = "";
       ApplicationInitialFullscreen = "";
@@ -1084,6 +1134,7 @@ assert
       DefaultFloatingPosition = "";
       DefaultInitialDestination = "";
       DefaultInitialFocus = "default";
+      DefaultInitialLayout = "tiled";
       DefaultWindowHeight = "auto";
       Gap = 1.2;
       NumberedDesktopTargets = "";

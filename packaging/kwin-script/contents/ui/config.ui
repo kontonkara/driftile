@@ -464,6 +464,36 @@
           </widget>
          </item>
          <item row="12" column="0">
+          <widget class="QLabel" name="defaultInitialLayoutLabel">
+           <property name="text">
+            <string>Default initial layout:</string>
+           </property>
+           <property name="buddy">
+            <cstring>kcfg_DefaultInitialLayout</cstring>
+           </property>
+          </widget>
+         </item>
+         <item row="12" column="1">
+          <widget class="QComboBox" name="kcfg_DefaultInitialLayout">
+           <property name="toolTip">
+            <string>Sets the tiled or manually floating layout for genuinely new normal windows. The applications-initially-floating list can still select floating, while an exact application layout rule overrides both. Automatic floating and tiling exclusions remain authoritative.</string>
+           </property>
+           <property name="kcfg_property" stdset="0">
+            <string>currentText</string>
+           </property>
+           <item>
+            <property name="text">
+             <string>tiled</string>
+            </property>
+           </item>
+           <item>
+            <property name="text">
+             <string>floating</string>
+            </property>
+           </item>
+          </widget>
+         </item>
+         <item row="13" column="0">
           <widget class="QLabel" name="defaultInitialDestinationLabel">
            <property name="text">
             <string>Default initial destination:</string>
@@ -473,7 +503,7 @@
            </property>
           </widget>
          </item>
-         <item row="12" column="1">
+         <item row="13" column="1">
           <widget class="QLineEdit" name="kcfg_DefaultInitialDestination">
            <property name="toolTip">
             <string>Place a genuinely new normal window on desktop:2, desktop-name:Work, output:DP-1, or a desktop selector plus output. Desktop and output names are exact and case-sensitive. An exact application destination rule takes precedence. Blank disables the default.</string>
@@ -483,7 +513,7 @@
            </property>
           </widget>
          </item>
-         <item row="13" column="0">
+         <item row="14" column="0">
           <widget class="QLabel" name="defaultFloatingPositionLabel">
            <property name="text">
             <string>Default initial floating position:</string>
@@ -493,7 +523,7 @@
            </property>
           </widget>
          </item>
-         <item row="13" column="1">
+         <item row="14" column="1">
           <widget class="QLineEdit" name="kcfg_DefaultFloatingPosition">
            <property name="toolTip">
             <string>Use anchor,x,y to place a genuinely new normal window when it first enters manual floating. Anchors are top-left, top, top-right, right, bottom-right, bottom, bottom-left, or left; offsets are signed logical pixels from -16384 to 16384. An exact application rule takes precedence. Blank disables the default.</string>
@@ -503,7 +533,7 @@
            </property>
           </widget>
          </item>
-         <item row="14" column="0">
+         <item row="15" column="0">
           <widget class="QLabel" name="defaultInitialFocusLabel">
            <property name="text">
             <string>Default initial focus:</string>
@@ -513,7 +543,7 @@
            </property>
           </widget>
          </item>
-         <item row="14" column="1">
+         <item row="15" column="1">
           <widget class="QComboBox" name="kcfg_DefaultInitialFocus">
            <property name="toolTip">
             <string>Affects genuinely new normal windows only. Exact initial-focused and initial-unfocused application rules override it; unfocused wins when both exact lists match.</string>
@@ -706,6 +736,32 @@
           <size>
            <width>0</width>
            <height>120</height>
+          </size>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QLabel" name="applicationInitialLayoutsLabel">
+         <property name="text">
+          <string>Application initial layouts:</string>
+         </property>
+         <property name="buddy">
+          <cstring>kcfg_ApplicationInitialLayouts</cstring>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QPlainTextEdit" name="kcfg_ApplicationInitialLayouts">
+         <property name="toolTip">
+          <string>Enter up to 128 exact, case-sensitive identifier=tiled or identifier=floating rules, one per line.</string>
+         </property>
+         <property name="whatsThis">
+          <string>Each exact rule affects genuinely new normal windows and overrides the default initial layout and the legacy applications-initially-floating list. Automatic floating and tiling exclusions remain authoritative. Live edits affect future windows only.</string>
+         </property>
+         <property name="minimumSize">
+          <size>
+           <width>0</width>
+           <height>100</height>
           </size>
          </property>
         </widget>

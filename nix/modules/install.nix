@@ -201,6 +201,22 @@ let
         builtins.sort builtins.lessThan (builtins.attrNames presentations)
       )
     );
+  initialLayoutType = lib.types.enum [
+    "tiled"
+    "floating"
+  ];
+  applicationInitialLayoutsType = lib.types.addCheck (lib.types.attrsOf initialLayoutType) (
+    layouts:
+    builtins.length (builtins.attrNames layouts) <= 128
+    && lib.all validMappedDesktopFileName (builtins.attrNames layouts)
+  );
+  renderApplicationInitialLayouts =
+    layouts:
+    lib.concatStringsSep "\n" (
+      map (desktopFileName: "${desktopFileName}=${layouts.${desktopFileName}}") (
+        builtins.sort builtins.lessThan (builtins.attrNames layouts)
+      )
+    );
   applicationTilingExclusionType = lib.types.addCheck (lib.types.listOf lib.types.str) (
     exclusions:
     builtins.length exclusions <= 128
@@ -598,6 +614,12 @@ in
               description = "Exact KWin application IDs whose newly admitted windows start manually floating; desktopFileName is used when available, otherwise resourceClass.";
             };
 
+            applicationInitialLayouts = lib.mkOption {
+              type = applicationInitialLayoutsType;
+              default = { };
+              description = "Initial tiled or manually floating layout keyed by exact KWin application ID. Exact rules override defaultInitialLayout and applicationInitialFloating; automatic floating and applicationTilingExclusions remain authoritative.";
+            };
+
             applicationInitialFocused = lib.mkOption {
               type = applicationInitialFocusedType;
               default = [ ];
@@ -650,6 +672,12 @@ in
               ];
               default = "default";
               description = "Default initial focus policy for genuinely new normal windows; exact applicationInitialFocused and applicationInitialUnfocused rules take precedence, with applicationInitialUnfocused winning when both match.";
+            };
+
+            defaultInitialLayout = lib.mkOption {
+              type = initialLayoutType;
+              default = "tiled";
+              description = "Default tiled or manually floating layout for genuinely new normal windows. applicationInitialFloating can select floating, exact applicationInitialLayouts rules override both, and automatic floating plus applicationTilingExclusions remain authoritative.";
             };
 
             applicationFloatingPositions = lib.mkOption {
@@ -907,6 +935,8 @@ in
             renderApplicationFocusCentering cfg.settings.applicationFocusCentering;
           ApplicationInitialFloating =
             renderApplicationInitialFloating cfg.settings.applicationInitialFloating;
+          ApplicationInitialLayouts =
+            renderApplicationInitialLayouts cfg.settings.applicationInitialLayouts;
           ApplicationInitialFocused =
             renderApplicationInitialFocused cfg.settings.applicationInitialFocused;
           ApplicationInitialUnfocused =
@@ -934,6 +964,7 @@ in
           DefaultFloatingPosition = renderDefaultFloatingPosition cfg.settings.defaultFloatingPosition;
           DefaultInitialDestination = renderInitialDestination cfg.settings.defaultInitialDestination;
           DefaultInitialFocus = cfg.settings.defaultInitialFocus;
+          DefaultInitialLayout = cfg.settings.defaultInitialLayout;
           DefaultWindowHeight = renderDefaultWindowHeight cfg.settings.defaultWindowHeight;
           Gap = cfg.settings.gap;
           NumberedDesktopTargets = renderNumberedDesktopTargets cfg.settings.numberedDesktopTargets;

@@ -88,6 +88,10 @@
       <label>Default initial focus behavior</label>
       <default>default</default>
     </entry>
+    <entry name="DefaultInitialLayout" type="String">
+      <label>Default initial tiled or floating layout</label>
+      <default>tiled</default>
+    </entry>
     <entry name="DefaultFloatingPosition" type="String">
       <label>Default initial floating position</label>
       <default></default>
@@ -150,6 +154,10 @@
     </entry>
     <entry name="ApplicationInitialFloating" type="String">
       <label>Applications initially floating by application identifier</label>
+      <default></default>
+    </entry>
+    <entry name="ApplicationInitialLayouts" type="String">
+      <label>Initial tiled or floating layouts by application identifier</label>
       <default></default>
     </entry>
     <entry name="ApplicationFloatingPositions" type="String">

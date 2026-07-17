@@ -975,6 +975,7 @@ describe("KWin shortcut handlers", () => {
       "kcfg_WindowHeightStepPercent",
       "kcfg_WindowHeightStepPixels",
       "kcfg_WindowHeightPresets",
+      "kcfg_DefaultInitialLayout",
       "kcfg_DefaultInitialDestination",
       "kcfg_DefaultFloatingPosition",
       "kcfg_DefaultInitialFocus",
@@ -985,6 +986,7 @@ describe("KWin shortcut handlers", () => {
       "kcfg_ApplicationWindowHeights",
       "kcfg_ApplicationFocusCentering",
       "kcfg_ApplicationInitialDestinations",
+      "kcfg_ApplicationInitialLayouts",
       "kcfg_ApplicationInitialFloating",
       "kcfg_ApplicationFloatingPositions",
       "kcfg_ApplicationInitialFullWidth",
@@ -1712,6 +1714,72 @@ describe("KWin shortcut handlers", () => {
       "applicationColumnPresentations: settings.applicationColumnPresentations",
     );
     expect(runtime).toContain("controller.setApplicationColumnPresentations(");
+  });
+
+  it("exposes default and exact application initial layout policies", () => {
+    const defaultEntry = configuration.match(
+      /<entry name="DefaultInitialLayout" type="String">([\s\S]*?)<\/entry>/,
+    )?.[1];
+    const defaultLabel = configurationUi.match(
+      /<widget class="QLabel" name="defaultInitialLayoutLabel">([\s\S]*?)<\/widget>/,
+    )?.[1];
+    const defaultWidget = configurationUi.match(
+      /<widget class="QComboBox" name="kcfg_DefaultInitialLayout">([\s\S]*?)<\/widget>/,
+    )?.[1];
+    const applicationEntry = configuration.match(
+      /<entry name="ApplicationInitialLayouts" type="String">([\s\S]*?)<\/entry>/,
+    )?.[1];
+    const applicationLabel = configurationUi.match(
+      /<widget class="QLabel" name="applicationInitialLayoutsLabel">([\s\S]*?)<\/widget>/,
+    )?.[1];
+    const applicationWidget = configurationUi.match(
+      /<widget class="QPlainTextEdit" name="kcfg_ApplicationInitialLayouts">([\s\S]*?)<\/widget>/,
+    )?.[1];
+
+    expect(defaultEntry).toContain(
+      "<label>Default initial tiled or floating layout</label>",
+    );
+    expect(defaultEntry).toContain("<default>tiled</default>");
+    expect(defaultLabel).toContain("<string>Default initial layout:</string>");
+    expect(defaultLabel).toContain(
+      "<cstring>kcfg_DefaultInitialLayout</cstring>",
+    );
+    expect(defaultWidget).toContain("<string>tiled</string>");
+    expect(defaultWidget).toContain("<string>floating</string>");
+    expect(defaultWidget).toContain(
+      "The applications-initially-floating list can still select floating",
+    );
+    expect(defaultWidget).toContain(
+      "an exact application layout rule overrides both",
+    );
+    expect(defaultWidget).toContain(
+      "Automatic floating and tiling exclusions remain authoritative.",
+    );
+    expect(applicationEntry).toContain(
+      "<label>Initial tiled or floating layouts by application identifier</label>",
+    );
+    expect(applicationEntry).toContain("<default></default>");
+    expect(applicationLabel).toContain(
+      "<string>Application initial layouts:</string>",
+    );
+    expect(applicationLabel).toContain(
+      "<cstring>kcfg_ApplicationInitialLayouts</cstring>",
+    );
+    expect(applicationWidget).toContain(
+      "identifier=tiled or identifier=floating rules",
+    );
+    expect(applicationWidget).toContain(
+      "overrides the default initial layout and the legacy applications-initially-floating list",
+    );
+    expect(applicationWidget).toContain(
+      "Automatic floating and tiling exclusions remain authoritative.",
+    );
+    expect(qml).toContain(
+      'defaultInitialLayout: KWin.readConfig("DefaultInitialLayout", "tiled")',
+    );
+    expect(qml).toContain(
+      'applicationInitialLayouts: KWin.readConfig("ApplicationInitialLayouts", "")',
+    );
   });
 
   it("exposes exact application admission rules as bounded lists", () => {

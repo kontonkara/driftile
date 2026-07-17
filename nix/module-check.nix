@@ -541,6 +541,10 @@ let
             "org.example.Terminal"
             "org.example.Browser"
           ];
+          applicationInitialLayouts = {
+            "org.example.Browser" = "floating";
+            "org.example.Editor" = "tiled";
+          };
           applicationInitialFocused = [
             "org.example.Terminal"
             "org.example.Browser"
@@ -578,6 +582,7 @@ let
             output = "DP-4";
           };
           defaultInitialFocus = "unfocused";
+          defaultInitialLayout = "floating";
           applicationFloatingPositions = {
             "org.example.Browser" = {
               anchor = "bottom-right";
@@ -884,6 +889,21 @@ let
         programs.driftile.settings.applicationTilingExclusions = builtins.genList (
           index: "org.example.App${toString index}"
         ) 128;
+      }
+      { };
+  homeManagerMaximumInitialLayouts =
+    evaluate homeManagerModule
+      [
+        "home"
+        "packages"
+      ]
+      {
+        programs.driftile.settings.applicationInitialLayouts = builtins.listToAttrs (
+          builtins.genList (index: {
+            name = "org.example.App${toString index}";
+            value = if index == 0 then "floating" else "tiled";
+          }) 128
+        );
       }
       { };
   homeManagerMaximumFocusCentering =
@@ -1626,6 +1646,20 @@ let
         }) 129
       );
     }
+    { defaultInitialLayout = "automatic"; }
+    { applicationInitialLayouts."org.example.Editor" = "automatic"; }
+    { applicationInitialLayouts."" = "tiled"; }
+    { applicationInitialLayouts." org.example.Editor" = "floating"; }
+    { applicationInitialLayouts."org.example.Editor=" = "tiled"; }
+    { applicationInitialLayouts."org.example\nEditor" = "floating"; }
+    {
+      applicationInitialLayouts = builtins.listToAttrs (
+        builtins.genList (index: {
+          name = "org.example.App${toString index}";
+          value = "tiled";
+        }) 129
+      );
+    }
     { applicationTilingExclusions = "org.example.Editor"; }
     { applicationTilingExclusions = [ 1 ]; }
     { applicationTilingExclusions = [ "" ]; }
@@ -1772,6 +1806,9 @@ let
       ApplicationInitialFloating = ''
         org.example.Browser
         org.example.Terminal'';
+      ApplicationInitialLayouts = ''
+        org.example.Browser=floating
+        org.example.Editor=tiled'';
       ApplicationInitialFocused = ''
         org.example.Browser
         org.example.Terminal'';
@@ -1809,6 +1846,7 @@ let
       DefaultFloatingPosition = "right,-36,48";
       DefaultInitialDestination = "desktop:4,output:DP-4";
       DefaultInitialFocus = "unfocused";
+      DefaultInitialLayout = "floating";
       DefaultWindowHeight = "720px";
       EmptyDesktopAboveFirst = true;
       Gap = 7.5;
@@ -1836,6 +1874,7 @@ let
       ApplicationWindowHeights = "";
       ApplicationFocusCentering = "";
       ApplicationInitialFloating = "";
+      ApplicationInitialLayouts = "";
       ApplicationInitialFocused = "";
       ApplicationInitialUnfocused = "";
       ApplicationInitialFullscreen = "";
@@ -1855,6 +1894,7 @@ let
       DefaultFloatingPosition = "";
       DefaultInitialDestination = "";
       DefaultInitialFocus = "default";
+      DefaultInitialLayout = "tiled";
       DefaultWindowHeight = "auto";
       Gap = 16;
       NumberedDesktopTargets = "";
@@ -2054,11 +2094,11 @@ assert homeManagerSettings.config.qt.kde.settings == expectedSettings;
 assert homeManagerDefaultSettings.config.qt.kde.settings == expectedDefaultSettings;
 assert
   builtins.length (builtins.attrNames expectedSettings.kwinrc."Script-io.github.kontonkara.driftile")
-  == 41;
+  == 43;
 assert
   builtins.length (
     builtins.attrNames expectedDefaultSettings.kwinrc."Script-io.github.kontonkara.driftile"
-  ) == 38;
+  ) == 40;
 assert
   homeManagerMaximumDefaultColumnWidthPixels.config.qt.kde.settings.kwinrc."Script-io.github.kontonkara.driftile".DefaultColumnWidthPixels
   == 16384;
@@ -2130,6 +2170,11 @@ assert
   builtins.length (
     lib.splitString "\n"
       homeManagerMaximumExclusions.config.qt.kde.settings.kwinrc."Script-io.github.kontonkara.driftile".ApplicationTilingExclusions
+  ) == 128;
+assert
+  builtins.length (
+    lib.splitString "\n"
+      homeManagerMaximumInitialLayouts.config.qt.kde.settings.kwinrc."Script-io.github.kontonkara.driftile".ApplicationInitialLayouts
   ) == 128;
 assert
   builtins.length (
@@ -2255,6 +2300,7 @@ assert
       ApplicationWindowHeights = "";
       ApplicationFocusCentering = "";
       ApplicationInitialFloating = "";
+      ApplicationInitialLayouts = "";
       ApplicationInitialFocused = "";
       ApplicationInitialUnfocused = "";
       ApplicationInitialFullscreen = "";
@@ -2274,6 +2320,7 @@ assert
       DefaultFloatingPosition = "";
       DefaultInitialDestination = "";
       DefaultInitialFocus = "default";
+      DefaultInitialLayout = "tiled";
       DefaultWindowHeight = "auto";
       Gap = 1.2;
       NumberedDesktopTargets = "";
