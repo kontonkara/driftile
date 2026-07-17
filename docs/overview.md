@@ -83,7 +83,8 @@ guarded path without restoring a minimized window.
 to small scenes and scrolls when needed. While it is open, background window,
 desktop, search, pointer, and wheel input stays inactive; `F1` or `Escape`
 closes the panel first. A compact `Close` button provides the same action for
-pointer users. Closing and reopening the Overview resets the panel.
+pointer users. The panel also summarizes the existing search fields and
+operators. Closing and reopening the Overview resets the panel.
 
 Typing filters visible windows with a case-insensitive query. Whitespace-
 separated terms use AND matching across the window title, application identity,

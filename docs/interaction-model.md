@@ -97,8 +97,9 @@ message as plain text. These interactions change only overview selection and
 perform no KWin, layout, configuration, or persistence write.
 
 `F1` opens a modal, bounded keyboard reference inside the overview. `F1` or
-`Escape` closes it before other input is processed, and a new overview session
-starts with the reference hidden.
+`Escape` closes it before other input is processed, while its pointer button
+provides the same action. The reference includes the existing structured-search
+fields and operators, and a new overview session starts with it hidden.
 
 A thumbnail or non-minimized tab can be dropped on an exact desktop card on the
 same or another output. Cross-output completion confirms the public output move

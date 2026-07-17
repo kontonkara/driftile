@@ -359,7 +359,9 @@ Rectangle {
                         { keys: "Ctrl+Backspace", action: "Remove last search clause" },
                         { keys: "Ctrl+U", action: "Clear search" },
                         { keys: "Escape", action: "Close help, clear search, or close Overview" },
-                        { keys: "F1", action: "Toggle keyboard help" }
+                        { keys: "F1", action: "Toggle keyboard help" },
+                        { keys: "Search fields", action: "title:, app:, desktop:, output:, state:" },
+                        { keys: "Search operators", action: "\"phrase\", -exclude, | alternatives" }
                     ]
 
                     anchors.centerIn: parent
