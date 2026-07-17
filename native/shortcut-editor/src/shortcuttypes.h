@@ -13,6 +13,7 @@ struct ShortcutAction
     QStringList dbusId;
     QString uniqueName;
     QString friendlyName;
+    QList<QKeySequence> defaults;
     QList<QKeySequence> baseline;
     QList<QKeySequence> edited;
 };
@@ -23,6 +24,7 @@ struct ShortcutAction
 [[nodiscard]] QString displaySequences(const QList<QKeySequence> &sequences);
 [[nodiscard]] bool sequencesConflict(const QKeySequence &left, const QKeySequence &right);
 [[nodiscard]] bool sequenceListsEqual(const QList<QKeySequence> &left, const QList<QKeySequence> &right);
+[[nodiscard]] QList<QKeySequence> normalizedSequences(const QList<QKeySequence> &sequences);
 [[nodiscard]] QList<QKeySequence> editedPairWithPreservedTail(
     const QList<QKeySequence> &current,
     const QKeySequence &primary,

@@ -28,6 +28,8 @@ protected:
 
 private Q_SLOTS:
     void editCurrentAction();
+    void restoreCurrentDefault();
+    void restoreAllDefaults();
     void applyChanges();
     void resetChanges();
     void reloadActions();
@@ -45,6 +47,8 @@ private:
     QTableView *m_table;
     QLabel *m_status;
     QPushButton *m_editButton;
+    QPushButton *m_restoreButton;
+    QPushButton *m_restoreAllButton;
     QPushButton *m_reloadButton;
     QDialogButtonBox *m_buttons;
     QString m_componentUniqueName;

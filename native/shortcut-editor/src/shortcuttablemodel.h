@@ -17,6 +17,7 @@ public:
         ActionColumn,
         PrimaryColumn,
         AlternateColumn,
+        DefaultColumn,
         ColumnCount,
     };
 
@@ -36,8 +37,12 @@ public:
     [[nodiscard]] const QList<ShortcutAction> &actions() const;
     [[nodiscard]] const ShortcutAction *actionAt(int row) const;
     void setEditedShortcuts(int row, QList<QKeySequence> shortcuts);
+    void restoreDefault(int row);
+    void restoreAllDefaults();
     void resetEdits();
     void markApplied();
+    [[nodiscard]] bool isDefault(int row) const;
+    [[nodiscard]] int dirtyActionCount() const;
     [[nodiscard]] bool isDirty() const;
 
 Q_SIGNALS:

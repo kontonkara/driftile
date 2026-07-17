@@ -26,6 +26,10 @@ QString displaySequence(const QKeySequence &sequence)
 
 QString displaySequences(const QList<QKeySequence> &sequences)
 {
+    if (sequences.isEmpty()) {
+        return displaySequence(QKeySequence());
+    }
+
     QStringList display;
     display.reserve(sequences.size());
 
@@ -48,6 +52,20 @@ bool sequencesConflict(const QKeySequence &left, const QKeySequence &right)
 bool sequenceListsEqual(const QList<QKeySequence> &left, const QList<QKeySequence> &right)
 {
     return left == right;
+}
+
+QList<QKeySequence> normalizedSequences(const QList<QKeySequence> &sequences)
+{
+    QList<QKeySequence> result;
+    result.reserve(sequences.size());
+
+    for (const QKeySequence &sequence : sequences) {
+        if (!sequence.isEmpty() && !result.contains(sequence)) {
+            result.append(sequence);
+        }
+    }
+
+    return result;
 }
 
 QList<QKeySequence> editedPairWithPreservedTail(

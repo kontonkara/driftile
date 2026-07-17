@@ -5,6 +5,7 @@
 
 #include <KKeySequenceWidget>
 
+#include <QAction>
 #include <QAbstractItemView>
 #include <QCloseEvent>
 #include <QDialog>
@@ -21,6 +22,8 @@
 #include <QSortFilterProxyModel>
 #include <QTableView>
 #include <QVBoxLayout>
+
+#include <algorithm>
 
 namespace
 {
@@ -44,7 +47,8 @@ public:
         m_alternate->setKeySequence(action.edited.value(1));
 
         auto *description = new QLabel(
-            tr("Conflicts are checked against the complete pending assignment when Apply is pressed."),
+            tr("Registered default: %1. Conflicts are checked against the complete pending assignment when Apply is pressed.")
+                .arg(displaySequences(action.defaults)),
             this);
         description->setWordWrap(true);
 
@@ -86,6 +90,8 @@ ShortcutEditorWindow::ShortcutEditorWindow(QWidget *parent)
     , m_table(new QTableView(this))
     , m_status(new QLabel(this))
     , m_editButton(new QPushButton(tr("Edit…"), this))
+    , m_restoreButton(new QPushButton(tr("Restore &Default"), this))
+    , m_restoreAllButton(new QPushButton(tr("Restore &All Defaults"), this))
     , m_reloadButton(new QPushButton(tr("Reload"), this))
     , m_buttons(new QDialogButtonBox(QDialogButtonBox::Apply | QDialogButtonBox::Reset | QDialogButtonBox::Close, this))
 {
@@ -121,10 +127,13 @@ ShortcutEditorWindow::ShortcutEditorWindow(QWidget *parent)
     m_table->horizontalHeader()->setSectionResizeMode(ShortcutTableModel::ActionColumn, QHeaderView::Stretch);
     m_table->horizontalHeader()->setSectionResizeMode(ShortcutTableModel::PrimaryColumn, QHeaderView::ResizeToContents);
     m_table->horizontalHeader()->setSectionResizeMode(ShortcutTableModel::AlternateColumn, QHeaderView::ResizeToContents);
+    m_table->horizontalHeader()->setSectionResizeMode(ShortcutTableModel::DefaultColumn, QHeaderView::ResizeToContents);
     m_table->verticalHeader()->setVisible(false);
 
     auto *tableButtons = new QHBoxLayout;
     tableButtons->addWidget(m_editButton);
+    tableButtons->addWidget(m_restoreButton);
+    tableButtons->addWidget(m_restoreAllButton);
     tableButtons->addWidget(m_reloadButton);
     tableButtons->addStretch();
 
@@ -141,13 +150,39 @@ ShortcutEditorWindow::ShortcutEditorWindow(QWidget *parent)
 
     connect(m_search, &QLineEdit::textChanged, m_proxy, &QSortFilterProxyModel::setFilterFixedString);
     connect(m_editButton, &QPushButton::clicked, this, &ShortcutEditorWindow::editCurrentAction);
+    connect(m_restoreButton, &QPushButton::clicked, this, &ShortcutEditorWindow::restoreCurrentDefault);
+    connect(m_restoreAllButton, &QPushButton::clicked, this, &ShortcutEditorWindow::restoreAllDefaults);
     connect(m_reloadButton, &QPushButton::clicked, this, &ShortcutEditorWindow::reloadActions);
-    connect(m_table, &QTableView::doubleClicked, this, &ShortcutEditorWindow::editCurrentAction);
+    connect(m_table, &QTableView::activated, this, &ShortcutEditorWindow::editCurrentAction);
     connect(m_table->selectionModel(), &QItemSelectionModel::selectionChanged, this, &ShortcutEditorWindow::updateButtons);
     connect(m_model, &ShortcutTableModel::dirtyChanged, this, &ShortcutEditorWindow::updateButtons);
     connect(m_buttons->button(QDialogButtonBox::Apply), &QPushButton::clicked, this, &ShortcutEditorWindow::applyChanges);
     connect(m_buttons->button(QDialogButtonBox::Reset), &QPushButton::clicked, this, &ShortcutEditorWindow::resetChanges);
     connect(m_buttons->button(QDialogButtonBox::Close), &QPushButton::clicked, this, &QWidget::close);
+
+    auto *findAction = new QAction(this);
+    findAction->setShortcut(QKeySequence::Find);
+    addAction(findAction);
+    connect(findAction, &QAction::triggered, m_search, qOverload<>(&QWidget::setFocus));
+
+    auto *applyAction = new QAction(this);
+    applyAction->setShortcut(QKeySequence::Save);
+    addAction(applyAction);
+    connect(applyAction, &QAction::triggered, this, [this]() {
+        if (m_model->isDirty()) {
+            applyChanges();
+        }
+    });
+
+    auto *reloadAction = new QAction(this);
+    reloadAction->setShortcut(QKeySequence::Refresh);
+    addAction(reloadAction);
+    connect(reloadAction, &QAction::triggered, this, &ShortcutEditorWindow::reloadActions);
+
+    auto *closeAction = new QAction(this);
+    closeAction->setShortcut(QKeySequence::Close);
+    addAction(closeAction);
+    connect(closeAction, &QAction::triggered, this, &QWidget::close);
 
     reloadActions();
 }
@@ -183,6 +218,28 @@ void ShortcutEditorWindow::editCurrentAction()
         sourceIndex.row(),
         editedPairWithPreservedTail(action->edited, dialog.primary(), dialog.alternate()));
     showStatus(tr("Changes are pending. Press Apply to write them."));
+    updateButtons();
+}
+
+void ShortcutEditorWindow::restoreCurrentDefault()
+{
+    const QModelIndex proxyIndex = m_table->currentIndex();
+    if (!proxyIndex.isValid()) {
+        return;
+    }
+
+    const QModelIndex sourceIndex = m_proxy->mapToSource(proxyIndex);
+    m_model->restoreDefault(sourceIndex.row());
+    showStatus(tr("The selected action's registered default is pending. Press Apply to write it."));
+    updateButtons();
+}
+
+void ShortcutEditorWindow::restoreAllDefaults()
+{
+    m_model->restoreAllDefaults();
+    showStatus(tr("Registered defaults are pending for %1 changed actions. Press Apply to write them.")
+                   .arg(m_model->dirtyActionCount()));
+    updateButtons();
 }
 
 void ShortcutEditorWindow::applyChanges()
@@ -244,7 +301,15 @@ bool ShortcutEditorWindow::confirmDiscard()
 
 void ShortcutEditorWindow::updateButtons()
 {
-    m_editButton->setEnabled(m_table->currentIndex().isValid());
+    const QModelIndex proxyIndex = m_table->currentIndex();
+    const bool hasSelection = proxyIndex.isValid();
+    m_editButton->setEnabled(hasSelection);
+    m_restoreButton->setEnabled(
+        hasSelection && !m_model->isDefault(m_proxy->mapToSource(proxyIndex).row()));
+    m_restoreAllButton->setEnabled(
+        std::any_of(m_model->actions().cbegin(), m_model->actions().cend(), [](const ShortcutAction &action) {
+            return !sequenceListsEqual(action.edited, action.defaults);
+        }));
     m_buttons->button(QDialogButtonBox::Apply)->setEnabled(m_model->isDirty());
     m_buttons->button(QDialogButtonBox::Reset)->setEnabled(m_model->isDirty());
 }

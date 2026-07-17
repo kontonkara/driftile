@@ -4,10 +4,30 @@
 #include "shortcuttablemodel.h"
 
 #include <QCoreApplication>
+#include <QFont>
 #include <QVariant>
 
 #include <algorithm>
 #include <utility>
+
+namespace
+{
+QString displayShortcutList(const QList<QKeySequence> &sequences)
+{
+    return sequences.isEmpty() ? displaySequence({}) : displaySequences(sequences);
+}
+
+const QList<int> &changedDataRoles()
+{
+    static const QList<int> roles = {
+        Qt::DisplayRole,
+        Qt::ToolTipRole,
+        Qt::FontRole,
+        ShortcutTableModel::SearchRole,
+    };
+    return roles;
+}
+}
 
 ShortcutTableModel::ShortcutTableModel(QObject *parent)
     : QAbstractTableModel(parent)
@@ -42,28 +62,51 @@ QVariant ShortcutTableModel::data(const QModelIndex &index, int role) const
             return displaySequence(primary);
         case AlternateColumn:
             return displaySequence(alternate);
+        case DefaultColumn:
+            return displayShortcutList(action.defaults);
         default:
             return {};
         }
     }
 
     if (role == Qt::ToolTipRole) {
+        const QString defaults = displayShortcutList(action.defaults);
+        QStringList details;
         if (index.column() == ActionColumn) {
-            return action.uniqueName;
+            details.append(action.uniqueName);
         }
-        if (action.edited.size() > 2) {
-            return QCoreApplication::translate(
-                       "ShortcutTableModel",
-                       "Additional assignments are preserved: %1")
-                .arg(displaySequences(action.edited.mid(2)));
+        if ((index.column() == PrimaryColumn || index.column() == AlternateColumn) && action.edited.size() > 2) {
+            details.append(
+                QCoreApplication::translate(
+                    "ShortcutTableModel",
+                    "Additional assignments are preserved: %1")
+                    .arg(displaySequences(action.edited.mid(2))));
         }
+        details.append(
+            QCoreApplication::translate("ShortcutTableModel", "Registered defaults: %1").arg(defaults));
+        return details.join(QLatin1Char('\n'));
     }
 
     if (role == SearchRole) {
         if (index.column() == ActionColumn) {
             return action.friendlyName + QLatin1Char(' ') + action.uniqueName;
         }
-        return index.column() == PrimaryColumn ? displaySequence(primary) : displaySequence(alternate);
+        switch (index.column()) {
+        case PrimaryColumn:
+            return displaySequence(primary);
+        case AlternateColumn:
+            return displaySequence(alternate);
+        case DefaultColumn:
+            return displayShortcutList(action.defaults);
+        default:
+            return {};
+        }
+    }
+
+    if (role == Qt::FontRole && !sequenceListsEqual(action.baseline, action.edited)) {
+        QFont font;
+        font.setBold(true);
+        return font;
     }
 
     return {};
@@ -82,6 +125,8 @@ QVariant ShortcutTableModel::headerData(int section, Qt::Orientation orientation
         return tr("Primary shortcut");
     case AlternateColumn:
         return tr("Alternate shortcut");
+    case DefaultColumn:
+        return tr("Default shortcut");
     default:
         return {};
     }
@@ -123,7 +168,40 @@ void ShortcutTableModel::setEditedShortcuts(int row, QList<QKeySequence> shortcu
 
     const bool wasDirty = isDirty();
     m_actions[row].edited = std::move(shortcuts);
-    Q_EMIT dataChanged(index(row, PrimaryColumn), index(row, AlternateColumn));
+    Q_EMIT dataChanged(index(row, ActionColumn), index(row, DefaultColumn), changedDataRoles());
+    emitDirtyIfChanged(wasDirty);
+}
+
+void ShortcutTableModel::restoreDefault(int row)
+{
+    if (row < 0 || row >= m_actions.size()) {
+        return;
+    }
+
+    setEditedShortcuts(row, m_actions.at(row).defaults);
+}
+
+void ShortcutTableModel::restoreAllDefaults()
+{
+    const bool wasDirty = isDirty();
+    bool changed = false;
+
+    for (ShortcutAction &action : m_actions) {
+        if (sequenceListsEqual(action.edited, action.defaults)) {
+            continue;
+        }
+        action.edited = action.defaults;
+        changed = true;
+    }
+
+    if (!changed) {
+        return;
+    }
+
+    Q_EMIT dataChanged(
+        index(0, ActionColumn),
+        index(m_actions.size() - 1, DefaultColumn),
+        changedDataRoles());
     emitDirtyIfChanged(wasDirty);
 }
 
@@ -137,7 +215,10 @@ void ShortcutTableModel::resetEdits()
     for (ShortcutAction &action : m_actions) {
         action.edited = action.baseline;
     }
-    Q_EMIT dataChanged(index(0, PrimaryColumn), index(m_actions.size() - 1, AlternateColumn));
+    Q_EMIT dataChanged(
+        index(0, ActionColumn),
+        index(m_actions.size() - 1, DefaultColumn),
+        changedDataRoles());
     emitDirtyIfChanged(wasDirty);
 }
 
@@ -147,14 +228,31 @@ void ShortcutTableModel::markApplied()
     for (ShortcutAction &action : m_actions) {
         action.baseline = action.edited;
     }
+    if (wasDirty) {
+        Q_EMIT dataChanged(index(0, ActionColumn), index(m_actions.size() - 1, DefaultColumn), {Qt::FontRole});
+    }
     emitDirtyIfChanged(wasDirty);
+}
+
+bool ShortcutTableModel::isDefault(int row) const
+{
+    return row >= 0 && row < m_actions.size()
+        && sequenceListsEqual(m_actions.at(row).edited, m_actions.at(row).defaults);
+}
+
+int ShortcutTableModel::dirtyActionCount() const
+{
+    return static_cast<int>(std::count_if(
+        m_actions.cbegin(),
+        m_actions.cend(),
+        [](const ShortcutAction &action) {
+            return !sequenceListsEqual(action.baseline, action.edited);
+        }));
 }
 
 bool ShortcutTableModel::isDirty() const
 {
-    return std::any_of(m_actions.cbegin(), m_actions.cend(), [](const ShortcutAction &action) {
-        return !sequenceListsEqual(action.baseline, action.edited);
-    });
+    return dirtyActionCount() != 0;
 }
 
 void ShortcutTableModel::emitDirtyIfChanged(bool wasDirty)

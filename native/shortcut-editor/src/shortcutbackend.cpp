@@ -151,6 +151,7 @@ ShortcutBackend::LoadResult ShortcutBackend::loadActions() const
             };
             action.uniqueName = info.uniqueName();
             action.friendlyName = info.friendlyName().isEmpty() ? info.uniqueName() : info.friendlyName();
+            action.defaults = normalizedSequences(info.defaultKeys());
 
             QString error;
             action.baseline = shortcutKeys(action.dbusId, &error);
