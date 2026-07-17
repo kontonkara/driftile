@@ -1,12 +1,12 @@
 # Roadmap
 
-Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.55.0 are
+Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.56.0 are
 released. The delivered milestones and release criteria below are a historical
 record. Later direction is not a committed release schedule.
 
-Stable 1.55.0 adds compact actionable placeholders for eligible minimized
-stacked tiled members and tracked floating windows in the optional Overview.
-Logical persistence remains v4.
+Stable 1.56.0 adds normalized caption and application labels to ordinary large
+thumbnails, tabs, and minimized placeholders in the optional Overview. Logical
+persistence remains v4.
 
 ## Foundation (delivered)
 
@@ -2087,7 +2087,7 @@ Release criteria (met):
 The batch adds no geometry, layout, setting, action, binding, persistence field,
 or private API write.
 
-### 1.56.0 (in development)
+### 1.56.0 (released)
 
 - Add a static bounded plain-text footer to ordinary large window thumbnails.
 - Use the normalized caption as the primary line, with the exact application
@@ -2099,7 +2099,7 @@ or private API write.
 - Keep every existing thumbnail, tab, placeholder, search, and close target
   unchanged.
 
-Release criteria:
+Release criteria (met):
 
 - Control characters, repeated whitespace, overlong text, malformed identity,
   and inaccessible fields are bounded or fail closed before reaching QML.
