@@ -2367,6 +2367,17 @@ describe("overview effect package", () => {
     expect(`${help}\n${keyboardHelpCloseButton}`).not.toMatch(
       /\b(?:Action|Animation|Behavior|Connections|Settings|ShortcutHandler|Timer)\s*\{|\.setValue\s*\(|\bsequence\s*:|org\.kde\.kwin\.private/u,
     );
+
+    const helpHint = scene.slice(
+      scene.indexOf('text: "F1  Keyboard help"') - 600,
+      scene.indexOf('text: "F1  Keyboard help"') + 300,
+    );
+    expect(helpHint).toContain("root.width >= 480 && root.height >= 320");
+    expect(helpHint).toContain("root.searchQuery.length === 0");
+    expect(helpHint).toContain("!root.keyboardHelpVisible");
+    expect(helpHint).not.toMatch(
+      /\b(?:HoverHandler|TapHandler|WheelHandler)\s*\{/u,
+    );
   });
 
   it("filters overview windows through one bounded session query", () => {
