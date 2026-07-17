@@ -99,8 +99,9 @@ perform no KWin, layout, configuration, or persistence write.
 `F1` opens a modal, bounded keyboard reference inside the overview. `F1` or
 `Escape` closes it before other input is processed, while its pointer button
 provides the same action. The reference includes the existing structured-search
-fields and operators, and a passive hint exposes F1 on sufficiently large idle
-scenes. A new overview session starts with the reference hidden.
+fields and operators. On sufficiently large idle scenes, the F1 hint also opens
+the reference with a left click or touch. A new overview session starts with
+the reference hidden.
 
 A thumbnail or non-minimized tab can be dropped on an exact desktop card on the
 same or another output. Cross-output completion confirms the public output move

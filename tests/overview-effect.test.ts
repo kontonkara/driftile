@@ -59,6 +59,10 @@ const keyboardHelpCloseButton = readFileSync(
   new URL("contents/runtime/ui/KeyboardHelpCloseButton.qml", effectRoot),
   "utf8",
 );
+const keyboardHelpHint = readFileSync(
+  new URL("contents/runtime/ui/KeyboardHelpHint.qml", effectRoot),
+  "utf8",
+);
 const overviewRuntimeIndex = readFileSync(
   new URL("../src/overview/runtime.ts", import.meta.url),
   "utf8",
@@ -74,6 +78,7 @@ const qmlSources = [
   outputIdentityBadge,
   searchMatchBadge,
   keyboardHelpCloseButton,
+  keyboardHelpHint,
   windowCloseButton,
 ];
 
@@ -2367,14 +2372,32 @@ describe("overview effect package", () => {
     );
 
     const helpHint = scene.slice(
-      scene.indexOf('text: "F1  Keyboard help"') - 600,
-      scene.indexOf('text: "F1  Keyboard help"') + 300,
+      scene.indexOf("KeyboardHelpHint {"),
+      scene.indexOf("id: keyboardHelpLoader"),
     );
     expect(helpHint).toContain("root.width >= 480 && root.height >= 320");
     expect(helpHint).toContain("root.searchQuery.length === 0");
     expect(helpHint).toContain("!root.keyboardHelpVisible");
-    expect(helpHint).not.toMatch(
-      /\b(?:HoverHandler|TapHandler|WheelHandler)\s*\{/u,
+    expect(helpHint).toContain(
+      "onOpenRequested: root.keyboardHelpVisible = true",
+    );
+    expect(keyboardHelpHint).toContain('text: "F1  Keyboard help"');
+    expect(keyboardHelpHint).toContain("hintTapHandler.pressed");
+    expect(keyboardHelpHint).toContain("hintHoverHandler.hovered");
+    expect(keyboardHelpHint).toContain("cursorShape: Qt.PointingHandCursor");
+    expect(keyboardHelpHint).toContain("acceptedButtons: Qt.LeftButton");
+    expect(keyboardHelpHint).toContain("PointerDevice.TouchScreen");
+    expect(keyboardHelpHint).toContain(
+      "gesturePolicy: TapHandler.ReleaseWithinBounds",
+    );
+    expect(keyboardHelpHint).toContain(
+      "grabPermissions: PointerHandler.CanTakeOverFromAnything",
+    );
+    expect(keyboardHelpHint).toContain("onTapped: hint.openRequested()");
+    expect(keyboardHelpHint.match(/\bHoverHandler\s*\{/gu)).toHaveLength(1);
+    expect(keyboardHelpHint.match(/\bTapHandler\s*\{/gu)).toHaveLength(1);
+    expect(keyboardHelpHint).not.toMatch(
+      /\b(?:Action|Animation|Behavior|Connections|Settings|ShortcutHandler|Timer|WheelHandler)\s*\{|\.setValue\s*\(|\bsequence\s*:|org\.kde\.kwin\.private/u,
     );
   });
 

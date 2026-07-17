@@ -290,29 +290,14 @@ Rectangle {
         }
     }
 
-    Rectangle {
+    KeyboardHelpHint {
         anchors.horizontalCenter: parent.horizontalCenter
         anchors.top: parent.top
         anchors.topMargin: Math.max(0, (root.outerMargin - height) / 2)
-        width: 128
-        height: 20
         visible: root.width >= 480 && root.height >= 320 && root.searchQuery.length === 0
             && !root.keyboardHelpVisible
-        color: "#cc1a2230"
-        border.width: 1
-        border.color: "#66758c"
-        radius: 7
         z: 19000
-
-        Text {
-            anchors.fill: parent
-            text: "F1  Keyboard help"
-            textFormat: Text.PlainText
-            color: "#c9d3e2"
-            font.pixelSize: 11
-            horizontalAlignment: Text.AlignHCenter
-            verticalAlignment: Text.AlignVCenter
-        }
+        onOpenRequested: root.keyboardHelpVisible = true
     }
 
     Rectangle {
