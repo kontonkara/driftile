@@ -3,6 +3,7 @@ const MAX_QUERY_SCAN_CODE_POINTS = MAX_QUERY_CODE_POINTS * 4;
 const MAX_QUERY_TERMS = 8;
 const MAX_SEARCH_FIELD_CODE_POINTS = 512;
 const MAX_DESKTOP_NAME_SEARCH_FIELD_CODE_POINTS = 64;
+const MAX_OUTPUT_NAME_SEARCH_FIELD_CODE_POINTS = 64;
 
 const SEARCH_FIELD_NAMES = [
   "caption",
@@ -11,6 +12,7 @@ const SEARCH_FIELD_NAMES = [
   "desktopFileName",
   "state",
   "desktopName",
+  "outputName",
 ] as const;
 
 export function appendOverviewSearchText(
@@ -59,7 +61,9 @@ export function matchesOverviewWindowSearch(
           value,
           name === "desktopName"
             ? MAX_DESKTOP_NAME_SEARCH_FIELD_CODE_POINTS
-            : MAX_SEARCH_FIELD_CODE_POINTS,
+            : name === "outputName"
+              ? MAX_OUTPUT_NAME_SEARCH_FIELD_CODE_POINTS
+              : MAX_SEARCH_FIELD_CODE_POINTS,
         ).toLowerCase(),
       );
     }

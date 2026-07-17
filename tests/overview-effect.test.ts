@@ -47,6 +47,10 @@ const windowApplicationIcon = readFileSync(
   new URL("contents/runtime/ui/WindowApplicationIcon.qml", effectRoot),
   "utf8",
 );
+const outputIdentityBadge = readFileSync(
+  new URL("contents/runtime/ui/OutputIdentityBadge.qml", effectRoot),
+  "utf8",
+);
 const overviewRuntimeIndex = readFileSync(
   new URL("../src/overview/runtime.ts", import.meta.url),
   "utf8",
@@ -59,6 +63,7 @@ const qmlSources = [
   scene,
   desktopCard,
   windowApplicationIcon,
+  outputIdentityBadge,
   windowCloseButton,
 ];
 
@@ -346,7 +351,7 @@ describe("overview effect package", () => {
 
   it("keeps a fixed scene-effect proxy over the cache-busted controller", () => {
     expect(createHash("sha256").update(main, "utf8").digest("hex")).toBe(
-      "37a37cce167da68b2b2263b33cb8f7c8886b97da4597231acf35c306c66bee69",
+      "8a15fd21f721cd360dd76056ba0e68a5984b62f832c42fec39d82ea3a2900ed6",
     );
     expect(main).toContain("KWin.SceneEffect {");
     expect(main).toContain("Date.now().toString(36)");
@@ -1650,6 +1655,84 @@ describe("overview effect package", () => {
     );
   });
 
+  it("lazily presents one bounded output label in eligible multi-output scenes", () => {
+    const loader = scene.slice(
+      scene.indexOf("id: outputIdentityLoader"),
+      scene.indexOf("function beginDesktopReorder("),
+    );
+    const liveScreenCount = scene.slice(
+      scene.indexOf("function liveScreenCountForOutputLabel("),
+      scene.indexOf("function planOutputLabel("),
+    );
+    const planner = scene.slice(
+      scene.indexOf("function planOutputLabel("),
+      scene.indexOf("function projectedOutputId("),
+    );
+
+    expect(scene).toContain('typeof sceneEffect.showOutputNames === "boolean"');
+    expect(scene).toContain(
+      "readonly property bool outputLabelGeometryEligible: width >= 640 && height >= 360",
+    );
+    expect(scene).toContain("searchQuery.length === 0");
+    expect(scene).toMatch(
+      /readonly property int outputLabelLiveScreenCount: showOutputNames && outputLabelGeometryEligible\s*\? liveScreenCountForOutputLabel\(targetScreen\) : 0/u,
+    );
+    expect(scene).toContain(
+      "readonly property bool outputLabelNeeded: searchQuery.length > 0 || outputLabelLiveScreenCount >= 2",
+    );
+    expect(scene).toContain(
+      "readonly property var outputLabelPlan: outputLabelNeeded ? planOutputLabel(targetScreen) : null",
+    );
+    expect(scene).toContain(
+      'readonly property string outputName: outputLabelPlan ? outputLabelPlan.label : ""',
+    );
+    expect(scene).toContain("outputName: root.outputName");
+    expect(desktopCard).toContain("required property string outputName");
+
+    expect(loader).toContain("anchors.top: parent.top");
+    expect(loader).toContain("anchors.right: parent.right");
+    expect(loader).toContain("active: root.outputLabelLiveScreenCount >= 2");
+    expect(loader).toMatch(
+      /sourceComponent: Component \{\s*OutputIdentityBadge \{\s*labelPlan: root\.outputLabelPlan/u,
+    );
+    expect(loader).not.toContain("screen.name");
+    expect(scene.match(/planOutputLabel\(targetScreen\)/gu)).toHaveLength(1);
+
+    expect(liveScreenCount).toContain("const screens = KWin.Workspace.screens");
+    expect(liveScreenCount).toContain("screens.length < 2");
+    expect(liveScreenCount).toContain("screens.length > 64");
+    expect(liveScreenCount).toContain("screen === expectedScreen");
+    expect(liveScreenCount).toContain(
+      "targetMatches === 1 ? screens.length : 0",
+    );
+    expect(liveScreenCount).toMatch(/catch \(error\) \{\s*return 0;/u);
+
+    expect(planner).toContain(
+      'typeof runtime.planOverviewOutputLabel !== "function"',
+    );
+    expect(planner).toContain("runtime.planOverviewOutputLabel(screen)");
+    expect(planner).toContain("boundedPlainOutputLabel(planned.label)");
+    expect(planner).toContain(
+      'typeof value !== "string" || value.length === 0 || value.length > 128',
+    );
+    expect(planner).toContain("if (codePoints > 64)");
+    expect(planner).toMatch(/catch \(error\) \{\s*return null;/u);
+
+    expect(outputIdentityBadge).toContain("required property var labelPlan");
+    expect(outputIdentityBadge).toContain(
+      "implicitWidth: Math.min(240, Math.max(96, outputIdentityText.implicitWidth + 20))",
+    );
+    expect(outputIdentityBadge).toContain("implicitHeight: 28");
+    expect(outputIdentityBadge).toContain("visible: label.length > 0");
+    expect(outputIdentityBadge).toContain("textFormat: Text.PlainText");
+    expect(outputIdentityBadge).toContain("elide: Text.ElideRight");
+    expect(outputIdentityBadge).toMatch(/catch \(error\) \{\s*return "";/u);
+
+    expect(outputIdentityBadge).not.toMatch(
+      /\b(?:TapHandler|DragHandler|HoverHandler|WheelHandler|DropArea|Timer|Behavior|Animation|ShortcutHandler|Connections)\s*\{|\bsequence\s*:|org\.kde\.kwin\.private|\.setValue\s*\(|KWin\.(?:SceneView|Workspace)\.[A-Za-z0-9_]+\s*=(?!=)/u,
+    );
+  });
+
   it("loads bounded application icons only for eligible static window labels", () => {
     const thumbnail = desktopCard.slice(
       desktopCard.indexOf("id: thumbnailShell"),
@@ -2272,6 +2355,7 @@ describe("overview effect package", () => {
       "resourceName",
       "desktopFileName",
       "desktopName",
+      "outputName",
       "state",
     ]) {
       expect(matcher).toContain(`${field}:`);
@@ -2279,6 +2363,8 @@ describe("overview effect package", () => {
     expect(matcher).toContain(
       "state: card.windowSearchState(candidate, windowState)",
     );
+    expect(matcher).toContain("outputName: card.outputName");
+    expect(matcher).not.toContain("showOutputNames");
     expect(matcher).toContain(
       "function windowSearchState(candidate, windowState)",
     );

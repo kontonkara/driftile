@@ -12,6 +12,7 @@ Rectangle {
     required property bool desktopReorderSource
     required property string desktopId
     required property var floatingWindows
+    required property string outputName
     required property var screen
     required property string searchQuery
     required property bool showApplicationIcons
@@ -1763,6 +1764,7 @@ Rectangle {
                 desktopFileName: candidate && candidate.desktopFileName !== undefined
                     && candidate.desktopFileName !== null ? String(candidate.desktopFileName) : "",
                 desktopName: card.desktopLabel ? card.desktopLabel.label : "",
+                outputName: card.outputName,
                 state: card.windowSearchState(candidate, windowState)
             }) === true;
         } catch (error) {

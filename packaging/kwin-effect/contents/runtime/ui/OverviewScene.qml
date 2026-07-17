@@ -38,6 +38,16 @@ Rectangle {
         && typeof sceneEffect.showApplicationIcons === "boolean"
         ? sceneEffect.showApplicationIcons
         : true
+    readonly property bool showOutputNames: sceneEffect && typeof sceneEffect.showOutputNames === "boolean"
+        ? sceneEffect.showOutputNames
+        : true
+    readonly property bool outputLabelGeometryEligible: width >= 640 && height >= 360
+        && searchQuery.length === 0
+    readonly property int outputLabelLiveScreenCount: showOutputNames && outputLabelGeometryEligible
+        ? liveScreenCountForOutputLabel(targetScreen) : 0
+    readonly property bool outputLabelNeeded: searchQuery.length > 0 || outputLabelLiveScreenCount >= 2
+    readonly property var outputLabelPlan: outputLabelNeeded ? planOutputLabel(targetScreen) : null
+    readonly property string outputName: outputLabelPlan ? outputLabelPlan.label : ""
     readonly property string outputId: outputIdForScreen()
     readonly property var desktopIds: outputId.length > 0 ? orderedDesktopIds() : []
     readonly property real outerMargin: Math.max(20, Math.min(width, height) * 0.035)
@@ -215,6 +225,7 @@ Rectangle {
             desktopId: modelData
             floatingWindows: root.floatingFor(modelData)
             keyboardSelectionId: root.keyboardSelectionId
+            outputName: root.outputName
             searchQuery: root.searchQuery
             screen: root.targetScreen
             showApplicationIdentity: root.showApplicationIdentity
@@ -278,6 +289,25 @@ Rectangle {
             horizontalAlignment: Text.AlignHCenter
             verticalAlignment: Text.AlignVCenter
             elide: Text.ElideRight
+        }
+    }
+
+    Loader {
+        id: outputIdentityLoader
+
+        anchors.top: parent.top
+        anchors.right: parent.right
+        anchors.topMargin: Math.max(8, root.outerMargin * 0.3)
+        anchors.rightMargin: root.outerMargin
+        width: item ? item.implicitWidth : 0
+        height: item ? item.implicitHeight : 0
+        active: root.outputLabelLiveScreenCount >= 2
+        z: 19000
+
+        sourceComponent: Component {
+            OutputIdentityBadge {
+                labelPlan: root.outputLabelPlan
+            }
         }
     }
 
@@ -1475,6 +1505,67 @@ Rectangle {
 
     function outputIdForScreen() {
         return projectedOutputId(overviewModel, targetScreen);
+    }
+
+    function liveScreenCountForOutputLabel(expectedScreen) {
+        if (!expectedScreen) {
+            return 0;
+        }
+
+        try {
+            const screens = KWin.Workspace.screens;
+            if (!screens || !Number.isInteger(screens.length) || screens.length < 2 || screens.length > 64) {
+                return 0;
+            }
+
+            let targetMatches = 0;
+            for (const screen of screens) {
+                if (screen === expectedScreen) {
+                    targetMatches += 1;
+                }
+            }
+
+            return targetMatches === 1 ? screens.length : 0;
+        } catch (error) {
+            return 0;
+        }
+    }
+
+    function planOutputLabel(screen) {
+        const runtime = OverviewRuntime.DriftileOverview;
+        if (!runtime || typeof runtime.planOverviewOutputLabel !== "function") {
+            return null;
+        }
+
+        try {
+            const planned = runtime.planOverviewOutputLabel(screen);
+            return planned && !Array.isArray(planned) && typeof planned === "object"
+                    && boundedPlainOutputLabel(planned.label) ? planned : null;
+        } catch (error) {
+            return null;
+        }
+    }
+
+    function boundedPlainOutputLabel(value) {
+        if (typeof value !== "string" || value.length === 0 || value.length > 128) {
+            return false;
+        }
+
+        let codePoints = 0;
+        for (const character of value) {
+            codePoints += 1;
+            if (codePoints > 64) {
+                return false;
+            }
+
+            const codePoint = character.codePointAt(0);
+            if (codePoint <= 0x1f || codePoint === 0x7f || codePoint >= 0x80 && codePoint <= 0x9f
+                    || codePoint === 0x2028 || codePoint === 0x2029) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     function projectedOutputId(model, screen) {

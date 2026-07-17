@@ -70,11 +70,12 @@ describe("matchesOverviewWindowSearch", () => {
     ).toBe(false);
   });
 
-  it("composes desktop-name terms with every existing search field", () => {
+  it("composes desktop and output name terms with every existing field", () => {
     const fields = {
       caption: "Mozilla Firefox",
       desktopFileName: "firefox.desktop",
       desktopName: "Web Development",
+      outputName: "DP-2",
       resourceClass: "Navigator",
       resourceName: "firefox",
       state: "urgent floating",
@@ -84,6 +85,7 @@ describe("matchesOverviewWindowSearch", () => {
     expect(matchesOverviewWindowSearch("web firefox urgent", fields)).toBe(
       true,
     );
+    expect(matchesOverviewWindowSearch("dp-2 web firefox", fields)).toBe(true);
     expect(matchesOverviewWindowSearch("web missing", fields)).toBe(false);
   });
 
@@ -140,6 +142,19 @@ describe("matchesOverviewWindowSearch", () => {
     ).toBe(false);
   });
 
+  it("scans output names through 64 Unicode code points", () => {
+    expect(
+      matchesOverviewWindowSearch("x", {
+        outputName: `${"😀".repeat(63)}xignored`,
+      }),
+    ).toBe(true);
+    expect(
+      matchesOverviewWindowSearch("x", {
+        outputName: `${"😀".repeat(64)}x`,
+      }),
+    ).toBe(false);
+  });
+
   it("does not match unsupported fields or across field boundaries", () => {
     expect(matchesOverviewWindowSearch("needle", { title: "needle" })).toBe(
       false,
@@ -173,6 +188,12 @@ describe("matchesOverviewWindowSearch", () => {
         desktopName: 42,
       }),
     ).toBe(false);
+    expect(
+      matchesOverviewWindowSearch("dp-2", {
+        caption: "dp-2",
+        outputName: 42,
+      }),
+    ).toBe(false);
 
     const hostile = Object.defineProperty({}, "caption", {
       get(): never {
@@ -200,10 +221,27 @@ describe("matchesOverviewWindowSearch", () => {
     expect(matchesOverviewWindowSearch("development", hostileDesktopName)).toBe(
       false,
     );
+
+    const hostileOutputName = Object.defineProperty(
+      { caption: "dp-2" },
+      "outputName",
+      {
+        get(): never {
+          throw new Error("unavailable");
+        },
+      },
+    );
+    expect(matchesOverviewWindowSearch("dp-2", hostileOutputName)).toBe(false);
   });
 
   it("does not inspect fields when the query is empty", () => {
     const hostile = Object.defineProperty({}, "caption", {
+      get(): never {
+        throw new Error("unavailable");
+      },
+    });
+
+    Object.defineProperty(hostile, "outputName", {
       get(): never {
         throw new Error("unavailable");
       },
