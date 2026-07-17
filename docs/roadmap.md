@@ -1,12 +1,12 @@
 # Roadmap
 
-Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.68.0 are
+Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.69.0 are
 released. The delivered milestones and release criteria below are a historical
 record. Later direction is not a committed release schedule.
 
-Stable 1.68.0 keeps corrected moving-column centers synchronized and restores
-same-context focus when KWin clears a provisional close handoff. Logical
-persistence remains v4.
+Stable 1.69.0 adds exact caption and window-role exclusions to the optional
+transition effect without disabling animation for the complete application.
+Logical persistence remains v4.
 
 ## Foundation (delivered)
 
@@ -2427,7 +2427,7 @@ Release criteria (met):
 - Settings, shortcuts, schemas, logical persistence v4, and public Plasma 6.7+
   API use remain unchanged.
 
-### 1.69.0 (in development)
+### 1.69.0 (released)
 
 - Exclude individual windows from optional geometry transitions by exact,
   case-sensitive KWin caption or window role without excluding their complete
@@ -2438,7 +2438,7 @@ Release criteria (met):
   Manager options. Keep system-wide NixOS package installation independent of
   per-user effect settings.
 
-Release criteria:
+Release criteria (met):
 
 - Class, caption, and role exclusions share the existing 128-entry,
   255-UTF-8-byte validation and fail closed as one transition policy.
