@@ -8,6 +8,7 @@ const SEARCH_FIELD_NAMES = [
   "resourceClass",
   "resourceName",
   "desktopFileName",
+  "state",
 ] as const;
 
 export function appendOverviewSearchText(

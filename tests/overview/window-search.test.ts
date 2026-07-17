@@ -53,6 +53,23 @@ describe("matchesOverviewWindowSearch", () => {
     ).toBe(false);
   });
 
+  it("matches synthetic attention state terms", () => {
+    const fields = {
+      caption: "Mozilla Firefox",
+      state: "urgent attention",
+    };
+
+    expect(matchesOverviewWindowSearch("urgent", fields)).toBe(true);
+    expect(matchesOverviewWindowSearch("attention", fields)).toBe(true);
+    expect(matchesOverviewWindowSearch("firefox urgent", fields)).toBe(true);
+    expect(
+      matchesOverviewWindowSearch("firefox urgent", {
+        caption: "Mozilla Firefox",
+        state: "",
+      }),
+    ).toBe(false);
+  });
+
   it("treats empty, whitespace-only, and non-string queries as unfiltered", () => {
     expect(matchesOverviewWindowSearch("", null)).toBe(true);
     expect(matchesOverviewWindowSearch("   \u00a0 ", null)).toBe(true);
@@ -81,6 +98,16 @@ describe("matchesOverviewWindowSearch", () => {
         resourceClass: `${"😀".repeat(511)}xignored`,
       }),
     ).toBe(true);
+    expect(
+      matchesOverviewWindowSearch("urgent", {
+        state: `${"😀".repeat(512)}urgent`,
+      }),
+    ).toBe(false);
+    expect(
+      matchesOverviewWindowSearch("x", {
+        state: `${"😀".repeat(511)}xignored`,
+      }),
+    ).toBe(true);
   });
 
   it("does not match unsupported fields or across field boundaries", () => {
@@ -104,6 +131,12 @@ describe("matchesOverviewWindowSearch", () => {
         resourceName: "query",
       }),
     ).toBe(false);
+    expect(
+      matchesOverviewWindowSearch("urgent", {
+        caption: "urgent",
+        state: true,
+      }),
+    ).toBe(false);
 
     const hostile = Object.defineProperty({}, "caption", {
       get(): never {
@@ -111,6 +144,13 @@ describe("matchesOverviewWindowSearch", () => {
       },
     });
     expect(matchesOverviewWindowSearch("query", hostile)).toBe(false);
+
+    const hostileState = Object.defineProperty({ caption: "urgent" }, "state", {
+      get(): never {
+        throw new Error("unavailable");
+      },
+    });
+    expect(matchesOverviewWindowSearch("urgent", hostileState)).toBe(false);
   });
 
   it("does not inspect fields when the query is empty", () => {
