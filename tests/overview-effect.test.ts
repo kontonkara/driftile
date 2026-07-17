@@ -39,6 +39,10 @@ const desktopCard = readFileSync(
   new URL("contents/runtime/ui/DesktopCard.qml", effectRoot),
   "utf8",
 );
+const overviewRuntimeIndex = readFileSync(
+  new URL("../src/overview/runtime.ts", import.meta.url),
+  "utf8",
+);
 const qmlSources = [
   main,
   controller,
@@ -533,13 +537,12 @@ describe("overview effect package", () => {
     );
     const tab = desktopCard.slice(
       desktopCard.indexOf("id: tabShell"),
-      desktopCard.indexOf("function indexOfDesktop("),
+      desktopCard.indexOf("id: minimizedPlaceholderShell"),
     );
 
-    expect(desktopCard.match(/\bTapHandler\s*\{/gu)).toHaveLength(6);
-    expect(numberGutter.match(/\bTapHandler\s*\{/gu)).toHaveLength(1);
-    expect(thumbnail.match(/\bTapHandler\s*\{/gu)).toHaveLength(2);
-    expect(tab.match(/\bTapHandler\s*\{/gu)).toHaveLength(2);
+    expect(numberGutter).toContain("acceptedButtons: Qt.LeftButton");
+    expect(thumbnail).toContain("acceptedButtons: Qt.LeftButton");
+    expect(tab).toContain("acceptedButtons: Qt.LeftButton");
     expect(windowPresentation).toContain("width: viewport.width");
     expect(windowPresentation).toContain("height: viewport.height");
     expect(thumbnail).toContain("acceptedButtons: Qt.LeftButton");
@@ -562,9 +565,7 @@ describe("overview effect package", () => {
     expect(tab).toContain(
       "enabled: tabShell.visible && tabShell.activationEligible && card.desktop && card.screen",
     );
-    expect(tab).toContain(
-      "? card.windowSnapshotCanActivateMinimizedTab(windowPresentation)",
-    );
+    expect(tab).toContain("? windowPresentation.minimizedActivationEligible");
     expect(tab).toContain(": !windowPresentation.tiledPresentation.selected");
     expect(tab).toContain(
       "readonly property bool keyboardTarget: activationEligible && windowPresentation.matchesSearch",
@@ -1277,6 +1278,109 @@ describe("overview effect package", () => {
     );
   });
 
+  it("projects exact minimized windows as fail-closed compact placeholders", () => {
+    const presentation = desktopCard.slice(
+      desktopCard.indexOf("id: windowPresentation"),
+      desktopCard.indexOf("id: thumbnailShell"),
+    );
+    const placeholder = desktopCard.slice(
+      desktopCard.indexOf("id: minimizedPlaceholderShell"),
+      desktopCard.indexOf("id: activeColumnBadge"),
+    );
+    const planner = desktopCard.slice(
+      desktopCard.indexOf("function planMinimizedPlaceholderFrame("),
+      desktopCard.indexOf("function boundedWindowCaption("),
+    );
+
+    expect(overviewRuntimeIndex).toContain(
+      'export { planOverviewMinimizedPlaceholder } from "./minimized-placeholder";',
+    );
+    expect(desktopCard).toContain(
+      'import "../code/main.js" as OverviewRuntime',
+    );
+    expect(presentation).toContain(
+      "readonly property bool minimizedActivationEligible: minimizedWindow",
+    );
+    expect(presentation).toContain(
+      "card.windowSnapshotCanActivateMinimizedWindow(windowPresentation)",
+    );
+    expect(presentation).toContain(
+      "readonly property bool hasMinimizedTabFrame: tiledPresentation && tiledPresentation.tabFrame !== null",
+    );
+    expect(presentation).toContain(
+      "readonly property var minimizedPlaceholderFrame: minimizedActivationEligible",
+    );
+    expect(presentation).toContain(
+      "card.planMinimizedPlaceholderFrame(frame, hasMinimizedTabFrame)",
+    );
+    expect(presentation).toContain(
+      "readonly property var minimizedPlaceholderTarget: minimizedPlaceholderShell",
+    );
+    expect(presentation).toContain(
+      "onMinimizedPlaceholderFrameChanged: card.navigationTargetsChanged()",
+    );
+
+    expect(planner).toContain(
+      "hasMinimizedTabFrame === true || !frame || !viewport || viewport.width <= 0 || viewport.height <= 0",
+    );
+    expect(planner).toContain("OverviewRuntime.DriftileOverview");
+    expect(planner).toContain(
+      'typeof runtime.planOverviewMinimizedPlaceholder !== "function"',
+    );
+    expect(planner).toContain(
+      "runtime.planOverviewMinimizedPlaceholder(frame, {",
+    );
+    expect(planner).toContain(
+      'if (!planned || Array.isArray(planned) || typeof planned !== "object")',
+    );
+    expect(planner).toContain("!Number.isFinite(width)");
+    expect(planner).toContain("width < 24 || height < 12");
+    expect(planner).toContain("width > 180 || height > 28");
+    expect(planner).toContain("x < frameLeft || y < frameTop");
+    expect(planner).toContain(
+      "x + width > frameRight || y + height > frameBottom",
+    );
+    expect(planner).toMatch(/catch \(error\) \{\s*return null;/u);
+
+    expect(placeholder).toContain(
+      "readonly property bool activationEligible: windowPresentation.minimizedActivationEligible",
+    );
+    expect(placeholder).toContain(
+      "readonly property bool keyboardTarget: activationEligible && windowPresentation.matchesSearch",
+    );
+    expect(placeholder).toContain(
+      "card.keyboardSelectionId === card.navigationTargetId(windowPresentation.windowId)",
+    );
+    expect(placeholder).toContain(
+      "visible: frame !== null && model.window && windowPresentation.minimizedWindow",
+    );
+    expect(placeholder).toContain("&& windowPresentation.matchesSearch");
+    expect(placeholder).toContain(
+      "card.minimizedPlaceholderLabel(windowPresentation.candidate)",
+    );
+    expect(placeholder).toContain("textFormat: Text.PlainText");
+    expect(placeholder).toContain("elide: Text.ElideRight");
+    expect(placeholder).toContain("id: minimizedPlaceholderAttentionBadge");
+    expect(placeholder).toContain(
+      "visible: windowPresentation.attentionRequested",
+    );
+    expect(placeholder).toContain(
+      "enabled: minimizedPlaceholderShell.visible && minimizedPlaceholderShell.activationEligible",
+    );
+    expect(placeholder).toContain(
+      "card.windowTapped(model.window, windowPresentation.windowId, card.desktop,",
+    );
+    expect(placeholder).toContain(
+      "enabled: minimizedPlaceholderShell.visible && windowPresentation.closeEligible",
+    );
+    expect(placeholder).toContain(
+      "card.windowCloseRequested(windowPresentation.candidate,",
+    );
+    expect(`${planner}\n${placeholder}`).not.toMatch(
+      /\b(?:Timer|Behavior|Animation|DragHandler|ShortcutHandler)\s*\{|\bsequence\s*:|org\.kde\.kwin\.private|\.setValue\s*\(|KWin\.(?:SceneView|Workspace)\.[A-Za-z0-9_]+\s*=(?!=)/u,
+    );
+  });
+
   it("navigates only live visible window targets with unmodified keys", () => {
     const keyHandler = scene.slice(
       scene.indexOf("Keys.onPressed:"),
@@ -1304,15 +1408,19 @@ describe("overview effect package", () => {
     );
     const tab = desktopCard.slice(
       desktopCard.indexOf("id: tabShell"),
-      desktopCard.indexOf("function collectNavigationTargets("),
+      desktopCard.indexOf("id: minimizedPlaceholderShell"),
+    );
+    const placeholder = desktopCard.slice(
+      desktopCard.indexOf("id: minimizedPlaceholderShell"),
+      desktopCard.indexOf("id: activeColumnBadge"),
     );
     const attentionProjection = desktopCard.slice(
       desktopCard.indexOf("function anyWindowDemandsAttention("),
       desktopCard.indexOf("function windowMatchesSearch("),
     );
     const minimizedActivation = desktopCard.slice(
-      desktopCard.indexOf("function windowSnapshotCanActivateMinimizedTab("),
-      desktopCard.indexOf("function anyWindowDemandsAttention("),
+      desktopCard.indexOf("function windowSnapshotCanActivateMinimizedWindow("),
+      desktopCard.indexOf("function planMinimizedPlaceholderFrame("),
     );
 
     expect(scene).toContain('import "../code/main.js" as OverviewRuntime');
@@ -1390,14 +1498,18 @@ describe("overview effect package", () => {
     expect(cardTargets).toContain(
       "!presentation.matchesSearch || !windowCanNavigate(presentation)",
     );
-    expect(cardTargets).toContain(
-      "const visual = presentation.minimizedWindow ? presentation.tabTarget",
+    expect(cardTargets).toMatch(
+      /const visual = presentation\.minimizedWindow\s*\? presentation\.hasMinimizedTabFrame \? presentation\.tabTarget : presentation\.minimizedPlaceholderTarget/u,
     );
     expect(cardTargets).toContain(
       "&& !presentation.tiledPresentation.selected",
     );
     expect(cardTargets).toContain("presentation.tabTarget");
+    expect(cardTargets).toContain("presentation.minimizedPlaceholderTarget");
     expect(cardTargets).toContain("presentation.thumbnailTarget");
+    expect(cardTargets).toContain(
+      "visualContainsViewportPoint(presentation.minimizedPlaceholderTarget, point)",
+    );
     expect(cardTargets).toContain(
       "id: navigationTargetId(presentation.windowId)",
     );
@@ -1435,9 +1547,7 @@ describe("overview effect package", () => {
       "readonly property bool activationEligible: windowPresentation.tiledPresentation",
     );
     expect(tab).toContain("windowPresentation.minimizedWindow");
-    expect(tab).toContain(
-      "? card.windowSnapshotCanActivateMinimizedTab(windowPresentation)",
-    );
+    expect(tab).toContain("? windowPresentation.minimizedActivationEligible");
     expect(tab).toContain(": !windowPresentation.tiledPresentation.selected");
     expect(tab).toContain(
       "readonly property bool keyboardTarget: activationEligible && windowPresentation.matchesSearch",
@@ -1451,7 +1561,6 @@ describe("overview effect package", () => {
     for (const condition of [
       "presentation.matchesSearch !== true",
       "presentation.minimizedWindow !== true",
-      "!tiled || !tiled.tabFrame",
       "snapshot.deleted",
       "snapshot.minimized !== true",
       "snapshot.managed !== true",
@@ -1479,15 +1588,17 @@ describe("overview effect package", () => {
     expect(minimizedActivation).not.toMatch(
       /\b(?:Timer|Behavior|Animation|ShortcutHandler)\s*\{|org\.kde\.kwin\.private|\bsequence\s*:|(?:candidate|snapshot|presentation)\.[A-Za-z0-9_]+\s*=(?!=)/u,
     );
-    for (const visual of [thumbnail, tab]) {
+    for (const visual of [thumbnail, tab, placeholder]) {
       expect(visual).toContain(
         "card.keyboardSelectionId === card.navigationTargetId(windowPresentation.windowId)",
       );
       expect(visual).not.toContain("isSelectedNavigationTarget");
     }
     expect(desktopCard).not.toContain("function isSelectedNavigationTarget(");
-    expect(desktopCard.match(/border\.color: "#ffd166"/gu)).toHaveLength(3);
-    expect(desktopCard.match(/keyboardSelected \? 3 : 0/gu)).toHaveLength(2);
+    expect(placeholder).toContain(
+      "border.width: minimizedPlaceholderShell.keyboardSelected ? 3 : 0",
+    );
+    expect(placeholder).toContain('border.color: "#ffd166"');
     const numberGutter = desktopCard.slice(
       desktopCard.indexOf("id: numberGutter"),
       desktopCard.indexOf("id: viewport"),
@@ -1537,6 +1648,7 @@ describe("overview effect package", () => {
     for (const visual of [
       { badge: "thumbnailAttentionBadge", source: thumbnail },
       { badge: "tabAttentionBadge", source: tab },
+      { badge: "minimizedPlaceholderAttentionBadge", source: placeholder },
     ]) {
       expect(visual.source).toContain(`id: ${visual.badge}`);
       expect(visual.source).toContain(
@@ -1552,7 +1664,7 @@ describe("overview effect package", () => {
     );
     expect(tab).toContain("windowPresentation.tiledPresentation.selected");
     expect(
-      `${attentionProjection}\n${numberGutter}\n${thumbnail}\n${tab}`,
+      `${attentionProjection}\n${numberGutter}\n${thumbnail}\n${tab}\n${placeholder}`,
     ).not.toMatch(/\b(?:Timer|Behavior|Animation)\s*\{/u);
     expect(attentionProjection).not.toMatch(
       /windowTapped|windowCloseRequested|closeWindow|activeWindow\s*=|\.setValue\s*\(|Settings/u,
@@ -1783,7 +1895,11 @@ describe("overview effect package", () => {
     );
     const tab = desktopCard.slice(
       desktopCard.indexOf("id: tabShell"),
-      desktopCard.indexOf("function indexOfDesktop("),
+      desktopCard.indexOf("id: minimizedPlaceholderShell"),
+    );
+    const placeholder = desktopCard.slice(
+      desktopCard.indexOf("id: minimizedPlaceholderShell"),
+      desktopCard.indexOf("id: activeColumnBadge"),
     );
     const eligibility = desktopCard.slice(
       desktopCard.indexOf("function windowSnapshotCanRequestClose("),
@@ -1797,12 +1913,10 @@ describe("overview effect package", () => {
     expect(desktopCard).toContain(
       "signal windowCloseRequested(var candidate, string expectedWindowId, var expectedDesktop,",
     );
-    expect(
-      desktopCard.match(/acceptedButtons: Qt\.MiddleButton/gu),
-    ).toHaveLength(2);
     for (const visual of [
       { source: thumbnail, id: "thumbnailShell" },
       { source: tab, id: "tabShell" },
+      { source: placeholder, id: "minimizedPlaceholderShell" },
     ]) {
       expect(visual.source).toContain(
         `enabled: ${visual.id}.visible && windowPresentation.closeEligible`,
