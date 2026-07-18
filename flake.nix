@@ -52,7 +52,7 @@
           src = self;
 
           nodejs = pkgs.nodejs_24;
-          npmDepsHash = "sha256-qQZ4gQuMPs9BO2QhUAvDGZRgXy0e4xDdFuUAAePQoUk=";
+          npmDepsHash = "sha256-hpXrL1uzSRNjb8dO17sZDKu78BAhtxR/bLKJ+Qes+S4=";
           npmBuildScript = "build";
           nativeBuildInputs = [ pkgs.makeWrapper ];
 
