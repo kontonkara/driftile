@@ -24,6 +24,7 @@ Rectangle {
     required property bool showWindowLabels
     required property bool showWindowStateBadges
     required property real previewViewportOffset
+    required property var spatialRowGeometryPlan
     property string keyboardSelectionId: ""
 
     signal desktopTapped(var candidate, string expectedDesktopId, var expectedScreen)
@@ -53,10 +54,16 @@ Rectangle {
     readonly property real contentWidth: Math.max(1, width - contentLeft - 10)
     readonly property real contentHeight: Math.max(1, height - contentTop * 2)
     readonly property bool searchDeemphasized: searchQuery.trim().length > 0 && searchResultCount === 0
-    readonly property real sourceViewportWidth: projectionExtent(screen && screen.geometry
-                                                                 ? screen.geometry.width : 0, contentWidth)
-    readonly property real sourceViewportHeight: projectionExtent(screen && screen.geometry
-                                                                  ? screen.geometry.height : 0, contentHeight)
+    readonly property var spatialRowDimensions: spatialRowGeometryPlan && spatialRowGeometryPlan.dimensions
+        ? spatialRowGeometryPlan.dimensions : null
+    readonly property real sourceViewportWidth: projectionExtent(spatialRowDimensions
+                                                                 ? spatialRowDimensions.outputWidth
+                                                                 : screen && screen.geometry
+                                                                   ? screen.geometry.width : 0, contentWidth)
+    readonly property real sourceViewportHeight: projectionExtent(spatialRowDimensions
+                                                                  ? spatialRowDimensions.outputHeight
+                                                                  : screen && screen.geometry
+                                                                    ? screen.geometry.height : 0, contentHeight)
     readonly property real projectionScale: finitePositive(contentHeight / sourceViewportHeight,
                                                            finitePositive(contentWidth / sourceViewportWidth, 1))
     readonly property real projectedViewportWidth: finitePositive(sourceViewportWidth * projectionScale,
@@ -2032,11 +2039,11 @@ Rectangle {
         }
 
         const gap = Math.max(2, Math.min(8, contentWidth * 0.008));
-        let columnX = viewportOriginX - logicalViewportOffset * projectionScale;
-
         for (let columnIndex = 0; columnIndex < columns.length; columnIndex += 1) {
             const column = columns[columnIndex];
-            const columnWidth = widthForColumn(column.width);
+            const columnFrame = card.columnFrame(columnIndex);
+            const columnX = columnFrame.x;
+            const columnWidth = columnFrame.width;
             const tabbed = column.presentation === "tabbed";
             const memberHeights = tabbed ? [] : heightsForMembers(column.members);
             const tabStripHeight = tabbed ? boundedTabStripHeight() : 0;
@@ -2071,7 +2078,6 @@ Rectangle {
                 memberY += memberHeight;
             }
 
-            columnX += columnWidth;
         }
 
         return presentations;
@@ -2090,11 +2096,40 @@ Rectangle {
     }
 
     function buildColumnFrames() {
-        const frames = [];
-        if (!context) {
-            return frames;
+        const plannedFrames = buildSpatialColumnFrames();
+        return plannedFrames !== null ? plannedFrames : buildLegacyColumnFrames();
+    }
+
+    function buildSpatialColumnFrames() {
+        const plan = spatialRowGeometryPlan;
+        const dimensions = plan ? plan.dimensions : null;
+        const sourceFrames = plan ? plan.columnFrames : null;
+        if (!context || !dimensions || !sourceFrames || !Number.isInteger(sourceFrames.length)
+                || sourceFrames.length !== columns.length || !Number.isFinite(dimensions.viewportInsetX)) {
+            return null;
         }
 
+        const frames = [];
+        for (let columnIndex = 0; columnIndex < sourceFrames.length; columnIndex += 1) {
+            const sourceFrame = sourceFrames[columnIndex];
+            if (!sourceFrame || sourceFrame.columnIndex !== columnIndex
+                    || !Number.isFinite(sourceFrame.contentX) || !Number.isFinite(sourceFrame.width)
+                    || sourceFrame.width <= 0) {
+                return null;
+            }
+            const x = viewportOriginX
+                + (dimensions.viewportInsetX + sourceFrame.contentX - logicalViewportOffset) * projectionScale;
+            const width = sourceFrame.width * projectionScale;
+            if (!Number.isFinite(x) || !Number.isFinite(width) || width <= 0) {
+                return null;
+            }
+            frames.push({ width, x });
+        }
+        return frames;
+    }
+
+    function buildLegacyColumnFrames() {
+        const frames = [];
         let x = viewportOriginX - logicalViewportOffset * projectionScale;
         for (const column of columns) {
             const width = widthForColumn(column.width);

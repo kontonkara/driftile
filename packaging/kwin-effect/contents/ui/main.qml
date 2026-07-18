@@ -23,6 +23,15 @@ KWin.SceneEffect {
     readonly property bool showDesktopNames: showDesktopNamesFromConfig()
     readonly property bool showApplicationIcons: showApplicationIconsFromConfig()
     readonly property bool showOutputNames: showOutputNamesFromConfig()
+    readonly property bool overviewAlwaysCenterSingleColumn: controller
+        && typeof controller.overviewAlwaysCenterSingleColumn === "boolean"
+        ? controller.overviewAlwaysCenterSingleColumn
+        : false
+    readonly property real overviewGap: controller && typeof controller.overviewGap === "number"
+        && Number.isFinite(controller.overviewGap) && controller.overviewGap >= 0
+        && controller.overviewGap <= 64
+        ? controller.overviewGap
+        : 16
 
     readonly property bool active: controller ? controller.active : false
     readonly property bool loading: controller ? controller.loading : false

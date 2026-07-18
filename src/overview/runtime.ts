@@ -94,6 +94,15 @@ export type {
   OverviewSpatialVisibleRangeInput,
   OverviewSpatialVisibleRangePlan,
 } from "./spatial-visible-range";
+export { planOverviewSpatialRowGeometry } from "./spatial-row-geometry";
+export type {
+  OverviewSpatialRowCamera,
+  OverviewSpatialRowColumnFrame,
+  OverviewSpatialRowDimensions,
+  OverviewSpatialRowGeometryColumnInput,
+  OverviewSpatialRowGeometryInput,
+  OverviewSpatialRowGeometryPlan,
+} from "./spatial-row-geometry";
 
 export type OverviewModelLoadResult =
   | OverviewLayoutProjectionResult

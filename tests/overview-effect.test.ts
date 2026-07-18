@@ -459,7 +459,7 @@ describe("overview effect package", () => {
 
   it("keeps a fixed scene-effect proxy over the cache-busted controller", () => {
     expect(createHash("sha256").update(main, "utf8").digest("hex")).toBe(
-      "a0c16e1f0939928ed53b5a0b40778d75183e6f4d4a2133ddcbcbcacb111fac66",
+      "519b1f54dde8dca88174a708ecdd6f4b3c5b8e105f8ca3c047f7e5a189064132",
     );
     expect(main).toContain("KWin.SceneEffect {");
     expect(main).toContain("Date.now().toString(36)");
@@ -1584,6 +1584,16 @@ describe("overview effect package", () => {
       'mainScriptSettings.value("EmptyDesktopAboveFirst", false) === true',
     );
     expect(controller).toContain("mainScriptSettings.sync()");
+    expect(controller).toMatch(
+      /function captureOverviewLayoutSettings[\s\S]*mainScriptSettings\.value\("AlwaysCenterSingleColumn", false\)[\s\S]*mainScriptSettings\.value\("Gap", 16\)[\s\S]*gap >= 0 && gap <= 64[\s\S]*overviewAlwaysCenterSingleColumn = nextAlwaysCenterSingleColumn;[\s\S]*overviewGap = nextGap;/u,
+    );
+    expect(controller).toMatch(
+      /function activate\(\)[\s\S]*captureOverviewLayoutSettings\(\);[\s\S]*lastActivationAttemptId/u,
+    );
+    expect(main).toContain(
+      "readonly property bool overviewAlwaysCenterSingleColumn: controller",
+    );
+    expect(main).toContain("readonly property real overviewGap: controller");
     expect(reorderDelegate).toContain(
       "root.desktopIds.length > (root.emptyDesktopAboveFirst ? 3 : 2)",
     );
@@ -2790,6 +2800,7 @@ describe("overview effect package", () => {
       /function revealHorizontalNavigationTarget[\s\S]*sceneAdjustment \/ card\.projectionScale[\s\S]*setSpatialHorizontalViewportOffset/u,
     );
     expect(scene).toContain("property var spatialHorizontalDesktopIds: []");
+    expect(scene).toContain("property var spatialHorizontalGeometryPlans: []");
     expect(scene).toContain(
       "property var spatialHorizontalViewportOffsets: []",
     );
@@ -2797,13 +2808,13 @@ describe("overview effect package", () => {
       /function desktopIdListShapeIsValid\(candidate\) \{\s*return candidate !== undefined && candidate !== null && Number\.isInteger\(candidate\.length\)[\s\S]*candidate\.length >= 0 && candidate\.length <= 512;\s*\}/u,
     );
     expect(horizontalViewportRefresh).toMatch(
-      /function refreshSpatialHorizontalViewports[\s\S]*const currentDesktopIds = desktopIds;[\s\S]*!desktopIdListShapeIsValid\(currentDesktopIds\)[\s\S]*return false;[\s\S]*previousOffsets\.length === currentDesktopIds\.length[\s\S]*index < currentDesktopIds\.length[\s\S]*nextOffsets\.push\(Math\.min\(bounds\.maximum, Math\.max\(bounds\.minimum, previous\)\)\)/u,
+      /function refreshSpatialHorizontalViewports[\s\S]*const currentDesktopIds = desktopIds;[\s\S]*!desktopIdListShapeIsValid\(currentDesktopIds\)[\s\S]*return false;[\s\S]*previousOffsets\.length === currentDesktopIds\.length[\s\S]*index < currentDesktopIds\.length[\s\S]*planSpatialHorizontalGeometry\(index, desktopId\)[\s\S]*nextGeometryPlans\.push\(geometryPlan\)[\s\S]*nextOffsets\.push\(Math\.min\(bounds\.maximum, Math\.max\(bounds\.minimum, previous\)\)\)/u,
     );
     expect(horizontalViewportRefresh).toMatch(
-      /!desktopIdListShapeIsValid\(currentDesktopIds\)[\s\S]*spatialHorizontalDesktopIds = \[\];[\s\S]*spatialHorizontalViewportOffsets = \[\];[\s\S]*resetOverviewHorizontalWheelState\(\);[\s\S]*return false;/u,
+      /!desktopIdListShapeIsValid\(currentDesktopIds\)[\s\S]*spatialHorizontalDesktopIds = \[\];[\s\S]*spatialHorizontalGeometryPlans = \[\];[\s\S]*spatialHorizontalViewportOffsets = \[\];[\s\S]*resetOverviewHorizontalWheelState\(\);[\s\S]*return false;/u,
     );
     expect(horizontalViewportBounds).toMatch(
-      /function spatialHorizontalViewportBounds[\s\S]*const currentDesktopIds = desktopIds;[\s\S]*!desktopIdListShapeIsValid\(currentDesktopIds\)[\s\S]*index >= currentDesktopIds\.length/u,
+      /function spatialHorizontalViewportBounds[\s\S]*spatialHorizontalGeometryPlanAt\(index, expectedDesktopId,[\s\S]*spatialHorizontalViewportRevision\)[\s\S]*spatialHorizontalViewportBoundsForPlan\(plan\)/u,
     );
     expect(horizontalViewportRefresh).not.toMatch(
       /\bdesktopIds\.length\b|desktopIds\[index\]/u,
@@ -2812,16 +2823,22 @@ describe("overview effect package", () => {
       /\bdesktopIds\.length\b|desktopIds\[index\]/u,
     );
     expect(scene).toMatch(
-      /function spatialHorizontalViewportBounds[\s\S]*context\.columns\.length > 512[\s\S]*stripWidth > Number\.MAX_SAFE_INTEGER/u,
+      /function planSpatialHorizontalGeometry[\s\S]*runtime\.planOverviewSpatialRowGeometry\(\{[\s\S]*activeColumnIndex: context\.activeColumnIndex,[\s\S]*alwaysCenterSingleColumn: overviewAlwaysCenterSingleColumn,[\s\S]*devicePixelRatio,[\s\S]*gap: overviewGap,[\s\S]*viewportOffset: context\.viewportOffset,[\s\S]*workArea/u,
+    );
+    expect(scene).toContain(
+      "KWin.Workspace.clientArea(KWin.Workspace.MaximizeArea, screen, desktop)",
     );
     expect(scene).toMatch(
-      /function spatialHorizontalViewportBounds[\s\S]*activeColumnStart \+ activeColumnWidth \/ 2 - sourceWidth \/ 2/u,
+      /function spatialHorizontalGeometryPlanIsValid[\s\S]*plan\.columnFrames\.length !== context\.columns\.length[\s\S]*plan\.camera\.minimum > plan\.camera\.base[\s\S]*plan\.dimensions\.viewportWidth !== workArea\.width[\s\S]*frame\.columnId !== `overview-column-\$\{columnIndex\}`/u,
     );
     expect(scene).not.toMatch(
-      /function spatialHorizontalViewportBounds[\s\S]{0,2500}context\.viewportOffset/u,
+      /function spatialHorizontalViewportBounds[\s\S]{0,2500}resolvedWidth/u,
     );
     expect(scene).toMatch(
       /previewViewportOffset: root\.spatialHorizontalViewportOffsetAt\([\s\S]*desktopCardLoader\.index, desktopCardLoader\.modelData,[\s\S]*root\.spatialHorizontalViewportRevision\)/u,
+    );
+    expect(scene).toMatch(
+      /spatialRowGeometryPlan: root\.spatialHorizontalGeometryPlanAt\([\s\S]*desktopCardLoader\.index, desktopCardLoader\.modelData,[\s\S]*root\.spatialHorizontalViewportRevision\)/u,
     );
     expect(scene).toMatch(
       /function setSpatialHorizontalViewportOffsetForBounds[\s\S]*spatialHorizontalViewportOffsets\[index\] === normalizedOffset[\s\S]*return true;[\s\S]*spatialHorizontalViewportOffsets\[index\] = normalizedOffset;\s*advanceSpatialHorizontalViewportRevision\(\);/u,
@@ -3842,14 +3859,16 @@ describe("overview effect package", () => {
       "required property real previewViewportOffset",
     );
     expect(desktopCard).toContain(
+      "required property var spatialRowGeometryPlan",
+    );
+    expect(desktopCard).toContain(
       "readonly property real logicalViewportOffset: finiteNumber(previewViewportOffset, 0)",
     );
     expect(presentations).toContain(
-      "let columnX = viewportOriginX - logicalViewportOffset * projectionScale",
+      "const columnFrame = card.columnFrame(columnIndex)",
     );
-    expect(desktopCard).toContain(
-      "return Math.max(1, width.value * projectedViewportWidth)",
-    );
+    expect(presentations).toContain("const columnX = columnFrame.x");
+    expect(presentations).toContain("const columnWidth = columnFrame.width");
     expect(desktopCard).toMatch(
       /x: viewportOriginX \+ \(geometry\.x - screenGeometry\.x\) \* projectionScale,\s*y: viewportOriginY \+ \(geometry\.y - screenGeometry\.y\) \* projectionScale/u,
     );
@@ -3857,7 +3876,10 @@ describe("overview effect package", () => {
     expect(presentations).not.toContain("context.viewportOffset *");
     expect(desktopCard).not.toContain("Number(context.viewportOffset)");
     expect(desktopCard).toMatch(
-      /function buildColumnFrames\(\) \{[\s\S]*for \(const column of columns\)[\s\S]*frames\.push\(\{[\s\S]*width,[\s\S]*x[\s\S]*x \+= width;/u,
+      /function buildColumnFrames\(\) \{[\s\S]*buildSpatialColumnFrames\(\)[\s\S]*buildLegacyColumnFrames\(\)/u,
+    );
+    expect(desktopCard).toMatch(
+      /function buildSpatialColumnFrames\(\)[\s\S]*sourceFrames\.length !== columns\.length[\s\S]*dimensions\.viewportInsetX \+ sourceFrame\.contentX - logicalViewportOffset[\s\S]*sourceFrame\.width \* projectionScale/u,
     );
     expect(desktopCard).toMatch(
       /function columnFrame\(columnIndex\) \{[\s\S]*const frame = columnFrames\[columnIndex\];[\s\S]*return frame;/u,

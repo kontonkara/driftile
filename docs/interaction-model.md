@@ -119,13 +119,14 @@ zoom change, or scene resize. An actual desktop selection recenters the new
 desktop instead of preserving the old anchor.
 
 The current Overview is an intermediate projection of captured layout state.
-Wide workspace rows preserve window proportions, show neighboring columns,
+Wide workspace rows use the normal strip solver for their initial camera,
+gaps, usable work area, and output pixel grid. They show neighboring columns
 and keep bounded session-only horizontal viewports. Precise horizontal wheel
 input pans the row under the pointer; discrete horizontal input selects and
 reveals adjacent windows. Holding `Shift` maps a standard vertical wheel onto
 that same horizontal path without changing unmodified workspace navigation.
-The Overview still does not share the continuous camera and live geometry of
-the normal scrollable workspace, so its architecture and interaction remain
+The Overview still does not maintain the normal workspace's continuous camera
+or live geometry after opening, so its architecture and interaction remain
 materially different from the planned spatial Overview. Search and keyboard
 help are supporting tools, not completion criteria for that work.
 

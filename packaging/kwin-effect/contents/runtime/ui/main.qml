@@ -17,6 +17,8 @@ QtObject {
     property var pendingLiveRefreshModel: null
     property int pendingLiveRefreshRetryCount: 0
     property int pendingLiveRefreshSessionId: 0
+    property bool overviewAlwaysCenterSingleColumn: false
+    property real overviewGap: 16
     property bool touchpadGestureEnabled: false
     property int touchpadGestureFingerCount: 4
     readonly property var overviewDelegate: Qt.createComponent("OverviewScene.qml")
@@ -164,11 +166,35 @@ QtObject {
         }
     }
 
+    function captureOverviewLayoutSettings() {
+        let nextAlwaysCenterSingleColumn = false;
+        let nextGap = 16;
+
+        try {
+            mainScriptSettings.sync();
+
+            const alwaysCenterSingleColumn = mainScriptSettings.value("AlwaysCenterSingleColumn", false);
+            if (typeof alwaysCenterSingleColumn === "boolean") {
+                nextAlwaysCenterSingleColumn = alwaysCenterSingleColumn;
+            }
+
+            const gap = mainScriptSettings.value("Gap", 16);
+            if (typeof gap === "number" && Number.isFinite(gap) && gap >= 0 && gap <= 64) {
+                nextGap = gap;
+            }
+        } catch (error) {
+        }
+
+        overviewAlwaysCenterSingleColumn = nextAlwaysCenterSingleColumn;
+        overviewGap = nextGap;
+    }
+
     function activate() {
         if (active || loading || plasmaOverviewIsActive()) {
             return;
         }
 
+        captureOverviewLayoutSettings();
         const attemptId = lastActivationAttemptId >= 2147483647
             ? 1
             : lastActivationAttemptId + 1;

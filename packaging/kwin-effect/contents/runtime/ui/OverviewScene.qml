@@ -57,6 +57,14 @@ Rectangle {
         && currentDesktop.id !== null ? desktopIds.indexOf(String(currentDesktop.id)) : -1
     readonly property real overviewZoom: sceneEffect && Number.isFinite(sceneEffect.overviewZoom)
         ? sceneEffect.overviewZoom : 0.5
+    readonly property bool overviewAlwaysCenterSingleColumn: sceneEffect
+        && typeof sceneEffect.overviewAlwaysCenterSingleColumn === "boolean"
+        ? sceneEffect.overviewAlwaysCenterSingleColumn
+        : false
+    readonly property real overviewGap: sceneEffect && Number.isFinite(sceneEffect.overviewGap)
+        && sceneEffect.overviewGap >= 0 && sceneEffect.overviewGap <= 64
+        ? sceneEffect.overviewGap
+        : 16
     readonly property var overviewSpatialLayout: planSpatialLayout()
     readonly property var overviewSpatialVisibleRange: planSpatialVisibleRange()
     readonly property real outerMargin: Math.max(20, Math.min(width, height) * 0.035)
@@ -79,6 +87,7 @@ Rectangle {
     property int overviewWheelRemainder: 0
     property real spatialContentY: 0
     property var spatialHorizontalDesktopIds: []
+    property var spatialHorizontalGeometryPlans: []
     property int spatialHorizontalViewportRevision: 0
     property var spatialHorizontalViewportOffsets: []
     property var spatialViewportSnapshot: null
@@ -123,6 +132,8 @@ Rectangle {
     onKeyboardHelpVisibleChanged: root.resetOverviewWheelState()
     onCurrentDesktopChanged: root.refreshOverviewSpatialSession(false)
     onOverviewModelChanged: root.refreshOverviewSpatialSession(true)
+    onOverviewAlwaysCenterSingleColumnChanged: root.refreshOverviewSpatialSession(true)
+    onOverviewGapChanged: root.refreshOverviewSpatialSession(true)
     onOverviewSpatialLayoutChanged: root.refreshOverviewSpatialSession(true)
     onSpatialContentYChanged: {
         root.resetOverviewWheelState();
@@ -247,6 +258,19 @@ Rectangle {
 
         function onScreensChanged() {
             root.closeStaleOverview();
+        }
+    }
+
+    Connections {
+        target: root.targetScreen
+        ignoreUnknownSignals: true
+
+        function onGeometryChanged() {
+            root.refreshOverviewSpatialSession(true);
+        }
+
+        function onScaleChanged() {
+            root.refreshOverviewSpatialSession(true);
         }
     }
 
@@ -389,6 +413,9 @@ Rectangle {
                     previewViewportOffset: root.spatialHorizontalViewportOffsetAt(
                                                desktopCardLoader.index, desktopCardLoader.modelData,
                                                root.spatialHorizontalViewportRevision)
+                    spatialRowGeometryPlan: root.spatialHorizontalGeometryPlanAt(
+                                                desktopCardLoader.index, desktopCardLoader.modelData,
+                                                root.spatialHorizontalViewportRevision)
                     searchQuery: root.searchQuery
                     searchQueryPlan: root.searchQueryPlan
                     searchResultCount: root.searchResultCountForDesktop(desktopCardLoader.modelData)
@@ -963,6 +990,7 @@ Rectangle {
         keyboardHelpVisible = false;
         searchQuery = "";
         spatialHorizontalDesktopIds = [];
+        spatialHorizontalGeometryPlans = [];
         spatialHorizontalViewportOffsets = [];
         spatialViewportSnapshot = null;
         refreshOverviewSpatialSession(false);
@@ -1011,6 +1039,7 @@ Rectangle {
         } else {
             spatialContentY = 0;
             spatialHorizontalDesktopIds = [];
+            spatialHorizontalGeometryPlans = [];
             spatialHorizontalViewportOffsets = [];
             spatialViewportSnapshot = null;
         }
@@ -1103,6 +1132,7 @@ Rectangle {
         const currentDesktopIds = desktopIds;
         if (!desktopIdListShapeIsValid(currentDesktopIds)) {
             spatialHorizontalDesktopIds = [];
+            spatialHorizontalGeometryPlans = [];
             spatialHorizontalViewportOffsets = [];
             resetOverviewHorizontalWheelState();
             return false;
@@ -1113,13 +1143,16 @@ Rectangle {
         const preserve = preserveViewport === true && sameStringList(previousDesktopIds, currentDesktopIds)
             && previousOffsets && previousOffsets.length === currentDesktopIds.length;
         const nextDesktopIds = [];
+        const nextGeometryPlans = [];
         const nextOffsets = [];
 
         for (let index = 0; index < currentDesktopIds.length; index += 1) {
             const desktopId = currentDesktopIds[index];
-            const bounds = spatialHorizontalViewportBounds(index, desktopId);
+            const geometryPlan = planSpatialHorizontalGeometry(index, desktopId);
+            const bounds = spatialHorizontalViewportBoundsForPlan(geometryPlan);
             if (!bounds) {
                 spatialHorizontalDesktopIds = [];
+                spatialHorizontalGeometryPlans = [];
                 spatialHorizontalViewportOffsets = [];
                 resetOverviewHorizontalWheelState();
                 return false;
@@ -1128,94 +1161,151 @@ Rectangle {
             const previous = preserve && Number.isFinite(previousOffsets[index])
                 ? previousOffsets[index] : bounds.base;
             nextDesktopIds.push(desktopId);
+            nextGeometryPlans.push(geometryPlan);
             nextOffsets.push(Math.min(bounds.maximum, Math.max(bounds.minimum, previous)));
         }
 
         spatialHorizontalDesktopIds = nextDesktopIds;
+        spatialHorizontalGeometryPlans = nextGeometryPlans;
         spatialHorizontalViewportOffsets = nextOffsets;
+        advanceSpatialHorizontalViewportRevision();
         resetOverviewHorizontalWheelState();
         return true;
     }
 
-    function spatialHorizontalViewportBounds(index, expectedDesktopId) {
+    function planSpatialHorizontalGeometry(index, expectedDesktopId) {
         const currentDesktopIds = desktopIds;
         if (!desktopIdListShapeIsValid(currentDesktopIds)
                 || !Number.isInteger(index) || index < 0 || index >= currentDesktopIds.length
                 || currentDesktopIds[index] !== expectedDesktopId || typeof expectedDesktopId !== "string"
-                || expectedDesktopId.length === 0 || !targetScreen || !targetScreen.geometry) {
+                || expectedDesktopId.length === 0) {
             return null;
         }
 
-        const sourceWidth = Number(targetScreen.geometry.width);
         const context = contextFor(expectedDesktopId);
-        if (!Number.isFinite(sourceWidth) || sourceWidth <= 0 || sourceWidth > Number.MAX_SAFE_INTEGER || !context
-                || context.desktopId !== expectedDesktopId || context.outputId !== outputId
-                || !context.columns || !Number.isInteger(context.columns.length)
-                || context.columns.length > 512) {
+        const desktop = desktopForId(expectedDesktopId);
+        const screen = liveScreenFor(targetScreen);
+        if (!context || context.desktopId !== expectedDesktopId || context.outputId !== outputId
+                || !context.columns || !Number.isInteger(context.columns.length) || context.columns.length > 512
+                || !desktop || !screen || !screen.geometry) {
             return null;
         }
 
-        if (context.columns.length === 0) {
-            return {
-                base: 0,
-                maximum: 0,
-                minimum: 0,
-                sourceWidth
-            };
-        }
-
-        const activeColumnIndex = Number(context.activeColumnIndex);
-        if (!Number.isInteger(activeColumnIndex) || activeColumnIndex < 0
-                || activeColumnIndex >= context.columns.length) {
+        const outputGeometry = spatialGeometryRect(screen.geometry);
+        const workArea = spatialWorkArea(screen, desktop);
+        const devicePixelRatio = Number(screen.devicePixelRatio);
+        if (!outputGeometry || !workArea || !Number.isFinite(devicePixelRatio) || devicePixelRatio <= 0) {
             return null;
         }
 
-        let stripWidth = 0;
-        let activeColumnStart = 0;
-        let activeColumnWidth = 0;
-        for (let columnIndex = 0; columnIndex < context.columns.length; columnIndex += 1) {
-            const column = context.columns[columnIndex];
-            const width = column ? column.width : null;
-            if (!width || !Number.isFinite(width.value) || width.value <= 0
-                    || (width.kind !== "fixed" && width.kind !== "proportion")) {
-                return null;
-            }
-
-            const resolvedWidth = width.kind === "fixed" ? width.value : width.value * sourceWidth;
-            if (!Number.isFinite(resolvedWidth) || resolvedWidth <= 0
-                    || resolvedWidth > Number.MAX_SAFE_INTEGER) {
-                return null;
-            }
-            if (columnIndex === activeColumnIndex) {
-                activeColumnStart = stripWidth;
-                activeColumnWidth = resolvedWidth;
-            }
-            stripWidth += resolvedWidth;
-            if (!Number.isFinite(stripWidth) || stripWidth > Number.MAX_SAFE_INTEGER) {
-                return null;
-            }
+        const runtime = OverviewRuntime.DriftileOverview;
+        if (!runtime || typeof runtime.planOverviewSpatialRowGeometry !== "function") {
+            return null;
         }
 
-        if (stripWidth <= sourceWidth) {
-            const base = (stripWidth - sourceWidth) / 2;
-            return {
-                base,
-                maximum: base,
-                minimum: base,
-                sourceWidth
-            };
+        let plan = null;
+        try {
+            plan = runtime.planOverviewSpatialRowGeometry({
+                                                              activeColumnIndex: context.activeColumnIndex,
+                                                              alwaysCenterSingleColumn: overviewAlwaysCenterSingleColumn,
+                                                              columns: context.columns,
+                                                              devicePixelRatio,
+                                                              gap: overviewGap,
+                                                              outputGeometry,
+                                                              viewportOffset: context.viewportOffset,
+                                                              workArea
+                                                          });
+        } catch (error) {
+            return null;
         }
 
-        const maximum = stripWidth - sourceWidth;
-        const base = Math.min(maximum,
-                              Math.max(0, activeColumnStart + activeColumnWidth / 2 - sourceWidth / 2));
+        return spatialHorizontalGeometryPlanIsValid(plan, context, outputGeometry, workArea) ? plan : null;
+    }
 
+    function spatialWorkArea(screen, desktop) {
+        try {
+            return spatialGeometryRect(KWin.Workspace.clientArea(KWin.Workspace.MaximizeArea, screen, desktop));
+        } catch (error) {
+            return null;
+        }
+    }
+
+    function spatialGeometryRect(candidate) {
+        if (!candidate) {
+            return null;
+        }
+
+        const x = Number(candidate.x);
+        const y = Number(candidate.y);
+        const width = Number(candidate.width);
+        const height = Number(candidate.height);
+        return Number.isFinite(x) && Number.isFinite(y) && Number.isFinite(width) && width > 0
+            && Number.isFinite(height) && height > 0
+            ? { height, width, x, y } : null;
+    }
+
+    function spatialHorizontalGeometryPlanIsValid(plan, context, outputGeometry, workArea) {
+        if (!plan || Array.isArray(plan) || !plan.camera || Array.isArray(plan.camera)
+                || !plan.dimensions || Array.isArray(plan.dimensions) || !plan.columnFrames
+                || !Number.isInteger(plan.columnFrames.length)
+                || plan.columnFrames.length !== context.columns.length || plan.columnFrames.length > 512
+                || !Number.isFinite(plan.contentWidth) || plan.contentWidth < 0
+                || !Number.isFinite(plan.camera.base) || !Number.isFinite(plan.camera.minimum)
+                || !Number.isFinite(plan.camera.maximum) || plan.camera.minimum > plan.camera.base
+                || plan.camera.base > plan.camera.maximum
+                || plan.dimensions.outputWidth !== outputGeometry.width
+                || plan.dimensions.outputHeight !== outputGeometry.height
+                || plan.dimensions.viewportWidth !== workArea.width
+                || plan.dimensions.viewportHeight !== workArea.height
+                || plan.dimensions.viewportInsetX !== workArea.x - outputGeometry.x
+                || plan.dimensions.viewportInsetY !== workArea.y - outputGeometry.y) {
+            return false;
+        }
+
+        for (let columnIndex = 0; columnIndex < plan.columnFrames.length; columnIndex += 1) {
+            const frame = plan.columnFrames[columnIndex];
+            if (!frame || Array.isArray(frame) || frame.columnIndex !== columnIndex
+                    || frame.columnId !== `overview-column-${columnIndex}`
+                    || !Number.isFinite(frame.contentX) || !Number.isFinite(frame.width) || frame.width <= 0
+                    || !Number.isFinite(frame.contentX + frame.width)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    function spatialHorizontalGeometryPlanAt(index, expectedDesktopId, expectedRevision) {
+        const currentDesktopIds = desktopIds;
+        if (!Number.isInteger(expectedRevision) || expectedRevision !== spatialHorizontalViewportRevision
+                || !Number.isInteger(index) || index < 0 || index >= spatialHorizontalDesktopIds.length
+                || !desktopIdListShapeIsValid(currentDesktopIds)
+                || spatialHorizontalDesktopIds.length !== currentDesktopIds.length
+                || spatialHorizontalGeometryPlans.length !== currentDesktopIds.length
+                || spatialHorizontalDesktopIds[index] !== expectedDesktopId) {
+            return null;
+        }
+        return spatialHorizontalGeometryPlans[index] || null;
+    }
+
+    function spatialHorizontalViewportBoundsForPlan(plan) {
+        if (!plan || !plan.camera || !plan.dimensions || !Number.isFinite(plan.camera.base)
+                || !Number.isFinite(plan.camera.minimum) || !Number.isFinite(plan.camera.maximum)
+                || plan.camera.minimum > plan.camera.base || plan.camera.base > plan.camera.maximum
+                || !Number.isFinite(plan.dimensions.viewportWidth) || plan.dimensions.viewportWidth <= 0) {
+            return null;
+        }
         return {
-            base,
-            maximum,
-            minimum: 0,
-            sourceWidth
+            base: plan.camera.base,
+            maximum: plan.camera.maximum,
+            minimum: plan.camera.minimum,
+            sourceWidth: plan.dimensions.viewportWidth
         };
+    }
+
+    function spatialHorizontalViewportBounds(index, expectedDesktopId) {
+        const plan = spatialHorizontalGeometryPlanAt(index, expectedDesktopId,
+                                                     spatialHorizontalViewportRevision);
+        return spatialHorizontalViewportBoundsForPlan(plan);
     }
 
     function spatialHorizontalViewportOffsetAt(index, expectedDesktopId, expectedRevision) {

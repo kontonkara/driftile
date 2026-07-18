@@ -54,11 +54,12 @@ backdrop without changing layout state.
 ## Spatial workspace view
 
 Each output presents its virtual desktops as centered wide rows in a vertical
-stack. A row preserves window proportions, marks its current preview viewport,
-and exposes neighboring columns on either side. The current desktop opens in
-the center. Keyboard selection reveals an off-screen workspace and column,
-while dragging the empty backdrop with a mouse, touchpad, or touchscreen pans
-the stack within its finite vertical bounds. Rows outside a small visible
+stack. A row derives its column widths, gaps, usable work area, pixel grid, and
+initial horizontal camera from the normal layout solver. It exposes neighboring
+columns on either side without changing saved layout state. The current desktop
+opens in the center. Keyboard selection reveals an off-screen workspace and
+column, while dragging the empty backdrop with a mouse, touchpad, or touchscreen
+pans the stack within its finite vertical bounds. Rows outside a small visible
 range are not instantiated.
 
 An unmodified mouse-wheel step selects the previous or next desktop without
