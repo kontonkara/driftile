@@ -1,14 +1,14 @@
 # Roadmap
 
-Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.78.0 are
+Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.79.0 are
 released. The delivered milestones and release criteria below are a historical
 record. Later direction is not a committed release schedule.
 
-Stable 1.78.0 derives each Overview row's initial geometry and camera from the
-normal layout solver, preserves inactive row cameras, and accepts `Shift` with
-a vertical wheel for horizontal row control. Firefox picture-in-picture
-windows remain floating during interactive moves. Settings, shortcuts, and
-logical persistence v4 remain compatible.
+Stable 1.79.0 lets the current Overview row follow the live frame geometry of
+its active eligible tiled window. It reconnects when the source changes and
+detaches after manual horizontal panning or a keyboard reveal. Inactive rows
+remain captured, session-only projections. Settings, shortcuts, and logical
+persistence v4 remain compatible.
 
 ## Current direction
 
@@ -2675,7 +2675,7 @@ Release criteria (met):
 - Existing settings, shortcuts, and logical persistence v4 remain compatible;
   no private API or KWin fork is introduced.
 
-### 1.79.0 (in development)
+### 1.79.0 (released)
 
 - Attach the current desktop row's session camera to the public frame geometry
   of its active ordinary tiled window while the Overview is open.
@@ -2685,7 +2685,7 @@ Release criteria (met):
 - Keep inactive rows as bounded, session-only projections of captured layout
   state.
 
-Release criteria:
+Release criteria (met):
 
 - Camera inference is bounded, pixel-grid aligned, and fails closed for stale
   work area, output, scale, or window classification.

@@ -43,7 +43,7 @@
         pkgs:
         pkgs.buildNpmPackage {
           pname = "driftile";
-          version = "1.79.0-dev.0";
+          version = "1.79.0";
           outputs = [
             "out"
             "overview"
