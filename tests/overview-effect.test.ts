@@ -2858,6 +2858,25 @@ describe("overview effect package", () => {
     expect(scene).toContain("property int spatialLiveCameraRefreshBudget: 1");
     expect(scene).toContain("property int spatialLiveCameraRefreshEpoch: 0");
     expect(scene).toMatch(
+      /liveGeometryEnabled: current && root\.spatialLiveCameraDetachedWindow === null/u,
+    );
+    expect(desktopCard).toContain("required property bool liveGeometryEnabled");
+    expect(desktopCard).toMatch(
+      /function buildTiledPresentations[\s\S]*columnIndex,[\s\S]*memberIndex,[\s\S]*plannedColumnFrame: spatialSourceColumnFrame\(columnIndex\)/u,
+    );
+    expect(desktopCard).toMatch(
+      /function frameForWindow[\s\S]*planSpatialLiveWindowFrame\(window, windowId, tiled\)[\s\S]*return liveFrame;[\s\S]*return tiled\.thumbnailFrame;/u,
+    );
+    expect(desktopCard).toMatch(
+      /function planSpatialLiveWindowFrame[\s\S]*!liveGeometryEnabled \|\| !current[\s\S]*window\.output !== screen[\s\S]*column\.members\[tiled\.memberIndex\]\.windowId !== windowId[\s\S]*sourceColumnFrame !== tiled\.plannedColumnFrame/u,
+    );
+    expect(desktopCard).toMatch(
+      /runtime\.projectOverviewSpatialLiveGeometry\(\{[\s\S]*columnIndex: tiled\.columnIndex,[\s\S]*liveFrame,[\s\S]*memberIndex: tiled\.memberIndex,[\s\S]*outputFrame,[\s\S]*plannedColumnFrame: sourceColumnFrame,[\s\S]*projectionScale,[\s\S]*viewportOriginX,[\s\S]*viewportOriginY,[\s\S]*windowId/u,
+    );
+    expect(desktopCard).toMatch(
+      /function spatialLiveWindowPlanIsExact[\s\S]*plan\.windowId !== windowId[\s\S]*plan\.columnIndex !== tiled\.columnIndex[\s\S]*plan\.memberIndex !== tiled\.memberIndex[\s\S]*plan\.frame\.floating !== false[\s\S]*projectionGeometryIsValid\(plan\.frame\)/u,
+    );
+    expect(scene).toMatch(
       /function desktopIdListShapeIsValid\(candidate\) \{\s*return candidate !== undefined && candidate !== null && Number\.isInteger\(candidate\.length\)[\s\S]*candidate\.length >= 0 && candidate\.length <= 512;\s*\}/u,
     );
     expect(horizontalViewportRefresh).toMatch(
@@ -3091,6 +3110,9 @@ describe("overview effect package", () => {
     );
     expect(overviewRuntimeIndex).toContain(
       "planOverviewSpatialWorkspaceSettle",
+    );
+    expect(overviewRuntimeIndex).toContain(
+      "projectOverviewSpatialLiveGeometry",
     );
     expect(scene).toMatch(
       /function refreshOverviewSpatialSession\(preserveViewport\)[\s\S]*resetOverviewWheelState\(\);/u,

@@ -580,6 +580,7 @@ Rectangle {
                     desktopId: desktopCardLoader.modelData
                     floatingWindows: root.floatingFor(desktopCardLoader.modelData)
                     keyboardSelectionId: root.keyboardSelectionId
+                    liveGeometryEnabled: current && root.spatialLiveCameraDetachedWindow === null
                     outputName: root.outputName
                     previewViewportOffset: root.spatialHorizontalViewportOffsetAt(
                                                desktopCardLoader.index, desktopCardLoader.modelData,
