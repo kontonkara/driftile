@@ -42,6 +42,7 @@ export interface OverviewSpatialRowCamera {
 }
 
 export interface OverviewSpatialRowDimensions {
+  readonly devicePixelRatio: number;
   readonly outputHeight: number;
   readonly outputWidth: number;
   readonly viewportHeight: number;
@@ -296,6 +297,7 @@ export function planOverviewSpatialRowGeometry(
       columnFrames: Object.freeze(columnFrames),
       contentWidth: normalizeZero(solved.stripWidth),
       dimensions: Object.freeze({
+        devicePixelRatio,
         outputHeight: outputGeometry.height,
         outputWidth: outputGeometry.width,
         viewportHeight: workArea.height,

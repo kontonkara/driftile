@@ -39,6 +39,7 @@ describe("planOverviewSpatialRowGeometry", () => {
       ],
       contentWidth: 1200,
       dimensions: {
+        devicePixelRatio: 1,
         outputHeight: 900,
         outputWidth: 1200,
         viewportHeight: 900,
@@ -62,6 +63,7 @@ describe("planOverviewSpatialRowGeometry", () => {
       columnFrames: [{ columnIndex: 0, contentX: 20, width: 720 }],
       contentWidth: 760,
       dimensions: {
+        devicePixelRatio: 1,
         outputHeight: 900,
         outputWidth: 1600,
         viewportHeight: 820,
@@ -89,6 +91,7 @@ describe("planOverviewSpatialRowGeometry", () => {
     });
 
     expect(result).not.toBeNull();
+    expect(result?.dimensions.devicePixelRatio).toBe(devicePixelRatio);
     for (const frame of result?.columnFrames ?? []) {
       const presentedLeft = workArea.x + frame.contentX;
       const presentedRight = presentedLeft + frame.width;

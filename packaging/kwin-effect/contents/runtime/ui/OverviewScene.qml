@@ -90,6 +90,16 @@ Rectangle {
     property var spatialHorizontalGeometryPlans: []
     property int spatialHorizontalViewportRevision: 0
     property var spatialHorizontalViewportOffsets: []
+    property var spatialLiveCameraAttachment: null
+    property var spatialLiveCameraWindow: null
+    property string spatialLiveCameraWindowId: ""
+    property string spatialLiveCameraDesktopId: ""
+    property var spatialLiveCameraProbeWindow: null
+    property var spatialLiveCameraDetachedWindow: null
+    property string spatialLiveCameraDetachedWindowId: ""
+    property bool spatialLiveCameraRefreshPending: false
+    property int spatialLiveCameraRefreshBudget: 1
+    property int spatialLiveCameraRefreshEpoch: 0
     property var spatialViewportSnapshot: null
     property var spatialWindowDragSource: null
     property string spatialWindowDragSourceDesktopId: ""
@@ -258,6 +268,166 @@ Rectangle {
 
         function onScreensChanged() {
             root.closeStaleOverview();
+        }
+
+        function onWindowActivated() {
+            root.resolveSpatialLiveCamera();
+        }
+
+        function onWindowRemoved(window) {
+            root.handleSpatialLiveCameraWindowRemoved(window);
+        }
+    }
+
+    Connections {
+        target: root.spatialLiveCameraWindow
+        enabled: target !== null
+        ignoreUnknownSignals: true
+
+        function onFrameGeometryChanged() {
+            root.applySpatialLiveCamera();
+        }
+
+        function onActivitiesChanged() {
+            root.resolveSpatialLiveCamera();
+        }
+
+        function onDeletedChanged() {
+            root.resolveSpatialLiveCamera();
+        }
+
+        function onDesktopsChanged() {
+            root.resolveSpatialLiveCamera();
+        }
+
+        function onDialogChanged() {
+            root.resolveSpatialLiveCamera();
+        }
+
+        function onFullScreenChanged() {
+            root.resolveSpatialLiveCamera();
+        }
+
+        function onManagedChanged() {
+            root.resolveSpatialLiveCamera();
+        }
+
+        function onMaximizedChanged() {
+            root.resolveSpatialLiveCamera();
+        }
+
+        function onModalChanged() {
+            root.resolveSpatialLiveCamera();
+        }
+
+        function onMinimizedChanged() {
+            root.resolveSpatialLiveCamera();
+        }
+
+        function onMoveResizedChanged() {
+            root.resolveSpatialLiveCamera();
+        }
+
+        function onNormalWindowChanged() {
+            root.resolveSpatialLiveCamera();
+        }
+
+        function onOutputChanged() {
+            root.resolveSpatialLiveCamera();
+        }
+
+        function onTileChanged() {
+            root.resolveSpatialLiveCamera();
+        }
+
+        function onTransientChanged() {
+            root.resolveSpatialLiveCamera();
+        }
+
+        function onTransientForChanged() {
+            root.resolveSpatialLiveCamera();
+        }
+
+        function onUtilityChanged() {
+            root.resolveSpatialLiveCamera();
+        }
+
+        function onWindowRoleChanged() {
+            root.resolveSpatialLiveCamera();
+        }
+    }
+
+    Connections {
+        target: root.spatialLiveCameraProbeWindow
+        enabled: target !== null && target !== root.spatialLiveCameraWindow
+        ignoreUnknownSignals: true
+
+        function onActivitiesChanged() {
+            root.resolveSpatialLiveCameraProbe();
+        }
+
+        function onDeletedChanged() {
+            root.resolveSpatialLiveCameraProbe();
+        }
+
+        function onDesktopsChanged() {
+            root.resolveSpatialLiveCameraProbe();
+        }
+
+        function onDialogChanged() {
+            root.resolveSpatialLiveCameraProbe();
+        }
+
+        function onFullScreenChanged() {
+            root.resolveSpatialLiveCameraProbe();
+        }
+
+        function onManagedChanged() {
+            root.resolveSpatialLiveCameraProbe();
+        }
+
+        function onMaximizedChanged() {
+            root.resolveSpatialLiveCameraProbe();
+        }
+
+        function onModalChanged() {
+            root.resolveSpatialLiveCameraProbe();
+        }
+
+        function onMinimizedChanged() {
+            root.resolveSpatialLiveCameraProbe();
+        }
+
+        function onMoveResizedChanged() {
+            root.resolveSpatialLiveCameraProbe();
+        }
+
+        function onNormalWindowChanged() {
+            root.resolveSpatialLiveCameraProbe();
+        }
+
+        function onOutputChanged() {
+            root.resolveSpatialLiveCameraProbe();
+        }
+
+        function onTileChanged() {
+            root.resolveSpatialLiveCameraProbe();
+        }
+
+        function onTransientChanged() {
+            root.resolveSpatialLiveCameraProbe();
+        }
+
+        function onTransientForChanged() {
+            root.resolveSpatialLiveCameraProbe();
+        }
+
+        function onUtilityChanged() {
+            root.resolveSpatialLiveCameraProbe();
+        }
+
+        function onWindowRoleChanged() {
+            root.resolveSpatialLiveCameraProbe();
         }
     }
 
@@ -985,6 +1155,7 @@ Rectangle {
     }
 
     function resetOverviewSession() {
+        resetSpatialLiveCameraSession();
         keyboardSelectionViewportTarget = null;
         keyboardSelectionId = "";
         keyboardHelpVisible = false;
@@ -1043,6 +1214,7 @@ Rectangle {
             spatialHorizontalViewportOffsets = [];
             spatialViewportSnapshot = null;
         }
+        resolveSpatialLiveCamera();
     }
 
     function currentSpatialViewportGeometry() {
@@ -1219,7 +1391,8 @@ Rectangle {
             return null;
         }
 
-        return spatialHorizontalGeometryPlanIsValid(plan, context, outputGeometry, workArea) ? plan : null;
+        return spatialHorizontalGeometryPlanIsValid(plan, context, outputGeometry, workArea,
+                                                    devicePixelRatio) ? plan : null;
     }
 
     function spatialWorkArea(screen, desktop) {
@@ -1244,7 +1417,7 @@ Rectangle {
             ? { height, width, x, y } : null;
     }
 
-    function spatialHorizontalGeometryPlanIsValid(plan, context, outputGeometry, workArea) {
+    function spatialHorizontalGeometryPlanIsValid(plan, context, outputGeometry, workArea, devicePixelRatio) {
         if (!plan || Array.isArray(plan) || !plan.camera || Array.isArray(plan.camera)
                 || !plan.dimensions || Array.isArray(plan.dimensions) || !plan.columnFrames
                 || !Number.isInteger(plan.columnFrames.length)
@@ -1258,7 +1431,8 @@ Rectangle {
                 || plan.dimensions.viewportWidth !== workArea.width
                 || plan.dimensions.viewportHeight !== workArea.height
                 || plan.dimensions.viewportInsetX !== workArea.x - outputGeometry.x
-                || plan.dimensions.viewportInsetY !== workArea.y - outputGeometry.y) {
+                || plan.dimensions.viewportInsetY !== workArea.y - outputGeometry.y
+                || plan.dimensions.devicePixelRatio !== devicePixelRatio) {
             return false;
         }
 
@@ -1353,6 +1527,469 @@ Rectangle {
     function advanceSpatialHorizontalViewportRevision() {
         spatialHorizontalViewportRevision = spatialHorizontalViewportRevision >= 2147483646
             ? 0 : spatialHorizontalViewportRevision + 1;
+    }
+
+    function resolveSpatialLiveCamera() {
+        const candidate = KWin.Workspace.activeWindow;
+        const attachment = createSpatialLiveCameraAttachment(candidate);
+        if (!attachment) {
+            updateSpatialLiveCameraProbe(candidate);
+            return false;
+        }
+
+        clearSpatialLiveCameraProbe();
+        if (spatialLiveCameraDetachedWindow === attachment.window
+                && spatialLiveCameraDetachedWindowId === attachment.windowId) {
+            return false;
+        }
+
+        if (spatialLiveCameraDetachedWindow !== null) {
+            spatialLiveCameraDetachedWindow = null;
+            spatialLiveCameraDetachedWindowId = "";
+        }
+        spatialLiveCameraWindow = attachment.window;
+        spatialLiveCameraWindowId = attachment.windowId;
+        spatialLiveCameraDesktopId = attachment.desktopId;
+        spatialLiveCameraAttachment = attachment;
+        return applySpatialLiveCamera();
+    }
+
+    function resolveSpatialLiveCameraProbe() {
+        const candidate = spatialLiveCameraProbeWindow;
+        if (!candidate || candidate === spatialLiveCameraWindow
+                || KWin.Workspace.activeWindow !== candidate) {
+            return false;
+        }
+        return resolveSpatialLiveCamera();
+    }
+
+    function updateSpatialLiveCameraProbe(candidate) {
+        try {
+            if (!sceneEffect || sceneEffect.active !== true || !candidate
+                    || candidate === spatialLiveCameraWindow || candidate.deleted === true) {
+                clearSpatialLiveCameraProbe();
+                return false;
+            }
+        } catch (error) {
+            clearSpatialLiveCameraProbe();
+            return false;
+        }
+
+        spatialLiveCameraProbeWindow = candidate;
+        return true;
+    }
+
+    function clearSpatialLiveCameraProbe() {
+        spatialLiveCameraProbeWindow = null;
+    }
+
+    function createSpatialLiveCameraAttachment(candidate) {
+        try {
+            if (!sceneEffect || sceneEffect.active !== true || !overviewModel
+                    || !Number.isInteger(currentWorkspaceIndex) || currentWorkspaceIndex < 0
+                    || currentWorkspaceIndex >= desktopIds.length || !currentDesktop) {
+                return null;
+            }
+
+            const desktopId = desktopIds[currentWorkspaceIndex];
+            const desktop = liveDesktopFor(currentDesktop, desktopId);
+            const screen = liveScreenFor(targetScreen);
+            const model = overviewModel;
+            const outputDescriptor = projectedOutput(model, screen);
+            const outputIndex = outputDescriptor ? model.outputs.indexOf(outputDescriptor) : -1;
+            const activityId = String(KWin.Workspace.currentActivity);
+            let context = null;
+            let contextIndex = -1;
+            for (let index = 0; index < model.contexts.length; index += 1) {
+                const current = model.contexts[index];
+                if (current.outputId === outputId && current.desktopId === desktopId) {
+                    if (context !== null) {
+                        return null;
+                    }
+                    context = current;
+                    contextIndex = index;
+                }
+            }
+            if (!desktop || !screen || !outputDescriptor || outputIndex < 0 || !context || contextIndex < 0
+                    || context.desktopId !== desktopId || context.outputId !== outputId
+                    || context.activityId !== activityId
+                    || !Number.isInteger(context.activeColumnIndex)
+                    || context.activeColumnIndex < 0 || context.activeColumnIndex >= context.columns.length) {
+                return null;
+            }
+
+            const columnIndex = context.activeColumnIndex;
+            const column = context.columns[columnIndex];
+            if (!column || !column.members || !Number.isInteger(column.members.length)
+                    || column.members.length < 1 || column.members.length > 512
+                    || !Number.isInteger(column.selectedMemberIndex)
+                    || column.selectedMemberIndex < 0 || column.selectedMemberIndex >= column.members.length) {
+                return null;
+            }
+
+            const member = column.members[column.selectedMemberIndex];
+            const windowId = member && typeof member.windowId === "string" ? member.windowId : "";
+            if (!spatialLiveCameraWindowIsEligible(candidate, windowId, screen)) {
+                return null;
+            }
+
+            const candidateDesktops = candidate.desktops;
+            if (!candidateDesktops || candidateDesktops.length !== 1
+                    || candidateDesktops[0] !== desktop || String(candidateDesktops[0].id) !== desktopId) {
+                return null;
+            }
+
+            const candidateActivities = candidate.activities;
+            let activityIndex = -1;
+            if (!candidateActivities || !Number.isInteger(candidateActivities.length)
+                    || candidateActivities.length > 512) {
+                return null;
+            }
+            if (candidateActivities.length > 0) {
+                for (let index = 0; index < candidateActivities.length; index += 1) {
+                    if (String(candidateActivities[index]) === activityId) {
+                        activityIndex = index;
+                        break;
+                    }
+                }
+                if (activityIndex < 0) {
+                    return null;
+                }
+            }
+
+            const geometryPlan = spatialHorizontalGeometryPlanAt(currentWorkspaceIndex, desktopId,
+                                                                 spatialHorizontalViewportRevision);
+            const bounds = spatialHorizontalViewportBoundsForPlan(geometryPlan);
+            const columnFrame = geometryPlan && geometryPlan.columnFrames
+                ? geometryPlan.columnFrames[columnIndex] : null;
+            const outputGeometry = spatialGeometryRect(screen.geometry);
+            const workArea = spatialWorkArea(screen, desktop);
+            const devicePixelRatio = Number(screen.devicePixelRatio);
+            if (!geometryPlan || !bounds || !columnFrame || columnFrame.columnIndex !== columnIndex
+                    || !outputGeometry || !workArea || !Number.isFinite(devicePixelRatio)
+                    || devicePixelRatio <= 0) {
+                return null;
+            }
+            if (!spatialLiveCameraDimensionsAreExact(geometryPlan.dimensions, outputGeometry,
+                                                     workArea, devicePixelRatio)) {
+                scheduleSpatialLiveCameraRefresh();
+                return null;
+            }
+
+            return {
+                activityId,
+                activityIndex,
+                bounds,
+                camera: geometryPlan.camera,
+                columnFrame,
+                column,
+                columnIndex,
+                context,
+                contextIndex,
+                desktopId,
+                desktop,
+                devicePixelRatio,
+                effect: sceneEffect,
+                geometryPlan,
+                member,
+                memberIndex: column.selectedMemberIndex,
+                model,
+                outputDescriptor,
+                outputGeometryHeight: outputGeometry.height,
+                outputGeometryWidth: outputGeometry.width,
+                outputGeometryX: outputGeometry.x,
+                outputGeometryY: outputGeometry.y,
+                outputIndex,
+                outputId,
+                screen,
+                window: candidate,
+                windowId,
+                windowActivityCount: candidateActivities.length,
+                workAreaHeight: workArea.height,
+                workAreaWidth: workArea.width,
+                workAreaX: workArea.x,
+                workAreaY: workArea.y,
+                workspaceIndex: currentWorkspaceIndex
+            };
+        } catch (error) {
+            return null;
+        }
+    }
+
+    function spatialLiveCameraWindowIsEligible(candidate, expectedWindowId, expectedScreen) {
+        if (!candidate || typeof expectedWindowId !== "string" || expectedWindowId.length === 0
+                || candidate.deleted === true || candidate.minimized === true
+                || candidate.normalWindow !== true || candidate.managed !== true
+                || candidate.output !== expectedScreen || candidate.fullScreen === true
+                || candidate.maximizeMode !== 0 || candidate.tile !== null
+                || candidate.move !== false || candidate.resize !== false
+                || candidate.internalId === undefined || candidate.internalId === null
+                || String(candidate.internalId) !== expectedWindowId) {
+            return false;
+        }
+
+        const runtime = OverviewRuntime.DriftileOverview;
+        if (!runtime || typeof runtime.hasAutomaticFloatingRole !== "function") {
+            return false;
+        }
+
+        try {
+            return runtime.hasAutomaticFloatingRole(candidate) === false;
+        } catch (error) {
+            return false;
+        }
+    }
+
+    function spatialLiveCameraDimensionsAreExact(dimensions, outputGeometry, workArea, devicePixelRatio) {
+        return dimensions && !Array.isArray(dimensions)
+            && dimensions.outputWidth === outputGeometry.width
+            && dimensions.outputHeight === outputGeometry.height
+            && dimensions.viewportWidth === workArea.width
+            && dimensions.viewportHeight === workArea.height
+            && dimensions.viewportInsetX === workArea.x - outputGeometry.x
+            && dimensions.viewportInsetY === workArea.y - outputGeometry.y
+            && dimensions.devicePixelRatio === devicePixelRatio;
+    }
+
+    function spatialLiveCameraAttachmentIsExact(attachment) {
+        if (!attachment || spatialLiveCameraAttachment !== attachment
+                || spatialLiveCameraWindow !== attachment.window
+                || spatialLiveCameraWindowId !== attachment.windowId
+                || spatialLiveCameraDesktopId !== attachment.desktopId
+                || spatialLiveCameraDetachedWindow !== null
+                || sceneEffect !== attachment.effect || sceneEffect.active !== true
+                || overviewModel !== attachment.model || sceneEffect.overviewModel !== attachment.model
+                || targetScreen !== attachment.screen || currentDesktop !== attachment.desktop
+                || currentWorkspaceIndex !== attachment.workspaceIndex
+                || desktopIds[attachment.workspaceIndex] !== attachment.desktopId
+                || outputId !== attachment.outputId
+                || String(KWin.Workspace.currentActivity) !== attachment.activityId
+                || KWin.Workspace.activeWindow !== attachment.window
+                || attachment.model.outputs[attachment.outputIndex] !== attachment.outputDescriptor
+                || attachment.model.contexts[attachment.contextIndex] !== attachment.context
+                || attachment.context.outputId !== attachment.outputId
+                || attachment.context.desktopId !== attachment.desktopId
+                || attachment.context.activityId !== attachment.activityId
+                || attachment.context.activeColumnIndex !== attachment.columnIndex
+                || attachment.context.columns[attachment.columnIndex] !== attachment.column
+                || attachment.column.selectedMemberIndex !== attachment.memberIndex
+                || attachment.column.members[attachment.memberIndex] !== attachment.member
+                || attachment.member.windowId !== attachment.windowId
+                || spatialHorizontalDesktopIds[attachment.workspaceIndex] !== attachment.desktopId
+                || spatialHorizontalGeometryPlans[attachment.workspaceIndex] !== attachment.geometryPlan
+                || attachment.geometryPlan.camera !== attachment.camera
+                || attachment.geometryPlan.columnFrames[attachment.columnIndex] !== attachment.columnFrame
+                || !spatialLiveCameraWindowIsEligible(attachment.window, attachment.windowId,
+                                                      attachment.screen)) {
+            return false;
+        }
+
+        const outputGeometry = attachment.screen.geometry;
+        const dimensions = attachment.geometryPlan.dimensions;
+        const desktops = attachment.window.desktops;
+        const activities = attachment.window.activities;
+        if (!outputGeometry || !dimensions
+                || Number(outputGeometry.x) !== attachment.outputGeometryX
+                || Number(outputGeometry.y) !== attachment.outputGeometryY
+                || Number(outputGeometry.width) !== attachment.outputGeometryWidth
+                || Number(outputGeometry.height) !== attachment.outputGeometryHeight
+                || Number(attachment.screen.devicePixelRatio) !== attachment.devicePixelRatio
+                || dimensions.outputWidth !== attachment.outputGeometryWidth
+                || dimensions.outputHeight !== attachment.outputGeometryHeight
+                || dimensions.viewportWidth !== attachment.workAreaWidth
+                || dimensions.viewportHeight !== attachment.workAreaHeight
+                || dimensions.viewportInsetX !== attachment.workAreaX - attachment.outputGeometryX
+                || dimensions.viewportInsetY !== attachment.workAreaY - attachment.outputGeometryY
+                || dimensions.devicePixelRatio !== attachment.devicePixelRatio
+                || !desktops || desktops.length !== 1 || desktops[0] !== attachment.desktop
+                || String(desktops[0].id) !== attachment.desktopId
+                || !activities || activities.length !== attachment.windowActivityCount) {
+            return false;
+        }
+
+        return activities.length === 0
+            || String(activities[attachment.activityIndex]) === attachment.activityId;
+    }
+
+    function applySpatialLiveCamera() {
+        const attachment = spatialLiveCameraAttachment;
+        if (!spatialLiveCameraAttachmentIsExact(attachment)) {
+            return false;
+        }
+
+        let workArea = null;
+        try {
+            workArea = KWin.Workspace.clientArea(KWin.Workspace.MaximizeArea,
+                                                 attachment.screen, attachment.desktop);
+        } catch (error) {
+            return false;
+        }
+        if (!workArea || Number(workArea.x) !== attachment.workAreaX
+                || Number(workArea.y) !== attachment.workAreaY
+                || Number(workArea.width) !== attachment.workAreaWidth
+                || Number(workArea.height) !== attachment.workAreaHeight) {
+            clearSpatialLiveCameraAttachment();
+            scheduleSpatialLiveCameraRefresh();
+            return false;
+        }
+
+        const frame = attachment.window.frameGeometry;
+        const liveFrame = frame ? { width: Number(frame.width), x: Number(frame.x) } : null;
+        if (!liveFrame || !Number.isFinite(liveFrame.x) || !Number.isFinite(liveFrame.width)
+                || liveFrame.width <= 0) {
+            return false;
+        }
+
+        const runtime = OverviewRuntime.DriftileOverview;
+        if (!runtime || typeof runtime.planOverviewSpatialLiveCamera !== "function") {
+            return false;
+        }
+
+        let plan = null;
+        try {
+            plan = runtime.planOverviewSpatialLiveCamera({
+                                                             camera: attachment.camera,
+                                                             columnFrame: attachment.columnFrame,
+                                                             devicePixelRatio: attachment.devicePixelRatio,
+                                                             liveFrame,
+                                                             workAreaX: attachment.workAreaX
+                                                         });
+        } catch (error) {
+            return false;
+        }
+
+        if (!spatialLiveCameraPlanIsValid(plan, attachment.bounds)
+                || !spatialLiveCameraAttachmentIsExact(attachment)) {
+            return false;
+        }
+
+        const applied = applySpatialLiveCameraViewportOffset(attachment.workspaceIndex, attachment.desktopId,
+                                                             plan.viewportOffset, attachment.bounds,
+                                                             attachment.geometryPlan);
+        if (applied) {
+            completeSpatialLiveCameraRefresh();
+        }
+        return applied;
+    }
+
+    function spatialLiveCameraPlanIsValid(plan, bounds) {
+        return plan && !Array.isArray(plan) && bounds
+            && Number.isFinite(plan.viewportOffset)
+            && plan.viewportOffset >= bounds.minimum && plan.viewportOffset <= bounds.maximum;
+    }
+
+    function applySpatialLiveCameraViewportOffset(index, expectedDesktopId, offset, bounds, expectedGeometryPlan) {
+        if (!bounds || !expectedGeometryPlan || !Number.isFinite(offset)
+                || offset < bounds.minimum || offset > bounds.maximum
+                || spatialHorizontalDesktopIds.length !== desktopIds.length
+                || spatialHorizontalDesktopIds[index] !== expectedDesktopId
+                || spatialHorizontalGeometryPlans[index] !== expectedGeometryPlan
+                || spatialHorizontalViewportOffsets.length !== desktopIds.length) {
+            return false;
+        }
+
+        const normalizedOffset = Object.is(offset, -0) ? 0 : offset;
+        if (spatialHorizontalViewportOffsets[index] === normalizedOffset) {
+            return true;
+        }
+
+        spatialHorizontalViewportOffsets[index] = normalizedOffset;
+        advanceSpatialHorizontalViewportRevision();
+        return spatialHorizontalViewportOffsets[index] === normalizedOffset;
+    }
+
+    function detachSpatialLiveCameraForManualOffset(index, expectedDesktopId, previousOffset, nextOffset) {
+        if (previousOffset === nextOffset || index !== currentWorkspaceIndex
+                || expectedDesktopId !== spatialLiveCameraDesktopId || spatialLiveCameraWindow === null
+                || spatialLiveCameraWindowId.length === 0) {
+            return false;
+        }
+
+        spatialLiveCameraDetachedWindow = spatialLiveCameraWindow;
+        spatialLiveCameraDetachedWindowId = spatialLiveCameraWindowId;
+        clearSpatialLiveCameraAttachment();
+        return true;
+    }
+
+    function clearSpatialLiveCameraAttachment() {
+        spatialLiveCameraAttachment = null;
+        spatialLiveCameraWindow = null;
+        spatialLiveCameraWindowId = "";
+        spatialLiveCameraDesktopId = "";
+    }
+
+    function scheduleSpatialLiveCameraRefresh() {
+        if (!sceneEffect || sceneEffect.active !== true || spatialLiveCameraRefreshPending
+                || spatialLiveCameraRefreshBudget <= 0) {
+            return false;
+        }
+
+        spatialLiveCameraRefreshBudget -= 1;
+        spatialLiveCameraRefreshPending = true;
+        const requestEpoch = spatialLiveCameraRefreshEpoch;
+        Qt.callLater(function() {
+            if (root.spatialLiveCameraRefreshEpoch !== requestEpoch) {
+                return;
+            }
+            root.spatialLiveCameraRefreshPending = false;
+            if (!root.sceneEffect || root.sceneEffect.active !== true) {
+                return;
+            }
+            root.refreshOverviewSpatialSession(true);
+        });
+        return true;
+    }
+
+    function completeSpatialLiveCameraRefresh() {
+        if (spatialLiveCameraRefreshPending) {
+            advanceSpatialLiveCameraRefreshEpoch();
+            spatialLiveCameraRefreshPending = false;
+        }
+        spatialLiveCameraRefreshBudget = 1;
+    }
+
+    function resetSpatialLiveCameraRefresh() {
+        advanceSpatialLiveCameraRefreshEpoch();
+        spatialLiveCameraRefreshPending = false;
+        spatialLiveCameraRefreshBudget = 1;
+    }
+
+    function advanceSpatialLiveCameraRefreshEpoch() {
+        spatialLiveCameraRefreshEpoch = spatialLiveCameraRefreshEpoch >= 2147483646
+            ? 0 : spatialLiveCameraRefreshEpoch + 1;
+    }
+
+    function resetSpatialLiveCameraSession() {
+        resetSpatialLiveCameraRefresh();
+        clearSpatialLiveCameraAttachment();
+        clearSpatialLiveCameraProbe();
+        spatialLiveCameraDetachedWindow = null;
+        spatialLiveCameraDetachedWindowId = "";
+    }
+
+    function handleSpatialLiveCameraWindowRemoved(removedWindow) {
+        if (!removedWindow) {
+            return false;
+        }
+
+        let removed = false;
+        if (removedWindow === spatialLiveCameraWindow) {
+            clearSpatialLiveCameraAttachment();
+            removed = true;
+        }
+        if (removedWindow === spatialLiveCameraDetachedWindow) {
+            spatialLiveCameraDetachedWindow = null;
+            spatialLiveCameraDetachedWindowId = "";
+            removed = true;
+        }
+        if (removedWindow === spatialLiveCameraProbeWindow) {
+            clearSpatialLiveCameraProbe();
+            removed = true;
+        }
+        if (removed) {
+            resolveSpatialLiveCamera();
+        }
+        return removed;
     }
 
     function resetSpatialViewport() {
@@ -2347,7 +2984,12 @@ Rectangle {
 
         overviewHorizontalWheelPixelRemainder = plan.pixelRemainder;
         overviewHorizontalWheelRemainder = 0;
-        return spatialHorizontalViewportOffsets[workspaceIndex] === plan.viewportOffset;
+        const applied = spatialHorizontalViewportOffsets[workspaceIndex] === plan.viewportOffset;
+        if (applied) {
+            detachSpatialLiveCameraForManualOffset(workspaceIndex, expectedDesktopId,
+                                                   currentOffset, plan.viewportOffset);
+        }
+        return applied;
     }
 
     function handleSpatialHorizontalSelectionWheel(workspaceIndex, expectedDesktopId, card, angleDeltaX) {
@@ -2523,7 +3165,11 @@ Rectangle {
         const currentOffset = spatialHorizontalViewportOffsetForBounds(workspaceIndex, expectedDesktopId, bounds);
         const nextOffset = Math.min(bounds.maximum,
                                     Math.max(bounds.minimum, currentOffset + sceneAdjustment / card.projectionScale));
-        return setSpatialHorizontalViewportOffsetForBounds(workspaceIndex, expectedDesktopId, nextOffset, bounds);
+        if (!setSpatialHorizontalViewportOffsetForBounds(workspaceIndex, expectedDesktopId, nextOffset, bounds)) {
+            return false;
+        }
+        detachSpatialLiveCameraForManualOffset(workspaceIndex, expectedDesktopId, currentOffset, nextOffset);
+        return true;
     }
 
     function handleSpatialViewportWheel(angleDeltaY, pixelDeltaY) {

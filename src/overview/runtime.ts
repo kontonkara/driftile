@@ -4,6 +4,7 @@ import {
   type OverviewLiveLayout,
 } from "./layout-view";
 
+export { hasAutomaticFloatingRole } from "../core/window-classification";
 export {
   countOverviewWindowNavigationTargets,
   findOverviewNavigationTarget,

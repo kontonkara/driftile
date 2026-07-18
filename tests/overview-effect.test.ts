@@ -2716,6 +2716,34 @@ describe("overview effect package", () => {
       scene.indexOf("function spatialHorizontalViewportBounds("),
       scene.indexOf("function spatialHorizontalViewportOffsetAt("),
     );
+    const liveCamera = scene.slice(
+      scene.indexOf("function resolveSpatialLiveCamera("),
+      scene.indexOf("function resetSpatialViewport("),
+    );
+    const liveCameraResolve = scene.slice(
+      scene.indexOf("function resolveSpatialLiveCamera("),
+      scene.indexOf("function createSpatialLiveCameraAttachment("),
+    );
+    const liveCameraAttachment = scene.slice(
+      scene.indexOf("function spatialLiveCameraAttachmentIsExact("),
+      scene.indexOf("function applySpatialLiveCamera("),
+    );
+    const liveCameraHotPath = scene.slice(
+      scene.indexOf("function spatialLiveCameraAttachmentIsExact("),
+      scene.indexOf("function spatialLiveCameraPlanIsValid("),
+    );
+    const liveCameraRefresh = scene.slice(
+      scene.indexOf("function scheduleSpatialLiveCameraRefresh("),
+      scene.indexOf("function resetSpatialLiveCameraSession("),
+    );
+    const liveCameraConnections = scene.slice(
+      scene.indexOf("target: root.spatialLiveCameraWindow"),
+      scene.indexOf("target: root.spatialLiveCameraProbeWindow"),
+    );
+    const liveCameraProbeConnections = scene.slice(
+      scene.indexOf("target: root.spatialLiveCameraProbeWindow"),
+      scene.indexOf("target: root.targetScreen"),
+    );
 
     expect(scene).toContain("property real overviewWheelPixelRemainder: 0");
     expect(scene).toContain("property int overviewWheelRemainder: 0");
@@ -2804,6 +2832,22 @@ describe("overview effect package", () => {
     expect(scene).toContain(
       "property var spatialHorizontalViewportOffsets: []",
     );
+    expect(scene).toContain("property var spatialLiveCameraAttachment: null");
+    expect(scene).toContain("property var spatialLiveCameraWindow: null");
+    expect(scene).toContain('property string spatialLiveCameraWindowId: ""');
+    expect(scene).toContain('property string spatialLiveCameraDesktopId: ""');
+    expect(scene).toContain("property var spatialLiveCameraProbeWindow: null");
+    expect(scene).toContain(
+      "property var spatialLiveCameraDetachedWindow: null",
+    );
+    expect(scene).toContain(
+      'property string spatialLiveCameraDetachedWindowId: ""',
+    );
+    expect(scene).toContain(
+      "property bool spatialLiveCameraRefreshPending: false",
+    );
+    expect(scene).toContain("property int spatialLiveCameraRefreshBudget: 1");
+    expect(scene).toContain("property int spatialLiveCameraRefreshEpoch: 0");
     expect(scene).toMatch(
       /function desktopIdListShapeIsValid\(candidate\) \{\s*return candidate !== undefined && candidate !== null && Number\.isInteger\(candidate\.length\)[\s\S]*candidate\.length >= 0 && candidate\.length <= 512;\s*\}/u,
     );
@@ -2829,7 +2873,7 @@ describe("overview effect package", () => {
       "KWin.Workspace.clientArea(KWin.Workspace.MaximizeArea, screen, desktop)",
     );
     expect(scene).toMatch(
-      /function spatialHorizontalGeometryPlanIsValid[\s\S]*plan\.columnFrames\.length !== context\.columns\.length[\s\S]*plan\.camera\.minimum > plan\.camera\.base[\s\S]*plan\.dimensions\.viewportWidth !== workArea\.width[\s\S]*frame\.columnId !== `overview-column-\$\{columnIndex\}`/u,
+      /function spatialHorizontalGeometryPlanIsValid[\s\S]*plan\.columnFrames\.length !== context\.columns\.length[\s\S]*plan\.camera\.minimum > plan\.camera\.base[\s\S]*plan\.dimensions\.viewportWidth !== workArea\.width[\s\S]*plan\.dimensions\.devicePixelRatio !== devicePixelRatio[\s\S]*frame\.columnId !== `overview-column-\$\{columnIndex\}`/u,
     );
     expect(scene).not.toMatch(
       /function spatialHorizontalViewportBounds[\s\S]{0,2500}resolvedWidth/u,
@@ -2842,6 +2886,139 @@ describe("overview effect package", () => {
     );
     expect(scene).toMatch(
       /function setSpatialHorizontalViewportOffsetForBounds[\s\S]*spatialHorizontalViewportOffsets\[index\] === normalizedOffset[\s\S]*return true;[\s\S]*spatialHorizontalViewportOffsets\[index\] = normalizedOffset;\s*advanceSpatialHorizontalViewportRevision\(\);/u,
+    );
+    expect(scene).toContain(
+      "function onWindowActivated() {\n            root.resolveSpatialLiveCamera();",
+    );
+    expect(scene).not.toContain("onClientAreaChanged");
+    expect(scene).toContain(
+      "function onWindowRemoved(window) {\n            root.handleSpatialLiveCameraWindowRemoved(window);",
+    );
+    expect(liveCameraConnections).toMatch(
+      /target: root\.spatialLiveCameraWindow[\s\S]*enabled: target !== null[\s\S]*function onFrameGeometryChanged\(\) \{\s*root\.applySpatialLiveCamera\(\);/u,
+    );
+    expect(liveCameraProbeConnections).toMatch(
+      /target: root\.spatialLiveCameraProbeWindow[\s\S]*enabled: target !== null && target !== root\.spatialLiveCameraWindow/u,
+    );
+    for (const signal of [
+      "ActivitiesChanged",
+      "DeletedChanged",
+      "DesktopsChanged",
+      "DialogChanged",
+      "FullScreenChanged",
+      "ManagedChanged",
+      "MaximizedChanged",
+      "ModalChanged",
+      "MinimizedChanged",
+      "MoveResizedChanged",
+      "NormalWindowChanged",
+      "OutputChanged",
+      "TileChanged",
+      "TransientChanged",
+      "TransientForChanged",
+      "UtilityChanged",
+      "WindowRoleChanged",
+    ]) {
+      expect(liveCameraConnections).toContain(`function on${signal}()`);
+      expect(liveCameraProbeConnections).toContain(`function on${signal}()`);
+    }
+    expect(liveCameraProbeConnections).not.toContain("onFrameGeometryChanged");
+    expect(liveCameraProbeConnections).toMatch(
+      /function onActivitiesChanged\(\) \{\s*root\.resolveSpatialLiveCameraProbe\(\);/u,
+    );
+    expect(liveCamera).toMatch(
+      /function createSpatialLiveCameraAttachment\(candidate\)[\s\S]*context\.activityId !== activityId[\s\S]*context\.activeColumnIndex[\s\S]*column\.selectedMemberIndex[\s\S]*spatialLiveCameraWindowIsEligible\(candidate, windowId, screen\)/u,
+    );
+    expect(liveCamera).toMatch(
+      /runtime\.planOverviewSpatialLiveCamera\(\{[\s\S]*camera: attachment\.camera,[\s\S]*columnFrame: attachment\.columnFrame,[\s\S]*devicePixelRatio: attachment\.devicePixelRatio,[\s\S]*liveFrame,[\s\S]*workAreaX: attachment\.workAreaX/u,
+    );
+    expect(liveCamera).toMatch(
+      /spatialHorizontalViewportOffsets\[index\] = normalizedOffset;\s*advanceSpatialHorizontalViewportRevision\(\);/u,
+    );
+    expect(liveCamera).not.toContain(
+      "spatialHorizontalViewportOffsets.slice()",
+    );
+    expect(liveCamera).toMatch(
+      /spatialLiveCameraDetachedWindow === attachment\.window[\s\S]*return false;[\s\S]*if \(spatialLiveCameraDetachedWindow !== null\)[\s\S]*spatialLiveCameraDetachedWindow = null;/u,
+    );
+    expect(liveCameraResolve).toMatch(
+      /const candidate = KWin\.Workspace\.activeWindow;\s*const attachment = createSpatialLiveCameraAttachment\(candidate\);\s*if \(!attachment\) \{\s*updateSpatialLiveCameraProbe\(candidate\);\s*return false;/u,
+    );
+    expect(liveCameraResolve).not.toContain(
+      "clearSpatialLiveCameraAttachment()",
+    );
+    expect(liveCameraResolve).toMatch(
+      /clearSpatialLiveCameraProbe\(\);[\s\S]*spatialLiveCameraWindow = attachment\.window;/u,
+    );
+    expect(liveCamera).toMatch(
+      /function resolveSpatialLiveCameraProbe\(\)[\s\S]*KWin\.Workspace\.activeWindow !== candidate[\s\S]*return resolveSpatialLiveCamera\(\);/u,
+    );
+    expect(liveCamera).toMatch(
+      /function updateSpatialLiveCameraProbe\(candidate\)[\s\S]*candidate === spatialLiveCameraWindow[\s\S]*clearSpatialLiveCameraProbe\(\);[\s\S]*spatialLiveCameraProbeWindow = candidate;/u,
+    );
+    expect(liveCamera).toMatch(
+      /typeof runtime\.hasAutomaticFloatingRole !== "function"[\s\S]*runtime\.hasAutomaticFloatingRole\(candidate\) === false[\s\S]*catch \(error\) \{\s*return false;/u,
+    );
+    expect(liveCamera).toMatch(
+      /spatialLiveCameraDimensionsAreExact\(geometryPlan\.dimensions, outputGeometry,[\s\S]*workArea, devicePixelRatio\)[\s\S]*dimensions\.outputWidth === outputGeometry\.width[\s\S]*dimensions\.viewportInsetX === workArea\.x - outputGeometry\.x[\s\S]*dimensions\.devicePixelRatio === devicePixelRatio/u,
+    );
+    expect(liveCamera).toMatch(
+      /if \(!geometryPlan \|\| !bounds \|\| !columnFrame[\s\S]*devicePixelRatio <= 0\) \{\s*return null;\s*\}\s*if \(!spatialLiveCameraDimensionsAreExact\(geometryPlan\.dimensions, outputGeometry,[\s\S]*workArea, devicePixelRatio\)\) \{\s*scheduleSpatialLiveCameraRefresh\(\);\s*return null;/u,
+    );
+    expect(liveCameraAttachment).toMatch(
+      /spatialHorizontalGeometryPlans\[attachment\.workspaceIndex\] !== attachment\.geometryPlan[\s\S]*attachment\.geometryPlan\.columnFrames\[attachment\.columnIndex\] !== attachment\.columnFrame[\s\S]*dimensions\.viewportWidth !== attachment\.workAreaWidth[\s\S]*dimensions\.devicePixelRatio !== attachment\.devicePixelRatio/u,
+    );
+    expect(liveCamera).toMatch(
+      /applySpatialLiveCameraViewportOffset\(attachment\.workspaceIndex, attachment\.desktopId,[\s\S]*attachment\.geometryPlan\)[\s\S]*spatialHorizontalGeometryPlans\[index\] !== expectedGeometryPlan/u,
+    );
+    expect(liveCameraHotPath).toMatch(
+      /KWin\.Workspace\.clientArea\(KWin\.Workspace\.MaximizeArea,[\s\S]*attachment\.screen, attachment\.desktop\)[\s\S]*Number\(workArea\.x\) !== attachment\.workAreaX[\s\S]*Number\(workArea\.height\) !== attachment\.workAreaHeight[\s\S]*runtime\.planOverviewSpatialLiveCamera/u,
+    );
+    expect(liveCameraHotPath).toMatch(
+      /Number\(workArea\.height\) !== attachment\.workAreaHeight\) \{\s*clearSpatialLiveCameraAttachment\(\);\s*scheduleSpatialLiveCameraRefresh\(\);\s*return false;[\s\S]*runtime\.planOverviewSpatialLiveCamera/u,
+    );
+    expect(
+      liveCameraHotPath.match(/KWin\.Workspace\.clientArea\(/gu) ?? [],
+    ).toHaveLength(1);
+    expect(liveCameraHotPath).not.toMatch(
+      /contextFor|liveScreenFor|liveDesktopFor|spatialWorkArea|createSpatialLiveCameraAttachment|\.indexOf\(|\bfor\s*\(/u,
+    );
+    expect(liveCamera).toMatch(
+      /const applied = applySpatialLiveCameraViewportOffset[\s\S]*if \(applied\) \{\s*completeSpatialLiveCameraRefresh\(\);\s*\}\s*return applied;/u,
+    );
+    expect(liveCameraRefresh).toMatch(
+      /spatialLiveCameraRefreshPending[\s\S]*spatialLiveCameraRefreshBudget <= 0[\s\S]*spatialLiveCameraRefreshBudget -= 1;\s*spatialLiveCameraRefreshPending = true;\s*const requestEpoch = spatialLiveCameraRefreshEpoch;\s*Qt\.callLater\(function\(\) \{[\s\S]*root\.spatialLiveCameraRefreshEpoch !== requestEpoch[\s\S]*root\.spatialLiveCameraRefreshPending = false;[\s\S]*root\.sceneEffect\.active !== true[\s\S]*root\.refreshOverviewSpatialSession\(true\);/u,
+    );
+    expect(liveCamera.match(/Qt\.callLater\(/gu) ?? []).toHaveLength(1);
+    expect(liveCameraRefresh).toMatch(
+      /function completeSpatialLiveCameraRefresh\(\) \{\s*if \(spatialLiveCameraRefreshPending\) \{\s*advanceSpatialLiveCameraRefreshEpoch\(\);\s*spatialLiveCameraRefreshPending = false;\s*\}\s*spatialLiveCameraRefreshBudget = 1;/u,
+    );
+    expect(liveCameraRefresh).toMatch(
+      /function resetSpatialLiveCameraRefresh\(\) \{\s*advanceSpatialLiveCameraRefreshEpoch\(\);\s*spatialLiveCameraRefreshPending = false;\s*spatialLiveCameraRefreshBudget = 1;/u,
+    );
+    expect(
+      liveCamera.match(/spatialLiveCameraRefreshBudget = 1;/gu) ?? [],
+    ).toHaveLength(2);
+    expect(liveCameraRefresh).toMatch(
+      /spatialLiveCameraRefreshEpoch = spatialLiveCameraRefreshEpoch >= 2147483646\s*\? 0 : spatialLiveCameraRefreshEpoch \+ 1;/u,
+    );
+    expect(liveCamera).toMatch(
+      /function handleSpatialLiveCameraWindowRemoved\(removedWindow\)[\s\S]*removedWindow === spatialLiveCameraWindow[\s\S]*clearSpatialLiveCameraAttachment\(\);[\s\S]*removedWindow === spatialLiveCameraDetachedWindow[\s\S]*spatialLiveCameraDetachedWindow = null;[\s\S]*removedWindow === spatialLiveCameraProbeWindow[\s\S]*clearSpatialLiveCameraProbe\(\);/u,
+    );
+    expect(wheelNavigation).toMatch(
+      /handleSpatialHorizontalViewportWheel[\s\S]*detachSpatialLiveCameraForManualOffset\(workspaceIndex, expectedDesktopId,[\s\S]*currentOffset, plan\.viewportOffset\)/u,
+    );
+    expect(wheelNavigation).toMatch(
+      /function revealHorizontalNavigationTarget[\s\S]*detachSpatialLiveCameraForManualOffset\(workspaceIndex, expectedDesktopId, currentOffset, nextOffset\)/u,
+    );
+    expect(scene).toMatch(
+      /function resetOverviewSession\(\) \{\s*resetSpatialLiveCameraSession\(\);/u,
+    );
+    expect(liveCamera).toMatch(
+      /function resetSpatialLiveCameraSession\(\) \{\s*resetSpatialLiveCameraRefresh\(\);\s*clearSpatialLiveCameraAttachment\(\);\s*clearSpatialLiveCameraProbe\(\);/u,
+    );
+    expect(liveCamera).not.toMatch(
+      /KWin\.Workspace\.(?:stackingOrder|windows)\b|\b(?:Timer|Behavior|Animation)\s*\{|setInterval|org\.kde\.kwin\.private/u,
     );
     expect(wheelNavigation).toMatch(
       /function handleSpatialViewportWheel[\s\S]*setSpatialContentY\(plan\.contentY\)[\s\S]*overviewWheelPixelRemainder = plan\.pixelRemainder;[\s\S]*overviewWheelRemainder = 0;[\s\S]*return true;/u,
