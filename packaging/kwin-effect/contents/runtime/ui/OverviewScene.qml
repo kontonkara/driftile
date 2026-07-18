@@ -285,7 +285,7 @@ Rectangle {
                  && !root.keyboardHelpVisible && !root.desktopReorderActive
                  && root.overviewSpatialLayout.contentHeight > root.height
         containmentMask: QtObject {
-            function contains(point) {
+            function contains(point: point) : bool {
                 return root.spatialViewportBackdropContains(point);
             }
         }

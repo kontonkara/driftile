@@ -1366,6 +1366,8 @@ describe("overview effect package", () => {
     expect(desktopRepeaterStart).toBeGreaterThan(spatialInputStart);
     expect(spatialInput).toContain("anchors.fill: parent");
     expect(spatialInput).toContain("containmentMask: QtObject {");
+    expect(spatialInput).toContain("function contains(point: point) : bool {");
+    expect(spatialInput).not.toMatch(/function contains\(point\)\s*\{/u);
     expect(spatialInput).toContain(
       "return root.spatialViewportBackdropContains(point)",
     );
