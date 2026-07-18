@@ -2,6 +2,7 @@ const MAX_QUERY_CODE_POINTS = 128;
 const MAX_QUERY_SCAN_CODE_POINTS = MAX_QUERY_CODE_POINTS * 4;
 const MAX_QUERY_CLAUSES = 8;
 const MAX_QUERY_GROUPS = 4;
+const RECENT_QUERY_PLAN_CAPACITY = 8;
 const MAX_SEARCH_FIELD_CODE_POINTS = 512;
 const MAX_DESKTOP_NAME_SEARCH_FIELD_CODE_POINTS = 64;
 const MAX_OUTPUT_NAME_SEARCH_FIELD_CODE_POINTS = 64;
@@ -62,8 +63,11 @@ interface ParsedQuotedValue {
   readonly value: string;
 }
 
-const trustedQueryPlans = new WeakSet<OverviewWindowSearchQueryPlan>();
-const EMPTY_QUERY_PLAN = createQueryPlan([]);
+const recentQueryPlans = new Array<OverviewWindowSearchQueryPlan | null>(
+  RECENT_QUERY_PLAN_CAPACITY,
+).fill(null);
+let nextRecentQueryPlanSlot = 0;
+const EMPTY_QUERY_PLAN = createQueryPlan([], true);
 
 export function appendOverviewSearchText(
   current: unknown,
@@ -177,9 +181,12 @@ export function planOverviewWindowSearchQuery(
       return null;
     }
 
-    return retainedClauseCount === 0
-      ? EMPTY_QUERY_PLAN
-      : createQueryPlan(groups);
+    if (retainedClauseCount === 0) {
+      rememberQueryPlan(EMPTY_QUERY_PLAN);
+      return EMPTY_QUERY_PLAN;
+    }
+
+    return createQueryPlan(groups, true);
   } catch {
     return null;
   }
@@ -298,6 +305,7 @@ export function matchesOverviewWindowSearchPlan(
 
 function createQueryPlan(
   clauseGroups: readonly (readonly OverviewWindowSearchQueryClause[])[],
+  retainForFastPath = false,
 ): OverviewWindowSearchQueryPlan {
   const groups: OverviewWindowSearchQueryGroup[] = [];
   const clauses: OverviewWindowSearchQueryClause[] = [];
@@ -335,8 +343,30 @@ function createQueryPlan(
     requiresAllFields,
   });
 
-  trustedQueryPlans.add(plan);
+  if (retainForFastPath) {
+    rememberQueryPlan(plan);
+  }
+
   return plan;
+}
+
+function rememberQueryPlan(plan: OverviewWindowSearchQueryPlan): void {
+  let latestIndex = nextRecentQueryPlanSlot - 1;
+
+  if (latestIndex < 0) {
+    latestIndex += RECENT_QUERY_PLAN_CAPACITY;
+  }
+
+  if (recentQueryPlans[latestIndex] === plan) {
+    return;
+  }
+
+  recentQueryPlans[nextRecentQueryPlanSlot] = plan;
+  nextRecentQueryPlanSlot += 1;
+
+  if (nextRecentQueryPlanSlot === RECENT_QUERY_PLAN_CAPACITY) {
+    nextRecentQueryPlanSlot = 0;
+  }
 }
 
 function requiredFieldsForMask(
@@ -582,13 +612,33 @@ function readQueryPlan(value: unknown): OverviewWindowSearchQueryPlan | null {
     return null;
   }
 
-  const candidate = value as unknown as OverviewWindowSearchQueryPlan;
+  const recentPlan = readRecentQueryPlan(value);
 
-  if (trustedQueryPlans.has(candidate)) {
-    return candidate;
+  if (recentPlan !== null) {
+    return recentPlan;
   }
 
   return decodeExternalQueryPlan(value);
+}
+
+function readRecentQueryPlan(
+  value: unknown,
+): OverviewWindowSearchQueryPlan | null {
+  for (let offset = 1; offset <= RECENT_QUERY_PLAN_CAPACITY; offset += 1) {
+    let index = nextRecentQueryPlanSlot - offset;
+
+    if (index < 0) {
+      index += RECENT_QUERY_PLAN_CAPACITY;
+    }
+
+    const plan = recentQueryPlans[index];
+
+    if (plan !== null && plan !== undefined && plan === value) {
+      return plan;
+    }
+  }
+
+  return null;
 }
 
 function decodeExternalQueryPlan(

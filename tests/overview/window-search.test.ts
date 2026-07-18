@@ -1,3 +1,5 @@
+import { fileURLToPath } from "node:url";
+import { build } from "esbuild";
 import { describe, expect, it } from "vitest";
 import {
   appendOverviewSearchText,
@@ -96,6 +98,61 @@ describe("overview window search text editing", () => {
     expect(removeLastOverviewSearchClause("")).toBe("");
     expect(removeLastOverviewSearchClause(" \t\u00a0 ")).toBe("");
     expect(removeLastOverviewSearchClause("  firefox  ")).toBe("");
+  });
+
+  it("replans safely while keyboard input changes the active query", () => {
+    let query = "";
+    const retainedPlans = [];
+
+    for (const character of "project notes") {
+      query = appendOverviewSearchText(query, character);
+      const plan = planOverviewWindowSearchQuery(query);
+
+      expect(plan).not.toBeNull();
+      expect(
+        matchesOverviewWindowSearchPlan(plan, {
+          caption: "Project Notes",
+        }),
+      ).toBe(true);
+      retainedPlans.push(plan);
+    }
+
+    query = removeLastOverviewSearchCharacter(query);
+    query = appendOverviewSearchText(query, "x");
+    expect(
+      matchesOverviewWindowSearchPlan(planOverviewWindowSearchQuery(query), {
+        caption: "Project Notes",
+      }),
+    ).toBe(false);
+
+    expect(
+      matchesOverviewWindowSearchPlan(retainedPlans[0], {
+        caption: "Project Notes",
+      }),
+    ).toBe(true);
+  });
+});
+
+describe("overview window search runtime", () => {
+  it("bundles without weak collection built-ins", async () => {
+    const result = await build({
+      bundle: true,
+      entryPoints: [
+        fileURLToPath(
+          new URL("../../src/overview/runtime.ts", import.meta.url),
+        ),
+      ],
+      format: "iife",
+      globalName: "DriftileOverview",
+      legalComments: "none",
+      platform: "neutral",
+      target: "es2017",
+      write: false,
+    });
+    const runtime = result.outputFiles[0]?.text ?? "";
+
+    expect(runtime.length).toBeGreaterThan(0);
+    expect(runtime).not.toMatch(/\bWeak(?:Set|Map)\b/u);
   });
 });
 
@@ -786,6 +843,13 @@ describe("planned overview window search", () => {
     expect(
       matchesOverviewWindowSearchPlan(external, { caption: "Project Notes" }),
     ).toBe(true);
+
+    clause.value = "PROJECT";
+    expect(
+      matchesOverviewWindowSearchPlan(external, { caption: "Project Notes" }),
+    ).toBe(false);
+    clause.value = "project";
+
     expect(
       matchesOverviewWindowSearchPlan(
         {
