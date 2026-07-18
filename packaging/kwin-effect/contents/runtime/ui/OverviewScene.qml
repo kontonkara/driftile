@@ -58,6 +58,7 @@ Rectangle {
     readonly property real overviewZoom: sceneEffect && Number.isFinite(sceneEffect.overviewZoom)
         ? sceneEffect.overviewZoom : 0.5
     readonly property var overviewSpatialLayout: planSpatialLayout()
+    readonly property var overviewSpatialVisibleRange: planSpatialVisibleRange()
     readonly property real outerMargin: Math.max(20, Math.min(width, height) * 0.035)
     readonly property real cardGap: overviewSpatialLayout.gap
     readonly property real cardHeight: overviewSpatialLayout.cardHeight
@@ -299,60 +300,73 @@ Rectangle {
         onItemAdded: Qt.callLater(root.repairKeyboardSelection)
         onItemRemoved: Qt.callLater(root.repairKeyboardSelection)
 
-        DesktopCard {
+        Loader {
+            id: desktopCardLoader
+
             required property string modelData
             required property int index
 
-            enabled: !root.keyboardHelpVisible
             x: root.cardX
             y: root.cardTop + index * (root.cardHeight + root.cardGap)
             width: root.cardWidth
             height: root.cardHeight
-            context: root.contextFor(modelData)
-            current: root.currentDesktop !== null && String(root.currentDesktop.id) === modelData
-            desktop: root.desktopForId(modelData)
-            desktopReorderEnabled: root.desktopReorderAvailable
-                                     && root.desktopIds.length > (root.emptyDesktopAboveFirst ? 3 : 2)
-                                     && index >= (root.emptyDesktopAboveFirst ? 1 : 0)
-                                     && index < root.desktopIds.length - 1
-            desktopReorderSource: root.desktopReorderActive && root.desktopReorderSourceId === modelData
-            desktopId: modelData
-            floatingWindows: root.floatingFor(modelData)
-            keyboardSelectionId: root.keyboardSelectionId
-            outputName: root.outputName
-            searchQuery: root.searchQuery
-            searchQueryPlan: root.searchQueryPlan
-            searchResultCount: root.searchResultCountForDesktop(modelData)
-            screen: root.targetScreen
-            showApplicationIdentity: root.showApplicationIdentity
-            showApplicationIcons: root.showApplicationIcons
-            showWindowCloseButtons: root.showWindowCloseButtons
-            showWindowLabels: root.showWindowLabels
-            showWindowStateBadges: root.showWindowStateBadges
-            showDesktopNames: root.showDesktopNames
-            onDesktopReorderCanceled: expectedDesktopId => root.cancelDesktopReorder(expectedDesktopId)
-            onDesktopReorderGrabbed: (candidate, expectedDesktopId, expectedScreen, sceneX, sceneY) =>
-                                         root.beginDesktopReorder(candidate, expectedDesktopId, expectedScreen,
-                                                                  sceneX, sceneY)
-            onDesktopReorderMoved: (expectedDesktopId, sceneX, sceneY) =>
-                                       root.updateDesktopReorder(expectedDesktopId, sceneX, sceneY)
-            onDesktopReorderReleased: (expectedDesktopId, sceneX, sceneY) =>
-                                          root.finishDesktopReorder(expectedDesktopId, sceneX, sceneY)
-            onNavigationTargetsChanged: Qt.callLater(root.repairKeyboardSelection)
-            onDesktopTapped: (candidate, expectedDesktopId, expectedScreen) => root.selectDesktop(
-                                 candidate, expectedDesktopId, expectedScreen)
-            onWindowTapped: (candidate, expectedWindowId, expectedDesktop, expectedDesktopId, expectedScreen) =>
-                                root.focusWindow(candidate, expectedWindowId, expectedDesktop, expectedDesktopId,
-                                                 expectedScreen)
-            onWindowCloseRequested: (candidate, expectedWindowId, expectedDesktop, expectedDesktopId,
-                                     expectedScreen) => root.closeWindow(candidate, expectedWindowId,
+            active: root.desktopCardShouldLoad(index, modelData)
+            onActiveChanged: Qt.callLater(root.repairKeyboardSelection)
+            onLoaded: Qt.callLater(root.repairKeyboardSelection)
+
+            sourceComponent: Component {
+                DesktopCard {
+                    enabled: !root.keyboardHelpVisible
+                    context: root.contextFor(desktopCardLoader.modelData)
+                    current: root.currentDesktop !== null
+                        && String(root.currentDesktop.id) === desktopCardLoader.modelData
+                    desktop: root.desktopForId(desktopCardLoader.modelData)
+                    desktopReorderEnabled: root.desktopReorderAvailable
+                                             && root.desktopIds.length > (root.emptyDesktopAboveFirst ? 3 : 2)
+                                             && desktopCardLoader.index >= (root.emptyDesktopAboveFirst ? 1 : 0)
+                                             && desktopCardLoader.index < root.desktopIds.length - 1
+                    desktopReorderSource: root.desktopReorderActive
+                        && root.desktopReorderSourceId === desktopCardLoader.modelData
+                    desktopId: desktopCardLoader.modelData
+                    floatingWindows: root.floatingFor(desktopCardLoader.modelData)
+                    keyboardSelectionId: root.keyboardSelectionId
+                    outputName: root.outputName
+                    searchQuery: root.searchQuery
+                    searchQueryPlan: root.searchQueryPlan
+                    searchResultCount: root.searchResultCountForDesktop(desktopCardLoader.modelData)
+                    screen: root.targetScreen
+                    showApplicationIdentity: root.showApplicationIdentity
+                    showApplicationIcons: root.showApplicationIcons
+                    showWindowCloseButtons: root.showWindowCloseButtons
+                    showWindowLabels: root.showWindowLabels
+                    showWindowStateBadges: root.showWindowStateBadges
+                    showDesktopNames: root.showDesktopNames
+                    onDesktopReorderCanceled: expectedDesktopId => root.cancelDesktopReorder(expectedDesktopId)
+                    onDesktopReorderGrabbed: (candidate, expectedDesktopId, expectedScreen, sceneX, sceneY) =>
+                                                 root.beginDesktopReorder(candidate, expectedDesktopId, expectedScreen,
+                                                                          sceneX, sceneY)
+                    onDesktopReorderMoved: (expectedDesktopId, sceneX, sceneY) =>
+                                               root.updateDesktopReorder(expectedDesktopId, sceneX, sceneY)
+                    onDesktopReorderReleased: (expectedDesktopId, sceneX, sceneY) =>
+                                                  root.finishDesktopReorder(expectedDesktopId, sceneX, sceneY)
+                    onNavigationTargetsChanged: Qt.callLater(root.repairKeyboardSelection)
+                    onDesktopTapped: (candidate, expectedDesktopId, expectedScreen) => root.selectDesktop(
+                                         candidate, expectedDesktopId, expectedScreen)
+                    onWindowTapped: (candidate, expectedWindowId, expectedDesktop, expectedDesktopId,
+                                     expectedScreen) => root.focusWindow(candidate, expectedWindowId,
                                                                           expectedDesktop, expectedDesktopId,
                                                                           expectedScreen)
-            onWindowDropped: (candidate, expectedWindowId, expectedSourceDesktop, expectedSourceDesktopId,
-                              expectedTargetDesktop, expectedTargetDesktopId, expectedScreen) =>
-                                 root.moveWindowToDesktop(candidate, expectedWindowId, expectedSourceDesktop,
-                                                          expectedSourceDesktopId, expectedTargetDesktop,
-                                                          expectedTargetDesktopId, expectedScreen)
+                    onWindowCloseRequested: (candidate, expectedWindowId, expectedDesktop, expectedDesktopId,
+                                             expectedScreen) => root.closeWindow(candidate, expectedWindowId,
+                                                                                  expectedDesktop, expectedDesktopId,
+                                                                                  expectedScreen)
+                    onWindowDropped: (candidate, expectedWindowId, expectedSourceDesktop, expectedSourceDesktopId,
+                                      expectedTargetDesktop, expectedTargetDesktopId, expectedScreen) =>
+                                         root.moveWindowToDesktop(candidate, expectedWindowId, expectedSourceDesktop,
+                                                                  expectedSourceDesktopId, expectedTargetDesktop,
+                                                                  expectedTargetDesktopId, expectedScreen)
+                }
+            }
         }
     }
 
@@ -703,6 +717,77 @@ Rectangle {
             gap,
             initialContentY: 0
         };
+    }
+
+    function planSpatialVisibleRange() {
+        const fallback = allDesktopCardsRange();
+        if (desktopIds.length <= 0) {
+            return fallback;
+        }
+
+        const runtime = OverviewRuntime.DriftileOverview;
+        if (!runtime || typeof runtime.planOverviewSpatialVisibleRange !== "function") {
+            return fallback;
+        }
+
+        try {
+            const plan = runtime.planOverviewSpatialVisibleRange({
+                                                                     sceneHeight: height,
+                                                                     contentHeight: overviewSpatialLayout.contentHeight,
+                                                                     contentY: spatialContentY,
+                                                                     edgeMargin: overviewSpatialLayout.edgeMargin,
+                                                                     cardHeight,
+                                                                     gap: cardGap,
+                                                                     workspaceCount: desktopIds.length,
+                                                                     overscan: 1
+                                                                 });
+            return spatialVisibleRangeIsValid(plan) ? plan : fallback;
+        } catch (error) {
+            return fallback;
+        }
+    }
+
+    function spatialVisibleRangeIsValid(plan) {
+        return plan && Number.isInteger(plan.firstIndex) && Number.isInteger(plan.lastIndex)
+            && plan.firstIndex >= 0 && plan.firstIndex <= plan.lastIndex
+            && plan.lastIndex < desktopIds.length;
+    }
+
+    function allDesktopCardsRange() {
+        return {
+            firstIndex: 0,
+            lastIndex: desktopIds.length - 1
+        };
+    }
+
+    function desktopCardShouldLoad(index, expectedDesktopId) {
+        if (!Number.isInteger(index) || index < 0 || index >= desktopIds.length
+                || typeof expectedDesktopId !== "string" || desktopIds[index] !== expectedDesktopId) {
+            return true;
+        }
+        if (searchQuery.length > 0
+                || (desktopReorderActive && desktopReorderSourceId === expectedDesktopId)) {
+            return true;
+        }
+
+        return index >= overviewSpatialVisibleRange.firstIndex
+            && index <= overviewSpatialVisibleRange.lastIndex;
+    }
+
+    function desktopCardAt(index) {
+        if (!Number.isInteger(index) || index < 0 || index >= desktopRepeater.count) {
+            return null;
+        }
+
+        const loader = desktopRepeater.itemAt(index);
+        const expectedDesktopId = desktopIds[index];
+        if (!loader || loader.index !== index || loader.modelData !== expectedDesktopId
+                || loader.active !== true || !loader.item
+                || loader.item.desktopId !== expectedDesktopId) {
+            return null;
+        }
+
+        return loader.item;
     }
 
     function resetSpatialViewport() {
@@ -1116,12 +1201,12 @@ Rectangle {
     function collectNavigationTargets() {
         const targets = [];
         for (let cardIndex = 0; cardIndex < desktopRepeater.count; cardIndex += 1) {
-            const desktopCard = desktopRepeater.itemAt(cardIndex);
+            const desktopCard = desktopCardAt(cardIndex);
             if (!desktopCard) {
                 continue;
             }
 
-            const cardTargets = desktopCard.collectNavigationTargets(root);
+            const cardTargets = desktopCard.collectNavigationTargets(root, true);
             for (const target of cardTargets) {
                 targets.push(target);
             }
@@ -1736,7 +1821,7 @@ Rectangle {
 
         let targetCard = null;
         for (let index = 0; index < desktopRepeater.count; index += 1) {
-            const candidate = desktopRepeater.itemAt(index);
+            const candidate = desktopCardAt(index);
             if (!candidate || !candidate.visible || candidate.screen !== liveTargetScreen
                     || !candidate.desktop || candidate.desktopId.length === 0) {
                 continue;

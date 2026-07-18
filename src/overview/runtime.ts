@@ -58,6 +58,11 @@ export type {
   OverviewSpatialViewportPlan,
   OverviewSpatialWorkspaceCenterInput,
 } from "./spatial-viewport";
+export { planOverviewSpatialVisibleRange } from "./spatial-visible-range";
+export type {
+  OverviewSpatialVisibleRangeInput,
+  OverviewSpatialVisibleRangePlan,
+} from "./spatial-visible-range";
 
 export type OverviewModelLoadResult =
   | OverviewLayoutProjectionResult

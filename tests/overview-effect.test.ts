@@ -647,7 +647,7 @@ describe("overview effect package", () => {
     );
     expect(tab).toContain("card.desktopId, card.screen)");
     expect(scene).toMatch(
-      /onWindowTapped:\s*\(candidate, expectedWindowId, expectedDesktop, expectedDesktopId, expectedScreen\)\s*=>\s*root\.focusWindow\(candidate, expectedWindowId, expectedDesktop, expectedDesktopId,\s*expectedScreen\)/u,
+      /onWindowTapped:\s*\(candidate,\s*expectedWindowId,\s*expectedDesktop,\s*expectedDesktopId,\s*expectedScreen\)\s*=>\s*root\.focusWindow\(candidate,\s*expectedWindowId,\s*expectedDesktop,\s*expectedDesktopId,\s*expectedScreen\)/u,
     );
 
     expect(focusHandler).toContain("const effect = sceneEffect;");
@@ -1232,6 +1232,13 @@ describe("overview effect package", () => {
       desktopCard.indexOf("id: numberGutter"),
       desktopCard.indexOf("id: viewport"),
     );
+    const desktopLoaderStart = scene.indexOf(
+      "Loader {\n            id: desktopCardLoader",
+    );
+    const desktopLoader = scene.slice(
+      desktopLoaderStart,
+      scene.indexOf("sourceComponent: Component", desktopLoaderStart),
+    );
     const reorderDelegate = scene.slice(
       scene.indexOf("DesktopCard {"),
       scene.indexOf("Rectangle {", scene.indexOf("DesktopCard {")),
@@ -1268,16 +1275,47 @@ describe("overview effect package", () => {
       "readonly property real cardTop: overviewSpatialLayout.edgeMargin - spatialContentY",
     );
     expect(scene).toContain("property real spatialContentY: 0");
-    expect(reorderDelegate).toContain("x: root.cardX");
-    expect(reorderDelegate).toContain(
+    expect(desktopLoaderStart).toBeGreaterThan(0);
+    expect(desktopLoader).toContain("x: root.cardX");
+    expect(desktopLoader).toContain(
       "y: root.cardTop + index * (root.cardHeight + root.cardGap)",
     );
-    expect(reorderDelegate).toContain("width: root.cardWidth");
-    expect(reorderDelegate).toContain("height: root.cardHeight");
+    expect(desktopLoader).toContain("width: root.cardWidth");
+    expect(desktopLoader).toContain("height: root.cardHeight");
+    expect(desktopLoader).toContain(
+      "active: root.desktopCardShouldLoad(index, modelData)",
+    );
+    expect(desktopLoader).toContain(
+      "onActiveChanged: Qt.callLater(root.repairKeyboardSelection)",
+    );
+    expect(desktopLoader).toContain(
+      "onLoaded: Qt.callLater(root.repairKeyboardSelection)",
+    );
+    expect(reorderDelegate).toContain(
+      "desktopReorderSource: root.desktopReorderActive",
+    );
+    expect(reorderDelegate).toContain(
+      "root.desktopReorderSourceId === desktopCardLoader.modelData",
+    );
 
     expect(overviewRuntimeIndex).toContain("planOverviewSpatialViewport");
     expect(overviewRuntimeIndex).toContain(
       "planOverviewSpatialWorkspaceCenter",
+    );
+    expect(overviewRuntimeIndex).toContain("planOverviewSpatialVisibleRange");
+    expect(spatialLayout).toContain(
+      'typeof runtime.planOverviewSpatialVisibleRange !== "function"',
+    );
+    expect(spatialLayout).toMatch(
+      /runtime\.planOverviewSpatialVisibleRange\(\{[\s\S]*sceneHeight: height,[\s\S]*contentHeight: overviewSpatialLayout\.contentHeight,[\s\S]*contentY: spatialContentY,[\s\S]*workspaceCount: desktopIds\.length,[\s\S]*overscan: 1/u,
+    );
+    expect(spatialLayout).toContain(
+      "return spatialVisibleRangeIsValid(plan) ? plan : fallback",
+    );
+    expect(spatialLayout).toContain("return fallback;");
+    expect(spatialLayout).toContain("if (searchQuery.length > 0");
+    expect(spatialLayout).toContain(
+      "desktopReorderSourceId === expectedDesktopId",
     );
     expect(spatialLayout).toMatch(
       /runtime\.planOverviewSpatialViewport\(\{[\s\S]*sceneHeight: height,[\s\S]*contentHeight: overviewSpatialLayout\.contentHeight,[\s\S]*contentY: requestedContentY/u,
@@ -2153,8 +2191,12 @@ describe("overview effect package", () => {
     expect(keyHandler).toContain("event.accepted = handled");
 
     expect(scene).toContain("id: desktopRepeater");
-    expect(navigation).toContain("desktopRepeater.itemAt(cardIndex)");
-    expect(navigation).toContain("desktopCard.collectNavigationTargets(root)");
+    expect(navigation).toContain("desktopCardAt(cardIndex)");
+    expect(navigation).toContain(
+      "desktopCard.collectNavigationTargets(root, true)",
+    );
+    expect(scene).toContain("const loader = desktopRepeater.itemAt(index)");
+    expect(scene).toContain("return loader.item;");
     expect(navigation).toContain("OverviewRuntime.DriftileOverview");
     expect(navigation).toContain(
       'typeof runtime.findOverviewNavigationTarget !== "function"',
@@ -2778,7 +2820,7 @@ describe("overview effect package", () => {
       "readonly property int searchResultOrdinal: searchResultOrdinalForTarget(keyboardSelectionId)",
     );
     expect(scene).toContain(
-      "searchResultCount: root.searchResultCountForDesktop(modelData)",
+      "searchResultCount: root.searchResultCountForDesktop(desktopCardLoader.modelData)",
     );
     expect(
       searchFeedback.match(/summarizeOverviewWindowNavigationTargets/gu),

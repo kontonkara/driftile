@@ -25,14 +25,11 @@ const cardClip = desktopCard.slice(
 );
 
 describe("spatial overview navigation geometry", () => {
-  it("preserves scene clipping for every existing call", () => {
+  it("preserves default clipping while the spatial scene opts into offscreen targets", () => {
     expect(collection).toContain(
       "function collectNavigationTargets(sceneItem, includeOffscreen = false)",
     );
-    expect(scene).toContain("desktopCard.collectNavigationTargets(root)");
-    expect(scene).not.toContain(
-      "desktopCard.collectNavigationTargets(root, true)",
-    );
+    expect(scene).toContain("desktopCard.collectNavigationTargets(root, true)");
 
     for (const clip of [windowClip, cardClip]) {
       expect(clip).toContain("includeOffscreen = false");
