@@ -69,6 +69,8 @@ Rectangle {
     property bool emptyDesktopAboveFirst: false
     property bool keyboardHelpVisible: false
     property string keyboardSelectionId: ""
+    property int keyboardBoundaryNavigationRequestId: 0
+    property bool keyboardBoundaryNavigationPending: false
     property int overviewWheelRemainder: 0
     property real spatialContentY: 0
     property var spatialWindowDragSource: null
@@ -106,6 +108,7 @@ Rectangle {
 
     onKeyboardSelectionIdChanged: root.centerKeyboardSelectionWorkspace()
     onOverviewSpatialLayoutChanged: {
+        cancelKeyboardBoundaryNavigation();
         if (desktopReorderActive) {
             resetDesktopReorder();
         }
@@ -114,7 +117,10 @@ Rectangle {
         }
         resetSpatialViewport();
     }
-    onSearchQueryChanged: Qt.callLater(root.repairKeyboardSelection)
+    onSearchQueryChanged: {
+        cancelKeyboardBoundaryNavigation();
+        Qt.callLater(root.repairKeyboardSelection);
+    }
 
     Keys.onPressed: event => {
         const modifiers = event.modifiers & ~Qt.KeypadModifier;
@@ -162,9 +168,9 @@ Rectangle {
                    || event.key === Qt.Key_Backtab) {
             root.navigateKeyboardSequence("previous");
         } else if (unmodified && event.key === Qt.Key_Home) {
-            root.navigateKeyboardSequence("first");
+            root.navigateKeyboardBoundary("first");
         } else if (unmodified && event.key === Qt.Key_End) {
-            root.navigateKeyboardSequence("last");
+            root.navigateKeyboardBoundary("last");
         } else if (unmodified && event.key === Qt.Key_Delete) {
             root.closeKeyboardSelection();
         } else if (unmodified
@@ -201,6 +207,7 @@ Rectangle {
         ignoreUnknownSignals: true
 
         function onActiveChanged() {
+            root.cancelKeyboardBoundaryNavigation();
             root.keyboardHelpVisible = false;
             if (!root.sceneEffect || root.sceneEffect.active !== true) {
                 root.overviewWheelRemainder = 0;
@@ -1108,9 +1115,21 @@ Rectangle {
             return false;
         }
 
+        const plan = planSpatialWorkspaceCenter(workspaceIndex);
+        const confirmedTarget = navigationTargetForId(collectNavigationTargets(), selectedTargetId);
+        if (!plan || keyboardSelectionId !== selectedTargetId
+                || !confirmedTarget || confirmedTarget.desktopId !== target.desktopId) {
+            return false;
+        }
+
+        spatialContentY = plan.contentY;
+        return true;
+    }
+
+    function planSpatialWorkspaceCenter(workspaceIndex) {
         const runtime = OverviewRuntime.DriftileOverview;
         if (!runtime || typeof runtime.planOverviewSpatialWorkspaceCenter !== "function") {
-            return false;
+            return null;
         }
 
         let plan = null;
@@ -1124,17 +1143,10 @@ Rectangle {
                                                                   workspaceIndex
                                                               });
         } catch (error) {
-            return false;
+            return null;
         }
 
-        const confirmedTarget = navigationTargetForId(collectNavigationTargets(), selectedTargetId);
-        if (!spatialViewportPlanIsValid(plan) || keyboardSelectionId !== selectedTargetId
-                || !confirmedTarget || confirmedTarget.desktopId !== target.desktopId) {
-            return false;
-        }
-
-        spatialContentY = plan.contentY;
-        return true;
+        return spatialViewportPlanIsValid(plan) ? plan : null;
     }
 
     function spatialViewportBackdropContains(point) {
@@ -1520,6 +1532,145 @@ Rectangle {
         }
     }
 
+    function navigateKeyboardBoundary(direction) {
+        if (direction !== "first" && direction !== "last") {
+            return;
+        }
+        if (searchQuery.length > 0) {
+            navigateKeyboardSequence(direction);
+            return;
+        }
+        if (desktopIds.length <= 0 || !spatialLayoutIsValid(overviewSpatialLayout)) {
+            return;
+        }
+
+        const workspaceIndex = direction === "first" ? 0 : desktopIds.length - 1;
+        const plan = planSpatialWorkspaceCenter(workspaceIndex);
+        if (!plan) {
+            return;
+        }
+
+        const requestId = nextKeyboardBoundaryNavigationRequestId();
+        const request = {
+            contentY: plan.contentY,
+            currentDesktop,
+            currentWorkspaceIndex,
+            desktopIds,
+            direction,
+            effect: sceneEffect,
+            layout: overviewSpatialLayout,
+            model: overviewModel,
+            outputId,
+            requestId,
+            screen: targetScreen,
+            workspaceIndex
+        };
+        if (!keyboardBoundaryNavigationContextIsExact(request)) {
+            return;
+        }
+
+        keyboardBoundaryNavigationPending = true;
+        if (!setSpatialContentY(plan.contentY)
+                || !keyboardBoundaryNavigationViewportIsExact(request)) {
+            finishFailedKeyboardBoundaryNavigation(request);
+            return;
+        }
+
+        Qt.callLater(root.completeKeyboardBoundaryNavigation, request);
+    }
+
+    function nextKeyboardBoundaryNavigationRequestId() {
+        const nextRequestId = keyboardBoundaryNavigationRequestId >= 2147483646
+            ? 1 : keyboardBoundaryNavigationRequestId + 1;
+        keyboardBoundaryNavigationRequestId = nextRequestId;
+        return nextRequestId;
+    }
+
+    function cancelKeyboardBoundaryNavigation() {
+        nextKeyboardBoundaryNavigationRequestId();
+        keyboardBoundaryNavigationPending = false;
+    }
+
+    function keyboardBoundaryNavigationContextIsExact(request) {
+        try {
+            if (!request || request.requestId !== keyboardBoundaryNavigationRequestId
+                    || (request.direction !== "first" && request.direction !== "last")
+                    || request.effect !== sceneEffect || !request.effect
+                    || request.effect.active !== true || request.effect.overviewModel !== request.model
+                    || request.model !== overviewModel || request.screen !== targetScreen
+                    || request.outputId !== outputId || request.desktopIds !== desktopIds
+                    || request.layout !== overviewSpatialLayout
+                    || request.currentDesktop !== currentDesktop
+                    || request.currentWorkspaceIndex !== currentWorkspaceIndex
+                    || searchQuery.length > 0 || keyboardHelpVisible || desktopReorderActive
+                    || spatialWindowDragSource !== null || spatialViewportDragHandler.active
+                    || desktopRepeater.count !== desktopIds.length
+                    || !spatialLayoutIsValid(overviewSpatialLayout)
+                    || !Number.isInteger(request.workspaceIndex)
+                    || request.workspaceIndex < 0 || request.workspaceIndex >= desktopIds.length
+                    || request.workspaceIndex !== (request.direction === "first" ? 0 : desktopIds.length - 1)
+                    || !Number.isFinite(request.contentY)) {
+                return false;
+            }
+
+            return true;
+        } catch (error) {
+            return false;
+        }
+    }
+
+    function keyboardBoundaryNavigationViewportIsExact(request) {
+        return keyboardBoundaryNavigationPending
+            && keyboardBoundaryNavigationContextIsExact(request)
+            && spatialContentY === request.contentY
+            && spatialVisibleRangeIsValid(overviewSpatialVisibleRange)
+            && request.workspaceIndex >= overviewSpatialVisibleRange.firstIndex
+            && request.workspaceIndex <= overviewSpatialVisibleRange.lastIndex;
+    }
+
+    function completeKeyboardBoundaryNavigation(request) {
+        if (!keyboardBoundaryNavigationViewportIsExact(request)
+                || !desktopCardAt(request.workspaceIndex)) {
+            finishFailedKeyboardBoundaryNavigation(request);
+            return;
+        }
+
+        const targets = collectNavigationTargets();
+        const target = keyboardBoundaryNavigationTarget(targets, request.direction);
+        if (!keyboardBoundaryNavigationViewportIsExact(request) || !target
+                || navigationTargetForId(targets, target.id) !== target) {
+            finishFailedKeyboardBoundaryNavigation(request);
+            return;
+        }
+
+        keyboardBoundaryNavigationPending = false;
+        keyboardSelectionId = target.id;
+    }
+
+    function finishFailedKeyboardBoundaryNavigation(request) {
+        if (!request || request.requestId !== keyboardBoundaryNavigationRequestId) {
+            return;
+        }
+
+        keyboardBoundaryNavigationPending = false;
+        Qt.callLater(root.repairKeyboardSelection);
+    }
+
+    function keyboardBoundaryNavigationTarget(targets, direction) {
+        let selected = null;
+        for (const target of targets) {
+            if (!target || typeof target.id !== "string" || target.id.length === 0) {
+                continue;
+            }
+            if (!selected || (direction === "first" && navigationTargetPrecedes(target, selected))
+                    || (direction === "last" && navigationTargetPrecedes(selected, target))) {
+                selected = target;
+            }
+        }
+
+        return selected;
+    }
+
     function handleOverviewWheel(event) {
         if (!event) {
             return;
@@ -1789,6 +1940,9 @@ Rectangle {
     }
 
     function repairKeyboardSelection() {
+        if (keyboardBoundaryNavigationPending) {
+            return;
+        }
         repairKeyboardSelectionFrom(collectNavigationTargets());
     }
 

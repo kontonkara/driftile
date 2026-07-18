@@ -2187,6 +2187,10 @@ describe("overview effect package", () => {
       scene.indexOf("function collectNavigationTargets("),
       scene.indexOf("function selectDesktop("),
     );
+    const boundaryNavigation = scene.slice(
+      scene.indexOf("function navigateKeyboardBoundary("),
+      scene.indexOf("function handleOverviewWheel("),
+    );
     const cardTargets = desktopCard.slice(
       desktopCard.indexOf("function collectNavigationTargets("),
       desktopCard.indexOf("function indexOfDesktop("),
@@ -2246,9 +2250,14 @@ describe("overview effect package", () => {
     expect(keyHandler).toContain("event.key === Qt.Key_Backtab");
     expect(keyHandler).toContain("event.key === Qt.Key_Home");
     expect(keyHandler).toContain("event.key === Qt.Key_End");
-    for (const direction of ["next", "previous", "first", "last"]) {
+    for (const direction of ["next", "previous"]) {
       expect(keyHandler).toContain(
         `root.navigateKeyboardSequence("${direction}")`,
+      );
+    }
+    for (const direction of ["first", "last"]) {
+      expect(keyHandler).toContain(
+        `root.navigateKeyboardBoundary("${direction}")`,
       );
     }
     expect(keyHandler).toContain("event.key === Qt.Key_Enter");
@@ -2278,6 +2287,52 @@ describe("overview effect package", () => {
     );
     expect(navigation).toContain(
       "runtime.findOverviewSequentialNavigationTarget(keyboardSelectionId, targets, direction)",
+    );
+    expect(boundaryNavigation).toContain("if (searchQuery.length > 0)");
+    expect(boundaryNavigation).toContain("navigateKeyboardSequence(direction)");
+    expect(boundaryNavigation).toContain(
+      'const workspaceIndex = direction === "first" ? 0 : desktopIds.length - 1',
+    );
+    expect(boundaryNavigation).toContain(
+      "const plan = planSpatialWorkspaceCenter(workspaceIndex)",
+    );
+    expect(boundaryNavigation).toContain("setSpatialContentY(plan.contentY)");
+    expect(boundaryNavigation).toContain(
+      "Qt.callLater(root.completeKeyboardBoundaryNavigation, request)",
+    );
+    expect(boundaryNavigation).toContain(
+      "request.requestId !== keyboardBoundaryNavigationRequestId",
+    );
+    expect(boundaryNavigation).toContain(
+      "request.effect.overviewModel !== request.model",
+    );
+    expect(boundaryNavigation).toContain(
+      "request.layout !== overviewSpatialLayout",
+    );
+    expect(boundaryNavigation).toContain("request.desktopIds !== desktopIds");
+    expect(boundaryNavigation).toContain(
+      "!desktopCardAt(request.workspaceIndex)",
+    );
+    expect(boundaryNavigation).toContain(
+      "keyboardBoundaryNavigationTarget(targets, request.direction)",
+    );
+    expect(boundaryNavigation).toContain(
+      "navigationTargetPrecedes(target, selected)",
+    );
+    expect(boundaryNavigation).toContain(
+      "navigationTargetPrecedes(selected, target)",
+    );
+    const boundaryCompletion = boundaryNavigation.slice(
+      boundaryNavigation.indexOf(
+        "function completeKeyboardBoundaryNavigation(",
+      ),
+      boundaryNavigation.indexOf(
+        "function finishFailedKeyboardBoundaryNavigation(",
+      ),
+    );
+    expect(boundaryCompletion).not.toContain("navigateKeyboardBoundary(");
+    expect(scene).toMatch(
+      /function repairKeyboardSelection\(\) \{\s*if \(keyboardBoundaryNavigationPending\) \{\s*return;/u,
     );
     expect(navigation).toContain(
       "focusWindow(target.candidate, target.windowId, target.desktop, target.desktopId, target.screen)",
@@ -2812,8 +2867,8 @@ describe("overview effect package", () => {
     expect(scene).toContain(
       "readonly property bool searchQueryValid: searchQueryPlan !== null",
     );
-    expect(scene).toContain(
-      "onSearchQueryChanged: Qt.callLater(root.repairKeyboardSelection)",
+    expect(scene).toMatch(
+      /onSearchQueryChanged: \{\s*cancelKeyboardBoundaryNavigation\(\);\s*Qt\.callLater\(root\.repairKeyboardSelection\);\s*\}/u,
     );
     expect(keyHandler).toContain("event.key === Qt.Key_Backspace");
     expect(keyHandler).toContain("root.removeLastSearchCharacter()");
