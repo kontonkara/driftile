@@ -88,13 +88,12 @@ inside the visible column span and hides when the complete label cannot fit or
 its source state is invalid. It accepts no input and changes no window, layout,
 setting, shortcut, persistence, or KWin state.
 
-Inside the optional overview, an unmodified vertical mouse wheel cycles the
-current actionable targets in visual order. Search limits the set to matching
-windows; without a query, non-current desktop gutters also participate.
-High-resolution deltas use bounded accumulation and a bounded step count. The
-search overlay reports the unique window-result count or an explicit no-match
-message as plain text. These interactions change only overview selection and
-perform no KWin, layout, configuration, or persistence write.
+Inside the optional overview, unmodified mouse-wheel steps select adjacent
+workspaces without wrapping or closing the effect. Precise touchpad deltas pan
+the bounded spatial workspace stack directly. A non-empty search keeps wheel
+cycling within matching actionable windows. The search overlay reports the
+unique window-result count or an explicit no-match message as plain text.
+These interactions do not mutate Driftile's layout or persistence.
 
 `F1` opens a modal, bounded keyboard reference inside the overview. `F1` or
 `Escape` closes it before other input is processed, while its pointer button
@@ -131,7 +130,7 @@ without another write.
 | Pointer resize       | Adopt one completed horizontal column resize or vertical stacked-window resize                      | Available |
 | Overview companion   | Filter or activate windows; select or reorder desktops; move windows between desktop cards          | Available |
 | Tabbed columns       | Toggle presentation; select or reorder members with the existing vertical grammar                   | 1.19.0    |
-| Pointer navigation   | Cycle the overview's shared actionable target model with vertical mouse wheel input                 | Available |
+| Pointer navigation   | Pan the spatial Overview and switch workspaces; cycle matching search results with the wheel        | Available |
 
 Adjacent and numbered single-window transfers remain secondary, unbound
 actions. Default desktop and output transfer shortcuts must move the whole

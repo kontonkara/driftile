@@ -9,8 +9,10 @@ and is never replaced or configured by the companion.
 The companion provides:
 
 - pointer and keyboard focus across current and non-current desktop cards;
-- keyboard, wheel, and structured text search across window, desktop, output,
-  application, and state fields;
+- a spatial workspace stack with keyboard, wheel, touchpad, and touch
+  navigation;
+- structured text search across window, desktop, output, application, and
+  state fields;
 - tab and minimized-window selection, restoration, and closure;
 - guarded window transfer and desktop reordering;
 - optional labels, application icons, state badges, close buttons, screen-edge
@@ -48,6 +50,28 @@ the effect; reaching the edge again cannot close an active or loading overview.
 Backdrop color and opacity are configurable through the same effect settings.
 Invalid external edge or color values fall back to no edge and the built-in
 backdrop without changing layout state.
+
+## Spatial workspace view
+
+Each output presents its virtual desktops as a centered vertical stack at the
+configured zoom. The current desktop opens in the center. Keyboard selection
+reveals an off-screen workspace, while touchpad or touchscreen movement pans
+the stack within its finite bounds. Desktop cards outside a small visible
+range are not instantiated; search and keyboard navigation retain their
+geometry without keeping their window previews loaded.
+
+An unmodified mouse-wheel step selects the previous or next desktop without
+closing the Overview and never wraps. High-resolution wheel input accumulates
+before a step. Precise touchpad deltas pan the stack directly and take
+precedence over a discrete step from the same event. During search, discrete
+wheel input retains result cycling; the F1 panel always consumes its own wheel
+input first.
+
+Dragging a window or desktop card into the top or bottom edge zone pans toward
+still-hidden workspaces. Panning stops outside the edge zone and at the first
+or last bound. The source card stays loaded, newly visible drop targets load on
+demand, and release reuses the existing exact transfer or reorder validation.
+No wheel or pan action writes Driftile's authoritative layout.
 
 ## Keyboard navigation
 
@@ -161,15 +185,11 @@ KWin attention request. `minimized` matches an exact minimized member tab or
 placeholder. They work as ordinary terms or through `state:` and combine with
 the rest of the query under the same AND rule.
 
-An unmodified vertical mouse wheel cycles the current actionable targets in
-visual order. An active search limits the cycle to matching windows; otherwise
-non-current desktop gutters also participate. High-resolution deltas accumulate
+With a non-empty search query, an unmodified vertical mouse wheel cycles the
+matching actionable targets in visual order. High-resolution deltas accumulate
 in a bounded remainder, and one event can advance only a bounded number of
-steps. Wheel navigation changes only the selected highlight and performs no
-KWin, layout, or persistent-state write.
-
-The interaction adds no timer, animation, KWin request, layout or persistent
-state, KConfig value, shortcut, schema, or private API.
+steps. Outside search, the same input follows the spatial workspace behavior
+described above.
 
 A left click on empty content in a non-current desktop card uses the same
 guarded desktop-selection path as its number gutter. Visible thumbnails and
