@@ -1403,6 +1403,7 @@ describe("overview effect package", () => {
     expect(spatialLayout).toContain(
       "spatialViewportOverlayContainsPoint(keyboardHelpHint, point)",
     );
+    expect(scene).toMatch(/KeyboardHelpHint\s*\{\s*id: keyboardHelpHint/u);
     expect(spatialLayout).toContain(
       "spatialViewportOverlayContainsPoint(searchOverlay, point)",
     );

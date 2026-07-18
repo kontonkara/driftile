@@ -405,6 +405,8 @@ Rectangle {
     }
 
     KeyboardHelpHint {
+        id: keyboardHelpHint
+
         anchors.horizontalCenter: parent.horizontalCenter
         anchors.top: parent.top
         anchors.topMargin: Math.max(0, (root.outerMargin - height) / 2)
