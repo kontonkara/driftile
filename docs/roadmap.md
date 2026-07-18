@@ -1,12 +1,11 @@
 # Roadmap
 
-Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.74.0 are
+Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.74.1 are
 released. The delivered milestones and release criteria below are a historical
 record. Later direction is not a committed release schedule.
 
-Stable 1.74.0 adds a spatial, pannable Overview workspace stack with bounded
-wheel navigation and preserves complete window motion across overlapping
-workspace effects. Logical persistence remains v4.
+Stable 1.74.1 isolates spatial Overview input during drags and preserves the
+latest eligible close-focus handoff. Logical persistence remains v4.
 
 ## Foundation (delivered)
 
@@ -2551,3 +2550,20 @@ Release criteria (met):
   real application lifecycles, and cleanup with no retained QEMU process.
 - Existing shortcuts and logical persistence v4 remain compatible; no private
   API or KWin fork is introduced.
+
+### 1.74.1 (released)
+
+- Consume wheel input without navigation while viewport, window, or workspace
+  drags own the spatial Overview scene.
+- Clear incomplete discrete wheel steps when a drag starts or search and help
+  change the input mode.
+- Prefer the latest live eligible same-context focus handoff after the active
+  window closes, while retaining the existing bounded fallback order.
+
+Release criteria (met):
+
+- Wheel, drag, search, and help paths cannot reuse state owned by another input
+  mode or race drag-owned viewport geometry.
+- Close-focus recovery never restores an ineligible or cross-context target.
+- Existing shortcuts, settings, and logical persistence v4 remain compatible;
+  no private API or KWin fork is introduced.

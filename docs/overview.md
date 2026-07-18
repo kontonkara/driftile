@@ -67,6 +67,10 @@ precedence over a discrete step from the same event. During search, discrete
 wheel input retains result cycling; the F1 panel always consumes its own wheel
 input first.
 
+Wheel input is consumed without navigation while a workspace, window, or
+viewport drag owns the scene. Partial discrete steps are cleared when a drag
+starts or when search or help changes the meaning of the next wheel event.
+
 Dragging a window or desktop card into the top or bottom edge zone pans toward
 still-hidden workspaces. Panning stops outside the edge zone and at the first
 or last bound. The source card stays loaded, newly visible drop targets load on
@@ -188,8 +192,9 @@ the rest of the query under the same AND rule.
 With a non-empty search query, an unmodified vertical mouse wheel cycles the
 matching actionable targets in visual order. High-resolution deltas accumulate
 in a bounded remainder, and one event can advance only a bounded number of
-steps. Outside search, the same input follows the spatial workspace behavior
-described above.
+steps. Entering or leaving search clears an incomplete step instead of carrying
+it into workspace navigation. Outside search, the same input follows the
+spatial workspace behavior described above.
 
 A left click on empty content in a non-current desktop card uses the same
 guarded desktop-selection path as its number gutter. Visible thumbnails and
