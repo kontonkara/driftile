@@ -4228,6 +4228,35 @@ let
             '.data | any(. == $effectId) | tostring'
       }
 
+      kwin_process_id() {
+        local process_id
+        local reply
+        local signature
+        local trailing
+
+        reply=$(busctl --user call \
+          org.freedesktop.DBus \
+          /org/freedesktop/DBus \
+          org.freedesktop.DBus \
+          GetConnectionUnixProcessID \
+          s org.kde.KWin 2>/dev/null) || return 1
+        read -r signature process_id trailing <<< "$reply"
+
+        [[ "$signature" == u \
+          && "$process_id" =~ ^[1-9][0-9]*$ \
+          && -z "$trailing" ]] || return 1
+
+        printf '%s' "$process_id"
+      }
+
+      kwin_process_is_unchanged() {
+        local expected_process_id=$1
+        local process_id
+
+        process_id=$(kwin_process_id) || return 1
+        [[ "$process_id" == "$expected_process_id" ]]
+      }
+
       wait_for_effect_loaded_state() {
         local attempt
         local effect_id=$1
@@ -4829,6 +4858,7 @@ let
         local fixture_checkpoint
         local fixture_sequence
         local journal_cursor
+        local kwin_search_process_id
         local live_refresh_base_title="Driftile VM Overview Live Refresh"
         local live_refresh_pid=""
         local live_refresh_title=""
@@ -5180,17 +5210,48 @@ let
         fi
 
         if ! invoke_shortcut "$overview_shortcut" \
-          || ! wait_for_effect_active_state "$overview_plugin_id" true; then
+          || ! wait_for_effect_active_state "$overview_plugin_id" true \
+          || ! kwin_search_process_id=$(kwin_process_id); then
           overview_checkpoint_failure \
-            "the overview could not reopen for the physical Escape checkpoint"
+            "the overview could not reopen for the physical search checkpoint"
           return 1
         fi
         sleep 0.3
-        if ! request_physical_shortcut overview-escape \
+
+        if ! request_physical_shortcut overview-search-query; then
+          overview_checkpoint_failure \
+            "the physical overview search query was not delivered"
+          return 1
+        fi
+        sleep 0.2
+        if [[ "$(effect_active_state "$overview_plugin_id" 2>/dev/null || true)" != true ]] \
+          || ! kwin_process_is_unchanged "$kwin_search_process_id" \
+          || ! overview_component_errors_after "$journal_cursor"; then
+          overview_checkpoint_failure \
+            "the physical overview search query did not preserve the active effect and KWin process"
+          return 1
+        fi
+
+        if ! request_physical_shortcut overview-search-edit; then
+          overview_checkpoint_failure \
+            "the physical overview search edit was not delivered"
+          return 1
+        fi
+        sleep 0.2
+        if [[ "$(effect_active_state "$overview_plugin_id" 2>/dev/null || true)" != true ]] \
+          || ! kwin_process_is_unchanged "$kwin_search_process_id" \
+          || ! overview_component_errors_after "$journal_cursor"; then
+          overview_checkpoint_failure \
+            "editing the physical overview search query did not preserve the active effect and KWin process"
+          return 1
+        fi
+
+        if ! request_physical_shortcut overview-search-close \
           || ! wait_for_effect_active_state "$overview_plugin_id" false \
+          || ! kwin_process_is_unchanged "$kwin_search_process_id" \
           || ! wait_for_active "$firefox_title"; then
           overview_checkpoint_failure \
-            "physical Escape did not close the reopened Firefox checkpoint"
+            "physical Escape did not clear search and close the reopened Firefox checkpoint"
           return 1
         fi
         after_checkpoint=$(capture_overview_checkpoint "$@") || {
@@ -5202,11 +5263,15 @@ let
           || [[ "$(effect_loaded_state "$overview_plugin_id")" != true ]] \
           || [[ "$(effect_loaded_state "$plasma_overview_effect_id")" != "$plasma_loaded" ]] \
           || [[ "$(effect_active_state "$plasma_overview_effect_id")" != "$plasma_active" ]] \
+          || ! kwin_process_is_unchanged "$kwin_search_process_id" \
           || ! overview_component_errors_after "$journal_cursor"; then
           overview_checkpoint_failure \
-            "physical Escape changed the Firefox checkpoint or the built-in Overview"
+            "physical search input changed the Firefox checkpoint, KWin process, or built-in Overview"
           return 1
         fi
+
+        record_focus_state \
+          "physical overview search input changed a query and closed without restarting KWin"
 
         if ! unload_overview_effect \
           || ! wait_for_shortcut_registration_state "$overview_shortcut" true; then
