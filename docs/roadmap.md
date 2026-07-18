@@ -1,23 +1,24 @@
 # Roadmap
 
-Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.76.0 are
+Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.77.0 are
 released. The delivered milestones and release criteria below are a historical
 record. Later direction is not a committed release schedule.
 
-Stable 1.76.0 preserves the workspace card under the Overview camera across
-live model, zoom, and scene-size changes; adds guarded background mouse
-panning; retains bounded subpixel wheel movement; and keeps an in-flight window
-transition replayable when a workspace effect temporarily owns the screen.
-Settings, shortcuts, and logical persistence v4 remain compatible.
+Stable 1.77.0 widens each Overview workspace into a spatial row, shows
+neighboring logical columns, preserves bounded session-only horizontal
+viewports, and supports precise or discrete horizontal wheel navigation.
+Keyboard navigation reveals off-screen columns without changing authoritative
+layout state. Settings, shortcuts, and logical persistence v4 remain
+compatible.
 
 ## Current direction
 
 The optional Overview remains an intermediate projection over captured layout
-state. Development now widens each workspace into a spatial row and adds
-bounded horizontal wheel control, but the effect still does not share a
-continuous camera or live geometry with the normal scrollable workspace.
-Search and keyboard help do not close that architectural gap. Continuous
-spatial behavior remains the primary direction within public KWin APIs.
+state. It now presents each workspace as a spatial row with bounded horizontal
+wheel control, but it still does not share a continuous camera or live geometry
+with the normal scrollable workspace. Search and keyboard help do not close
+that architectural gap. Continuous spatial behavior remains the primary
+direction within public KWin APIs.
 
 ## Foundation (delivered)
 
@@ -2636,7 +2637,7 @@ Release criteria (met):
 - This is incremental spatial continuity, not completion of the planned
   Overview architecture; no private API or KWin fork is introduced.
 
-### 1.77.0 (in development)
+### 1.77.0 (released)
 
 - Expand each workspace into a wide spatial row while preserving output-scale
   window proportions and showing neighboring logical columns.
@@ -2645,7 +2646,7 @@ Release criteria (met):
 - Pan the row under the pointer with precise horizontal wheel input; use
   discrete horizontal steps to select and reveal neighboring windows.
 
-Exit criteria:
+Release criteria (met):
 
 - Horizontal and vertical wheel state remain isolated, bounded, and read-only.
 - Keyboard navigation can reveal an off-screen column without altering the
