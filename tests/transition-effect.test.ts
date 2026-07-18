@@ -2323,6 +2323,51 @@ describe("transition effect package", () => {
     expect(columnsHarness.cancelledAnimations).toHaveLength(0);
   });
 
+  it("retargets an active column after its target geometry becomes hidden", () => {
+    const leftColumn = createWindow({
+      geometry: { x: 10, y: 30, width: 1000, height: 900 },
+    });
+    const middleColumn = createWindow({
+      geometry: { x: 1024, y: 30, width: 660, height: 900 },
+    });
+    const rightColumn = createWindow({
+      geometry: { x: 1698, y: 30, width: 660, height: 900 },
+    });
+    const harness = createHarness({ window: leftColumn });
+    harness.effects.windowAdded.emit(middleColumn);
+    harness.effects.windowAdded.emit(rightColumn);
+
+    for (const [column, x] of [
+      [leftColumn, -1340],
+      [middleColumn, -326],
+      [rightColumn, 348],
+    ] as const) {
+      changeGeometry(column, {
+        ...column.geometry,
+        x,
+      });
+    }
+
+    leftColumn.visible = false;
+    for (const [column, x] of [
+      [leftColumn, -660],
+      [middleColumn, 354],
+      [rightColumn, 1028],
+    ] as const) {
+      changeGeometry(column, {
+        ...column.geometry,
+        x,
+      });
+    }
+
+    expect(harness.animationRequests).toHaveLength(3);
+    expect(harness.retargetCalls.map(({ animationId }) => animationId)).toEqual(
+      [1, 2, 3, 4],
+    );
+    expect(harness.cancelledAnimations).toHaveLength(0);
+    expect(harness.activeAnimationIds()).toEqual([1, 2, 3, 4]);
+  });
+
   it("retires completed animation state before the next geometry change", () => {
     const harness = createHarness();
     changeGeometry(harness.window, {

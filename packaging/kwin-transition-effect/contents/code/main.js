@@ -410,8 +410,7 @@ class DriftileTransitionsEffect {
   isTransitionPresentable(window) {
     return (
       this.isDeferredTransitionPresentable(window) ||
-      (this.continuityLeasedWindows.has(window) &&
-        this.hasActiveWindowAnimation(window) &&
+      (this.hasActiveWindowAnimation(window) &&
         this.isWindowInCurrentVisibilityContext(window))
     );
   }
