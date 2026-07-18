@@ -224,6 +224,7 @@ import {
   layoutPersistenceWindowDescriptor,
 } from "./platform/kwin/persistence-descriptors";
 import {
+  hasAutomaticFloatingRole,
   normalizeWindow,
   WindowObserver,
   type ObservedWindowChangeCause,
@@ -29618,12 +29619,7 @@ export class RuntimeController {
   }
 
   private automaticallyFloats(source: KWinWindow): boolean {
-    if (
-      source.dialog ||
-      source.modal ||
-      source.transient ||
-      Boolean(source.transientFor)
-    ) {
+    if (hasAutomaticFloatingRole(source)) {
       return true;
     }
 

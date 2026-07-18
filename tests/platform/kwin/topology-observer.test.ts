@@ -134,6 +134,7 @@ function createWindow(
     tile: null,
     transient: false,
     transientFor: null,
+    utility: false,
     ...overrides,
     hiddenChanged,
   };

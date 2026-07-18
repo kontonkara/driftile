@@ -92,6 +92,8 @@ function createWindow(overrides: Partial<KWinWindow> = {}): KWinWindow {
     transient: false,
     transientChanged: new Signal<[]>(),
     transientFor: null,
+    utility: false,
+    windowRoleChanged: new Signal<[]>(),
     ...overrides,
   };
 }
@@ -182,13 +184,36 @@ describe("normalizeWindow", () => {
     ).toBe("other");
   });
 
+  it.each([
+    {
+      label: "utility",
+      overrides: { normalWindow: false, utility: true },
+    },
+    {
+      label: "picture-in-picture role",
+      overrides: {
+        normalWindow: false,
+        windowRole: "Toolkit:Picture-In_Picture",
+      },
+    },
+  ])("keeps a non-normal $label observable", ({ overrides }) => {
+    expect(normalizeWindow(createWindow(overrides))?.kind).toBe("other");
+  });
+
   it("ignores special windows", () => {
     expect(normalizeWindow(createWindow({ specialWindow: true }))).toBeNull();
   });
 
   it("ignores windows shown on every desktop", () => {
     expect(
-      normalizeWindow(createWindow({ desktops: [], onAllDesktops: true })),
+      normalizeWindow(
+        createWindow({
+          desktops: [],
+          normalWindow: false,
+          onAllDesktops: true,
+          windowRole: "PictureInPicture",
+        }),
+      ),
     ).toBeNull();
   });
 });
@@ -440,6 +465,7 @@ describe("WindowObserver", () => {
     const transientChanged = source.transientChanged as Signal<[]>;
     const modalChanged = source.modalChanged as Signal<[]>;
     const desktopFileNameChanged = source.desktopFileNameChanged as Signal<[]>;
+    const windowRoleChanged = source.windowRoleChanged as Signal<[]>;
     const changed: string[] = [];
     const observer = new WindowObserver(createWorkspace([source]), {
       changed: (windowId, cause) => changed.push(`${windowId}:${cause}`),
@@ -466,9 +492,15 @@ describe("WindowObserver", () => {
       value: "org.example.Reclassified",
     });
     desktopFileNameChanged.emit();
+    Object.defineProperty(source, "windowRole", {
+      configurable: true,
+      value: "PictureInPicture",
+    });
+    windowRoleChanged.emit();
 
     expect(changed).toEqual([
       "window-1:constraints",
+      "window-1:classification",
       "window-1:classification",
       "window-1:classification",
       "window-1:classification",

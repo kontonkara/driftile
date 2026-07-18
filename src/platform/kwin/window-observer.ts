@@ -76,6 +76,7 @@ interface WindowEntry {
 
 const INVALID_CONSTRAINT_FINGERPRINT = "invalid";
 const CONSTRAINT_EPSILON = 1e-6;
+const PICTURE_IN_PICTURE_WINDOW_ROLE = "pictureinpicture";
 
 export class WindowObserver {
   private readonly events: WindowObserverEvents;
@@ -451,6 +452,7 @@ export class WindowObserver {
     window.requestedTileChanged?.connect(entry.handleRequestedTileChanged);
     window.tileChanged?.connect(entry.handleTileChanged);
     window.transientChanged?.connect(entry.handleClassificationChanged);
+    window.windowRoleChanged?.connect(entry.handleClassificationChanged);
     this.events.tracked?.(id);
     window.decorationChanged?.connect(entry.handleDecorationChanged);
     window.decorationPolicyChanged?.connect(
@@ -587,10 +589,51 @@ function isTrackableWindow(window: KWinWindow): boolean {
   );
 }
 
-function hasAutomaticFloatingRole(window: KWinWindow): boolean {
-  return Boolean(
-    window.dialog || window.modal || window.transient || window.transientFor,
-  );
+export function hasAutomaticFloatingRole(window: KWinWindow): boolean {
+  try {
+    return Boolean(
+      window.dialog ||
+      window.modal ||
+      window.transient ||
+      window.transientFor ||
+      window.utility ||
+      isPictureInPictureWindowRole(window.windowRole),
+    );
+  } catch {
+    return false;
+  }
+}
+
+function isPictureInPictureWindowRole(value: unknown): boolean {
+  if (typeof value !== "string") {
+    return false;
+  }
+
+  const roleStart = value.lastIndexOf(":") + 1;
+  let tokenIndex = 0;
+
+  for (let index = roleStart; index < value.length; index += 1) {
+    let code = value.charCodeAt(index);
+
+    if (code === 32 || code === 45 || code === 95) {
+      continue;
+    }
+
+    if (code >= 65 && code <= 90) {
+      code += 32;
+    }
+
+    if (
+      tokenIndex >= PICTURE_IN_PICTURE_WINDOW_ROLE.length ||
+      code !== PICTURE_IN_PICTURE_WINDOW_ROLE.charCodeAt(tokenIndex)
+    ) {
+      return false;
+    }
+
+    tokenIndex += 1;
+  }
+
+  return tokenIndex === PICTURE_IN_PICTURE_WINDOW_ROLE.length;
 }
 
 function windowId(window: KWinWindow): string {
@@ -637,6 +680,7 @@ function disconnectWindowSignals(entry: WindowEntry): void {
   );
   entry.source.tileChanged?.disconnect(entry.handleTileChanged);
   entry.source.transientChanged?.disconnect(entry.handleClassificationChanged);
+  entry.source.windowRoleChanged?.disconnect(entry.handleClassificationChanged);
 }
 
 function constraintFingerprint(window: KWinWindow): string {

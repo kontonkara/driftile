@@ -293,6 +293,7 @@ function createTrackedWindow(
     transient: false,
     transientChanged,
     transientFor: null,
+    utility: false,
     ...overrides,
   };
   frameGeometry = window.frameGeometry;
@@ -12467,7 +12468,9 @@ describe("RuntimeController", () => {
   it("leaves automatic-floating window classes exclusively to KWin", () => {
     const output = createOutput("DP-1", 0);
     const desktop = { id: "desktop-1" };
-    const regular = createTrackedWindow("regular", output, desktop);
+    const regular = createTrackedWindow("regular", output, desktop, {
+      windowRole: "main",
+    });
     const transientParent = createTrackedWindow("parent", output, desktop);
     const dialog = createTrackedWindow("dialog", output, desktop, {
       dialog: true,
@@ -12494,6 +12497,18 @@ describe("RuntimeController", () => {
       maxSize: { height: 180, width: 280 },
       minSize: { height: 180, width: 280 },
     });
+    const utility = createTrackedWindow("utility", output, desktop, {
+      normalWindow: false,
+      utility: true,
+    });
+    const pictureInPicture = createTrackedWindow(
+      "picture-in-picture",
+      output,
+      desktop,
+      {
+        windowRole: "Toolkit:PictureInPicture",
+      },
+    );
     const fixture = createWorkspace(
       output,
       desktop,
@@ -12507,6 +12522,8 @@ describe("RuntimeController", () => {
         transientFor.window,
         modal.window,
         nonResizeable.window,
+        utility.window,
+        pictureInPicture.window,
         fixed.window,
       ],
     );
@@ -12522,6 +12539,8 @@ describe("RuntimeController", () => {
       modal,
       nonResizeable,
       fixed,
+      utility,
+      pictureInPicture,
     ];
     const originalFrames = automatic.map(({ window }) => ({
       ...window.frameGeometry,
@@ -12530,7 +12549,7 @@ describe("RuntimeController", () => {
     expect(controller.start()).toBe(true);
     expect(controller.managedCount).toBe(2);
     expect(controller.floatingCount).toBe(0);
-    expect(controller.automaticFloatingCount).toBe(6);
+    expect(controller.automaticFloatingCount).toBe(8);
     expect(automatic.map(({ writeCount }) => writeCount)).toEqual(
       automatic.map(() => 0),
     );
@@ -12589,6 +12608,34 @@ describe("RuntimeController", () => {
     expect(automatic.map(({ writeCount }) => writeCount)).toEqual(
       automatic.map(() => 0),
     );
+
+    fixture.workspace.activeWindow = pictureInPicture.window;
+    expect(controller.toggleFloating()).toBe(false);
+    const movedFrame = {
+      ...pictureInPicture.window.frameGeometry,
+      x: 540,
+      y: 420,
+    };
+    Object.defineProperty(pictureInPicture.window, "move", {
+      configurable: true,
+      value: true,
+    });
+    pictureInPicture.moveResizedChanged.emit();
+    pictureInPicture.interactiveMoveResizeStarted.emit();
+    pictureInPicture.setFrameGeometry(movedFrame);
+    fixture.setCursorPosition(700, 510);
+    Object.defineProperty(pictureInPicture.window, "move", {
+      configurable: true,
+      value: false,
+    });
+    pictureInPicture.moveResizedChanged.emit();
+    pictureInPicture.interactiveMoveResizeFinished.emit();
+
+    expect(controller.managedCount).toBe(2);
+    expect(controller.floatingCount).toBe(0);
+    expect(controller.automaticFloatingCount).toBe(8);
+    expect(pictureInPicture.window.frameGeometry).toEqual(movedFrame);
+    expect(pictureInPicture.writeCount).toBe(0);
   });
 
   it("keeps matching applications outside layout ownership and persistence", () => {

@@ -73,6 +73,7 @@ function createWindow(overrides: Partial<KWinWindow> = {}): TestHintedWindow {
     tile: null,
     transient: false,
     transientFor: null,
+    utility: false,
     ...overrides,
   };
 }

@@ -96,7 +96,9 @@ export interface KWinWindow {
   readonly transient: boolean;
   readonly transientChanged?: KWinSignal<[]>;
   readonly transientFor: KWinWindow | null;
+  readonly utility: boolean;
   readonly windowRole?: string;
+  readonly windowRoleChanged?: KWinSignal<[]>;
 }
 
 export interface KWinWorkspace {
