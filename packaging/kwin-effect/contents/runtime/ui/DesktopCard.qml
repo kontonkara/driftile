@@ -23,8 +23,8 @@ Rectangle {
     required property bool showWindowCloseButtons
     required property bool showWindowLabels
     required property bool showWindowStateBadges
+    required property real previewViewportOffset
     property string keyboardSelectionId: ""
-    property real previewViewportOffset: Number.NaN
 
     signal desktopTapped(var candidate, string expectedDesktopId, var expectedScreen)
     signal desktopReorderCanceled(string expectedDesktopId)
@@ -65,8 +65,7 @@ Rectangle {
                                                                    contentHeight)
     readonly property real viewportOriginX: finiteNumber((contentWidth - projectedViewportWidth) / 2, 0)
     readonly property real viewportOriginY: finiteNumber((contentHeight - projectedViewportHeight) / 2, 0)
-    readonly property real logicalViewportOffset: Number.isFinite(previewViewportOffset)
-        ? previewViewportOffset : finiteNumber(context ? Number(context.viewportOffset) : 0, 0)
+    readonly property real logicalViewportOffset: finiteNumber(previewViewportOffset, 0)
     readonly property var columnFrames: buildColumnFrames()
     readonly property var tiledPresentations: buildTiledPresentations()
     readonly property var floatingWindowIds: buildFloatingWindowIds()

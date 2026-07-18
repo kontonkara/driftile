@@ -69,6 +69,7 @@ Rectangle {
     property bool emptyDesktopAboveFirst: false
     property bool keyboardHelpVisible: false
     property string keyboardSelectionId: ""
+    property var keyboardSelectionViewportTarget: null
     property int keyboardBoundaryNavigationRequestId: 0
     property bool keyboardBoundaryNavigationPending: false
     property real overviewHorizontalWheelPixelRemainder: 0
@@ -115,8 +116,9 @@ Rectangle {
     property int desktopReorderSourceIndex: -1
 
     onKeyboardSelectionIdChanged: {
-        root.centerKeyboardSelectionWorkspace();
-        root.revealKeyboardSelectionHorizontally();
+        const target = keyboardSelectionViewportTarget;
+        keyboardSelectionViewportTarget = null;
+        root.synchronizeKeyboardSelectionViewport(target);
     }
     onKeyboardHelpVisibleChanged: root.resetOverviewWheelState()
     onCurrentDesktopChanged: root.refreshOverviewSpatialSession(false)
@@ -942,6 +944,7 @@ Rectangle {
     }
 
     function resetOverviewSession() {
+        keyboardSelectionViewportTarget = null;
         keyboardSelectionId = "";
         keyboardHelpVisible = false;
         searchQuery = "";
@@ -1121,29 +1124,56 @@ Rectangle {
 
         const sourceWidth = Number(targetScreen.geometry.width);
         const context = contextFor(expectedDesktopId);
-        const base = context ? Number(context.viewportOffset) : Number.NaN;
         if (!Number.isFinite(sourceWidth) || sourceWidth <= 0 || sourceWidth > Number.MAX_SAFE_INTEGER || !context
                 || context.desktopId !== expectedDesktopId || context.outputId !== outputId
                 || !context.columns || !Number.isInteger(context.columns.length)
-                || context.columns.length > 512 || !Number.isFinite(base)
-                || Math.abs(base) > Number.MAX_SAFE_INTEGER) {
+                || context.columns.length > 512) {
+            return null;
+        }
+
+        if (context.columns.length === 0) {
+            return {
+                base: 0,
+                maximum: 0,
+                minimum: 0,
+                sourceWidth
+            };
+        }
+
+        const activeColumnIndex = Number(context.activeColumnIndex);
+        if (!Number.isInteger(activeColumnIndex) || activeColumnIndex < 0
+                || activeColumnIndex >= context.columns.length) {
             return null;
         }
 
         let stripWidth = 0;
-        for (const column of context.columns) {
+        let activeColumnStart = 0;
+        let activeColumnWidth = 0;
+        for (let columnIndex = 0; columnIndex < context.columns.length; columnIndex += 1) {
+            const column = context.columns[columnIndex];
             const width = column ? column.width : null;
             if (!width || !Number.isFinite(width.value) || width.value <= 0
                     || (width.kind !== "fixed" && width.kind !== "proportion")) {
                 return null;
             }
-            stripWidth += width.kind === "fixed" ? width.value : width.value * sourceWidth;
+
+            const resolvedWidth = width.kind === "fixed" ? width.value : width.value * sourceWidth;
+            if (!Number.isFinite(resolvedWidth) || resolvedWidth <= 0
+                    || resolvedWidth > Number.MAX_SAFE_INTEGER) {
+                return null;
+            }
+            if (columnIndex === activeColumnIndex) {
+                activeColumnStart = stripWidth;
+                activeColumnWidth = resolvedWidth;
+            }
+            stripWidth += resolvedWidth;
             if (!Number.isFinite(stripWidth) || stripWidth > Number.MAX_SAFE_INTEGER) {
                 return null;
             }
         }
 
         if (stripWidth <= sourceWidth) {
+            const base = (stripWidth - sourceWidth) / 2;
             return {
                 base,
                 maximum: base,
@@ -1152,10 +1182,14 @@ Rectangle {
             };
         }
 
+        const maximum = stripWidth - sourceWidth;
+        const base = Math.min(maximum,
+                              Math.max(0, activeColumnStart + activeColumnWidth / 2 - sourceWidth / 2));
+
         return {
             base,
-            maximum: Math.max(base, stripWidth - sourceWidth),
-            minimum: Math.min(base, 0),
+            maximum,
+            minimum: 0,
             sourceWidth
         };
     }
@@ -1194,6 +1228,9 @@ Rectangle {
         }
 
         const normalizedOffset = Object.is(offset, -0) ? 0 : offset;
+        if (spatialHorizontalViewportOffsets[index] === normalizedOffset) {
+            return true;
+        }
         spatialHorizontalViewportOffsets[index] = normalizedOffset;
         advanceSpatialHorizontalViewportRevision();
         return spatialHorizontalViewportOffsets[index] === normalizedOffset;
@@ -1380,31 +1417,50 @@ Rectangle {
             && Math.abs(delta) <= maximumDistance + tolerance;
     }
 
-    function centerKeyboardSelectionWorkspace() {
+    function setKeyboardSelectionTarget(target) {
+        if (!target || typeof target.id !== "string" || target.id.length === 0) {
+            return false;
+        }
+
+        if (keyboardSelectionId === target.id) {
+            keyboardSelectionViewportTarget = null;
+            return synchronizeKeyboardSelectionViewport(target);
+        }
+
+        keyboardSelectionViewportTarget = target;
+        keyboardSelectionId = target.id;
+        keyboardSelectionViewportTarget = null;
+        return keyboardSelectionId === target.id;
+    }
+
+    function synchronizeKeyboardSelectionViewport(preferredTarget) {
         const selectedTargetId = keyboardSelectionId;
         if (selectedTargetId.length === 0) {
             return false;
         }
 
-        const target = navigationTargetForId(collectNavigationTargets(), selectedTargetId);
-        if (!target || typeof target.desktopId !== "string" || target.desktopId.length === 0) {
+        let target = preferredTarget;
+        if (!target || target.id !== selectedTargetId) {
+            target = navigationTargetForId(collectNavigationTargets(), selectedTargetId);
+        }
+        if (!target || target.id !== selectedTargetId || typeof target.desktopId !== "string"
+                || target.desktopId.length === 0) {
             return false;
         }
 
         const workspaceIndex = desktopIds.indexOf(target.desktopId);
-        if (workspaceIndex < 0) {
+        if (workspaceIndex < 0 || desktopIds[workspaceIndex] !== target.desktopId) {
             return false;
         }
 
         const plan = planSpatialWorkspaceCenter(workspaceIndex);
-        const confirmedTarget = navigationTargetForId(collectNavigationTargets(), selectedTargetId);
-        if (!plan || keyboardSelectionId !== selectedTargetId
-                || !confirmedTarget || confirmedTarget.desktopId !== target.desktopId) {
+        if (!plan || keyboardSelectionId !== selectedTargetId) {
             return false;
         }
 
         spatialContentY = plan.contentY;
-        return true;
+        return target.kind !== "window"
+            || revealHorizontalNavigationTarget(workspaceIndex, target.desktopId, target);
     }
 
     function planSpatialWorkspaceCenter(workspaceIndex) {
@@ -1764,11 +1820,14 @@ Rectangle {
 
     function navigateKeyboardSelection(direction) {
         let targets = collectNavigationTargets();
+        const previousSelectionId = keyboardSelectionId;
         repairKeyboardSelectionFrom(targets);
         if (keyboardSelectionId.length === 0) {
             return;
         }
-        targets = collectNavigationTargets();
+        if (keyboardSelectionId !== previousSelectionId) {
+            targets = collectNavigationTargets();
+        }
         if (!navigationTargetForId(targets, keyboardSelectionId)) {
             return;
         }
@@ -1780,8 +1839,9 @@ Rectangle {
 
         try {
             const targetId = runtime.findOverviewNavigationTarget(keyboardSelectionId, targets, direction);
-            if (typeof targetId === "string" && navigationTargetForId(targets, targetId)) {
-                keyboardSelectionId = targetId;
+            const target = typeof targetId === "string" ? navigationTargetForId(targets, targetId) : null;
+            if (target) {
+                setKeyboardSelectionTarget(target);
             }
         } catch (error) {
             return;
@@ -1790,11 +1850,14 @@ Rectangle {
 
     function navigateKeyboardSequence(direction) {
         let targets = collectNavigationTargets();
+        const previousSelectionId = keyboardSelectionId;
         repairKeyboardSelectionFrom(targets);
         if (keyboardSelectionId.length === 0) {
             return;
         }
-        targets = collectNavigationTargets();
+        if (keyboardSelectionId !== previousSelectionId) {
+            targets = collectNavigationTargets();
+        }
         if (!navigationTargetForId(targets, keyboardSelectionId)) {
             return;
         }
@@ -1806,8 +1869,9 @@ Rectangle {
 
         try {
             const targetId = runtime.findOverviewSequentialNavigationTarget(keyboardSelectionId, targets, direction);
-            if (typeof targetId === "string" && navigationTargetForId(targets, targetId)) {
-                keyboardSelectionId = targetId;
+            const target = typeof targetId === "string" ? navigationTargetForId(targets, targetId) : null;
+            if (target) {
+                setKeyboardSelectionTarget(target);
             }
         } catch (error) {
             return;
@@ -1926,7 +1990,7 @@ Rectangle {
         }
 
         keyboardBoundaryNavigationPending = false;
-        keyboardSelectionId = target.id;
+        setKeyboardSelectionTarget(target);
     }
 
     function finishFailedKeyboardBoundaryNavigation(request) {
@@ -2243,23 +2307,8 @@ Rectangle {
         }
 
         const selectionChanged = keyboardSelectionId !== selected.id;
-        keyboardSelectionId = selected.id;
-        return selectionChanged || revealHorizontalNavigationTarget(workspaceIndex, expectedDesktopId, selected);
-    }
-
-    function revealKeyboardSelectionHorizontally() {
-        if (keyboardSelectionId.length === 0 || !sceneEffect || sceneEffect.active !== true) {
-            return false;
-        }
-
-        const targets = collectNavigationTargets();
-        const target = navigationTargetForId(targets, keyboardSelectionId);
-        if (!target || typeof target.desktopId !== "string") {
-            return false;
-        }
-        const workspaceIndex = desktopIds.indexOf(target.desktopId);
-        return workspaceIndex >= 0
-            && revealHorizontalNavigationTarget(workspaceIndex, target.desktopId, target);
+        const synchronized = setKeyboardSelectionTarget(selected);
+        return selectionChanged || synchronized;
     }
 
     function horizontalBoundaryNavigationTarget(targets, boundary) {
@@ -2625,7 +2674,11 @@ Rectangle {
         }
 
         const preferred = preferredInitialNavigationTarget(targets);
-        keyboardSelectionId = preferred ? preferred.id : "";
+        if (preferred) {
+            setKeyboardSelectionTarget(preferred);
+        } else {
+            keyboardSelectionId = "";
+        }
     }
 
     function searchSummaryIsValid(summary, targetCount) {

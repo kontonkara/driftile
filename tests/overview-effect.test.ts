@@ -1348,7 +1348,7 @@ describe("overview effect package", () => {
     );
     const spatialEdgePan = scene.slice(
       scene.indexOf("function beginWindowSpatialEdgePan("),
-      scene.indexOf("function centerKeyboardSelectionWorkspace("),
+      scene.indexOf("function setKeyboardSelectionTarget("),
     );
     const staleClose = scene.slice(
       scene.indexOf("function closeStaleOverview("),
@@ -1489,10 +1489,10 @@ describe("overview effect package", () => {
     );
 
     expect(scene).toMatch(
-      /onKeyboardSelectionIdChanged: \{\s*root\.centerKeyboardSelectionWorkspace\(\);\s*root\.revealKeyboardSelectionHorizontally\(\);\s*\}/u,
+      /onKeyboardSelectionIdChanged: \{[\s\S]*const target = keyboardSelectionViewportTarget;[\s\S]*keyboardSelectionViewportTarget = null;[\s\S]*root\.synchronizeKeyboardSelectionViewport\(target\);/u,
     );
     expect(spatialLayout).toContain(
-      "navigationTargetForId(collectNavigationTargets(), selectedTargetId)",
+      "target = navigationTargetForId(collectNavigationTargets(), selectedTargetId)",
     );
     expect(spatialLayout).toContain(
       "const workspaceIndex = desktopIds.indexOf(target.desktopId)",
@@ -1501,7 +1501,10 @@ describe("overview effect package", () => {
       /runtime\.planOverviewSpatialWorkspaceCenter\(\{[\s\S]*sceneHeight: height,[\s\S]*contentHeight: overviewSpatialLayout\.contentHeight,[\s\S]*cardHeight,[\s\S]*gap: cardGap,[\s\S]*workspaceCount: desktopIds\.length,[\s\S]*workspaceIndex/u,
     );
     expect(spatialLayout).toContain(
-      "confirmedTarget.desktopId !== target.desktopId",
+      "!plan || keyboardSelectionId !== selectedTargetId",
+    );
+    expect(spatialLayout).toMatch(
+      /function setKeyboardSelectionTarget[\s\S]*keyboardSelectionViewportTarget = target;[\s\S]*keyboardSelectionId = target\.id;/u,
     );
 
     expect(scene).toContain("clip: true");
@@ -2777,10 +2780,16 @@ describe("overview effect package", () => {
       /function spatialHorizontalViewportBounds[\s\S]*context\.columns\.length > 512[\s\S]*stripWidth > Number\.MAX_SAFE_INTEGER/u,
     );
     expect(scene).toMatch(
+      /function spatialHorizontalViewportBounds[\s\S]*activeColumnStart \+ activeColumnWidth \/ 2 - sourceWidth \/ 2/u,
+    );
+    expect(scene).not.toMatch(
+      /function spatialHorizontalViewportBounds[\s\S]{0,2500}context\.viewportOffset/u,
+    );
+    expect(scene).toMatch(
       /previewViewportOffset: root\.spatialHorizontalViewportOffsetAt\([\s\S]*desktopCardLoader\.index, desktopCardLoader\.modelData,[\s\S]*root\.spatialHorizontalViewportRevision\)/u,
     );
     expect(scene).toMatch(
-      /function setSpatialHorizontalViewportOffsetForBounds[\s\S]*spatialHorizontalViewportOffsets\[index\] = normalizedOffset;\s*advanceSpatialHorizontalViewportRevision\(\);/u,
+      /function setSpatialHorizontalViewportOffsetForBounds[\s\S]*spatialHorizontalViewportOffsets\[index\] === normalizedOffset[\s\S]*return true;[\s\S]*spatialHorizontalViewportOffsets\[index\] = normalizedOffset;\s*advanceSpatialHorizontalViewportRevision\(\);/u,
     );
     expect(wheelNavigation).toMatch(
       /function handleSpatialViewportWheel[\s\S]*setSpatialContentY\(plan\.contentY\)[\s\S]*overviewWheelPixelRemainder = plan\.pixelRemainder;[\s\S]*overviewWheelRemainder = 0;[\s\S]*return true;/u,
@@ -3795,10 +3804,10 @@ describe("overview effect package", () => {
       "readonly property var columnFrames: buildColumnFrames()",
     );
     expect(desktopCard).toContain(
-      "property real previewViewportOffset: Number.NaN",
+      "required property real previewViewportOffset",
     );
-    expect(desktopCard).toMatch(
-      /readonly property real logicalViewportOffset: Number\.isFinite\(previewViewportOffset\)[\s\S]*\? previewViewportOffset/u,
+    expect(desktopCard).toContain(
+      "readonly property real logicalViewportOffset: finiteNumber(previewViewportOffset, 0)",
     );
     expect(presentations).toContain(
       "let columnX = viewportOriginX - logicalViewportOffset * projectionScale",
@@ -3811,6 +3820,7 @@ describe("overview effect package", () => {
     );
     expect(desktopCard).not.toMatch(/horizontalScale|verticalScale/u);
     expect(presentations).not.toContain("context.viewportOffset *");
+    expect(desktopCard).not.toContain("Number(context.viewportOffset)");
     expect(desktopCard).toMatch(
       /function buildColumnFrames\(\) \{[\s\S]*for \(const column of columns\)[\s\S]*frames\.push\(\{[\s\S]*width,[\s\S]*x[\s\S]*x \+= width;/u,
     );
