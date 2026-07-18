@@ -1,24 +1,23 @@
 # Roadmap
 
-Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.77.0 are
+Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.78.0 are
 released. The delivered milestones and release criteria below are a historical
 record. Later direction is not a committed release schedule.
 
-Stable 1.77.0 widens each Overview workspace into a spatial row, shows
-neighboring logical columns, preserves bounded session-only horizontal
-viewports, and supports precise or discrete horizontal wheel navigation.
-Keyboard navigation reveals off-screen columns without changing authoritative
-layout state. Settings, shortcuts, and logical persistence v4 remain
-compatible.
+Stable 1.78.0 derives each Overview row's initial geometry and camera from the
+normal layout solver, preserves inactive row cameras, and accepts `Shift` with
+a vertical wheel for horizontal row control. Firefox picture-in-picture
+windows remain floating during interactive moves. Settings, shortcuts, and
+logical persistence v4 remain compatible.
 
 ## Current direction
 
 The optional Overview remains an intermediate projection over captured layout
-state. It now presents each workspace as a spatial row with bounded horizontal
-wheel control, but it still does not share a continuous camera or live geometry
-with the normal scrollable workspace. Search and keyboard help do not close
-that architectural gap. Continuous spatial behavior remains the primary
-direction within public KWin APIs.
+state. Its initial rows now share the normal solver's gaps, work area, pixel
+grid, and camera placement, but it still does not share a continuous camera or
+live geometry with the normal scrollable workspace. Search and keyboard help
+do not close that architectural gap. Continuous spatial behavior remains the
+primary direction within public KWin APIs.
 
 ## Foundation (delivered)
 
@@ -2653,3 +2652,24 @@ Release criteria (met):
   authoritative layout.
 - The projection remains explicitly intermediate until it shares continuous
   camera and live geometry with the normal workspace.
+
+### 1.78.0 (released)
+
+- Derive Overview rows' initial gaps, work area, output pixel grid, column
+  widths, and camera placement from the normal layout solver.
+- Preserve each inactive workspace row's bounded camera when another row
+  refreshes.
+- Map `Shift` plus a vertical wheel to the existing bounded horizontal row
+  control.
+- Keep picture-in-picture windows on the floating layer during interactive
+  moves.
+
+Release criteria (met):
+
+- Initial Overview geometry agrees with the normal layout without writing
+  authoritative layout state or retaining an unbounded cache.
+- Horizontal wheel paths remain isolated, bounded, and read-only.
+- Picture-in-picture classification uses public KWin window properties and
+  does not rely on window captions.
+- Existing settings, shortcuts, and logical persistence v4 remain compatible;
+  no private API or KWin fork is introduced.
