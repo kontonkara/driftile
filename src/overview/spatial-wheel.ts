@@ -1,3 +1,5 @@
+import { LAYOUT_PERSISTENCE_LIMITS } from "../core/layout-persistence";
+
 export interface OverviewSpatialWheelInput {
   readonly angleDeltaY: number;
   readonly contentHeight: number;
@@ -25,6 +27,18 @@ export interface OverviewSpatialViewportWheelPlan {
 
 export type OverviewSpatialWheelPlan =
   OverviewSpatialViewportWheelPlan | OverviewSpatialWorkspaceWheelPlan;
+
+export interface OverviewSpatialWorkspaceWheelTargetInput {
+  readonly currentIndex: number;
+  readonly direction: OverviewSpatialWheelDirection;
+  readonly steps: number;
+  readonly workspaceCount: number;
+}
+
+export interface OverviewSpatialWorkspaceWheelTargetPlan {
+  readonly appliedSteps: number;
+  readonly targetIndex: number;
+}
 
 const ANGLE_DELTA_PER_STEP = 120;
 const MAXIMUM_STEPS_PER_EVENT = 4;
@@ -104,6 +118,42 @@ export function planOverviewSpatialWheel(
   }
 }
 
+export function planOverviewSpatialWorkspaceWheelTarget(
+  input: unknown,
+): OverviewSpatialWorkspaceWheelTargetPlan | null {
+  try {
+    if (!isRecord(input)) {
+      return null;
+    }
+
+    const currentIndex = input["currentIndex"];
+    const direction = input["direction"];
+    const steps = input["steps"];
+    const workspaceCount = input["workspaceCount"];
+
+    if (
+      !isWorkspaceCount(workspaceCount) ||
+      !isWorkspaceIndex(currentIndex, workspaceCount) ||
+      !isWheelDirection(direction) ||
+      !isStepCount(steps)
+    ) {
+      return null;
+    }
+
+    const targetIndex =
+      direction === "previous"
+        ? Math.max(0, currentIndex - steps)
+        : Math.min(workspaceCount - 1, currentIndex + steps);
+
+    return Object.freeze({
+      appliedSteps: Math.abs(targetIndex - currentIndex),
+      targetIndex,
+    });
+  } catch {
+    return null;
+  }
+}
+
 function moveViewport(
   contentY: number,
   maximumContentY: number,
@@ -158,6 +208,42 @@ function isRemainder(value: unknown): value is number {
     typeof value === "number" &&
     Number.isSafeInteger(value) &&
     Math.abs(value) < ANGLE_DELTA_PER_STEP
+  );
+}
+
+function isWorkspaceCount(value: unknown): value is number {
+  return (
+    typeof value === "number" &&
+    Number.isSafeInteger(value) &&
+    value >= 1 &&
+    value <= LAYOUT_PERSISTENCE_LIMITS.contexts
+  );
+}
+
+function isWorkspaceIndex(
+  value: unknown,
+  workspaceCount: number,
+): value is number {
+  return (
+    typeof value === "number" &&
+    Number.isSafeInteger(value) &&
+    value >= 0 &&
+    value < workspaceCount
+  );
+}
+
+function isWheelDirection(
+  value: unknown,
+): value is OverviewSpatialWheelDirection {
+  return value === "next" || value === "previous";
+}
+
+function isStepCount(value: unknown): value is number {
+  return (
+    typeof value === "number" &&
+    Number.isSafeInteger(value) &&
+    value >= 0 &&
+    value <= MAXIMUM_STEPS_PER_EVENT
   );
 }
 

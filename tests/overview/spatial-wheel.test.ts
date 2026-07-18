@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { planOverviewSpatialWheel } from "../../src/overview/spatial-wheel";
+import { LAYOUT_PERSISTENCE_LIMITS } from "../../src/core/layout-persistence";
+import {
+  planOverviewSpatialWheel,
+  planOverviewSpatialWorkspaceWheelTarget,
+} from "../../src/overview/spatial-wheel";
 
 const baseInput = Object.freeze({
   angleDeltaY: 0,
@@ -151,5 +155,100 @@ describe("planOverviewSpatialWheel", () => {
     });
 
     expect(planOverviewSpatialWheel(hostile)).toBeNull();
+  });
+});
+
+describe("planOverviewSpatialWorkspaceWheelTarget", () => {
+  it.each([
+    ["previous", 3, 4, 10, 0, 3],
+    ["next", 3, 4, 10, 7, 4],
+    ["previous", 2, 4, 10, 0, 2],
+    ["next", 8, 4, 10, 9, 1],
+    ["next", 5, 0, 10, 5, 0],
+  ] as const)(
+    "moves %s from %i by %i within %i workspaces",
+    (
+      direction,
+      currentIndex,
+      steps,
+      workspaceCount,
+      targetIndex,
+      appliedSteps,
+    ) => {
+      const plan = planOverviewSpatialWorkspaceWheelTarget({
+        currentIndex,
+        direction,
+        steps,
+        workspaceCount,
+      });
+
+      expect(plan).toEqual({ appliedSteps, targetIndex });
+      expect(Object.isFrozen(plan)).toBe(true);
+    },
+  );
+
+  it("stays at the first and last workspace without wrapping", () => {
+    expect(
+      planOverviewSpatialWorkspaceWheelTarget({
+        currentIndex: 0,
+        direction: "previous",
+        steps: 4,
+        workspaceCount: 5,
+      }),
+    ).toEqual({ appliedSteps: 0, targetIndex: 0 });
+    expect(
+      planOverviewSpatialWorkspaceWheelTarget({
+        currentIndex: 4,
+        direction: "next",
+        steps: 4,
+        workspaceCount: 5,
+      }),
+    ).toEqual({ appliedSteps: 0, targetIndex: 4 });
+  });
+
+  it("accepts the bounded maximum workspace count in constant work", () => {
+    const workspaceCount = LAYOUT_PERSISTENCE_LIMITS.contexts;
+
+    expect(
+      planOverviewSpatialWorkspaceWheelTarget({
+        currentIndex: workspaceCount - 2,
+        direction: "next",
+        steps: 4,
+        workspaceCount,
+      }),
+    ).toEqual({ appliedSteps: 1, targetIndex: workspaceCount - 1 });
+  });
+
+  it.each([
+    null,
+    [],
+    {},
+    { currentIndex: 0, direction: "next", steps: 1, workspaceCount: 0 },
+    {
+      currentIndex: 0,
+      direction: "next",
+      steps: 1,
+      workspaceCount: LAYOUT_PERSISTENCE_LIMITS.contexts + 1,
+    },
+    { currentIndex: -1, direction: "next", steps: 1, workspaceCount: 5 },
+    { currentIndex: 5, direction: "next", steps: 1, workspaceCount: 5 },
+    { currentIndex: 0.5, direction: "next", steps: 1, workspaceCount: 5 },
+    { currentIndex: 0, direction: null, steps: 1, workspaceCount: 5 },
+    { currentIndex: 0, direction: "up", steps: 1, workspaceCount: 5 },
+    { currentIndex: 0, direction: "next", steps: -1, workspaceCount: 5 },
+    { currentIndex: 0, direction: "next", steps: 5, workspaceCount: 5 },
+    { currentIndex: 0, direction: "next", steps: 0.5, workspaceCount: 5 },
+  ])("fails closed for malformed or unbounded input (%o)", (input) => {
+    expect(planOverviewSpatialWorkspaceWheelTarget(input)).toBeNull();
+  });
+
+  it("fails closed for hostile accessors", () => {
+    const hostile = Object.defineProperty({}, "direction", {
+      get(): never {
+        throw new Error("unavailable");
+      },
+    });
+
+    expect(planOverviewSpatialWorkspaceWheelTarget(hostile)).toBeNull();
   });
 });
