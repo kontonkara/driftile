@@ -3,7 +3,7 @@ import { LAYOUT_PERSISTENCE_LIMITS } from "../../src/core/layout-persistence";
 import { planOverviewSpatialLayout } from "../../src/overview/runtime";
 
 describe("planOverviewSpatialLayout", () => {
-  it("plans one centered aspect-preserving workspace card", () => {
+  it("plans one centered workspace row across most of the scene", () => {
     const plan = planOverviewSpatialLayout({
       currentWorkspaceIndex: 0,
       sceneHeight: 900,
@@ -12,15 +12,15 @@ describe("planOverviewSpatialLayout", () => {
       zoom: 0.5,
     });
 
-    expect(plan).toEqual({
+    expect(plan).toMatchObject({
       cardHeight: 450,
-      cardWidth: 800,
-      cardX: 400,
+      cardWidth: 1537,
       contentHeight: 900,
       edgeMargin: 225,
       gap: 48,
       initialContentY: 0,
     });
+    expect(plan?.cardX).toBeCloseTo(31.5);
     expect(Object.isFrozen(plan)).toBe(true);
   });
 
@@ -41,9 +41,9 @@ describe("planOverviewSpatialLayout", () => {
         zoom: 0.3,
       });
 
-      expect(plan?.cardWidth).toBe(480);
+      expect(plan?.cardWidth).toBe(1537);
       expect(plan?.cardHeight).toBe(270);
-      expect(plan?.cardX).toBe(560);
+      expect(plan?.cardX).toBeCloseTo(31.5);
       expect(plan?.edgeMargin).toBe(315);
       expect(plan?.gap).toBeCloseTo(32.4);
       expect(plan?.contentHeight).toBeCloseTo(expectedContentHeight);
@@ -51,6 +51,30 @@ describe("planOverviewSpatialLayout", () => {
         currentWorkspaceIndex * expectedStride,
       );
     }
+  });
+
+  it("bounds horizontal margins on small and large scenes", () => {
+    const small = planOverviewSpatialLayout({
+      currentWorkspaceIndex: 0,
+      sceneHeight: 900,
+      sceneWidth: 80,
+      workspaceCount: 1,
+      zoom: 0.5,
+    });
+    const large = planOverviewSpatialLayout({
+      currentWorkspaceIndex: 0,
+      sceneHeight: 2160,
+      sceneWidth: 3840,
+      workspaceCount: 1,
+      zoom: 0.75,
+    });
+
+    expect(small?.cardX).toBe(16);
+    expect(small?.cardWidth).toBe(48);
+    expect(large?.cardX).toBe(64);
+    expect(large?.cardWidth).toBe(3712);
+    expect(Object.isFrozen(small)).toBe(true);
+    expect(Object.isFrozen(large)).toBe(true);
   });
 
   it("caps the logical card gap without allocating workspace geometry", () => {

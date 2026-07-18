@@ -52,10 +52,19 @@ Rectangle {
     readonly property real contentWidth: Math.max(1, width - contentLeft - 10)
     readonly property real contentHeight: Math.max(1, height - contentTop * 2)
     readonly property bool searchDeemphasized: searchQuery.trim().length > 0 && searchResultCount === 0
-    readonly property real horizontalScale: screen && screen.geometry.width > 0 ? contentWidth / screen.geometry.width :
-                                                                                  1
-    readonly property real verticalScale: screen && screen.geometry.height > 0 ? contentHeight / screen.geometry.height :
-                                                                                 1
+    readonly property real sourceViewportWidth: projectionExtent(screen && screen.geometry
+                                                                 ? screen.geometry.width : 0, contentWidth)
+    readonly property real sourceViewportHeight: projectionExtent(screen && screen.geometry
+                                                                  ? screen.geometry.height : 0, contentHeight)
+    readonly property real projectionScale: finitePositive(contentHeight / sourceViewportHeight,
+                                                           finitePositive(contentWidth / sourceViewportWidth, 1))
+    readonly property real projectedViewportWidth: finitePositive(sourceViewportWidth * projectionScale,
+                                                                  contentWidth)
+    readonly property real projectedViewportHeight: finitePositive(sourceViewportHeight * projectionScale,
+                                                                   contentHeight)
+    readonly property real viewportOriginX: finiteNumber((contentWidth - projectedViewportWidth) / 2, 0)
+    readonly property real viewportOriginY: finiteNumber((contentHeight - projectedViewportHeight) / 2, 0)
+    readonly property real logicalViewportOffset: finiteNumber(context ? Number(context.viewportOffset) : 0, 0)
     readonly property var tiledPresentations: buildTiledPresentations()
     readonly property var floatingWindowIds: buildFloatingWindowIds()
     property int columnDelegateRevision: 0
@@ -204,6 +213,20 @@ Rectangle {
         width: card.contentWidth
         height: card.contentHeight
         clip: true
+
+        Rectangle {
+            x: card.viewportOriginX
+            y: card.viewportOriginY
+            width: card.projectedViewportWidth
+            height: card.projectedViewportHeight
+            visible: width > 0 && height > 0
+            enabled: false
+            color: "transparent"
+            border.width: 1
+            border.color: "#708ba2c4"
+            radius: 3
+            z: 2000
+        }
 
         Repeater {
             id: columnRepeater
@@ -1995,7 +2018,7 @@ Rectangle {
         }
 
         const gap = Math.max(2, Math.min(8, contentWidth * 0.008));
-        let columnX = -context.viewportOffset * horizontalScale;
+        let columnX = viewportOriginX - logicalViewportOffset * projectionScale;
 
         for (let columnIndex = 0; columnIndex < columns.length; columnIndex += 1) {
             const column = columns[columnIndex];
@@ -2060,7 +2083,7 @@ Rectangle {
             };
         }
 
-        let x = -context.viewportOffset * horizontalScale;
+        let x = viewportOriginX - logicalViewportOffset * projectionScale;
         for (let index = 0; index < columnIndex; index += 1) {
             x += widthForColumn(columns[index].width);
         }
@@ -2072,11 +2095,17 @@ Rectangle {
     }
 
     function widthForColumn(width) {
+        if (!width || !Number.isFinite(width.value) || width.value <= 0) {
+            return 1;
+        }
         if (width.kind === "fixed") {
-            return Math.max(1, width.value * horizontalScale);
+            return Math.max(1, width.value * projectionScale);
+        }
+        if (width.kind === "proportion") {
+            return Math.max(1, width.value * projectedViewportWidth);
         }
 
-        return Math.max(1, width.value * contentWidth);
+        return 1;
     }
 
     function layoutBadgeLabel(column) {
@@ -2135,7 +2164,7 @@ Rectangle {
                 continue;
             }
 
-            const target = height.kind === "fixed" ? Math.max(1, height.clientHeight * verticalScale) : presetHeight(
+            const target = height.kind === "fixed" ? Math.max(1, height.clientHeight * projectionScale) : presetHeight(
                                                          height.index, members.length);
             targets.push(target);
             autoWeights.push(0);
@@ -2180,12 +2209,33 @@ Rectangle {
 
         const geometry = window.frameGeometry;
         const screenGeometry = screen.geometry;
+        if (!projectionGeometryIsValid(geometry) || !projectionGeometryIsValid(screenGeometry)) {
+            return null;
+        }
         return {
             floating: true,
-            height: geometry.height * verticalScale,
-            width: geometry.width * horizontalScale,
-            x: (geometry.x - screenGeometry.x) * horizontalScale,
-            y: (geometry.y - screenGeometry.y) * verticalScale
+            height: Math.max(1, geometry.height * projectionScale),
+            width: Math.max(1, geometry.width * projectionScale),
+            x: viewportOriginX + (geometry.x - screenGeometry.x) * projectionScale,
+            y: viewportOriginY + (geometry.y - screenGeometry.y) * projectionScale
         };
+    }
+
+    function projectionExtent(value, fallback) {
+        return finitePositive(Number(value), finitePositive(fallback, 1));
+    }
+
+    function finitePositive(value, fallback) {
+        return Number.isFinite(value) && value > 0 ? value : fallback;
+    }
+
+    function finiteNumber(value, fallback) {
+        return Number.isFinite(value) ? value : fallback;
+    }
+
+    function projectionGeometryIsValid(geometry) {
+        return geometry && Number.isFinite(Number(geometry.x)) && Number.isFinite(Number(geometry.y))
+            && Number.isFinite(Number(geometry.width)) && Number(geometry.width) > 0
+            && Number.isFinite(Number(geometry.height)) && Number(geometry.height) > 0;
     }
 }

@@ -22,6 +22,10 @@ const MINIMUM_ZOOM = 0.2;
 const MAXIMUM_ZOOM = 0.75;
 const CARD_GAP_RATIO = 0.12;
 const MAXIMUM_CARD_GAP = 48;
+const HORIZONTAL_MARGIN_RATIO = 0.035;
+const MINIMUM_HORIZONTAL_MARGIN = 20;
+const MAXIMUM_HORIZONTAL_MARGIN = 64;
+const MAXIMUM_HORIZONTAL_MARGIN_RATIO = 0.2;
 
 export function planOverviewSpatialLayout(
   input: unknown,
@@ -54,9 +58,16 @@ export function planOverviewSpatialLayout(
       return null;
     }
 
-    const cardWidth = sceneWidth * zoom;
     const cardHeight = sceneHeight * zoom;
-    const cardX = (sceneWidth - cardWidth) / 2;
+    const cardX = Math.min(
+      Math.max(
+        Math.min(sceneWidth, sceneHeight) * HORIZONTAL_MARGIN_RATIO,
+        MINIMUM_HORIZONTAL_MARGIN,
+      ),
+      MAXIMUM_HORIZONTAL_MARGIN,
+      sceneWidth * MAXIMUM_HORIZONTAL_MARGIN_RATIO,
+    );
+    const cardWidth = sceneWidth - cardX * 2;
     const edgeMargin = (sceneHeight - cardHeight) / 2;
     const gap = Math.min(cardHeight * CARD_GAP_RATIO, MAXIMUM_CARD_GAP);
     const stride = cardHeight + gap;

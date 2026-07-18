@@ -715,11 +715,10 @@ Rectangle {
             return false;
         }
 
-        const aspectError = Math.abs(plan.cardWidth * height - plan.cardHeight * width);
-        const aspectScale = Math.max(1, plan.cardWidth * height, plan.cardHeight * width);
+        const horizontalError = Math.abs(plan.cardX * 2 + plan.cardWidth - width);
         const currentCardCenter = plan.edgeMargin - plan.initialContentY
             + currentWorkspaceIndex * (plan.cardHeight + plan.gap) + plan.cardHeight / 2;
-        return aspectError <= aspectScale * 0.000001
+        return horizontalError <= Math.max(1, width) * 0.000001
             && Math.abs(currentCardCenter - height / 2) <= Math.max(1, height) * 0.000001;
     }
 

@@ -1380,7 +1380,7 @@ describe("overview effect package", () => {
     );
     expect(spatialLayout).toContain("function legacySpatialLayout()");
     expect(spatialLayout).toContain(
-      "const aspectError = Math.abs(plan.cardWidth * height - plan.cardHeight * width);",
+      "const horizontalError = Math.abs(plan.cardX * 2 + plan.cardWidth - width);",
     );
     expect(scene).toContain(
       "readonly property real cardTop: overviewSpatialLayout.edgeMargin - spatialContentY",
@@ -3708,7 +3708,7 @@ describe("overview effect package", () => {
     );
   });
 
-  it("projects stack heights without mixing pixels and auto weights", () => {
+  it("projects neighboring columns with one spatial scale and bounded stack heights", () => {
     const presentations = desktopCard.slice(
       desktopCard.indexOf("function buildTiledPresentations("),
       desktopCard.indexOf("function buildFloatingWindowIds("),
@@ -3717,6 +3717,22 @@ describe("overview effect package", () => {
     expect(presentations).toContain(
       "const presentations = Object.create(null)",
     );
+    expect(desktopCard).toContain(
+      "readonly property real projectionScale: finitePositive(contentHeight / sourceViewportHeight",
+    );
+    expect(desktopCard).toContain(
+      "readonly property real viewportOriginX: finiteNumber((contentWidth - projectedViewportWidth) / 2, 0)",
+    );
+    expect(presentations).toContain(
+      "let columnX = viewportOriginX - logicalViewportOffset * projectionScale",
+    );
+    expect(desktopCard).toContain(
+      "return Math.max(1, width.value * projectedViewportWidth)",
+    );
+    expect(desktopCard).toMatch(
+      /x: viewportOriginX \+ \(geometry\.x - screenGeometry\.x\) \* projectionScale,\s*y: viewportOriginY \+ \(geometry\.y - screenGeometry\.y\) \* projectionScale/u,
+    );
+    expect(desktopCard).not.toMatch(/horizontalScale|verticalScale/u);
     expect(presentations).toContain(
       'const tabbed = column.presentation === "tabbed"',
     );
