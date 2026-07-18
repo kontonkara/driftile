@@ -258,13 +258,28 @@ describe("touchpad navigation", () => {
       /direction: SwipeGestureHandler\.Direction\.Right[\s\S]*if \(root\.naturalScroll\) \{\s*root\.focusLeftRequested\(\);\s*\} else \{\s*root\.focusRightRequested\(\);/u,
     );
     expect(touchpadQml).toMatch(
-      /function beginGesture\(owner, progress\) \{[\s\S]*if \(!\(progress > 0\)\) \{\s*return;\s*\}[\s\S]*if \(root\.activeGestureOwner !== ""\) \{\s*return;\s*\}[\s\S]*const contextKey = root\.currentContextKey\(\);[\s\S]*root\.activeGestureOwner = owner;[\s\S]*root\.gestureContextKey = contextKey;[\s\S]*\}/u,
+      /function beginGesture\(owner, progress\) \{[\s\S]*if \(!\(progress > 0\)\) \{\s*return;\s*\}[\s\S]*if \(root\.activeGestureOwner !== ""\) \{\s*return;\s*\}[\s\S]*const context = root\.currentGestureContext\(\);[\s\S]*if \(!context\) \{\s*root\.resetGesture\(\);\s*return;\s*\}[\s\S]*root\.activeGestureOwner = owner;[\s\S]*root\.gestureContextKey = context\.key;[\s\S]*\}/u,
     );
     expect(touchpadQml).toMatch(
       /function cancelGesture\(owner\) \{\s*if \(owner === root\.activeGestureOwner\) \{\s*root\.resetGesture\(\);\s*\}\s*\}/u,
     );
     expect(touchpadQml).toMatch(
-      /function completeGesture\(owner\) \{[\s\S]*owner === root\.activeGestureOwner[\s\S]*!root\.gestureContextInvalidated[\s\S]*root\.gestureContextKey === root\.currentContextKey\(\)[\s\S]*root\.resetGesture\(\);[\s\S]*return accepted;[\s\S]*\}/u,
+      /function completeGesture\(owner\) \{[\s\S]*const context = root\.currentGestureContext\(\);[\s\S]*owner === root\.activeGestureOwner[\s\S]*!root\.gestureContextInvalidated[\s\S]*context !== null[\s\S]*root\.gestureContextKey === context\.key[\s\S]*root\.resetGesture\(\);[\s\S]*return accepted;[\s\S]*\}/u,
+    );
+    expect(touchpadQml).toMatch(
+      /function desktopForOutput\(output\) \{[\s\S]*if \(typeof Workspace\.currentDesktopForScreen !== "function"\) \{\s*return Workspace\.currentDesktop;\s*\}[\s\S]*try \{[\s\S]*Workspace\.currentDesktopForScreen\(output\)[\s\S]*return desktop \|\| null;[\s\S]*\} catch \(_error\) \{\s*return null;\s*\}[\s\S]*\}/u,
+    );
+    expect(touchpadQml).toMatch(
+      /function liveOutput\(output\) \{[\s\S]*screens\[index\] === output[\s\S]*matches \+= 1;[\s\S]*return matches === 1 \? output : null;[\s\S]*\}/u,
+    );
+    expect(touchpadQml).toMatch(
+      /function currentGestureContext\(\) \{[\s\S]*const window = Workspace\.activeWindow;[\s\S]*window\.internalId[\s\S]*const output = root\.liveOutput\(window\.output\);[\s\S]*const desktop = root\.desktopForOutput\(output\);[\s\S]*desktops\.length !== 1[\s\S]*root\.valueKey\(desktops\[0\]\.id\) !== desktopId[\s\S]*root\.activityForWindow\(window\)[\s\S]*return \{[\s\S]*key:[\s\S]*\};[\s\S]*\}/u,
+    );
+    expect(touchpadQml).toMatch(
+      /function activityForWindow\(window\) \{[\s\S]*activities\.length === 1[\s\S]*currentActivity !== activity[\s\S]*activities\.length === 0[\s\S]*workspaceActivities\.length <= 1[\s\S]*\}/u,
+    );
+    expect(touchpadQml).toMatch(
+      /function onCurrentDesktopChanged\(_previous, _current, output\) \{[\s\S]*window\.output === output[\s\S]*root\.invalidateGesture\(\);[\s\S]*\}/u,
     );
     expect(
       touchpadQml.match(/onProgressChanged: root\.beginGesture\(/gu),

@@ -40,14 +40,101 @@ QtObject {
         return keys.join(",");
     }
 
-    function currentContextKey() {
-        const desktop = Workspace.currentDesktop;
+    function liveOutput(output) {
+        if (!output) {
+            return null;
+        }
+
+        const screens = Workspace.screens;
+        let matches = 0;
+        for (let index = 0; index < screens.length; index += 1) {
+            if (screens[index] === output) {
+                matches += 1;
+            }
+        }
+        return matches === 1 ? output : null;
+    }
+
+    function desktopForOutput(output) {
+        if (!output) {
+            return null;
+        }
+
+        if (typeof Workspace.currentDesktopForScreen !== "function") {
+            return Workspace.currentDesktop;
+        }
+
+        try {
+            const desktop = Workspace.currentDesktopForScreen(output);
+            return desktop || null;
+        } catch (_error) {
+            return null;
+        }
+    }
+
+    function activityForWindow(window) {
+        const currentActivity = root.valueKey(Workspace.currentActivity);
+        const activities = window.activities;
+
+        if (activities === undefined || activities === null) {
+            return currentActivity;
+        }
+
+        if (activities.length === 1) {
+            const activity = root.valueKey(activities[0]);
+            if (activity === ""
+                    || (currentActivity !== "" && currentActivity !== activity)) {
+                return null;
+            }
+            return activity;
+        }
+
+        const workspaceActivities = Workspace.activities;
+        if (activities.length === 0
+                && (!workspaceActivities || workspaceActivities.length <= 1)) {
+            return currentActivity;
+        }
+        return null;
+    }
+
+    function currentGestureContext() {
         const window = Workspace.activeWindow;
-        return [root.valueKey(Workspace.currentActivity),
-                desktop ? root.valueKey(desktop.id) : "",
-                window ? root.valueKey(window.internalId) : "",
-                window ? root.outputKey(window.output) : root.outputKey(Workspace.activeScreen),
-                root.topologyKey()].join("|");
+        if (!window || window.deleted || window.onAllDesktops
+                || window.internalId === undefined || window.internalId === null) {
+            return null;
+        }
+
+        const windowId = root.valueKey(window.internalId);
+        const output = root.liveOutput(window.output);
+        if (windowId === "" || !output) {
+            return null;
+        }
+
+        const desktop = root.desktopForOutput(output);
+        if (!desktop || desktop.id === undefined || desktop.id === null) {
+            return null;
+        }
+
+        const desktopId = root.valueKey(desktop.id);
+        const desktops = window.desktops;
+        if (desktopId === "" || !desktops || desktops.length !== 1
+                || !desktops[0]
+                || root.valueKey(desktops[0].id) !== desktopId) {
+            return null;
+        }
+
+        const activity = root.activityForWindow(window);
+        if (activity === null) {
+            return null;
+        }
+
+        return {
+            key: [activity,
+                  desktopId,
+                  windowId,
+                  root.outputKey(output),
+                  root.topologyKey()].join("|")
+        };
     }
 
     function beginGesture(owner, progress) {
@@ -59,9 +146,14 @@ QtObject {
             return;
         }
 
-        const contextKey = root.currentContextKey();
+        const context = root.currentGestureContext();
+        if (!context) {
+            root.resetGesture();
+            return;
+        }
+
         root.activeGestureOwner = owner;
-        root.gestureContextKey = contextKey;
+        root.gestureContextKey = context.key;
         root.gestureContextInvalidated = false;
     }
 
@@ -84,9 +176,11 @@ QtObject {
     }
 
     function completeGesture(owner) {
+        const context = root.currentGestureContext();
         const accepted = owner === root.activeGestureOwner
             && !root.gestureContextInvalidated
-            && root.gestureContextKey === root.currentContextKey();
+            && context !== null
+            && root.gestureContextKey === context.key;
         root.resetGesture();
         return accepted;
     }
@@ -95,11 +189,18 @@ QtObject {
         target: Workspace
         ignoreUnknownSignals: true
 
-        function onCurrentDesktopChanged() {
-            root.invalidateGesture();
+        function onCurrentDesktopChanged(_previous, _current, output) {
+            const window = Workspace.activeWindow;
+            if (!output || !window || window.output === output) {
+                root.invalidateGesture();
+            }
         }
 
         function onCurrentActivityChanged() {
+            root.invalidateGesture();
+        }
+
+        function onActivitiesChanged() {
             root.invalidateGesture();
         }
 
