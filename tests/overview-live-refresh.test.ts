@@ -118,6 +118,10 @@ describe("overview live model refresh", () => {
       scene.indexOf("target: KWin.Workspace"),
       scene.indexOf("Timer {", scene.indexOf("target: KWin.Workspace")),
     );
+    const spatialSessionRefresh = scene.slice(
+      scene.indexOf("function refreshOverviewSpatialSession("),
+      scene.indexOf("function resetSpatialViewport("),
+    );
 
     for (const signal of [
       "onDesktopsChanged",
@@ -138,6 +142,26 @@ describe("overview live model refresh", () => {
     );
     expect(scene).toMatch(
       /function refreshOverviewSpatialSession\(\)[\s\S]*Qt\.callLater\(root\.repairKeyboardSelection\);/u,
+    );
+    expect(spatialSessionRefresh).toMatch(
+      /const selectedWorkspaceIndex = desktopIds\s*&& typeof desktopIds\.indexOf === "function"\s*\? desktopIds\.indexOf\(selectedDesktopId\) : -1;/u,
+    );
+    expect(
+      spatialSessionRefresh.indexOf(
+        "selectedDesktopId = selectedTarget.desktopId;",
+      ),
+    ).toBeLessThan(
+      spatialSessionRefresh.indexOf("cancelKeyboardBoundaryNavigation();"),
+    );
+    expect(
+      spatialSessionRefresh.indexOf("const selectedWorkspaceIndex"),
+    ).toBeLessThan(
+      spatialSessionRefresh.indexOf(
+        "planSpatialWorkspaceCenter(selectedWorkspaceIndex)",
+      ),
+    );
+    expect(spatialSessionRefresh).not.toMatch(
+      /keyboardSelectionId = ""|keyboardHelpVisible = false|searchQuery = ""/u,
     );
   });
 });

@@ -935,7 +935,8 @@ Rectangle {
 
         if (sceneEffect && sceneEffect.active === true) {
             resetSpatialViewport();
-            const selectedWorkspaceIndex = desktopIds.indexOf(selectedDesktopId);
+            const selectedWorkspaceIndex = desktopIds && typeof desktopIds.indexOf === "function"
+                ? desktopIds.indexOf(selectedDesktopId) : -1;
             const selectionPlan = selectedWorkspaceIndex >= 0
                 ? planSpatialWorkspaceCenter(selectedWorkspaceIndex) : null;
             if (selectionPlan) {
