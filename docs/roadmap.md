@@ -12,13 +12,12 @@ Settings, shortcuts, and logical persistence v4 remain compatible.
 
 ## Current direction
 
-The optional Overview remains an intermediate card-based projection over
-captured layout state. It does not yet share a continuous camera or live
-geometry with the normal scrollable workspace, so it differs materially from
-the planned spatial Overview in both architecture and interaction. Search and
-keyboard help do not close that gap. Continuous spatial behavior is the next
-primary direction; complete wheel control follows within the limits of public
-KWin APIs.
+The optional Overview remains an intermediate projection over captured layout
+state. Development now widens each workspace into a spatial row and adds
+bounded horizontal wheel control, but the effect still does not share a
+continuous camera or live geometry with the normal scrollable workspace.
+Search and keyboard help do not close that architectural gap. Continuous
+spatial behavior remains the primary direction within public KWin APIs.
 
 ## Foundation (delivered)
 
@@ -2636,3 +2635,20 @@ Release criteria (met):
   with no retained QEMU process.
 - This is incremental spatial continuity, not completion of the planned
   Overview architecture; no private API or KWin fork is introduced.
+
+### 1.77.0 (in development)
+
+- Expand each workspace into a wide spatial row while preserving output-scale
+  window proportions and showing neighboring logical columns.
+- Keep a bounded session-only horizontal viewport per workspace across live
+  Overview refreshes.
+- Pan the row under the pointer with precise horizontal wheel input; use
+  discrete horizontal steps to select and reveal neighboring windows.
+
+Exit criteria:
+
+- Horizontal and vertical wheel state remain isolated, bounded, and read-only.
+- Keyboard navigation can reveal an off-screen column without altering the
+  authoritative layout.
+- The projection remains explicitly intermediate until it shares continuous
+  camera and live geometry with the normal workspace.

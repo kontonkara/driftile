@@ -118,11 +118,15 @@ the viewport center retains its local camera offset across a live refresh,
 zoom change, or scene resize. An actual desktop selection recenters the new
 desktop instead of preserving the old anchor.
 
-The current Overview is an intermediate card-based projection of captured
-layout state. It does not yet share the continuous camera and live geometry of
-the normal scrollable workspace, so its architecture and interaction remain
-materially different from the planned spatial Overview. Search and keyboard
-help are supporting tools, not completion criteria for that work.
+The current Overview is an intermediate projection of captured layout state.
+Wide workspace rows preserve window proportions, show neighboring columns,
+and keep bounded session-only horizontal viewports. Precise horizontal wheel
+input pans the row under the pointer; discrete horizontal input selects and
+reveals adjacent windows. The Overview still does not share the continuous
+camera and live geometry of the normal scrollable workspace, so its
+architecture and interaction remain materially different from the planned
+spatial Overview. Search and keyboard help are supporting tools, not
+completion criteria for that work.
 
 `F1` opens a modal, bounded keyboard reference inside the overview. `F1` or
 `Escape` closes it before other input is processed, while its pointer button
@@ -159,7 +163,7 @@ without another write.
 | Pointer resize       | Adopt one completed horizontal column resize or vertical stacked-window resize                      | Available |
 | Overview companion   | Filter or activate windows; select or reorder desktops; move windows between desktop cards          | Available |
 | Tabbed columns       | Toggle presentation; select or reorder members with the existing vertical grammar                   | 1.19.0    |
-| Pointer navigation   | Pan the spatial Overview and switch workspaces; cycle matching search results with the wheel        | Available |
+| Pointer navigation   | Pan workspace rows on both wheel axes; switch workspaces; cycle matching search results             | Available |
 
 Adjacent and numbered single-window transfers remain secondary, unbound
 actions. Default desktop and output transfer shortcuts must move the whole

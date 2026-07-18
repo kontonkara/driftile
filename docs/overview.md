@@ -53,13 +53,13 @@ backdrop without changing layout state.
 
 ## Spatial workspace view
 
-Each output presents its virtual desktops as a centered vertical stack at the
-configured zoom. The current desktop opens in the center. Keyboard selection
-reveals an off-screen workspace, while dragging the empty backdrop with a
-mouse, touchpad, or touchscreen pans the stack within its finite bounds.
-Desktop cards outside a small visible range are not instantiated; search and
-keyboard navigation retain their geometry without keeping their window
-previews loaded.
+Each output presents its virtual desktops as centered wide rows in a vertical
+stack. A row preserves window proportions, marks the saved output viewport,
+and exposes neighboring columns on either side. The current desktop opens in
+the center. Keyboard selection reveals an off-screen workspace and column,
+while dragging the empty backdrop with a mouse, touchpad, or touchscreen pans
+the stack within its finite vertical bounds. Rows outside a small visible
+range are not instantiated.
 
 An unmodified mouse-wheel step selects the previous or next desktop without
 closing the Overview and never wraps. High-resolution wheel input retains a
@@ -67,6 +67,13 @@ bounded subpixel remainder, so small deltas are not discarded. Precise
 touchpad deltas pan the stack directly and take precedence over a discrete step
 from the same event. During search, discrete wheel input retains result
 cycling; the F1 panel always consumes its own wheel input first.
+
+A horizontal wheel or touchpad axis acts only on the row under the pointer.
+Precise deltas pan that row without changing the saved layout; discrete steps
+move the Overview selection left or right and reveal the selected column.
+Horizontal input is consumed without changing the row during search. Each
+row's session-only viewport is bounded by its projected strip and is preserved
+across live refreshes until the Overview closes.
 
 The card under the viewport center remains at the same local position when a
 live window refresh, zoom change, or scene resize rebuilds the projection. A
@@ -99,9 +106,10 @@ member is represented only by its large thumbnail and its duplicate tab remains
 inert; each other actionable member is represented by its tab. Exact minimized
 member tabs retain that behavior. An eligible minimized stacked tiled member or
 tracked floating window without a tab is represented by one compact caption
-placeholder. Invalid, ineligible, malformed, tiny, fully clipped, and offscreen
-projections are excluded. A partially clipped target remains actionable, and
-spatial navigation uses only its visible intersection. The number gutter of
+placeholder. Invalid, ineligible, malformed, and tiny projections are
+excluded. Off-screen tiled targets in an instantiated row remain available to
+spatial navigation and are brought into view when selected. A partially
+clipped target remains actionable. The number gutter of
 every non-current live desktop, including the shared empty tail, is also a
 target; the current desktop's gutter is not.
 `Tab` and `Shift+Tab` cycle through targets in visual order, while `Home` and
