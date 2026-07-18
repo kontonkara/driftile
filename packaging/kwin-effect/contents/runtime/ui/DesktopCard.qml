@@ -24,6 +24,7 @@ Rectangle {
     required property bool showWindowLabels
     required property bool showWindowStateBadges
     property string keyboardSelectionId: ""
+    property real previewViewportOffset: Number.NaN
 
     signal desktopTapped(var candidate, string expectedDesktopId, var expectedScreen)
     signal desktopReorderCanceled(string expectedDesktopId)
@@ -64,7 +65,9 @@ Rectangle {
                                                                    contentHeight)
     readonly property real viewportOriginX: finiteNumber((contentWidth - projectedViewportWidth) / 2, 0)
     readonly property real viewportOriginY: finiteNumber((contentHeight - projectedViewportHeight) / 2, 0)
-    readonly property real logicalViewportOffset: finiteNumber(context ? Number(context.viewportOffset) : 0, 0)
+    readonly property real logicalViewportOffset: Number.isFinite(previewViewportOffset)
+        ? previewViewportOffset : finiteNumber(context ? Number(context.viewportOffset) : 0, 0)
+    readonly property var columnFrames: buildColumnFrames()
     readonly property var tiledPresentations: buildTiledPresentations()
     readonly property var floatingWindowIds: buildFloatingWindowIds()
     property int columnDelegateRevision: 0
@@ -1926,16 +1929,28 @@ Rectangle {
 
         try {
             let rect = plainRect(visual.mapToItem(sceneItem, 0, 0, visual.width, visual.height));
-            rect = intersectRects(rect, plainRect(viewport.mapToItem(sceneItem, 0, 0, viewport.width, viewport.height)));
-            rect = intersectRects(rect, plainRect(card.mapToItem(sceneItem, 0, 0, card.width, card.height)));
-            if (includeOffscreen !== true) {
-                rect = intersectRects(rect, {
-                    height: sceneItem.height,
-                    width: sceneItem.width,
-                    x: 0,
-                    y: 0
-                });
+            const viewportRect = plainRect(viewport.mapToItem(sceneItem, 0, 0, viewport.width, viewport.height));
+            const cardRect = plainRect(card.mapToItem(sceneItem, 0, 0, card.width, card.height));
+            if (includeOffscreen === true) {
+                const top = Math.max(rect.y, viewportRect.y, cardRect.y);
+                const bottom = Math.min(rect.y + rect.height, viewportRect.y + viewportRect.height,
+                                        cardRect.y + cardRect.height);
+                rect = {
+                    height: bottom - top,
+                    width: rect.width,
+                    x: rect.x,
+                    y: top
+                };
+                return navigationRectIsValid(rect) ? rect : null;
             }
+            rect = intersectRects(rect, viewportRect);
+            rect = intersectRects(rect, cardRect);
+            rect = intersectRects(rect, {
+                height: sceneItem.height,
+                width: sceneItem.width,
+                x: 0,
+                y: 0
+            });
             return navigationRectIsValid(rect) ? rect : null;
         } catch (error) {
             return null;
@@ -2075,23 +2090,34 @@ Rectangle {
         return ids;
     }
 
+    function buildColumnFrames() {
+        const frames = [];
+        if (!context) {
+            return frames;
+        }
+
+        let x = viewportOriginX - logicalViewportOffset * projectionScale;
+        for (const column of columns) {
+            const width = widthForColumn(column.width);
+            frames.push({
+                width,
+                x
+            });
+            x += width;
+        }
+        return frames;
+    }
+
     function columnFrame(columnIndex) {
-        if (!context || columnIndex < 0 || columnIndex >= columns.length) {
+        const frame = columnFrames[columnIndex];
+        if (!frame || !Number.isFinite(frame.x) || !Number.isFinite(frame.width) || frame.width <= 0) {
             return {
                 width: 0,
                 x: 0
             };
         }
 
-        let x = viewportOriginX - logicalViewportOffset * projectionScale;
-        for (let index = 0; index < columnIndex; index += 1) {
-            x += widthForColumn(columns[index].width);
-        }
-
-        return {
-            width: widthForColumn(columns[columnIndex].width),
-            x
-        };
+        return frame;
     }
 
     function widthForColumn(width) {

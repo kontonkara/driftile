@@ -31,12 +31,14 @@ describe("spatial overview navigation geometry", () => {
     );
     expect(scene).toContain("desktopCard.collectNavigationTargets(root, true)");
 
-    for (const clip of [windowClip, cardClip]) {
-      expect(clip).toContain("includeOffscreen = false");
-      expect(clip).toMatch(
-        /if \(includeOffscreen !== true\) \{[\s\S]*?height: sceneItem\.height,[\s\S]*?width: sceneItem\.width,[\s\S]*?x: 0,[\s\S]*?y: 0[\s\S]*?\}/u,
-      );
-    }
+    expect(windowClip).toContain("includeOffscreen = false");
+    expect(windowClip).toMatch(
+      /if \(includeOffscreen === true\) \{[\s\S]*height: bottom - top,[\s\S]*width: rect\.width,[\s\S]*x: rect\.x,[\s\S]*y: top/u,
+    );
+    expect(cardClip).toContain("includeOffscreen = false");
+    expect(cardClip).toMatch(
+      /if \(includeOffscreen !== true\) \{[\s\S]*?height: sceneItem\.height,[\s\S]*?width: sceneItem\.width,[\s\S]*?x: 0,[\s\S]*?y: 0[\s\S]*?\}/u,
+    );
   });
 
   it("can retain offscreen mapped targets without escaping card clips", () => {
@@ -51,11 +53,20 @@ describe("spatial overview navigation geometry", () => {
     expect(windowClip).toContain("viewport.mapToItem(sceneItem");
     expect(windowClip).toContain("card.mapToItem(sceneItem");
     expect(windowClip.indexOf("viewport.mapToItem(sceneItem")).toBeLessThan(
-      windowClip.indexOf("if (includeOffscreen !== true)"),
+      windowClip.indexOf("if (includeOffscreen === true)"),
     );
     expect(windowClip.indexOf("card.mapToItem(sceneItem")).toBeLessThan(
-      windowClip.indexOf("if (includeOffscreen !== true)"),
+      windowClip.indexOf("if (includeOffscreen === true)"),
     );
+    expect(windowClip).toContain(
+      "const top = Math.max(rect.y, viewportRect.y, cardRect.y)",
+    );
+    expect(windowClip).toContain(
+      "const bottom = Math.min(rect.y + rect.height, viewportRect.y + viewportRect.height",
+    );
+    expect(windowClip).toContain("cardRect.y + cardRect.height)");
+    expect(windowClip).toContain("width: rect.width");
+    expect(windowClip).toContain("x: rect.x");
 
     expect(cardClip).toContain("visual.mapToItem(sceneItem");
     expect(cardClip).toContain("card.mapToItem(sceneItem");

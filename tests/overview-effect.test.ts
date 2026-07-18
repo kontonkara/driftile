@@ -1488,8 +1488,8 @@ describe("overview effect package", () => {
       "plan.anchorDesktopId !== nextGeometry.desktopIds[plan.anchorWorkspaceIndex]",
     );
 
-    expect(scene).toContain(
-      "onKeyboardSelectionIdChanged: root.centerKeyboardSelectionWorkspace()",
+    expect(scene).toMatch(
+      /onKeyboardSelectionIdChanged: \{\s*root\.centerKeyboardSelectionWorkspace\(\);\s*root\.revealKeyboardSelectionHorizontally\(\);\s*\}/u,
     );
     expect(spatialLayout).toContain(
       "navigationTargetForId(collectNavigationTargets(), selectedTargetId)",
@@ -2683,6 +2683,10 @@ describe("overview effect package", () => {
       scene.indexOf("function handleOverviewWheel("),
       scene.indexOf("function activateKeyboardSelection("),
     );
+    const wheelRouting = scene.slice(
+      scene.indexOf("function routeOverviewWheel("),
+      scene.indexOf("function handleOverviewWheel("),
+    );
     const wheelPresentationGuard = scene.slice(
       scene.indexOf("function spatialWheelPresentationIsExact("),
       scene.indexOf("function requestSpatialWheelWorkspace("),
@@ -2694,10 +2698,34 @@ describe("overview effect package", () => {
 
     expect(scene).toContain("property real overviewWheelPixelRemainder: 0");
     expect(scene).toContain("property int overviewWheelRemainder: 0");
-    expect(wheelHandler).toMatch(
-      /target: null[\s\S]*acceptedDevices: PointerDevice\.Mouse \| PointerDevice\.TouchPad[\s\S]*acceptedModifiers: Qt\.NoModifier[\s\S]*orientation: Qt\.Vertical[\s\S]*onWheel: event => root\.handleOverviewWheel\(event\)/u,
+    expect(scene).toContain(
+      "property real overviewHorizontalWheelPixelRemainder: 0",
     );
-    expect(wheelNavigation).toContain("event.accepted = false");
+    expect(scene).toContain("property int overviewHorizontalWheelRemainder: 0");
+    expect(wheelHandler).toMatch(
+      /id: spatialVerticalWheelHandler[\s\S]*target: null[\s\S]*acceptedDevices: PointerDevice\.Mouse \| PointerDevice\.TouchPad[\s\S]*acceptedModifiers: Qt\.NoModifier[\s\S]*blocking: false[\s\S]*orientation: Qt\.Vertical[\s\S]*onWheel: event => root\.routeOverviewWheel\(event, point\.position, "vertical"\)/u,
+    );
+    expect(wheelHandler).toMatch(
+      /id: spatialHorizontalWheelHandler[\s\S]*blocking: false[\s\S]*orientation: Qt\.Horizontal[\s\S]*onWheel: event => root\.routeOverviewWheel\(event, point\.position, "horizontal"\)/u,
+    );
+    expect(scene).toContain('property string overviewWheelAxisOwner: ""');
+    expect(wheelRouting).not.toContain("event.accepted === true");
+    expect(wheelRouting).not.toContain("event.accepted = false");
+    expect(wheelRouting).toMatch(
+      /const pixelInput = event\.pixelDelta\.x !== 0 \|\| event\.pixelDelta\.y !== 0;[\s\S]*horizontalMagnitude > verticalMagnitude \? "horizontal" : "vertical"/u,
+    );
+    expect(wheelRouting).toMatch(
+      /if \(handlerAxis !== requestedAxis\) \{\s*return false;\s*\}/u,
+    );
+    expect(wheelRouting).toMatch(
+      /if \(overviewWheelAxisOwner !== requestedAxis\) \{\s*event\.accepted = true;\s*return true;/u,
+    );
+    expect(wheelRouting).toMatch(
+      /const handled = requestedAxis === "horizontal"[\s\S]*handleOverviewHorizontalWheel\(event, point\)[\s\S]*handleOverviewWheel\(event\)[\s\S]*if \(claimedAxis && !handled\)/u,
+    );
+    expect(wheelRouting).toMatch(
+      /function releaseOverviewWheelAxisIfIdle[\s\S]*!spatialVerticalWheelHandler\.active && !spatialHorizontalWheelHandler\.active[\s\S]*overviewWheelAxisOwner = "";/u,
+    );
     expect(wheelNavigation).toContain("event.modifiers !== Qt.NoModifier");
     expect(wheelNavigation).toContain("keyboardHelpVisible");
     expect(scene).toContain(
@@ -2707,7 +2735,7 @@ describe("overview effect package", () => {
       /onSpatialContentYChanged: \{\s*root\.resetOverviewWheelState\(\);\s*root\.captureSpatialViewportSnapshot\(\);\s*\}/u,
     );
     expect(wheelNavigation).toMatch(
-      /spatialViewportDragHandler\.active \|\| spatialWindowDragSource !== null[\s\S]*\|\| desktopReorderActive[\s\S]*resetOverviewWheelState\(\);[\s\S]*event\.accepted = true;[\s\S]*return;/u,
+      /spatialViewportDragHandler\.active \|\| spatialWindowDragSource !== null[\s\S]*\|\| desktopReorderActive[\s\S]*resetOverviewWheelState\(\);[\s\S]*event\.accepted = true;[\s\S]*return true;/u,
     );
     expect(
       wheelNavigation.indexOf("if (spatialViewportDragHandler.active"),
@@ -2723,6 +2751,37 @@ describe("overview effect package", () => {
     );
     expect(wheelNavigation).toContain('plan.intent === "viewport"');
     expect(wheelNavigation).toContain('plan.intent === "workspace"');
+    expect(wheelNavigation).toContain(
+      'typeof runtime.planOverviewSpatialHorizontalWheel !== "function"',
+    );
+    expect(wheelNavigation).toMatch(
+      /runtime\.planOverviewSpatialHorizontalWheel\(\{[\s\S]*angleDeltaX,[\s\S]*maximumViewportOffset: bounds\.maximum,[\s\S]*minimumViewportOffset: bounds\.minimum,[\s\S]*pixelDeltaX,[\s\S]*projectionScale,[\s\S]*viewportOffset/u,
+    );
+    expect(wheelNavigation).toMatch(
+      /function handleOverviewHorizontalWheel[\s\S]*spatialWorkspaceIndexAtPoint\(point\)[\s\S]*pixelDeltaX !== 0[\s\S]*handleSpatialHorizontalViewportWheel[\s\S]*handleSpatialHorizontalSelectionWheel/u,
+    );
+    expect(wheelNavigation).toMatch(
+      /function navigateHorizontalWheelSelection[\s\S]*target\.desktopId === expectedDesktopId[\s\S]*findOverviewNavigationTarget\(selected\.id, rowTargets, navigationDirection\)/u,
+    );
+    expect(wheelNavigation).toMatch(
+      /function revealHorizontalNavigationTarget[\s\S]*sceneAdjustment \/ card\.projectionScale[\s\S]*setSpatialHorizontalViewportOffset/u,
+    );
+    expect(scene).toContain("property var spatialHorizontalDesktopIds: []");
+    expect(scene).toContain(
+      "property var spatialHorizontalViewportOffsets: []",
+    );
+    expect(scene).toMatch(
+      /function refreshSpatialHorizontalViewports[\s\S]*previousOffsets\.length === desktopIds\.length[\s\S]*nextOffsets\.push\(Math\.min\(bounds\.maximum, Math\.max\(bounds\.minimum, previous\)\)\)/u,
+    );
+    expect(scene).toMatch(
+      /function spatialHorizontalViewportBounds[\s\S]*context\.columns\.length > 512[\s\S]*stripWidth > Number\.MAX_SAFE_INTEGER/u,
+    );
+    expect(scene).toMatch(
+      /previewViewportOffset: root\.spatialHorizontalViewportOffsetAt\([\s\S]*desktopCardLoader\.index, desktopCardLoader\.modelData,[\s\S]*root\.spatialHorizontalViewportRevision\)/u,
+    );
+    expect(scene).toMatch(
+      /function setSpatialHorizontalViewportOffsetForBounds[\s\S]*spatialHorizontalViewportOffsets\[index\] = normalizedOffset;\s*advanceSpatialHorizontalViewportRevision\(\);/u,
+    );
     expect(wheelNavigation).toMatch(
       /function handleSpatialViewportWheel[\s\S]*setSpatialContentY\(plan\.contentY\)[\s\S]*overviewWheelPixelRemainder = plan\.pixelRemainder;[\s\S]*overviewWheelRemainder = 0;[\s\S]*return true;/u,
     );
@@ -2766,6 +2825,9 @@ describe("overview effect package", () => {
     expect(wheelNavigation).not.toContain("deactivate()");
     expect(overviewRuntimeIndex).toContain("planOverviewSpatialWheel");
     expect(overviewRuntimeIndex).toContain(
+      "planOverviewSpatialHorizontalWheel",
+    );
+    expect(overviewRuntimeIndex).toContain(
       "planOverviewSpatialWorkspaceWheelTarget",
     );
     expect(scene).toMatch(
@@ -2781,7 +2843,13 @@ describe("overview effect package", () => {
       /function beginDesktopReorder\([\s\S]*resetOverviewWheelState\(\);\s*desktopReorderActive = true;/u,
     );
     expect(wheelNavigation).toMatch(
-      /function resetOverviewWheelState\(\) \{\s*overviewWheelPixelRemainder = 0;\s*overviewWheelRemainder = 0;\s*\}/u,
+      /function resetOverviewWheelState\(\) \{\s*resetOverviewHorizontalWheelState\(\);\s*resetOverviewVerticalWheelState\(\);\s*\}/u,
+    );
+    expect(wheelNavigation).toMatch(
+      /function resetOverviewHorizontalWheelState\(\) \{\s*overviewHorizontalWheelPixelRemainder = 0;\s*overviewHorizontalWheelRemainder = 0;\s*\}/u,
+    );
+    expect(wheelNavigation).toMatch(
+      /function resetOverviewVerticalWheelState\(\) \{\s*overviewWheelPixelRemainder = 0;\s*overviewWheelRemainder = 0;\s*\}/u,
     );
     expect(wheelNavigation).toMatch(
       /if \(plan\.steps > 0\)[\s\S]*requestSpatialWheelWorkspace\(plan\.direction, plan\.steps\)[\s\S]*resetOverviewWheelState\(\);[\s\S]*else \{[\s\S]*overviewWheelRemainder = plan\.remainder;/u,
@@ -3723,6 +3791,15 @@ describe("overview effect package", () => {
     expect(desktopCard).toContain(
       "readonly property real viewportOriginX: finiteNumber((contentWidth - projectedViewportWidth) / 2, 0)",
     );
+    expect(desktopCard).toContain(
+      "readonly property var columnFrames: buildColumnFrames()",
+    );
+    expect(desktopCard).toContain(
+      "property real previewViewportOffset: Number.NaN",
+    );
+    expect(desktopCard).toMatch(
+      /readonly property real logicalViewportOffset: Number\.isFinite\(previewViewportOffset\)[\s\S]*\? previewViewportOffset/u,
+    );
     expect(presentations).toContain(
       "let columnX = viewportOriginX - logicalViewportOffset * projectionScale",
     );
@@ -3733,6 +3810,21 @@ describe("overview effect package", () => {
       /x: viewportOriginX \+ \(geometry\.x - screenGeometry\.x\) \* projectionScale,\s*y: viewportOriginY \+ \(geometry\.y - screenGeometry\.y\) \* projectionScale/u,
     );
     expect(desktopCard).not.toMatch(/horizontalScale|verticalScale/u);
+    expect(presentations).not.toContain("context.viewportOffset *");
+    expect(desktopCard).toMatch(
+      /function buildColumnFrames\(\) \{[\s\S]*for \(const column of columns\)[\s\S]*frames\.push\(\{[\s\S]*width,[\s\S]*x[\s\S]*x \+= width;/u,
+    );
+    expect(desktopCard).toMatch(
+      /function columnFrame\(columnIndex\) \{[\s\S]*const frame = columnFrames\[columnIndex\];[\s\S]*return frame;/u,
+    );
+    const columnFrame = desktopCard.slice(
+      desktopCard.indexOf("function columnFrame("),
+      desktopCard.indexOf("function widthForColumn("),
+    );
+    expect(columnFrame).not.toMatch(/for\s*\(|\.slice\(|\.map\(/u);
+    expect(desktopCard).toMatch(
+      /function clippedNavigationRect[\s\S]*if \(includeOffscreen === true\) \{[\s\S]*width: rect\.width,[\s\S]*x: rect\.x,[\s\S]*return navigationRectIsValid\(rect\) \? rect : null;/u,
+    );
     expect(presentations).toContain(
       'const tabbed = column.presentation === "tabbed"',
     );
