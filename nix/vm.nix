@@ -4829,6 +4829,9 @@ let
         local fixture_checkpoint
         local fixture_sequence
         local journal_cursor
+        local live_refresh_base_title="Driftile VM Overview Live Refresh"
+        local live_refresh_pid=""
+        local live_refresh_title=""
         local output_frame
         local overview_keys
         local plasma_active
@@ -4960,6 +4963,48 @@ let
             "the visible overview did not remain active and component-error-free"
           return 1
         fi
+
+        if ! start_konsole_window \
+            live_refresh_pid \
+            live_refresh_title \
+            "$live_refresh_base_title"; then
+          overview_checkpoint_failure \
+            "the live overview refresh window could not be started"
+          return 1
+        fi
+
+        # A stable checkpoint outlasts the effect's bounded two-sample model read.
+        if ! capture_overview_checkpoint \
+            "$@" \
+            "$title_desktop_destination" \
+            "$live_refresh_title" \
+            >/dev/null \
+          || [[ "$(effect_active_state "$overview_plugin_id" 2>/dev/null || true)" != true ]] \
+          || ! overview_component_errors_after "$journal_cursor"; then
+          terminate_process "$live_refresh_pid"
+          live_refresh_pid=""
+          wait_for_window_gone "$live_refresh_title" >/dev/null 2>&1 || true
+          overview_checkpoint_failure \
+            "adding a real window did not keep the refreshed overview active and component-error-free"
+          return 1
+        fi
+
+        terminate_process "$live_refresh_pid"
+        live_refresh_pid=""
+        if ! wait_for_window_gone "$live_refresh_title" \
+          || ! capture_overview_checkpoint \
+            "$@" \
+            "$title_desktop_destination" \
+            >/dev/null \
+          || [[ "$(effect_active_state "$overview_plugin_id" 2>/dev/null || true)" != true ]] \
+          || ! overview_component_errors_after "$journal_cursor"; then
+          overview_checkpoint_failure \
+            "removing a real window did not keep the refreshed overview active and component-error-free"
+          return 1
+        fi
+
+        record_focus_state \
+          "the active overview refreshed after a real window was added and removed"
 
         if ! request_physical_overview_desktop_drag \
             "$output_frame" \
