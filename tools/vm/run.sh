@@ -1022,6 +1022,7 @@ send_physical_pointer_drag() {
   local output_x
   local output_y
   local result=0
+  local release_delay=0.1
   local start_absolute_x
   local start_absolute_y
   local start_x
@@ -1038,6 +1039,9 @@ send_physical_pointer_drag() {
     output_height \
     extra < "$coordinate_file" || return 1
   [[ -z "${extra:-}" ]] || return 1
+  if [[ "$plain" == true ]]; then
+    release_delay=0.25
+  fi
 
   start_absolute_x=$(absolute_pointer_coordinate \
     "$start_x" "$output_x" "$output_width") || return 1
@@ -1078,7 +1082,7 @@ send_physical_pointer_drag() {
     && ! send_absolute_pointer_position "$end_absolute_x" "$end_absolute_y"; then
     result=1
   fi
-  sleep 0.1
+  sleep "$release_delay"
 
   set_pointer_drag_button_state false "$plain" || result=1
   return "$result"

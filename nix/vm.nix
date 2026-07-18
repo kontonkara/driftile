@@ -8731,12 +8731,13 @@ let
       request_physical_overview_desktop_drag() {
         local attempt
         local card_height_milli
+        local card_width_milli
+        local card_x_milli
         local desktop_count=$2
         local destination_x
         local destination_y
+        local edge_margin_milli
         local gap_milli
-        local margin_milli
-        local minimum_side
         local output_frame=$1
         local output_height
         local output_width
@@ -8759,28 +8760,26 @@ let
           output_height \
           <<< "$output_frame"
 
-        minimum_side=$((output_width < output_height ? output_width : output_height))
-        margin_milli=$((minimum_side * 35))
-        ((margin_milli >= 20000)) || margin_milli=20000
-        gap_milli=$((output_height * 12))
-        ((gap_milli >= 2000)) || gap_milli=2000
-        ((gap_milli <= 10000)) || gap_milli=10000
-        card_height_milli=$((
-          (output_height * 1000 - 2 * margin_milli \
-            - (desktop_count - 1) * gap_milli) / desktop_count
+        card_width_milli=$((output_width * 500))
+        card_height_milli=$((output_height * 500))
+        card_x_milli=$((
+          (output_width * 1000 - card_width_milli) / 2
         ))
-        ((card_height_milli > 0)) || return 1
+        edge_margin_milli=$((output_height * 250))
+        gap_milli=$((card_height_milli * 12 / 100))
+        ((gap_milli <= 48000)) || gap_milli=48000
+        ((card_width_milli > 0 && card_height_milli > 0)) || return 1
         stride_milli=$((card_height_milli + gap_milli))
 
-        source_x=$((output_x + (margin_milli + 21000) / 1000))
+        source_x=$((output_x + (card_x_milli + 21000) / 1000))
         destination_x=$source_x
-        source_y=$((output_y + (margin_milli + card_height_milli / 2) / 1000))
-        destination_y=$((output_y \
-          + (margin_milli + stride_milli + 3 * card_height_milli / 4) / 1000))
+        source_y=$((output_y + (edge_margin_milli + card_height_milli / 2) / 1000))
+        destination_y=$((output_y + output_height - 8))
         ((source_x >= output_x \
           && source_x < output_x + output_width \
           && source_y >= output_y \
           && source_y < output_y + output_height \
+          && destination_y >= output_y + (edge_margin_milli + stride_milli) / 1000 \
           && destination_y >= output_y \
           && destination_y < output_y + output_height)) \
           || return 1
