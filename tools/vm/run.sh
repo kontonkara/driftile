@@ -711,11 +711,15 @@ send_physical_overview_horizontal_wheel() {
   local capabilities='{"execute":"qmp_capabilities"}'
   local coordinate_file=$1
   local extra
-  local input
+  local horizontal_wheel_input='{"execute":"input-send-event","arguments":{"events":[{"type":"btn","data":{"down":true,"button":"wheel-right"}},{"type":"btn","data":{"down":false,"button":"wheel-right"}}]}}'
   local output_height
   local output_width
   local output_x
   local output_y
+  local shift_down_input='{"execute":"input-send-event","arguments":{"events":[{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"shift"}}}]}}'
+  local shift_up_input='{"execute":"input-send-event","arguments":{"events":[{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"shift"}}}]}}'
+  local shifted_wheel_input='{"execute":"input-send-event","arguments":{"events":[{"type":"btn","data":{"down":true,"button":"wheel-down"}},{"type":"btn","data":{"down":false,"button":"wheel-down"}}]}}'
+  local settle_seconds=0.05
   local x
   local y
 
@@ -737,8 +741,29 @@ send_physical_overview_horizontal_wheel() {
   send_absolute_pointer_position "$absolute_x" "$absolute_y" || return 1
   sleep 0.1
 
-  input='{"execute":"input-send-event","arguments":{"events":[{"type":"btn","data":{"down":true,"button":"wheel-right"}},{"type":"btn","data":{"down":false,"button":"wheel-right"}},{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"shift"}}},{"type":"btn","data":{"down":true,"button":"wheel-down"}},{"type":"btn","data":{"down":false,"button":"wheel-down"}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"shift"}}}]}}'
-  send_qmp_commands "$capabilities" "$input"
+  send_qmp_commands "$capabilities" "$horizontal_wheel_input" || return 1
+  sleep "$settle_seconds"
+
+  if ! send_qmp_commands "$capabilities" "$shift_down_input"; then
+    send_qmp_commands "$capabilities" "$shift_up_input" >/dev/null 2>&1 || true
+    return 1
+  fi
+  if ! sleep "$settle_seconds"; then
+    send_qmp_commands "$capabilities" "$shift_up_input" >/dev/null 2>&1 || true
+    return 1
+  fi
+  if ! send_qmp_commands "$capabilities" "$shifted_wheel_input"; then
+    send_qmp_commands "$capabilities" "$shift_up_input" >/dev/null 2>&1 || true
+    return 1
+  fi
+  if ! sleep "$settle_seconds"; then
+    send_qmp_commands "$capabilities" "$shift_up_input" >/dev/null 2>&1 || true
+    return 1
+  fi
+  if ! send_qmp_commands "$capabilities" "$shift_up_input"; then
+    send_qmp_commands "$capabilities" "$shift_up_input" >/dev/null 2>&1 || true
+    return 1
+  fi
 }
 
 send_two_head_pointer_probe() {

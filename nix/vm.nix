@@ -4833,7 +4833,14 @@ let
       }
 
       overview_checkpoint_failure() {
+        local active_caption
+        local kwin_id
         local message=$1
+
+        active_caption=$(
+          active_window_caption 2>/dev/null || printf unavailable
+        )
+        kwin_id=$(kwin_process_id 2>/dev/null || printf unavailable)
 
         {
           printf '\n[visible overview checkpoint failed]\n'
@@ -4842,6 +4849,12 @@ let
             "$(effect_loaded_state "$overview_plugin_id" 2>/dev/null || true)"
           printf 'overview active: %s\n' \
             "$(effect_active_state "$overview_plugin_id" 2>/dev/null || true)"
+          printf 'expected KWin process: %s\n' \
+            "''${kwin_horizontal_wheel_process_id:-unavailable}"
+          printf 'KWin process: %s\n' "$kwin_id"
+          printf 'pre-Escape active window: %s\n' \
+            "''${horizontal_wheel_active_caption:-unavailable}"
+          printf 'active window: %s\n' "$active_caption"
         } >> /tmp/shared/driftile-focus-diagnostics
 
         unload_overview_effect >/dev/null 2>&1 || true
@@ -4857,6 +4870,7 @@ let
         local firefox_title=$4
         local fixture_checkpoint
         local fixture_sequence
+        local horizontal_wheel_active_caption=""
         local journal_cursor
         local kwin_horizontal_wheel_process_id
         local kwin_search_process_id
@@ -5009,13 +5023,49 @@ let
             "horizontal wheel controls did not preserve the active overview and KWin process"
           return 1
         fi
-
-        if ! request_physical_shortcut overview-escape \
-          || ! wait_for_effect_active_state "$overview_plugin_id" false \
-          || ! kwin_process_is_unchanged "$kwin_horizontal_wheel_process_id" \
-          || ! wait_for_active "$xterm_title"; then
+        if ! wait_for_current_desktop "$primary_desktop_id"; then
           overview_checkpoint_failure \
-            "physical Escape did not close the horizontal-wheel overview checkpoint"
+            "shifted horizontal wheel input leaked into vertical workspace navigation"
+          return 1
+        fi
+        horizontal_wheel_active_caption=$(
+          active_window_caption 2>/dev/null || printf unavailable
+        )
+
+        if ! request_physical_shortcut overview-escape; then
+          overview_checkpoint_failure \
+            "physical Escape was not delivered to the horizontal-wheel overview checkpoint"
+          return 1
+        fi
+
+        if ! wait_for_effect_active_state "$overview_plugin_id" false; then
+          if ! kwin_process_is_unchanged \
+              "$kwin_horizontal_wheel_process_id"; then
+            overview_checkpoint_failure \
+              "the KWin process changed while waiting for physical Escape to close the horizontal-wheel overview checkpoint"
+          else
+            overview_checkpoint_failure \
+              "physical Escape did not close the horizontal-wheel overview checkpoint"
+          fi
+          return 1
+        fi
+
+        if ! kwin_process_is_unchanged \
+            "$kwin_horizontal_wheel_process_id"; then
+          overview_checkpoint_failure \
+            "the KWin process changed while closing the horizontal-wheel overview checkpoint"
+          return 1
+        fi
+
+        if ! wait_for_active "$xterm_title"; then
+          if ! kwin_process_is_unchanged \
+              "$kwin_horizontal_wheel_process_id"; then
+            overview_checkpoint_failure \
+              "the KWin process changed while restoring focus after the horizontal-wheel overview checkpoint"
+          else
+            overview_checkpoint_failure \
+              "physical Escape closed the horizontal-wheel overview checkpoint but did not restore the expected active window"
+          fi
           return 1
         fi
         after_checkpoint=$(capture_overview_checkpoint \
