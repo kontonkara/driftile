@@ -62,6 +62,14 @@ column, while dragging the empty backdrop with a mouse, touchpad, or touchscreen
 pans the stack within its finite vertical bounds. Rows outside a small visible
 range are not instantiated.
 
+While the effect is open, the current desktop row follows the public frame
+geometry of its active ordinary tiled window. Activating another eligible
+tiled window reconnects the row to that source. Manual horizontal scrolling or
+a keyboard reveal detaches the current source until the active source changes
+or a new Overview session starts. Inactive rows remain bounded, session-only
+projections of captured layout state. This current-row bridge is not a complete
+continuous spatial Overview.
+
 An unmodified mouse-wheel step selects the previous or next desktop without
 closing the Overview and never wraps. High-resolution wheel input retains a
 bounded subpixel remainder, so small deltas are not discarded. Precise

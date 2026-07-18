@@ -13,11 +13,12 @@ logical persistence v4 remain compatible.
 ## Current direction
 
 The optional Overview remains an intermediate projection over captured layout
-state. Its initial rows now share the normal solver's gaps, work area, pixel
-grid, and camera placement, but it still does not share a continuous camera or
-live geometry with the normal scrollable workspace. Search and keyboard help
-do not close that architectural gap. Continuous spatial behavior remains the
-primary direction within public KWin APIs.
+state. Its initial rows share the normal solver's gaps, work area, pixel grid,
+and camera placement. The current row can follow the active eligible tiled
+window's live geometry, but inactive rows and the overall effect still do not
+share a continuous camera or live geometry with the normal scrollable
+workspace. Continuous spatial behavior remains the primary direction within
+public KWin APIs.
 
 ## Foundation (delivered)
 
@@ -2673,3 +2674,22 @@ Release criteria (met):
   does not rely on window captions.
 - Existing settings, shortcuts, and logical persistence v4 remain compatible;
   no private API or KWin fork is introduced.
+
+### 1.79.0 (in development)
+
+- Attach the current desktop row's session camera to the public frame geometry
+  of its active ordinary tiled window while the Overview is open.
+- Reattach when the active eligible source changes. Detach the current source
+  after manual horizontal scrolling or a keyboard reveal until the source or
+  Overview session changes.
+- Keep inactive rows as bounded, session-only projections of captured layout
+  state.
+
+Release criteria:
+
+- Camera inference is bounded, pixel-grid aligned, and fails closed for stale
+  work area, output, scale, or window classification.
+- Frame-driven updates avoid layout scans, polling, private APIs, unbounded
+  retained state, and writes to authoritative layout or window state.
+- This milestone is a current-row bridge only; it is not a complete continuous
+  spatial Overview.
