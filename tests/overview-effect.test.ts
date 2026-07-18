@@ -2719,6 +2719,9 @@ describe("overview effect package", () => {
     expect(wheelHandler).toMatch(
       /id: spatialHorizontalWheelHandler[\s\S]*blocking: false[\s\S]*orientation: Qt\.Horizontal[\s\S]*onWheel: event => root\.routeOverviewWheel\(event, point\.position, "horizontal"\)/u,
     );
+    expect(wheelHandler).toMatch(
+      /id: spatialShiftHorizontalWheelHandler[\s\S]*target: null[\s\S]*acceptedDevices: PointerDevice\.Mouse \| PointerDevice\.TouchPad[\s\S]*acceptedModifiers: Qt\.ShiftModifier[\s\S]*blocking: false[\s\S]*orientation: Qt\.Vertical[\s\S]*onWheel: event => root\.routeOverviewShiftHorizontalWheel\(event, point\.position\)/u,
+    );
     expect(scene).toContain('property string overviewWheelAxisOwner: ""');
     expect(wheelRouting).not.toContain("event.accepted === true");
     expect(wheelRouting).not.toContain("event.accepted = false");
@@ -2735,7 +2738,10 @@ describe("overview effect package", () => {
       /const handled = requestedAxis === "horizontal"[\s\S]*handleOverviewHorizontalWheel\(event, point\)[\s\S]*handleOverviewWheel\(event\)[\s\S]*if \(claimedAxis && !handled\)/u,
     );
     expect(wheelRouting).toMatch(
-      /function releaseOverviewWheelAxisIfIdle[\s\S]*!spatialVerticalWheelHandler\.active && !spatialHorizontalWheelHandler\.active[\s\S]*overviewWheelAxisOwner = "";/u,
+      /function routeOverviewShiftHorizontalWheel[\s\S]*event\.modifiers !== Qt\.ShiftModifier[\s\S]*const pixelDeltaX = event\.pixelDelta\.y;[\s\S]*const angleDeltaX = event\.angleDelta\.y;[\s\S]*overviewWheelAxisOwner = "horizontal";[\s\S]*handleOverviewHorizontalWheelInput\(event, point, angleDeltaX, pixelDeltaX\)/u,
+    );
+    expect(wheelRouting).toMatch(
+      /function releaseOverviewWheelAxisIfIdle[\s\S]*!spatialVerticalWheelHandler\.active && !spatialHorizontalWheelHandler\.active[\s\S]*!spatialShiftHorizontalWheelHandler\.active[\s\S]*overviewWheelAxisOwner = "";/u,
     );
     expect(wheelNavigation).toContain("event.modifiers !== Qt.NoModifier");
     expect(wheelNavigation).toContain("keyboardHelpVisible");
@@ -2770,6 +2776,12 @@ describe("overview effect package", () => {
     );
     expect(wheelNavigation).toMatch(
       /function handleOverviewHorizontalWheel[\s\S]*spatialWorkspaceIndexAtPoint\(point\)[\s\S]*pixelDeltaX !== 0[\s\S]*handleSpatialHorizontalViewportWheel[\s\S]*handleSpatialHorizontalSelectionWheel/u,
+    );
+    expect(wheelNavigation).toMatch(
+      /function handleOverviewHorizontalWheel\(event, point\)[\s\S]*event\.modifiers !== Qt\.NoModifier[\s\S]*handleOverviewHorizontalWheelInput\(event, point,[\s\S]*event\.angleDelta\.x, event\.pixelDelta\.x\)/u,
+    );
+    expect(wheelNavigation).toMatch(
+      /function handleOverviewHorizontalWheelInput\(event, point, angleDeltaX, pixelDeltaX\)[\s\S]*keyboardHelpVisible \|\| !sceneEffect \|\| sceneEffect\.active !== true[\s\S]*searchQuery\.length > 0[\s\S]*spatialWorkspaceIndexAtPoint\(point\)/u,
     );
     expect(wheelNavigation).toMatch(
       /function navigateHorizontalWheelSelection[\s\S]*target\.desktopId === expectedDesktopId[\s\S]*findOverviewNavigationTarget\(selected\.id, rowTargets, navigationDirection\)/u,

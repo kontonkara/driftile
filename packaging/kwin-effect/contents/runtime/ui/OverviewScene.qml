@@ -288,6 +288,20 @@ Rectangle {
         onWheel: event => root.routeOverviewWheel(event, point.position, "horizontal")
     }
 
+    WheelHandler {
+        id: spatialShiftHorizontalWheelHandler
+
+        target: null
+        enabled: !root.keyboardHelpVisible
+        acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
+        acceptedModifiers: Qt.ShiftModifier
+        blocking: false
+        orientation: Qt.Vertical
+
+        onActiveChanged: root.releaseOverviewWheelAxisIfIdle()
+        onWheel: event => root.routeOverviewShiftHorizontalWheel(event, point.position)
+    }
+
     Item {
         id: spatialViewportInput
 
@@ -2070,8 +2084,38 @@ Rectangle {
         return handled;
     }
 
+    function routeOverviewShiftHorizontalWheel(event, point) {
+        if (!event || event.modifiers !== Qt.ShiftModifier
+                || !event.pixelDelta || !event.angleDelta
+                || !Number.isFinite(event.pixelDelta.y) || !Number.isFinite(event.angleDelta.y)) {
+            return false;
+        }
+
+        const pixelDeltaX = event.pixelDelta.y;
+        const angleDeltaX = event.angleDelta.y;
+        if (pixelDeltaX === 0 && angleDeltaX === 0) {
+            return false;
+        }
+
+        const claimedAxis = overviewWheelAxisOwner.length === 0;
+        if (claimedAxis) {
+            overviewWheelAxisOwner = "horizontal";
+        }
+        if (overviewWheelAxisOwner !== "horizontal") {
+            event.accepted = true;
+            return true;
+        }
+
+        const handled = handleOverviewHorizontalWheelInput(event, point, angleDeltaX, pixelDeltaX);
+        if (claimedAxis && !handled) {
+            overviewWheelAxisOwner = "";
+        }
+        return handled;
+    }
+
     function releaseOverviewWheelAxisIfIdle() {
-        if (!spatialVerticalWheelHandler.active && !spatialHorizontalWheelHandler.active) {
+        if (!spatialVerticalWheelHandler.active && !spatialHorizontalWheelHandler.active
+                && !spatialShiftHorizontalWheelHandler.active) {
             overviewWheelAxisOwner = "";
         }
     }
@@ -2125,9 +2169,18 @@ Rectangle {
                 return false;
             }
 
-            const pixelDeltaX = event.pixelDelta.x;
-            const angleDeltaX = event.angleDelta.x;
-            if (pixelDeltaX === 0 && angleDeltaX === 0) {
+            return handleOverviewHorizontalWheelInput(event, point,
+                                                      event.angleDelta.x, event.pixelDelta.x);
+        } catch (error) {
+            return false;
+        }
+    }
+
+    function handleOverviewHorizontalWheelInput(event, point, angleDeltaX, pixelDeltaX) {
+        try {
+            if (!event || keyboardHelpVisible || !sceneEffect || sceneEffect.active !== true
+                    || !Number.isFinite(pixelDeltaX) || !Number.isFinite(angleDeltaX)
+                    || (pixelDeltaX === 0 && angleDeltaX === 0)) {
                 return false;
             }
             if (spatialViewportDragHandler.active || spatialWindowDragSource !== null

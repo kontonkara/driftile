@@ -122,11 +122,12 @@ The current Overview is an intermediate projection of captured layout state.
 Wide workspace rows preserve window proportions, show neighboring columns,
 and keep bounded session-only horizontal viewports. Precise horizontal wheel
 input pans the row under the pointer; discrete horizontal input selects and
-reveals adjacent windows. The Overview still does not share the continuous
-camera and live geometry of the normal scrollable workspace, so its
-architecture and interaction remain materially different from the planned
-spatial Overview. Search and keyboard help are supporting tools, not
-completion criteria for that work.
+reveals adjacent windows. Holding `Shift` maps a standard vertical wheel onto
+that same horizontal path without changing unmodified workspace navigation.
+The Overview still does not share the continuous camera and live geometry of
+the normal scrollable workspace, so its architecture and interaction remain
+materially different from the planned spatial Overview. Search and keyboard
+help are supporting tools, not completion criteria for that work.
 
 `F1` opens a modal, bounded keyboard reference inside the overview. `F1` or
 `Escape` closes it before other input is processed, while its pointer button

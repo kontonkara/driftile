@@ -4998,7 +4998,7 @@ let
         if ! kwin_horizontal_wheel_process_id=$(kwin_process_id) \
           || ! request_physical_overview_horizontal_wheel "$output_frame"; then
           overview_checkpoint_failure \
-            "the physical horizontal wheel event was not delivered to the multi-column overview"
+            "the physical horizontal wheel controls were not delivered to the multi-column overview"
           return 1
         fi
         sleep 0.3
@@ -5006,7 +5006,7 @@ let
           || ! kwin_process_is_unchanged "$kwin_horizontal_wheel_process_id" \
           || ! overview_component_errors_after "$journal_cursor"; then
           overview_checkpoint_failure \
-            "horizontal wheel input did not preserve the active overview and KWin process"
+            "horizontal wheel controls did not preserve the active overview and KWin process"
           return 1
         fi
 
@@ -5029,12 +5029,12 @@ let
           || ! kwin_process_is_unchanged "$kwin_horizontal_wheel_process_id" \
           || ! overview_component_errors_after "$journal_cursor"; then
           overview_checkpoint_failure \
-            "horizontal wheel input changed applications, layout state, or the KWin process"
+            "horizontal wheel controls changed applications, layout state, or the KWin process"
           return 1
         fi
 
         record_focus_state \
-          "physical horizontal wheel input preserved the multi-column overview and KWin process"
+          "physical horizontal wheel controls preserved the multi-column overview and KWin process"
 
         if ! invoke_shortcut "$overview_shortcut" \
           || ! wait_for_effect_active_state "$overview_plugin_id" true; then

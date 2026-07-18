@@ -366,12 +366,12 @@ monitor_guest() {
       && -f "$overview_horizontal_wheel_ready_file" ]]; then
       if ! send_physical_overview_horizontal_wheel \
         "$overview_horizontal_wheel_ready_file"; then
-        printf 'Could not send the physical overview horizontal wheel event.\n' >&2
+        printf 'Could not send the physical overview horizontal wheel controls.\n' >&2
         finish_full_vm_monitor || true
         return 1
       fi
 
-      printf 'The VM received the physical overview horizontal wheel event.\n'
+      printf 'The VM received the physical overview horizontal wheel controls.\n'
       : > "$overview_horizontal_wheel_sent_file"
       overview_horizontal_wheel_sent=true
     fi
@@ -737,7 +737,7 @@ send_physical_overview_horizontal_wheel() {
   send_absolute_pointer_position "$absolute_x" "$absolute_y" || return 1
   sleep 0.1
 
-  input='{"execute":"input-send-event","arguments":{"events":[{"type":"btn","data":{"down":true,"button":"wheel-right"}},{"type":"btn","data":{"down":false,"button":"wheel-right"}}]}}'
+  input='{"execute":"input-send-event","arguments":{"events":[{"type":"btn","data":{"down":true,"button":"wheel-right"}},{"type":"btn","data":{"down":false,"button":"wheel-right"}},{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"shift"}}},{"type":"btn","data":{"down":true,"button":"wheel-down"}},{"type":"btn","data":{"down":false,"button":"wheel-down"}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"shift"}}}]}}'
   send_qmp_commands "$capabilities" "$input"
 }
 

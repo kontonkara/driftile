@@ -69,6 +69,7 @@ from the same event. During search, discrete wheel input retains result
 cycling; the F1 panel always consumes its own wheel input first.
 
 A horizontal wheel or touchpad axis acts only on the row under the pointer.
+Holding `Shift` gives a standard vertical wheel the same horizontal behavior.
 Precise deltas pan that row without changing the saved layout; discrete steps
 move the Overview selection left or right and reveal the selected column.
 Horizontal input is consumed without changing the row during search. Each
