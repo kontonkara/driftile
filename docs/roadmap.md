@@ -2605,6 +2605,10 @@ Release criteria (met):
   model refreshes in place, with one retry for an unstable sample.
 - Preserve search, help, and a still-valid keyboard selection across refresh;
   clear stale drag, wheel, and keyboard-boundary state.
+- Replace the query-plan weak cache with a bounded eight-plan ring and retain
+  fail-closed validation for external values.
+- Guard transient desktop-list invalidation while a refreshed model replaces
+  the active Overview projection.
 - Limit one rapid discrete Overview wheel burst to four workspace steps.
 - Complete horizontal, vertical-desktop, and Overview open or close touchpad
   gestures only in their captured activity, desktop, output, and topology.
