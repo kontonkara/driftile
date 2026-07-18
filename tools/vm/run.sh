@@ -216,6 +216,9 @@ monitor_guest() {
     [overview-enter-target]=false
     [overview-escape]=false
     [overview-open]=false
+    [overview-search-close]=false
+    [overview-search-edit]=false
+    [overview-search-query]=false
     [overview-up]=false
     [period]=false
     [preset-back]=false
@@ -265,6 +268,9 @@ monitor_guest() {
       minimized-consume \
       minimized-expel \
       overview-open \
+      overview-search-query \
+      overview-search-edit \
+      overview-search-close \
       overview-enter-initial \
       overview-up \
       overview-enter-target \
@@ -1277,6 +1283,15 @@ send_physical_shortcut() {
       ;;
     overview-open)
       input='{"execute":"input-send-event","arguments":{"events":[{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"meta_l"}}},{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"o"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"o"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"meta_l"}}}]}}'
+      ;;
+    overview-search-query)
+      input='{"execute":"input-send-event","arguments":{"events":[{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"f"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"f"}}},{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"i"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"i"}}},{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"r"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"r"}}},{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"e"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"e"}}}]}}'
+      ;;
+    overview-search-edit)
+      input='{"execute":"input-send-event","arguments":{"events":[{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"backspace"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"backspace"}}},{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"x"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"x"}}}]}}'
+      ;;
+    overview-search-close)
+      input='{"execute":"input-send-event","arguments":{"events":[{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"esc"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"esc"}}},{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"esc"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"esc"}}}]}}'
       ;;
     overview-enter-initial|overview-enter-target)
       input='{"execute":"input-send-event","arguments":{"events":[{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"ret"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"ret"}}}]}}'
