@@ -136,7 +136,13 @@ describe("overview live model refresh", () => {
         ),
       );
     }
-    expect(workspaceLifecycle).not.toMatch(/onWindow(?:Added|Removed)/u);
+    expect(workspaceLifecycle).not.toContain("function onWindowAdded");
+    expect(workspaceLifecycle).toMatch(
+      /function onWindowRemoved\(window\) \{\s*root\.handleSpatialLiveCameraWindowRemoved\(window\);/u,
+    );
+    expect(workspaceLifecycle).not.toMatch(
+      /function onWindowRemoved\(window\)[\s\S]*requestLiveModelRefresh|function onWindowRemoved\(window\)[\s\S]*closeStaleOverview/u,
+    );
     expect(scene).toContain(
       "onOverviewModelChanged: root.refreshOverviewSpatialSession(true)",
     );
