@@ -435,10 +435,10 @@ class DriftileTransitionsEffect {
 
   isDeferredTransitionPresentable(window) {
     return (
-      window.visible ||
-      ((effects.activeWindow === window ||
-        this.visibilityLeasedWindows.has(window)) &&
-        this.isWindowInCurrentVisibilityContext(window))
+      this.isWindowInCurrentVisibilityContext(window) &&
+      (window.visible ||
+        effects.activeWindow === window ||
+        this.visibilityLeasedWindows.has(window))
     );
   }
 

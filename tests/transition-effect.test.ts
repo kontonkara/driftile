@@ -1313,6 +1313,41 @@ describe("transition effect package", () => {
     ]);
   });
 
+  it("keeps outgoing desktop motion deferred until it becomes current", () => {
+    const harness = createHarness();
+    harness.setFullScreenEffectActive(true);
+
+    changeGeometry(harness.window, {
+      x: 60,
+      y: 70,
+      width: 500,
+      height: 300,
+    });
+    harness.window.onCurrentDesktop = false;
+    harness.setFullScreenEffectActive(false);
+
+    expect(harness.animationRequests).toHaveLength(0);
+
+    harness.window.onCurrentDesktop = true;
+    harness.window.windowDesktopsChanged.emit(harness.window);
+
+    expect(harness.animationRequests).toHaveLength(1);
+    expect(harness.animationRequests[0]).toMatchObject({
+      animations: [
+        {
+          type: "size",
+          from: { value1: 300, value2: 200 },
+          to: { value1: 500, value2: 300 },
+        },
+        {
+          type: "position",
+          from: { value1: 170, value2: 130 },
+          to: { value1: 310, value2: 220 },
+        },
+      ],
+    });
+  });
+
   it("preserves late active motion after desktop effect ownership ends", () => {
     const harness = createHarness({
       window: createWindow({ visible: false }),
