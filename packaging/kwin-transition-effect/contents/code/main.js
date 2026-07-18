@@ -15,6 +15,7 @@ const MANAGED_PROPERTY = "driftileTransitionsManaged";
 const ANIMATION_PROPERTY = "driftileTransitionAnimation";
 const DEFERRED_PROPERTY = "driftileDeferredTransition";
 const ACTIVE_ANIMATION_COUNT = "activeAnimationCount";
+const ANIMATION_BASELINE_PROPERTY = "baselineGeometry";
 const POSITION_ANIMATION = "position";
 const TRANSLATION_ANIMATION = "translation";
 const SIZE_ANIMATION = "size";
@@ -243,7 +244,7 @@ class DriftileTransitionsEffect {
       this.visibilityHandoffAnchor = effects.activeWindow;
       this.rememberVisibilityLease(effects.activeWindow);
       for (const window of this.activeAnimationWindows) {
-        this.cancelWindowAnimation(window);
+        this.deferActiveWindowTransition(window);
       }
       return;
     }
@@ -355,6 +356,28 @@ class DriftileTransitionsEffect {
     window[DEFERRED_PROPERTY] = this.copyGeometry(oldGeometry);
     this.deferredWindows.add(window);
     this.rememberVisibilityLease(window);
+  }
+
+  deferActiveWindowTransition(window) {
+    const state = window && window[ANIMATION_PROPERTY];
+    const baseline =
+      state && typeof state === "object" && !Array.isArray(state)
+        ? state[ANIMATION_BASELINE_PROPERTY]
+        : undefined;
+    const baselineGeometry = this.isValidGeometry(baseline)
+      ? this.copyGeometry(baseline)
+      : undefined;
+
+    if (
+      baselineGeometry === undefined ||
+      !this.isValidGeometry(window.geometry) ||
+      !this.geometryChanged(baselineGeometry, window.geometry)
+    ) {
+      this.cancelWindowAnimation(window);
+      return;
+    }
+
+    this.deferWindowTransition(window, baselineGeometry);
   }
 
   replayDeferredTransitions(excludedWindow) {
@@ -566,6 +589,9 @@ class DriftileTransitionsEffect {
         ));
     const positionRetargetNeeded =
       positionChanged || activePositionTargetChanged;
+    if (!this.isValidGeometry(state[ANIMATION_BASELINE_PROPERTY])) {
+      state[ANIMATION_BASELINE_PROPERTY] = this.copyGeometry(oldGeometry);
+    }
     this.retargetChangedAnimation(
       state,
       SIZE_ANIMATION,

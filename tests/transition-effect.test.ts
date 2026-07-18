@@ -994,12 +994,6 @@ describe("transition effect package", () => {
     harness.setFullScreenEffectActive(true);
     expect(harness.cancelledAnimations).toEqual([1, 2]);
 
-    changeGeometry(harness.window, {
-      x: 60,
-      y: 70,
-      width: 500,
-      height: 300,
-    });
     expect(harness.animationRequests).toHaveLength(1);
 
     harness.setFullScreenEffectActive(false);
@@ -1009,16 +1003,37 @@ describe("transition effect package", () => {
       animations: [
         {
           type: "size",
-          from: { value1: 400, value2: 250 },
-          to: { value1: 500, value2: 300 },
+          from: { value1: 300, value2: 200 },
+          to: { value1: 400, value2: 250 },
         },
         {
           type: "position",
-          from: { value1: 240, value2: 175 },
-          to: { value1: 310, value2: 220 },
+          from: { value1: 170, value2: 130 },
+          to: { value1: 240, value2: 175 },
         },
       ],
     });
+
+    changeGeometry(harness.window, {
+      x: 60,
+      y: 70,
+      width: 500,
+      height: 300,
+    });
+    expect(harness.animationRequests).toHaveLength(2);
+    expect(harness.retargetCalls).toEqual([
+      {
+        animationId: 3,
+        target: { value1: 500, value2: 300 },
+        duration: 180,
+      },
+      {
+        animationId: 4,
+        target: { value1: 310, value2: 220 },
+        duration: 180,
+      },
+    ]);
+    expect(harness.cancelledAnimations).toEqual([1, 2]);
   });
 
   it("touches only tracked animation windows when effect ownership changes", () => {
