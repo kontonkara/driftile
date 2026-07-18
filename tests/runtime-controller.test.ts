@@ -14190,14 +14190,10 @@ describe("RuntimeController", () => {
     });
     for (
       let attempt = 0;
-      !rejectedExpectedActivation && scheduler.pendingCount > 0;
+      attempt < 20 && scheduler.pendingCount > 0;
       attempt += 1
     ) {
       scheduler.flush();
-
-      if (attempt >= 20) {
-        throw new Error("desktop focus replay did not reach its target");
-      }
     }
     expect(rejectedExpectedActivation).toBe(true);
     fixture.setActivationBehavior(null);
