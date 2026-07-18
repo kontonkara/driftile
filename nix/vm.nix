@@ -8940,6 +8940,8 @@ let
         local destination_y
         local edge_margin_milli
         local gap_milli
+        local horizontal_margin_limit_milli
+        local minimum_output_dimension
         local output_frame=$1
         local output_height
         local output_width
@@ -8962,11 +8964,17 @@ let
           output_height \
           <<< "$output_frame"
 
-        card_width_milli=$((output_width * 500))
         card_height_milli=$((output_height * 500))
-        card_x_milli=$((
-          (output_width * 1000 - card_width_milli) / 2
-        ))
+        minimum_output_dimension=$output_width
+        ((output_height >= minimum_output_dimension)) \
+          || minimum_output_dimension=$output_height
+        card_x_milli=$((minimum_output_dimension * 35))
+        ((card_x_milli >= 20000)) || card_x_milli=20000
+        ((card_x_milli <= 64000)) || card_x_milli=64000
+        horizontal_margin_limit_milli=$((output_width * 200))
+        ((card_x_milli <= horizontal_margin_limit_milli)) \
+          || card_x_milli=$horizontal_margin_limit_milli
+        card_width_milli=$((output_width * 1000 - card_x_milli * 2))
         edge_margin_milli=$((output_height * 250))
         gap_milli=$((card_height_milli * 12 / 100))
         ((gap_milli <= 48000)) || gap_milli=48000
