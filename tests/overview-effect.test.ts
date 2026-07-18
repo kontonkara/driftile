@@ -1511,9 +1511,8 @@ describe("overview effect package", () => {
     expect(spatialInput).toContain("target: null");
     expect(spatialInput).toContain("acceptedButtons: Qt.LeftButton");
     expect(spatialInput).toContain(
-      "acceptedDevices: PointerDevice.TouchPad | PointerDevice.TouchScreen",
+      "acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad | PointerDevice.TouchScreen",
     );
-    expect(spatialInput).not.toContain("PointerDevice.Mouse");
     expect(spatialInput).toContain(
       "grabPermissions: PointerHandler.TakeOverForbidden",
     );

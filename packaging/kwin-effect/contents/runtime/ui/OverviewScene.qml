@@ -275,7 +275,7 @@ Rectangle {
 
             target: null
             acceptedButtons: Qt.LeftButton
-            acceptedDevices: PointerDevice.TouchPad | PointerDevice.TouchScreen
+            acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad | PointerDevice.TouchScreen
             acceptedModifiers: Qt.NoModifier
             grabPermissions: PointerHandler.TakeOverForbidden
             xAxis.enabled: false
