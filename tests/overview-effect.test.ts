@@ -2748,6 +2748,9 @@ describe("overview effect package", () => {
     expect(scene).toContain("property real overviewWheelPixelRemainder: 0");
     expect(scene).toContain("property int overviewWheelRemainder: 0");
     expect(scene).toContain(
+      "property bool overviewVerticalWheelSettlePending: false",
+    );
+    expect(scene).toContain(
       "property real overviewHorizontalWheelPixelRemainder: 0",
     );
     expect(scene).toContain("property int overviewHorizontalWheelRemainder: 0");
@@ -2767,6 +2770,9 @@ describe("overview effect package", () => {
       /const pixelInput = event\.pixelDelta\.x !== 0 \|\| event\.pixelDelta\.y !== 0;[\s\S]*horizontalMagnitude > verticalMagnitude \? "horizontal" : "vertical"/u,
     );
     expect(wheelRouting).toMatch(
+      /horizontalMagnitude === verticalMagnitude[\s\S]*overviewWheelAxisOwner\.length > 0[\s\S]*event\.accepted = true;[\s\S]*return false;/u,
+    );
+    expect(wheelRouting).toMatch(
       /if \(handlerAxis !== requestedAxis\) \{\s*return false;\s*\}/u,
     );
     expect(wheelRouting).toMatch(
@@ -2779,7 +2785,7 @@ describe("overview effect package", () => {
       /function routeOverviewShiftHorizontalWheel[\s\S]*event\.modifiers !== Qt\.ShiftModifier[\s\S]*const pixelDeltaX = event\.pixelDelta\.y;[\s\S]*const angleDeltaX = event\.angleDelta\.y;[\s\S]*overviewWheelAxisOwner = "horizontal";[\s\S]*handleOverviewHorizontalWheelInput\(event, point, angleDeltaX, pixelDeltaX\)/u,
     );
     expect(wheelRouting).toMatch(
-      /function releaseOverviewWheelAxisIfIdle[\s\S]*!spatialVerticalWheelHandler\.active && !spatialHorizontalWheelHandler\.active[\s\S]*!spatialShiftHorizontalWheelHandler\.active[\s\S]*overviewWheelAxisOwner = "";/u,
+      /function releaseOverviewWheelAxisIfIdle[\s\S]*!spatialVerticalWheelHandler\.active && !spatialHorizontalWheelHandler\.active[\s\S]*!spatialShiftHorizontalWheelHandler\.active[\s\S]*overviewWheelAxisOwner === "vertical"[\s\S]*finishSpatialVerticalWheelGesture\(\);[\s\S]*overviewWheelAxisOwner = "";/u,
     );
     expect(wheelNavigation).toContain("event.modifiers !== Qt.NoModifier");
     expect(wheelNavigation).toContain("keyboardHelpVisible");
@@ -2820,6 +2826,9 @@ describe("overview effect package", () => {
     );
     expect(wheelNavigation).toMatch(
       /function handleOverviewHorizontalWheelInput\(event, point, angleDeltaX, pixelDeltaX\)[\s\S]*keyboardHelpVisible \|\| !sceneEffect \|\| sceneEffect\.active !== true[\s\S]*searchQuery\.length > 0[\s\S]*spatialWorkspaceIndexAtPoint\(point\)/u,
+    );
+    expect(wheelNavigation).toMatch(
+      /function handleOverviewHorizontalWheelInput[\s\S]*resetOverviewVerticalWheelState\(\);[\s\S]*handleSpatialHorizontalViewportWheel/u,
     );
     expect(wheelNavigation).toMatch(
       /function navigateHorizontalWheelSelection[\s\S]*target\.desktopId === expectedDesktopId[\s\S]*findOverviewNavigationTarget\(selected\.id, rowTargets, navigationDirection\)/u,
@@ -3021,7 +3030,7 @@ describe("overview effect package", () => {
       /KWin\.Workspace\.(?:stackingOrder|windows)\b|\b(?:Timer|Behavior|Animation)\s*\{|setInterval|org\.kde\.kwin\.private/u,
     );
     expect(wheelNavigation).toMatch(
-      /function handleSpatialViewportWheel[\s\S]*setSpatialContentY\(plan\.contentY\)[\s\S]*overviewWheelPixelRemainder = plan\.pixelRemainder;[\s\S]*overviewWheelRemainder = 0;[\s\S]*return true;/u,
+      /function handleSpatialViewportWheel[\s\S]*const previousContentY = spatialContentY;[\s\S]*setSpatialContentY\(plan\.contentY\)[\s\S]*overviewWheelPixelRemainder = plan\.pixelRemainder;[\s\S]*searchQuery\.length === 0 && plan\.contentY !== previousContentY[\s\S]*overviewVerticalWheelSettlePending = true;[\s\S]*return true;/u,
     );
     expect(wheelNavigation).toContain(
       "runtime.planOverviewWheelNavigation(overviewWheelRemainder,",
@@ -3033,7 +3042,19 @@ describe("overview effect package", () => {
       'typeof runtime.planOverviewSpatialWorkspaceWheelTarget !== "function"',
     );
     expect(wheelNavigation).toMatch(
-      /runtime\.planOverviewSpatialWorkspaceWheelTarget\(\{[\s\S]*currentIndex: sourceIndex,[\s\S]*direction,[\s\S]*steps,[\s\S]*workspaceCount: expectedDesktopIds\.length/u,
+      /runtime\.planOverviewSpatialWorkspaceWheelTarget\(\{[\s\S]*currentIndex: request\.sourceIndex,[\s\S]*direction,[\s\S]*steps,[\s\S]*workspaceCount: request\.desktopIds\.length/u,
+    );
+    expect(wheelNavigation).toMatch(
+      /function finishSpatialVerticalWheelGesture[\s\S]*overviewVerticalWheelSettlePending[\s\S]*resetOverviewVerticalWheelState\(\);[\s\S]*captureSpatialWheelWorkspaceRequest\(\)[\s\S]*planSpatialWorkspaceSettle\(request\)[\s\S]*requestSpatialWheelWorkspaceIndex\(request, plan\.targetIndex\)[\s\S]*setSpatialContentY\(plan\.contentY\)/u,
+    );
+    expect(wheelNavigation).toMatch(
+      /runtime\.planOverviewSpatialWorkspaceSettle\(\{[\s\S]*cardHeight: request\.cardHeight,[\s\S]*contentHeight: request\.layout\.contentHeight,[\s\S]*contentY: request\.contentY,[\s\S]*gap: request\.gap,[\s\S]*sceneHeight: request\.sceneHeight,[\s\S]*workspaceCount: request\.desktopIds\.length/u,
+    );
+    expect(wheelNavigation).toMatch(
+      /function spatialWheelWorkspaceRequestIsExact[\s\S]*desktopIds === request\.desktopIds[\s\S]*currentDesktop === request\.sourceDesktop[\s\S]*overviewSpatialLayout === request\.layout[\s\S]*spatialContentY === request\.contentY[\s\S]*desktopContextIsExact/u,
+    );
+    expect(wheelNavigation).toMatch(
+      /function resetOverviewVerticalWheelState[\s\S]*overviewWheelPixelRemainder = 0;[\s\S]*overviewWheelRemainder = 0;[\s\S]*overviewVerticalWheelSettlePending = false;/u,
     );
     expect(wheelNavigation).toContain(
       "plan.appliedSteps !== Math.abs(plan.targetIndex - sourceIndex)",
@@ -3068,6 +3089,9 @@ describe("overview effect package", () => {
     expect(overviewRuntimeIndex).toContain(
       "planOverviewSpatialWorkspaceWheelTarget",
     );
+    expect(overviewRuntimeIndex).toContain(
+      "planOverviewSpatialWorkspaceSettle",
+    );
     expect(scene).toMatch(
       /function refreshOverviewSpatialSession\(preserveViewport\)[\s\S]*resetOverviewWheelState\(\);/u,
     );
@@ -3087,7 +3111,7 @@ describe("overview effect package", () => {
       /function resetOverviewHorizontalWheelState\(\) \{\s*overviewHorizontalWheelPixelRemainder = 0;\s*overviewHorizontalWheelRemainder = 0;\s*\}/u,
     );
     expect(wheelNavigation).toMatch(
-      /function resetOverviewVerticalWheelState\(\) \{\s*overviewWheelPixelRemainder = 0;\s*overviewWheelRemainder = 0;\s*\}/u,
+      /function resetOverviewVerticalWheelState\(\) \{\s*overviewWheelPixelRemainder = 0;\s*overviewWheelRemainder = 0;\s*overviewVerticalWheelSettlePending = false;\s*\}/u,
     );
     expect(wheelNavigation).toMatch(
       /if \(plan\.steps > 0\)[\s\S]*requestSpatialWheelWorkspace\(plan\.direction, plan\.steps\)[\s\S]*resetOverviewWheelState\(\);[\s\S]*else \{[\s\S]*overviewWheelRemainder = plan\.remainder;/u,

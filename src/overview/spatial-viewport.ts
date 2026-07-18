@@ -15,6 +15,15 @@ export interface OverviewSpatialWorkspaceCenterInput {
   readonly workspaceIndex: number;
 }
 
+export interface OverviewSpatialWorkspaceSettleInput {
+  readonly cardHeight: number;
+  readonly contentHeight: number;
+  readonly contentY: number;
+  readonly gap: number;
+  readonly sceneHeight: number;
+  readonly workspaceCount: number;
+}
+
 export interface OverviewSpatialViewportAnchorLayoutInput {
   readonly cardHeight: number;
   readonly contentHeight: number;
@@ -35,6 +44,10 @@ export interface OverviewSpatialViewportAnchorInput {
 export interface OverviewSpatialViewportPlan {
   readonly contentY: number;
   readonly maximumContentY: number;
+}
+
+export interface OverviewSpatialWorkspaceSettlePlan extends OverviewSpatialViewportPlan {
+  readonly targetIndex: number;
 }
 
 export interface OverviewSpatialViewportAnchorPlan extends OverviewSpatialViewportPlan {
@@ -119,6 +132,84 @@ export function planOverviewSpatialWorkspaceCenter(
     }
 
     return createViewportPlan(sceneHeight, contentHeight, centeredContentY);
+  } catch {
+    return null;
+  }
+}
+
+export function planOverviewSpatialWorkspaceSettle(
+  input: unknown,
+): OverviewSpatialWorkspaceSettlePlan | null {
+  try {
+    if (!isRecord(input)) {
+      return null;
+    }
+
+    const sceneHeight = input["sceneHeight"];
+    const contentHeight = input["contentHeight"];
+    const contentY = input["contentY"];
+    const cardHeight = input["cardHeight"];
+    const gap = input["gap"];
+    const workspaceCount = input["workspaceCount"];
+
+    if (
+      !isPositiveFiniteNumber(sceneHeight) ||
+      !isPositiveFiniteNumber(contentHeight) ||
+      contentHeight < sceneHeight ||
+      !isNonNegativeFiniteNumber(contentY) ||
+      !isPositiveFiniteNumber(cardHeight) ||
+      cardHeight > sceneHeight ||
+      !isNonNegativeFiniteNumber(gap) ||
+      !isSafeInteger(workspaceCount) ||
+      workspaceCount < 1 ||
+      workspaceCount > LAYOUT_PERSISTENCE_LIMITS.contexts
+    ) {
+      return null;
+    }
+
+    const stride = cardHeight + gap;
+    const expectedMaximumContentY = (workspaceCount - 1) * stride;
+    const maximumContentY = contentHeight - sceneHeight;
+
+    if (
+      !isPositiveFiniteNumber(stride) ||
+      !isNonNegativeFiniteNumber(expectedMaximumContentY) ||
+      !isNonNegativeFiniteNumber(maximumContentY) ||
+      !approximatelyEqual(expectedMaximumContentY, maximumContentY) ||
+      (contentY > maximumContentY &&
+        !approximatelyEqual(contentY, maximumContentY))
+    ) {
+      return null;
+    }
+
+    const continuousWorkspaceIndex =
+      Math.min(contentY, maximumContentY) / stride;
+    if (!isNonNegativeFiniteNumber(continuousWorkspaceIndex)) {
+      return null;
+    }
+
+    const targetIndex = clampInteger(
+      Math.floor(continuousWorkspaceIndex + 0.5),
+      0,
+      workspaceCount - 1,
+    );
+    const centeredContentY = targetIndex * stride;
+
+    if (!isNonNegativeFiniteNumber(centeredContentY)) {
+      return null;
+    }
+
+    const viewport = createViewportPlan(
+      sceneHeight,
+      contentHeight,
+      centeredContentY,
+    );
+
+    return Object.freeze({
+      targetIndex,
+      contentY: viewport.contentY,
+      maximumContentY: viewport.maximumContentY,
+    });
   } catch {
     return null;
   }

@@ -4,6 +4,7 @@ import {
   planOverviewSpatialViewportAnchor,
   planOverviewSpatialViewport,
   planOverviewSpatialWorkspaceCenter,
+  planOverviewSpatialWorkspaceSettle,
 } from "../../src/overview/spatial-viewport";
 
 const previousLayout = Object.freeze({
@@ -178,6 +179,151 @@ describe("planOverviewSpatialWorkspaceCenter", () => {
 
     expect(planOverviewSpatialViewport(hostile)).toBeNull();
     expect(planOverviewSpatialWorkspaceCenter(hostile)).toBeNull();
+  });
+});
+
+describe("planOverviewSpatialWorkspaceSettle", () => {
+  const sceneHeight = 900;
+  const cardHeight = 270;
+  const gap = 32.4;
+  const workspaceCount = 4;
+  const stride = cardHeight + gap;
+  const maximumContentY = (workspaceCount - 1) * stride;
+  const contentHeight = sceneHeight + maximumContentY;
+
+  it.each([
+    [0, 0],
+    [stride * 0.5 - 0.001, 0],
+    [stride * 0.5, 1],
+    [stride * 1.49, 1],
+    [stride * 1.5, 2],
+    [stride * 2.5, 3],
+    [maximumContentY, 3],
+  ])(
+    "settles content y %o on workspace %o",
+    (contentY, expectedTargetIndex) => {
+      const plan = planOverviewSpatialWorkspaceSettle({
+        cardHeight,
+        contentHeight,
+        contentY,
+        gap,
+        sceneHeight,
+        workspaceCount,
+      });
+
+      expect(plan?.targetIndex).toBe(expectedTargetIndex);
+      expect(plan?.contentY).toBeCloseTo(expectedTargetIndex * stride);
+      expect(plan?.maximumContentY).toBeCloseTo(maximumContentY);
+      expect(Object.isFrozen(plan)).toBe(true);
+    },
+  );
+
+  it("keeps a single workspace centered at zero", () => {
+    expect(
+      planOverviewSpatialWorkspaceSettle({
+        cardHeight: 450,
+        contentHeight: 900,
+        contentY: 0,
+        gap: 48,
+        sceneHeight: 900,
+        workspaceCount: 1,
+      }),
+    ).toEqual({ targetIndex: 0, contentY: 0, maximumContentY: 0 });
+  });
+
+  it("accepts the bounded workspace limit with constant-time selection", () => {
+    const boundedWorkspaceCount = LAYOUT_PERSISTENCE_LIMITS.contexts;
+    const boundedStride = 128;
+    const boundedMaximumContentY = (boundedWorkspaceCount - 1) * boundedStride;
+
+    expect(
+      planOverviewSpatialWorkspaceSettle({
+        cardHeight: boundedStride,
+        contentHeight: 720 + boundedMaximumContentY,
+        contentY: boundedMaximumContentY - boundedStride * 0.49,
+        gap: 0,
+        sceneHeight: 720,
+        workspaceCount: boundedWorkspaceCount,
+      }),
+    ).toEqual({
+      targetIndex: boundedWorkspaceCount - 1,
+      contentY: boundedMaximumContentY,
+      maximumContentY: boundedMaximumContentY,
+    });
+  });
+
+  it.each([
+    null,
+    [],
+    {},
+    {
+      cardHeight,
+      contentHeight,
+      contentY: -1,
+      gap,
+      sceneHeight,
+      workspaceCount,
+    },
+    {
+      cardHeight,
+      contentHeight,
+      contentY: maximumContentY + 1,
+      gap,
+      sceneHeight,
+      workspaceCount,
+    },
+    {
+      cardHeight,
+      contentHeight: contentHeight + 1,
+      contentY: 0,
+      gap,
+      sceneHeight,
+      workspaceCount,
+    },
+    {
+      cardHeight: sceneHeight + 1,
+      contentHeight,
+      contentY: 0,
+      gap,
+      sceneHeight,
+      workspaceCount,
+    },
+    {
+      cardHeight,
+      contentHeight,
+      contentY: 0,
+      gap,
+      sceneHeight,
+      workspaceCount: LAYOUT_PERSISTENCE_LIMITS.contexts + 1,
+    },
+    {
+      cardHeight: Number.MAX_VALUE,
+      contentHeight: Number.MAX_VALUE,
+      contentY: 0,
+      gap: Number.MAX_VALUE,
+      sceneHeight: Number.MAX_VALUE,
+      workspaceCount: 2,
+    },
+    {
+      cardHeight,
+      contentHeight,
+      contentY: Number.NaN,
+      gap,
+      sceneHeight,
+      workspaceCount,
+    },
+  ])("rejects malformed or inconsistent settle input (%o)", (input) => {
+    expect(planOverviewSpatialWorkspaceSettle(input)).toBeNull();
+  });
+
+  it("fails closed for hostile accessors", () => {
+    const hostile = Object.defineProperty({}, "contentY", {
+      get(): never {
+        throw new Error("unavailable");
+      },
+    });
+
+    expect(planOverviewSpatialWorkspaceSettle(hostile)).toBeNull();
   });
 });
 

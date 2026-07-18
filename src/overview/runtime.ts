@@ -54,6 +54,7 @@ export {
   planOverviewSpatialViewportAnchor,
   planOverviewSpatialViewport,
   planOverviewSpatialWorkspaceCenter,
+  planOverviewSpatialWorkspaceSettle,
 } from "./spatial-viewport";
 export type {
   OverviewSpatialViewportAnchorInput,
@@ -62,6 +63,8 @@ export type {
   OverviewSpatialViewportInput,
   OverviewSpatialViewportPlan,
   OverviewSpatialWorkspaceCenterInput,
+  OverviewSpatialWorkspaceSettleInput,
+  OverviewSpatialWorkspaceSettlePlan,
 } from "./spatial-viewport";
 export {
   planOverviewSpatialWheel,
