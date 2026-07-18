@@ -1,7 +1,28 @@
 # Migration
 
-The latest stable release is 1.70.0. Use the steps below when changing release
+The latest stable release is 1.74.0. Use the steps below when changing release
 generations, and never combine files from different releases.
+
+## Upgrade from 1.73.0 to 1.74.0
+
+1. Release a helper-owned shortcut profile with the installed helper.
+2. Disable Driftile and both optional effects in System Settings.
+3. Install matching 1.74.0 artifacts, or pin the Nix input to `v1.74.0` and
+   rebuild.
+4. Re-enable Driftile and only the optional effects you use, then reclaim the
+   helper profile if needed.
+
+The optional Overview gains a configurable spatial zoom. Existing KConfig and
+Home Manager configurations keep the `0.5` default when the option is unset.
+No shortcut, layout, or persistence migration is required; logical state
+remains v4.
+
+## Roll back from 1.74.0 to 1.73.0
+
+Release a helper-owned profile, disable Driftile and both optional effects,
+then restore matching verified 1.73.0 artifacts or pin the Nix input to
+`v1.73.0` and rebuild. Older effects ignore the optional Overview zoom key.
+No layout or schema migration is required.
 
 ## Upgrade from 1.69.0 to 1.70.0
 

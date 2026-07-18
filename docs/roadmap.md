@@ -1,12 +1,12 @@
 # Roadmap
 
-Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.73.0 are
+Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.74.0 are
 released. The delivered milestones and release criteria below are a historical
 record. Later direction is not a committed release schedule.
 
-Stable 1.73.0 makes overflowing Overview help fully scrollable by keyboard,
-mouse, and touchpad without dispatching background actions. Logical persistence
-remains v4.
+Stable 1.74.0 adds a spatial, pannable Overview workspace stack with bounded
+wheel navigation and preserves complete window motion across overlapping
+workspace effects. Logical persistence remains v4.
 
 ## Foundation (delivered)
 
@@ -2527,3 +2527,27 @@ Release criteria (met):
   the Overview selection handler.
 - The batch adds no global binding, setting, timer, animation, persistence
   field, private API, or KWin fork.
+
+### 1.74.0 (released)
+
+- Present Overview workspaces as a vertically scrollable spatial stack at the
+  output aspect ratio, centered on the current workspace.
+- Configure Overview zoom from `0.2` to `0.75`, with `0.5` as the default.
+- Pan with touch or high-resolution touchpad input; use discrete wheel steps to
+  select adjacent workspaces without wrapping or closing the Overview.
+- Preserve search-result wheel cycling, bounded boundary navigation,
+  virtualized off-screen cards, and edge auto-pan for window and workspace
+  drags.
+- Replay every eligible deferred current-context window after a workspace
+  effect so rapid focus navigation keeps complete column motion.
+
+Release criteria (met):
+
+- The current card starts centered, neighboring cards remain spatially
+  reachable, and all viewport movement stays inside finite content bounds.
+- Wheel, drag, search, help, and keyboard paths remain mutually isolated and
+  issue only guarded public KWin requests.
+- Hidden VM coverage confirms physical Overview reorder, keyboard navigation,
+  real application lifecycles, and cleanup with no retained QEMU process.
+- Existing shortcuts and logical persistence v4 remain compatible; no private
+  API or KWin fork is introduced.
