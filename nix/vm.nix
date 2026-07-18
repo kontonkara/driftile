@@ -8773,15 +8773,16 @@ let
 
         source_x=$((output_x + (card_x_milli + 21000) / 1000))
         destination_x=$source_x
-        source_y=$((output_y + (edge_margin_milli + card_height_milli / 2) / 1000))
-        destination_y=$((output_y + output_height - 8))
+        source_y=$((output_y \
+          + (edge_margin_milli + stride_milli + output_height * 1000) / 2000))
+        destination_y=$((output_y \
+          + (edge_margin_milli + card_height_milli / 4) / 1000))
         ((source_x >= output_x \
           && source_x < output_x + output_width \
-          && source_y >= output_y \
+          && source_y >= output_y + (edge_margin_milli + stride_milli) / 1000 \
           && source_y < output_y + output_height \
-          && destination_y >= output_y + (edge_margin_milli + stride_milli) / 1000 \
           && destination_y >= output_y \
-          && destination_y < output_y + output_height)) \
+          && destination_y < source_y)) \
           || return 1
 
         rm -f "$ready_file" "$sent_file" "$temporary_file"
