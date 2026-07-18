@@ -109,6 +109,7 @@ Rectangle {
     onKeyboardSelectionIdChanged: root.centerKeyboardSelectionWorkspace()
     onKeyboardHelpVisibleChanged: overviewWheelRemainder = 0
     onOverviewSpatialLayoutChanged: {
+        overviewWheelRemainder = 0;
         cancelKeyboardBoundaryNavigation();
         if (desktopReorderActive) {
             resetDesktopReorder();
@@ -118,6 +119,7 @@ Rectangle {
         }
         resetSpatialViewport();
     }
+    onSpatialContentYChanged: overviewWheelRemainder = 0
     onSearchQueryChanged: {
         overviewWheelRemainder = 0;
         cancelKeyboardBoundaryNavigation();

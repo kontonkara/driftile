@@ -1336,7 +1336,7 @@ describe("overview effect package", () => {
       /function resetSpatialViewport\(\)[\s\S]*planSpatialViewport\(overviewSpatialLayout\.initialContentY\)[\s\S]*spatialContentY = plan\.contentY/u,
     );
     expect(scene).toMatch(
-      /onOverviewSpatialLayoutChanged:[\s\S]*resetDesktopReorder\(\);[\s\S]*resetSpatialViewport\(\);/u,
+      /onOverviewSpatialLayoutChanged: \{\s*overviewWheelRemainder = 0;[\s\S]*resetDesktopReorder\(\);[\s\S]*resetSpatialViewport\(\);/u,
     );
     expect(scene).toMatch(
       /Component\.onCompleted:[\s\S]*resetSpatialViewport\(\);[\s\S]*forceActiveFocus\(\);/u,
@@ -2561,6 +2561,9 @@ describe("overview effect package", () => {
     expect(wheelNavigation).toContain("keyboardHelpVisible");
     expect(scene).toContain(
       "onKeyboardHelpVisibleChanged: overviewWheelRemainder = 0",
+    );
+    expect(scene).toContain(
+      "onSpatialContentYChanged: overviewWheelRemainder = 0",
     );
     expect(wheelNavigation).toMatch(
       /spatialViewportDragHandler\.active \|\| spatialWindowDragSource !== null[\s\S]*\|\| desktopReorderActive[\s\S]*overviewWheelRemainder = 0;[\s\S]*event\.accepted = true;[\s\S]*return;/u,
