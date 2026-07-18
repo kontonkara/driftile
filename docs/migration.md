@@ -1,7 +1,32 @@
 # Migration
 
-The latest stable release is 1.79.0. Use the steps below when changing release
+The latest stable release is 1.80.0. Use the steps below when changing release
 generations, and never combine files from different releases.
+
+## Upgrade from 1.79.0 to 1.80.0
+
+1. Release a helper-owned shortcut profile with the installed helper.
+2. Disable Driftile and both optional effects in System Settings.
+3. Install matching 1.80.0 artifacts, or pin the Nix input to `v1.80.0` and
+   rebuild.
+4. Re-enable Driftile and only the optional effects you use, then reclaim the
+   helper profile if needed.
+
+No shortcut, setting, schema, layout, or persistence migration is required.
+Immediate horizontal focus after a desktop handoff now queues up to four
+requests and advances after exact activation; vertical and boundary-edge input
+keeps one superseding request. Close-focus recovery accepts eligible
+same-context automatic-floating utilities, transients, and
+application-excluded windows while ordinary non-normal windows fail closed. An
+exact unresolved output-local handoff owns immediate input even while another
+output remains active; ambiguous, global, and stale handoffs fail closed.
+
+## Roll back from 1.80.0 to 1.79.0
+
+Release a helper-owned profile, disable Driftile and both optional effects,
+then restore matching verified 1.79.0 artifacts or pin the Nix input to
+`v1.79.0` and rebuild. Logical persistence v4 remains compatible; no option
+deletion or schema migration is required.
 
 ## Upgrade from 1.78.0 to 1.79.0
 

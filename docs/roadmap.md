@@ -1,14 +1,14 @@
 # Roadmap
 
-Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.79.0 are
+Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.80.0 are
 released. The delivered milestones and release criteria below are a historical
 record. Later direction is not a committed release schedule.
 
-Stable 1.79.0 lets the current Overview row follow the live frame geometry of
-its active eligible tiled window. It reconnects when the source changes and
-detaches after manual horizontal panning or a keyboard reveal. Inactive rows
-remain captured, session-only projections. Settings, shortcuts, and logical
-persistence v4 remain compatible.
+Stable 1.80.0 queues immediate horizontal focus across desktop handoffs,
+restores eligible automatic-floating focus after close, and keeps per-output
+handoff input owned by its exact unresolved context. Ambiguous, global, and
+stale cases fail closed. Settings, shortcuts, and logical persistence v4 remain
+compatible.
 
 ## Current direction
 
@@ -2694,7 +2694,7 @@ Release criteria (met):
 - This milestone is a current-row bridge only; it is not a complete continuous
   spatial Overview.
 
-### 1.80.0 (in development)
+### 1.80.0 (released)
 
 - Queue up to four immediate horizontal focus intents across a desktop handoff,
   beginning after the exact handoff activation and advancing only after each
