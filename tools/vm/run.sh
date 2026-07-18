@@ -169,6 +169,9 @@ monitor_guest() {
   local overview_desktop_drag_ready_file="$temporary_directory/xchg/driftile-overview-desktop-drag-ready"
   local overview_desktop_drag_sent=false
   local overview_desktop_drag_sent_file="$temporary_directory/xchg/driftile-overview-desktop-drag-sent"
+  local overview_horizontal_wheel_ready_file="$temporary_directory/xchg/driftile-overview-horizontal-wheel-ready"
+  local overview_horizontal_wheel_sent=false
+  local overview_horizontal_wheel_sent_file="$temporary_directory/xchg/driftile-overview-horizontal-wheel-sent"
   local -A keys_sent=(
     [bracket-right]=false
     [close-window]=false
@@ -359,6 +362,20 @@ monitor_guest() {
       overview_desktop_drag_sent=true
     fi
 
+    if [[ "$overview_horizontal_wheel_sent" == false \
+      && -f "$overview_horizontal_wheel_ready_file" ]]; then
+      if ! send_physical_overview_horizontal_wheel \
+        "$overview_horizontal_wheel_ready_file"; then
+        printf 'Could not send the physical overview horizontal wheel event.\n' >&2
+        finish_full_vm_monitor || true
+        return 1
+      fi
+
+      printf 'The VM received the physical overview horizontal wheel event.\n'
+      : > "$overview_horizontal_wheel_sent_file"
+      overview_horizontal_wheel_sent=true
+    fi
+
     pointer_resize_ready_file="$temporary_directory/xchg/driftile-pointer-resize-horizontal-ready"
     pointer_resize_sent_file="$temporary_directory/xchg/driftile-pointer-resize-horizontal-sent"
 
@@ -439,9 +456,9 @@ monitor_guest() {
       fi
 
       if [[ "$(<"$focus_file")" == true ]]; then
-        printf 'The VM verified physical shortcut and pointer routing, physical Meta+Q close-window handling, desktop switching and reordering, same-output cross-desktop pointer adoption, minimized-slot navigation, column reordering, horizontal extraction, consume and expel past minimized peers, native fullscreen and maximize, stacked fullscreen and maximize extraction past minimized peers, borderless ownership, numbered dynamic desktops, whole-column desktop transfer past a minimized member, floating desktop transfers, output transfers, floating-layer navigation, focus, stack editing, pointer reinsertion and horizontal pointer-resize adoption, live touchpad-navigation settings, physical overview keyboard navigation, advanced column view, column and window sizing, scrolling, mixed Konsole, Firefox, KDE Calculator, XWayland xterm, and fixed-size XWayland fixtures, plus repeated real-application lifecycles.\n'
+        printf 'The VM verified physical shortcut and pointer routing, physical Meta+Q close-window handling, desktop switching and reordering, same-output cross-desktop pointer adoption, minimized-slot navigation, column reordering, horizontal extraction, consume and expel past minimized peers, native fullscreen and maximize, stacked fullscreen and maximize extraction past minimized peers, borderless ownership, numbered dynamic desktops, whole-column desktop transfer past a minimized member, floating desktop transfers, output transfers, floating-layer navigation, focus, stack editing, pointer reinsertion and horizontal pointer-resize adoption, live touchpad-navigation settings, physical overview keyboard and horizontal-wheel navigation, advanced column view, column and window sizing, scrolling, mixed Konsole, Firefox, KDE Calculator, XWayland xterm, and fixed-size XWayland fixtures, plus repeated real-application lifecycles.\n'
       else
-        printf 'The VM failed to verify physical shortcut or pointer routing, physical Meta+Q close-window handling, desktop switching or reordering, same-output cross-desktop pointer adoption, minimized-slot navigation, column reordering, horizontal extraction, consume or expel past minimized peers, native fullscreen or maximize, stacked fullscreen or maximize extraction past minimized peers, borderless ownership, numbered dynamic desktops, whole-column desktop transfer past a minimized member, floating desktop transfers, output transfers, floating-layer navigation, focus, stack editing, pointer reinsertion or horizontal pointer-resize adoption, live touchpad-navigation settings, physical overview keyboard navigation, advanced column view, column or window sizing, scrolling, mixed primary application fixtures, or the repeated real-application lifecycle pool.\n' >&2
+        printf 'The VM failed to verify physical shortcut or pointer routing, physical Meta+Q close-window handling, desktop switching or reordering, same-output cross-desktop pointer adoption, minimized-slot navigation, column reordering, horizontal extraction, consume or expel past minimized peers, native fullscreen or maximize, stacked fullscreen or maximize extraction past minimized peers, borderless ownership, numbered dynamic desktops, whole-column desktop transfer past a minimized member, floating desktop transfers, output transfers, floating-layer navigation, focus, stack editing, pointer reinsertion or horizontal pointer-resize adoption, live touchpad-navigation settings, physical overview keyboard or horizontal-wheel navigation, advanced column view, column or window sizing, scrolling, mixed primary application fixtures, or the repeated real-application lifecycle pool.\n' >&2
         failed=true
 
         if [[ -f "$diagnostics_file" ]]; then
@@ -685,6 +702,42 @@ send_absolute_pointer_position() {
 
   ((x >= 0 && x <= 32767 && y >= 0 && y <= 32767)) || return 1
   input="{\"execute\":\"input-send-event\",\"arguments\":{\"events\":[{\"type\":\"abs\",\"data\":{\"axis\":\"x\",\"value\":$x}},{\"type\":\"abs\",\"data\":{\"axis\":\"y\",\"value\":$y}}]}}"
+  send_qmp_commands "$capabilities" "$input"
+}
+
+send_physical_overview_horizontal_wheel() {
+  local absolute_x
+  local absolute_y
+  local capabilities='{"execute":"qmp_capabilities"}'
+  local coordinate_file=$1
+  local extra
+  local input
+  local output_height
+  local output_width
+  local output_x
+  local output_y
+  local x
+  local y
+
+  IFS=' ' read -r \
+    x \
+    y \
+    output_x \
+    output_y \
+    output_width \
+    output_height \
+    extra < "$coordinate_file" || return 1
+  [[ -z "${extra:-}" ]] || return 1
+  absolute_x=$(absolute_pointer_coordinate \
+    "$x" "$output_x" "$output_width") || return 1
+  absolute_y=$(absolute_pointer_coordinate \
+    "$y" "$output_y" "$output_height") || return 1
+
+  absolute_pointer_available || return 1
+  send_absolute_pointer_position "$absolute_x" "$absolute_y" || return 1
+  sleep 0.1
+
+  input='{"execute":"input-send-event","arguments":{"events":[{"type":"btn","data":{"down":true,"button":"wheel-right"}},{"type":"btn","data":{"down":false,"button":"wheel-right"}}]}}'
   send_qmp_commands "$capabilities" "$input"
 }
 

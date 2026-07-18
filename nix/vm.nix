@@ -4858,6 +4858,7 @@ let
         local fixture_checkpoint
         local fixture_sequence
         local journal_cursor
+        local kwin_horizontal_wheel_process_id
         local kwin_search_process_id
         local live_refresh_base_title="Driftile VM Overview Live Refresh"
         local live_refresh_pid=""
@@ -4993,6 +4994,55 @@ let
             "the visible overview did not remain active and component-error-free"
           return 1
         fi
+
+        if ! kwin_horizontal_wheel_process_id=$(kwin_process_id) \
+          || ! request_physical_overview_horizontal_wheel "$output_frame"; then
+          overview_checkpoint_failure \
+            "the physical horizontal wheel event was not delivered to the multi-column overview"
+          return 1
+        fi
+        sleep 0.3
+        if [[ "$(effect_active_state "$overview_plugin_id" 2>/dev/null || true)" != true ]] \
+          || ! kwin_process_is_unchanged "$kwin_horizontal_wheel_process_id" \
+          || ! overview_component_errors_after "$journal_cursor"; then
+          overview_checkpoint_failure \
+            "horizontal wheel input did not preserve the active overview and KWin process"
+          return 1
+        fi
+
+        if ! request_physical_shortcut overview-escape \
+          || ! wait_for_effect_active_state "$overview_plugin_id" false \
+          || ! kwin_process_is_unchanged "$kwin_horizontal_wheel_process_id" \
+          || ! wait_for_active "$xterm_title"; then
+          overview_checkpoint_failure \
+            "physical Escape did not close the horizontal-wheel overview checkpoint"
+          return 1
+        fi
+        after_checkpoint=$(capture_overview_checkpoint \
+          "$@" \
+          "$title_desktop_destination") || {
+          overview_checkpoint_failure \
+            "the horizontal-wheel overview checkpoint did not stabilize after closing"
+          return 1
+        }
+        if [[ "$after_checkpoint" != "$fixture_checkpoint" ]] \
+          || ! kwin_process_is_unchanged "$kwin_horizontal_wheel_process_id" \
+          || ! overview_component_errors_after "$journal_cursor"; then
+          overview_checkpoint_failure \
+            "horizontal wheel input changed applications, layout state, or the KWin process"
+          return 1
+        fi
+
+        record_focus_state \
+          "physical horizontal wheel input preserved the multi-column overview and KWin process"
+
+        if ! invoke_shortcut "$overview_shortcut" \
+          || ! wait_for_effect_active_state "$overview_plugin_id" true; then
+          overview_checkpoint_failure \
+            "the overview could not reopen after the horizontal-wheel checkpoint"
+          return 1
+        fi
+        sleep 0.3
 
         if ! start_konsole_window \
             live_refresh_pid \
@@ -8780,6 +8830,48 @@ let
 
         rm -f "$ready_file" "$sent_file"
         : > "$ready_file"
+
+        for ((attempt = 0; attempt < 100; attempt += 1)); do
+          [[ -f "$sent_file" ]] && return 0
+          sleep 0.1
+        done
+
+        return 1
+      }
+
+      request_physical_overview_horizontal_wheel() {
+        local attempt
+        local output_frame=$1
+        local output_height
+        local output_width
+        local output_x
+        local output_y
+        local pointer_x
+        local pointer_y
+        local ready_file=/tmp/shared/driftile-overview-horizontal-wheel-ready
+        local sent_file=/tmp/shared/driftile-overview-horizontal-wheel-sent
+        local temporary_file="$ready_file.tmp"
+
+        frame_is_valid "$output_frame" || return 1
+        IFS=, read -r \
+          output_x \
+          output_y \
+          output_width \
+          output_height \
+          <<< "$output_frame"
+        pointer_x=$((output_x + output_width / 2))
+        pointer_y=$((output_y + output_height / 2))
+
+        rm -f "$ready_file" "$sent_file" "$temporary_file"
+        printf '%s %s %s %s %s %s\n' \
+          "$pointer_x" \
+          "$pointer_y" \
+          "$output_x" \
+          "$output_y" \
+          "$output_width" \
+          "$output_height" \
+          > "$temporary_file"
+        mv "$temporary_file" "$ready_file"
 
         for ((attempt = 0; attempt < 100; attempt += 1)); do
           [[ -f "$sent_file" ]] && return 0
