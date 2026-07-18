@@ -114,7 +114,6 @@ export type {
 } from "./spatial-row-geometry";
 export { projectOverviewSpatialLiveGeometry } from "./spatial-live-geometry";
 export type {
-  OverviewSpatialLiveGeometryColumnFrame,
   OverviewSpatialLiveGeometryFrame,
   OverviewSpatialLiveGeometryInput,
   OverviewSpatialLiveGeometryPlan,

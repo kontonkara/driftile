@@ -86,6 +86,14 @@ Rectangle {
     property real overviewWheelPixelRemainder: 0
     property int overviewWheelRemainder: 0
     property bool overviewVerticalWheelSettlePending: false
+    property int overviewVerticalWheelSettleRequestId: 0
+    property string overviewVerticalWheelWorkspaceDesktopId: ""
+    property int overviewVerticalWheelWorkspaceGeometryEpoch: -1
+    property string overviewVerticalWheelWorkspaceOutputId: ""
+    property int overviewVerticalWheelWorkspaceRequestId: 0
+    property int overviewVerticalWheelWorkspaceSourceIndex: -1
+    property int overviewVerticalWheelWorkspaceTargetIndex: -1
+    property int overviewVerticalWheelWorkspaceCount: 0
     property real spatialContentY: 0
     property var spatialHorizontalDesktopIds: []
     property var spatialHorizontalGeometryPlans: []
@@ -98,6 +106,8 @@ Rectangle {
     property var spatialLiveCameraProbeWindow: null
     property var spatialLiveCameraDetachedWindow: null
     property string spatialLiveCameraDetachedWindowId: ""
+    property string spatialLiveGeometryDetachedDesktopId: ""
+    property string spatialLiveGeometryDetachedOutputId: ""
     property bool spatialLiveCameraRefreshPending: false
     property int spatialLiveCameraRefreshBudget: 1
     property int spatialLiveCameraRefreshEpoch: 0
@@ -580,7 +590,8 @@ Rectangle {
                     desktopId: desktopCardLoader.modelData
                     floatingWindows: root.floatingFor(desktopCardLoader.modelData)
                     keyboardSelectionId: root.keyboardSelectionId
-                    liveGeometryEnabled: current && root.spatialLiveCameraDetachedWindow === null
+                    liveGeometryEnabled: current && !root.spatialLiveGeometryIsManuallyDetached(
+                                             root.outputId, desktopCardLoader.modelData)
                     outputName: root.outputName
                     previewViewportOffset: root.spatialHorizontalViewportOffsetAt(
                                                desktopCardLoader.index, desktopCardLoader.modelData,
@@ -1901,16 +1912,56 @@ Rectangle {
     }
 
     function detachSpatialLiveCameraForManualOffset(index, expectedDesktopId, previousOffset, nextOffset) {
-        if (previousOffset === nextOffset || index !== currentWorkspaceIndex
-                || expectedDesktopId !== spatialLiveCameraDesktopId || spatialLiveCameraWindow === null
-                || spatialLiveCameraWindowId.length === 0) {
+        const normalizedNextOffset = Object.is(nextOffset, -0) ? 0 : nextOffset;
+        if (!manualSpatialLiveGeometryDetachIsExact(index, expectedDesktopId, previousOffset,
+                                                     normalizedNextOffset)) {
             return false;
         }
 
-        spatialLiveCameraDetachedWindow = spatialLiveCameraWindow;
-        spatialLiveCameraDetachedWindowId = spatialLiveCameraWindowId;
-        clearSpatialLiveCameraAttachment();
+        spatialLiveGeometryDetachedDesktopId = expectedDesktopId;
+        spatialLiveGeometryDetachedOutputId = outputId;
+        if (expectedDesktopId === spatialLiveCameraDesktopId && spatialLiveCameraWindow !== null
+                && spatialLiveCameraWindowId.length > 0) {
+            spatialLiveCameraDetachedWindow = spatialLiveCameraWindow;
+            spatialLiveCameraDetachedWindowId = spatialLiveCameraWindowId;
+            clearSpatialLiveCameraAttachment();
+        }
         return true;
+    }
+
+    function manualSpatialLiveGeometryDetachIsExact(index, expectedDesktopId, previousOffset, nextOffset) {
+        try {
+            if (!Number.isInteger(index) || index !== currentWorkspaceIndex
+                    || typeof expectedDesktopId !== "string" || expectedDesktopId.length === 0
+                    || !Number.isFinite(previousOffset) || !Number.isFinite(nextOffset)
+                    || previousOffset === nextOffset || outputId.length === 0
+                    || spatialHorizontalDesktopIds.length !== desktopIds.length
+                    || spatialHorizontalDesktopIds[index] !== expectedDesktopId
+                    || spatialHorizontalViewportOffsets.length !== desktopIds.length
+                    || spatialHorizontalViewportOffsets[index] !== nextOffset
+                    || desktopIds[index] !== expectedDesktopId) {
+                return false;
+            }
+
+            const effect = sceneEffect;
+            const model = overviewModel;
+            const liveScreen = liveScreenFor(targetScreen);
+            const expectedOutput = projectedOutput(model, liveScreen);
+            const expectedOutputId = expectedOutput ? String(expectedOutput.outputId) : "";
+            const liveDesktop = liveDesktopFor(currentDesktop, expectedDesktopId);
+            return expectedOutputId === outputId
+                && desktopContextIsExact(effect, model, liveScreen, expectedOutput, expectedOutputId,
+                                         liveDesktop, expectedDesktopId);
+        } catch (error) {
+            return false;
+        }
+    }
+
+    function spatialLiveGeometryIsManuallyDetached(expectedOutputId, expectedDesktopId) {
+        return typeof expectedOutputId === "string" && expectedOutputId.length > 0
+            && typeof expectedDesktopId === "string" && expectedDesktopId.length > 0
+            && spatialLiveGeometryDetachedOutputId === expectedOutputId
+            && spatialLiveGeometryDetachedDesktopId === expectedDesktopId;
     }
 
     function clearSpatialLiveCameraAttachment() {
@@ -1967,6 +2018,8 @@ Rectangle {
         clearSpatialLiveCameraProbe();
         spatialLiveCameraDetachedWindow = null;
         spatialLiveCameraDetachedWindowId = "";
+        spatialLiveGeometryDetachedDesktopId = "";
+        spatialLiveGeometryDetachedOutputId = "";
     }
 
     function handleSpatialLiveCameraWindowRemoved(removedWindow) {
@@ -3188,10 +3241,12 @@ Rectangle {
             return false;
         }
 
+        advanceOverviewVerticalWheelSettleRequestId();
         const previousContentY = spatialContentY;
         const plan = planSpatialWheel(angleDeltaY, pixelDeltaY);
         if (!spatialViewportWheelPlanIsValid(plan, pixelDeltaY) || !spatialWheelPresentationIsExact()
-                || !setSpatialContentY(plan.contentY) || spatialContentY !== plan.contentY) {
+                || !setSpatialContentY(plan.contentY)
+                || spatialContentY !== plan.contentY) {
             return false;
         }
 
@@ -3208,15 +3263,17 @@ Rectangle {
             return false;
         }
 
+        resetOverviewPreciseVerticalWheelState();
         const plan = planSpatialWheel(angleDeltaY, 0);
         if (!spatialWorkspaceWheelPlanIsValid(plan) || !spatialWheelPresentationIsExact()) {
             return false;
         }
         if (plan.steps > 0) {
+            overviewWheelPixelRemainder = 0;
+            overviewWheelRemainder = 0;
             if (!requestSpatialWheelWorkspace(plan.direction, plan.steps)) {
                 return false;
             }
-            resetOverviewWheelState();
         } else {
             overviewWheelPixelRemainder = 0;
             overviewWheelRemainder = plan.remainder;
@@ -3246,7 +3303,7 @@ Rectangle {
             return false;
         }
 
-        overviewWheelPixelRemainder = 0;
+        resetOverviewPreciseVerticalWheelState();
         overviewWheelRemainder = plan.remainder;
         for (let step = 0; step < plan.steps; step += 1) {
             navigateKeyboardSequence(plan.direction);
@@ -3256,7 +3313,7 @@ Rectangle {
 
     function finishSpatialVerticalWheelGesture() {
         const settlePending = overviewVerticalWheelSettlePending;
-        resetOverviewVerticalWheelState();
+        resetOverviewPreciseVerticalWheelState();
         if (!settlePending) {
             return false;
         }
@@ -3265,12 +3322,39 @@ Rectangle {
         if (!request) {
             return false;
         }
+
+        const requestId = advanceOverviewVerticalWheelSettleRequestId();
+        Qt.callLater(root.completeSpatialVerticalWheelSettle,
+                     requestId, request.outputId, request.sourceDesktopId, request.sourceIndex,
+                     request.geometryEpoch, request.contentY, request.cardHeight, request.gap,
+                     request.sceneHeight, request.layout.contentHeight, request.desktopIds.length);
+        return true;
+    }
+
+    function completeSpatialVerticalWheelSettle(requestId, expectedOutputId, expectedDesktopId,
+                                                expectedSourceIndex, expectedGeometryEpoch,
+                                                expectedContentY, expectedCardHeight, expectedGap,
+                                                expectedSceneHeight, expectedContentHeight,
+                                                expectedWorkspaceCount) {
+        if (!Number.isInteger(requestId) || requestId !== overviewVerticalWheelSettleRequestId) {
+            return false;
+        }
+
+        const request = deferredSpatialWheelWorkspaceRequest(
+            expectedOutputId, expectedDesktopId, expectedSourceIndex, expectedGeometryEpoch,
+            expectedContentY, expectedCardHeight, expectedGap, expectedSceneHeight,
+            expectedContentHeight, expectedWorkspaceCount);
+        if (!request) {
+            return false;
+        }
+
         const plan = planSpatialWorkspaceSettle(request);
         if (!spatialWorkspaceSettlePlanIsValid(plan, request)
                 || !spatialWheelWorkspaceRequestIsExact(request)) {
             return false;
         }
 
+        advanceOverviewVerticalWheelSettleRequestId();
         if (plan.targetIndex === request.sourceIndex) {
             if (!setSpatialContentY(plan.contentY) || spatialContentY !== plan.contentY) {
                 return false;
@@ -3392,9 +3476,28 @@ Rectangle {
     }
 
     function resetOverviewVerticalWheelState() {
-        overviewWheelPixelRemainder = 0;
+        resetOverviewPreciseVerticalWheelState();
+        clearOverviewVerticalWheelWorkspaceRequest();
+        advanceOverviewVerticalWheelWorkspaceRequestId();
         overviewWheelRemainder = 0;
+    }
+
+    function resetOverviewPreciseVerticalWheelState() {
+        advanceOverviewVerticalWheelSettleRequestId();
+        overviewWheelPixelRemainder = 0;
         overviewVerticalWheelSettlePending = false;
+    }
+
+    function advanceOverviewVerticalWheelSettleRequestId() {
+        overviewVerticalWheelSettleRequestId = overviewVerticalWheelSettleRequestId >= 2147483646
+            ? 0 : overviewVerticalWheelSettleRequestId + 1;
+        return overviewVerticalWheelSettleRequestId;
+    }
+
+    function advanceOverviewVerticalWheelWorkspaceRequestId() {
+        overviewVerticalWheelWorkspaceRequestId = overviewVerticalWheelWorkspaceRequestId >= 2147483646
+            ? 0 : overviewVerticalWheelWorkspaceRequestId + 1;
+        return overviewVerticalWheelWorkspaceRequestId;
     }
 
     function spatialWheelPresentationIsExact() {
@@ -3426,10 +3529,12 @@ Rectangle {
             return false;
         }
 
+        const planningSourceIndex = overviewVerticalWheelWorkspaceRequestIsExact(request)
+            ? overviewVerticalWheelWorkspaceTargetIndex : request.sourceIndex;
         let targetPlan = null;
         try {
             targetPlan = runtime.planOverviewSpatialWorkspaceWheelTarget({
-                                                                            currentIndex: request.sourceIndex,
+                                                                            currentIndex: planningSourceIndex,
                                                                             direction,
                                                                             steps,
                                                                             workspaceCount: request.desktopIds.length
@@ -3437,16 +3542,119 @@ Rectangle {
         } catch (error) {
             return false;
         }
-        if (!spatialWorkspaceWheelTargetPlanIsValid(targetPlan, request.sourceIndex, direction, steps,
+        if (!spatialWorkspaceWheelTargetPlanIsValid(targetPlan, planningSourceIndex, direction, steps,
                                                     request.desktopIds.length)
                 || !spatialWheelWorkspaceRequestIsExact(request)) {
             return false;
         }
         if (targetPlan.appliedSteps === 0) {
-            return targetPlan.targetIndex === request.sourceIndex;
+            return targetPlan.targetIndex === planningSourceIndex;
+        }
+        if (targetPlan.targetIndex === request.sourceIndex) {
+            clearOverviewVerticalWheelWorkspaceRequest();
+            advanceOverviewVerticalWheelWorkspaceRequestId();
+            return true;
         }
 
-        return requestSpatialWheelWorkspaceIndex(request, targetPlan.targetIndex);
+        rememberOverviewVerticalWheelWorkspaceRequest(request, targetPlan.targetIndex);
+        const requestId = advanceOverviewVerticalWheelWorkspaceRequestId();
+        Qt.callLater(root.completeSpatialWheelWorkspaceSelection,
+                     requestId, request.outputId, request.sourceDesktopId, request.sourceIndex,
+                     request.geometryEpoch, request.contentY, request.cardHeight, request.gap,
+                     request.sceneHeight, request.layout.contentHeight, request.desktopIds.length,
+                     targetPlan.targetIndex);
+        return true;
+    }
+
+    function completeSpatialWheelWorkspaceSelection(requestId, expectedOutputId, expectedDesktopId,
+                                                     expectedSourceIndex, expectedGeometryEpoch,
+                                                     expectedContentY, expectedCardHeight, expectedGap,
+                                                     expectedSceneHeight, expectedContentHeight,
+                                                     expectedWorkspaceCount, expectedTargetIndex) {
+        if (!Number.isInteger(requestId) || requestId !== overviewVerticalWheelWorkspaceRequestId
+                || !Number.isInteger(expectedTargetIndex)) {
+            return false;
+        }
+
+        const request = deferredSpatialWheelWorkspaceRequest(
+            expectedOutputId, expectedDesktopId, expectedSourceIndex, expectedGeometryEpoch,
+            expectedContentY, expectedCardHeight, expectedGap, expectedSceneHeight,
+            expectedContentHeight, expectedWorkspaceCount);
+        if (!request || !overviewVerticalWheelWorkspaceRequestIsExact(request)
+                || overviewVerticalWheelWorkspaceTargetIndex !== expectedTargetIndex
+                || expectedTargetIndex < 0 || expectedTargetIndex >= request.desktopIds.length
+                || expectedTargetIndex === request.sourceIndex) {
+            if (requestId === overviewVerticalWheelWorkspaceRequestId) {
+                clearOverviewVerticalWheelWorkspaceRequest();
+                advanceOverviewVerticalWheelWorkspaceRequestId();
+            }
+            return false;
+        }
+
+        clearOverviewVerticalWheelWorkspaceRequest();
+        advanceOverviewVerticalWheelWorkspaceRequestId();
+        return requestSpatialWheelWorkspaceIndex(request, expectedTargetIndex);
+    }
+
+    function rememberOverviewVerticalWheelWorkspaceRequest(request, targetIndex) {
+        overviewVerticalWheelWorkspaceDesktopId = request.sourceDesktopId;
+        overviewVerticalWheelWorkspaceGeometryEpoch = request.geometryEpoch;
+        overviewVerticalWheelWorkspaceOutputId = request.outputId;
+        overviewVerticalWheelWorkspaceSourceIndex = request.sourceIndex;
+        overviewVerticalWheelWorkspaceTargetIndex = targetIndex;
+        overviewVerticalWheelWorkspaceCount = request.desktopIds.length;
+    }
+
+    function overviewVerticalWheelWorkspaceRequestIsExact(request) {
+        return request && overviewVerticalWheelWorkspaceDesktopId === request.sourceDesktopId
+            && overviewVerticalWheelWorkspaceGeometryEpoch === request.geometryEpoch
+            && overviewVerticalWheelWorkspaceOutputId === request.outputId
+            && overviewVerticalWheelWorkspaceSourceIndex === request.sourceIndex
+            && overviewVerticalWheelWorkspaceCount === request.desktopIds.length
+            && overviewVerticalWheelWorkspaceTargetIndex >= 0
+            && overviewVerticalWheelWorkspaceTargetIndex < request.desktopIds.length;
+    }
+
+    function clearOverviewVerticalWheelWorkspaceRequest() {
+        overviewVerticalWheelWorkspaceDesktopId = "";
+        overviewVerticalWheelWorkspaceGeometryEpoch = -1;
+        overviewVerticalWheelWorkspaceOutputId = "";
+        overviewVerticalWheelWorkspaceSourceIndex = -1;
+        overviewVerticalWheelWorkspaceTargetIndex = -1;
+        overviewVerticalWheelWorkspaceCount = 0;
+    }
+
+    function deferredSpatialWheelWorkspaceRequest(expectedOutputId, expectedDesktopId,
+                                                   expectedSourceIndex, expectedGeometryEpoch,
+                                                   expectedContentY, expectedCardHeight, expectedGap,
+                                                   expectedSceneHeight, expectedContentHeight,
+                                                   expectedWorkspaceCount) {
+        if (typeof expectedOutputId !== "string" || expectedOutputId.length === 0
+                || typeof expectedDesktopId !== "string" || expectedDesktopId.length === 0
+                || !Number.isInteger(expectedSourceIndex) || expectedSourceIndex < 0
+                || !Number.isInteger(expectedGeometryEpoch)
+                || expectedGeometryEpoch !== spatialHorizontalViewportRevision
+                || !Number.isFinite(expectedContentY) || !Number.isFinite(expectedCardHeight)
+                || !Number.isFinite(expectedGap) || !Number.isFinite(expectedSceneHeight)
+                || !Number.isFinite(expectedContentHeight)
+                || !Number.isInteger(expectedWorkspaceCount) || expectedWorkspaceCount < 1) {
+            return null;
+        }
+
+        const request = captureSpatialWheelWorkspaceRequest();
+        if (!request || request.outputId !== expectedOutputId
+                || request.sourceDesktopId !== expectedDesktopId
+                || request.sourceIndex !== expectedSourceIndex
+                || request.geometryEpoch !== expectedGeometryEpoch
+                || request.contentY !== expectedContentY || request.cardHeight !== expectedCardHeight
+                || request.gap !== expectedGap || request.sceneHeight !== expectedSceneHeight
+                || request.layout.contentHeight !== expectedContentHeight
+                || request.desktopIds.length !== expectedWorkspaceCount
+                || !spatialWheelWorkspaceRequestIsExact(request)) {
+            return null;
+        }
+
+        return request;
     }
 
     function captureSpatialWheelWorkspaceRequest() {
@@ -3475,6 +3683,7 @@ Rectangle {
                 desktopIds: expectedDesktopIds,
                 effect,
                 gap: cardGap,
+                geometryEpoch: spatialHorizontalViewportRevision,
                 layout,
                 liveScreen,
                 model,
@@ -3496,6 +3705,7 @@ Rectangle {
             && currentWorkspaceIndex === request.sourceIndex && overviewSpatialLayout === request.layout
             && spatialContentY === request.contentY && height === request.sceneHeight
             && cardHeight === request.cardHeight && cardGap === request.gap
+            && spatialHorizontalViewportRevision === request.geometryEpoch
             && request.desktopIds[request.sourceIndex] === request.sourceDesktopId
             && spatialWheelPresentationIsExact()
             && desktopContextIsExact(request.effect, request.model, request.liveScreen, request.output,

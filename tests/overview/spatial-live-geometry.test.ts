@@ -5,103 +5,113 @@ import { projectOverviewSpatialLiveGeometry } from "../../src/overview/spatial-l
 describe("projectOverviewSpatialLiveGeometry", () => {
   it("maps an exact live frame into viewport-local card coordinates", () => {
     const result = project({
-      liveFrame: { height: 360, width: 640, x: -1260, y: 140 },
-      outputFrame: { height: 1080, width: 1920, x: -1920, y: 40 },
-      plannedColumnFrame: {
-        columnId: "overview-column-1",
-        columnIndex: 1,
-        contentX: 652,
-        width: 640,
-      },
+      liveHeight: 360,
+      liveWidth: 640,
+      liveX: -1260,
+      liveY: 140,
+      outputHeight: 1080,
+      outputWidth: 1920,
+      outputX: -1920,
+      outputY: 40,
       projectionScale: 0.4,
       viewportOriginX: 18,
       viewportOriginY: 12,
     });
 
     expect(result).toEqual({
-      columnFrame: {
-        columnId: "overview-column-1",
-        columnIndex: 1,
-        contentX: 652,
-        width: 640,
-      },
       columnIndex: 1,
-      frame: {
-        floating: false,
-        height: 144,
-        width: 256,
-        x: 282,
-        y: 52,
-      },
+      floating: false,
+      height: 144,
       memberIndex: 0,
+      width: 256,
       windowId: "window-1",
+      x: 282,
+      y: 52,
     });
   });
 
-  it("projects every stack member through the same exact column mapping", () => {
+  it("projects every stack member through one flat plan", () => {
     const frames = [
-      { height: 300, width: 700, x: 220, y: 50 },
-      { height: 420, width: 700, x: 220, y: 350 },
-      { height: 250, width: 700, x: 220, y: 770 },
+      { liveHeight: 300, liveWidth: 700, liveX: 220, liveY: 50 },
+      { liveHeight: 420, liveWidth: 700, liveX: 220, liveY: 350 },
+      { liveHeight: 250, liveWidth: 700, liveX: 220, liveY: 770 },
     ];
-    const plans = frames.map((liveFrame, memberIndex) =>
+    const plans = frames.map((frame, memberIndex) =>
       project({
-        liveFrame,
+        ...frame,
         memberIndex,
         windowId: `window-${String(memberIndex + 1)}`,
       }),
     );
 
-    expect(plans.map((plan) => plan?.columnFrame)).toEqual([
-      plans[0]?.columnFrame,
-      plans[0]?.columnFrame,
-      plans[0]?.columnFrame,
-    ]);
-    expect(plans.map((plan) => plan?.frame)).toEqual([
-      { floating: false, height: 150, width: 350, x: 110, y: 25 },
-      { floating: false, height: 210, width: 350, x: 110, y: 175 },
-      { floating: false, height: 125, width: 350, x: 110, y: 385 },
+    expect(plans).toEqual([
+      {
+        columnIndex: 1,
+        floating: false,
+        height: 150,
+        memberIndex: 0,
+        width: 350,
+        windowId: "window-1",
+        x: 110,
+        y: 25,
+      },
+      {
+        columnIndex: 1,
+        floating: false,
+        height: 210,
+        memberIndex: 1,
+        width: 350,
+        windowId: "window-2",
+        x: 110,
+        y: 175,
+      },
+      {
+        columnIndex: 1,
+        floating: false,
+        height: 125,
+        memberIndex: 2,
+        width: 350,
+        windowId: "window-3",
+        x: 110,
+        y: 385,
+      },
     ]);
   });
 
   it("allows a moving member to cross its planned column frame", () => {
     const result = project({
-      liveFrame: { height: 700, width: 700, x: -480, y: 100 },
-      plannedColumnFrame: {
-        columnId: "overview-column-1",
-        columnIndex: 1,
-        contentX: 900,
-        width: 320,
-      },
+      liveHeight: 700,
+      liveWidth: 700,
+      liveX: -480,
+      liveY: 100,
     });
 
-    expect(result?.frame).toEqual({
+    expect(result).toEqual({
+      columnIndex: 1,
       floating: false,
       height: 350,
+      memberIndex: 0,
       width: 350,
+      windowId: "window-1",
       x: -240,
       y: 50,
     });
   });
 
-  it("returns frozen copies without retaining source geometry", () => {
-    const liveFrame = { height: 700, width: 700, x: 20, y: 100 };
-    const plannedColumnFrame = {
-      columnId: "overview-column-1",
-      columnIndex: 1,
-      contentX: 652,
-      width: 700,
-    };
-    const result = project({ liveFrame, plannedColumnFrame });
+  it("returns one frozen plan containing only primitive values", () => {
+    const candidate = input();
+    const result = projectOverviewSpatialLiveGeometry(candidate);
 
-    liveFrame.x = 900;
-    plannedColumnFrame.width = 900;
+    candidate.liveX = 900;
 
-    expect(result?.frame.x).toBe(10);
-    expect(result?.columnFrame.width).toBe(700);
+    expect(result?.x).toBe(10);
+    expect(result?.width).toBe(350);
     expect(Object.isFrozen(result)).toBe(true);
-    expect(Object.isFrozen(result?.frame)).toBe(true);
-    expect(Object.isFrozen(result?.columnFrame)).toBe(true);
+    expect(
+      Object.values(result ?? {}).every((value) => typeof value !== "object"),
+    ).toBe(true);
+    expect(result).not.toHaveProperty("frame");
+    expect(result).not.toHaveProperty("columnFrame");
   });
 
   it.each([
@@ -114,31 +124,15 @@ describe("projectOverviewSpatialLiveGeometry", () => {
     input({ windowId: "" }),
     input({ projectionScale: 0 }),
     input({ viewportOriginX: Number.NaN }),
-    input({ liveFrame: { height: 700, width: 0, x: 0, y: 0 } }),
-    input({ outputFrame: { height: 1080, width: 0, x: 0, y: 0 } }),
-    input({
-      plannedColumnFrame: {
-        columnId: "overview-column-0",
-        columnIndex: 1,
-        contentX: 652,
-        width: 700,
-      },
-    }),
-    input({
-      plannedColumnFrame: {
-        columnId: "overview-column-1",
-        columnIndex: 2,
-        contentX: 652,
-        width: 700,
-      },
-    }),
-    input({ liveFrame: { height: 40, width: 40, x: 0, y: 4_000 } }),
+    input({ liveWidth: 0 }),
+    input({ outputWidth: 0 }),
+    input({ liveHeight: 40, liveWidth: 40, liveX: 0, liveY: 4_000 }),
   ])("fails closed for malformed or unrelated input (%o)", (candidate) => {
     expect(projectOverviewSpatialLiveGeometry(candidate)).toBeNull();
   });
 
   it("fails closed when an input accessor throws", () => {
-    const hostile = Object.defineProperty({}, "liveFrame", {
+    const hostile = Object.defineProperty({}, "liveX", {
       get(): never {
         throw new Error("unavailable");
       },
@@ -155,15 +149,15 @@ function project(overrides: Record<string, unknown> = {}) {
 function input(overrides: Record<string, unknown> = {}) {
   return {
     columnIndex: 1,
-    liveFrame: { height: 700, width: 700, x: 20, y: 100 },
+    liveHeight: 700,
+    liveWidth: 700,
+    liveX: 20,
+    liveY: 100,
     memberIndex: 0,
-    outputFrame: { height: 1080, width: 1920, x: 0, y: 0 },
-    plannedColumnFrame: {
-      columnId: "overview-column-1",
-      columnIndex: 1,
-      contentX: 652,
-      width: 700,
-    },
+    outputHeight: 1080,
+    outputWidth: 1920,
+    outputX: 0,
+    outputY: 0,
     projectionScale: 0.5,
     viewportOriginX: 0,
     viewportOriginY: 0,

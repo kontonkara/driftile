@@ -2708,6 +2708,18 @@ describe("overview effect package", () => {
       scene.indexOf("function requestSpatialWheelWorkspace("),
       scene.indexOf("function spatialWorkspaceWheelTargetPlanIsValid("),
     );
+    const wheelWorkspaceSchedule = scene.slice(
+      scene.indexOf("function requestSpatialWheelWorkspace("),
+      scene.indexOf("function completeSpatialWheelWorkspaceSelection("),
+    );
+    const wheelWorkspaceCompletion = scene.slice(
+      scene.indexOf("function completeSpatialWheelWorkspaceSelection("),
+      scene.indexOf("function deferredSpatialWheelWorkspaceRequest("),
+    );
+    const preciseWorkspaceSettleSchedule = scene.slice(
+      scene.indexOf("function finishSpatialVerticalWheelGesture("),
+      scene.indexOf("function completeSpatialVerticalWheelSettle("),
+    );
     const horizontalViewportRefresh = scene.slice(
       scene.indexOf("function refreshSpatialHorizontalViewports("),
       scene.indexOf("function spatialHorizontalViewportBounds("),
@@ -2749,6 +2761,18 @@ describe("overview effect package", () => {
     expect(scene).toContain("property int overviewWheelRemainder: 0");
     expect(scene).toContain(
       "property bool overviewVerticalWheelSettlePending: false",
+    );
+    expect(scene).toContain(
+      "property int overviewVerticalWheelSettleRequestId: 0",
+    );
+    expect(scene).toContain(
+      "property int overviewVerticalWheelWorkspaceRequestId: 0",
+    );
+    expect(scene).toContain(
+      'property string overviewVerticalWheelWorkspaceDesktopId: ""',
+    );
+    expect(scene).toContain(
+      "property int overviewVerticalWheelWorkspaceTargetIndex: -1",
     );
     expect(scene).toContain(
       "property real overviewHorizontalWheelPixelRemainder: 0",
@@ -2853,12 +2877,21 @@ describe("overview effect package", () => {
       'property string spatialLiveCameraDetachedWindowId: ""',
     );
     expect(scene).toContain(
+      'property string spatialLiveGeometryDetachedDesktopId: ""',
+    );
+    expect(scene).toContain(
+      'property string spatialLiveGeometryDetachedOutputId: ""',
+    );
+    expect(scene).toContain(
       "property bool spatialLiveCameraRefreshPending: false",
     );
     expect(scene).toContain("property int spatialLiveCameraRefreshBudget: 1");
     expect(scene).toContain("property int spatialLiveCameraRefreshEpoch: 0");
     expect(scene).toMatch(
-      /liveGeometryEnabled: current && root\.spatialLiveCameraDetachedWindow === null/u,
+      /liveGeometryEnabled: current && !root\.spatialLiveGeometryIsManuallyDetached\([\s\S]*root\.outputId, desktopCardLoader\.modelData\)/u,
+    );
+    expect(scene).not.toContain(
+      "liveGeometryEnabled: current && root.spatialLiveCameraDetachedWindow === null",
     );
     expect(desktopCard).toContain("required property bool liveGeometryEnabled");
     expect(desktopCard).toMatch(
@@ -2868,13 +2901,16 @@ describe("overview effect package", () => {
       /function frameForWindow[\s\S]*planSpatialLiveWindowFrame\(window, windowId, tiled\)[\s\S]*return liveFrame;[\s\S]*return tiled\.thumbnailFrame;/u,
     );
     expect(desktopCard).toMatch(
-      /function planSpatialLiveWindowFrame[\s\S]*!liveGeometryEnabled \|\| !current[\s\S]*window\.output !== screen[\s\S]*column\.members\[tiled\.memberIndex\]\.windowId !== windowId[\s\S]*sourceColumnFrame !== tiled\.plannedColumnFrame/u,
+      /function planSpatialLiveWindowFrame[\s\S]*!liveGeometryEnabled \|\| !current[\s\S]*column\.presentation === "tabbed"[\s\S]*sourceColumnFrame !== tiled\.plannedColumnFrame[\s\S]*const deleted = window\.deleted;[\s\S]*const minimized = window\.minimized;[\s\S]*const output = window\.output;[\s\S]*const internalId = window\.internalId;[\s\S]*deleted !== false \|\| minimized !== false \|\| output !== expectedScreen[\s\S]*const liveGeometry = window\.frameGeometry;[\s\S]*const liveX = liveGeometry \? Number\(liveGeometry\.x\)[\s\S]*const outputX = outputGeometry \? Number\(outputGeometry\.x\)[\s\S]*const confirmedLiveGeometry = window\.frameGeometry;[\s\S]*tiledPresentations\[windowId\] !== tiled[\s\S]*window\.deleted !== false[\s\S]*window\.minimized !== false[\s\S]*window\.output !== expectedScreen[\s\S]*projectionGeometryMatches\(confirmedLiveGeometry, liveX, liveY, liveWidth, liveHeight\)/u,
     );
     expect(desktopCard).toMatch(
-      /runtime\.projectOverviewSpatialLiveGeometry\(\{[\s\S]*columnIndex: tiled\.columnIndex,[\s\S]*liveFrame,[\s\S]*memberIndex: tiled\.memberIndex,[\s\S]*outputFrame,[\s\S]*plannedColumnFrame: sourceColumnFrame,[\s\S]*projectionScale,[\s\S]*viewportOriginX,[\s\S]*viewportOriginY,[\s\S]*windowId/u,
+      /runtime\.projectOverviewSpatialLiveGeometry\(\{[\s\S]*columnIndex,[\s\S]*liveHeight,[\s\S]*liveWidth,[\s\S]*liveX,[\s\S]*liveY,[\s\S]*memberIndex,[\s\S]*outputHeight,[\s\S]*outputWidth,[\s\S]*outputX,[\s\S]*outputY,[\s\S]*projectionScale: scale,[\s\S]*viewportOriginX: originX,[\s\S]*viewportOriginY: originY,[\s\S]*windowId/u,
     );
     expect(desktopCard).toMatch(
-      /function spatialLiveWindowPlanIsExact[\s\S]*plan\.windowId !== windowId[\s\S]*plan\.columnIndex !== tiled\.columnIndex[\s\S]*plan\.memberIndex !== tiled\.memberIndex[\s\S]*plan\.frame\.floating !== false[\s\S]*projectionGeometryIsValid\(plan\.frame\)/u,
+      /function spatialLiveWindowPlanIsExact[\s\S]*plan\.windowId !== windowId[\s\S]*plan\.columnIndex !== tiled\.columnIndex[\s\S]*plan\.memberIndex !== tiled\.memberIndex[\s\S]*plan\.floating !== false[\s\S]*projectionGeometryScalarsAreValid\(plan\.x, plan\.y, plan\.width, plan\.height\)/u,
+    );
+    expect(desktopCard).not.toMatch(
+      /projectOverviewSpatialLiveGeometry\(\{[\s\S]{0,900}\b(?:liveFrame|outputFrame|plannedColumnFrame)\b/u,
     );
     expect(scene).toMatch(
       /function desktopIdListShapeIsValid\(candidate\) \{\s*return candidate !== undefined && candidate !== null && Number\.isInteger\(candidate\.length\)[\s\S]*candidate\.length >= 0 && candidate\.length <= 512;\s*\}/u,
@@ -3039,18 +3075,35 @@ describe("overview effect package", () => {
     expect(wheelNavigation).toMatch(
       /function revealHorizontalNavigationTarget[\s\S]*detachSpatialLiveCameraForManualOffset\(workspaceIndex, expectedDesktopId, currentOffset, nextOffset\)/u,
     );
+    expect(liveCamera).toMatch(
+      /function detachSpatialLiveCameraForManualOffset[\s\S]*manualSpatialLiveGeometryDetachIsExact\(index, expectedDesktopId, previousOffset,[\s\S]*spatialLiveGeometryDetachedDesktopId = expectedDesktopId;[\s\S]*spatialLiveGeometryDetachedOutputId = outputId;/u,
+    );
+    expect(liveCamera).toMatch(
+      /function manualSpatialLiveGeometryDetachIsExact[\s\S]*index !== currentWorkspaceIndex[\s\S]*spatialHorizontalViewportOffsets\[index\] !== nextOffset[\s\S]*desktopContextIsExact/u,
+    );
+    expect(liveCamera).toMatch(
+      /function spatialLiveGeometryIsManuallyDetached[\s\S]*spatialLiveGeometryDetachedOutputId === expectedOutputId[\s\S]*spatialLiveGeometryDetachedDesktopId === expectedDesktopId/u,
+    );
     expect(scene).toMatch(
       /function resetOverviewSession\(\) \{\s*resetSpatialLiveCameraSession\(\);/u,
     );
     expect(liveCamera).toMatch(
       /function resetSpatialLiveCameraSession\(\) \{\s*resetSpatialLiveCameraRefresh\(\);\s*clearSpatialLiveCameraAttachment\(\);\s*clearSpatialLiveCameraProbe\(\);/u,
     );
+    expect(liveCamera).toMatch(
+      /function resetSpatialLiveCameraSession[\s\S]*spatialLiveGeometryDetachedDesktopId = "";[\s\S]*spatialLiveGeometryDetachedOutputId = "";/u,
+    );
     expect(liveCamera).not.toMatch(
       /KWin\.Workspace\.(?:stackingOrder|windows)\b|\b(?:Timer|Behavior|Animation)\s*\{|setInterval|org\.kde\.kwin\.private/u,
     );
     expect(wheelNavigation).toMatch(
-      /function handleSpatialViewportWheel[\s\S]*const previousContentY = spatialContentY;[\s\S]*setSpatialContentY\(plan\.contentY\)[\s\S]*overviewWheelPixelRemainder = plan\.pixelRemainder;[\s\S]*searchQuery\.length === 0 && plan\.contentY !== previousContentY[\s\S]*overviewVerticalWheelSettlePending = true;[\s\S]*return true;/u,
+      /function handleSpatialViewportWheel[\s\S]*advanceOverviewVerticalWheelSettleRequestId\(\);[\s\S]*const previousContentY = spatialContentY;[\s\S]*setSpatialContentY\(plan\.contentY\)[\s\S]*overviewWheelPixelRemainder = plan\.pixelRemainder;[\s\S]*overviewWheelRemainder = 0;[\s\S]*searchQuery\.length === 0 && plan\.contentY !== previousContentY[\s\S]*overviewVerticalWheelSettlePending = true;[\s\S]*return true;/u,
     );
+    const preciseWheel = wheelNavigation.slice(
+      wheelNavigation.indexOf("function handleSpatialViewportWheel("),
+      wheelNavigation.indexOf("function handleSpatialWorkspaceWheel("),
+    );
+    expect(preciseWheel).toContain("overviewWheelRemainder = 0");
     expect(wheelNavigation).toContain(
       "runtime.planOverviewWheelNavigation(overviewWheelRemainder,",
     );
@@ -3061,10 +3114,13 @@ describe("overview effect package", () => {
       'typeof runtime.planOverviewSpatialWorkspaceWheelTarget !== "function"',
     );
     expect(wheelNavigation).toMatch(
-      /runtime\.planOverviewSpatialWorkspaceWheelTarget\(\{[\s\S]*currentIndex: request\.sourceIndex,[\s\S]*direction,[\s\S]*steps,[\s\S]*workspaceCount: request\.desktopIds\.length/u,
+      /runtime\.planOverviewSpatialWorkspaceWheelTarget\(\{[\s\S]*currentIndex: planningSourceIndex,[\s\S]*direction,[\s\S]*steps,[\s\S]*workspaceCount: request\.desktopIds\.length/u,
     );
     expect(wheelNavigation).toMatch(
-      /function finishSpatialVerticalWheelGesture[\s\S]*overviewVerticalWheelSettlePending[\s\S]*resetOverviewVerticalWheelState\(\);[\s\S]*captureSpatialWheelWorkspaceRequest\(\)[\s\S]*planSpatialWorkspaceSettle\(request\)[\s\S]*requestSpatialWheelWorkspaceIndex\(request, plan\.targetIndex\)[\s\S]*setSpatialContentY\(plan\.contentY\)/u,
+      /function finishSpatialVerticalWheelGesture[\s\S]*overviewVerticalWheelSettlePending[\s\S]*resetOverviewPreciseVerticalWheelState\(\);[\s\S]*captureSpatialWheelWorkspaceRequest\(\)[\s\S]*Qt\.callLater\(root\.completeSpatialVerticalWheelSettle,[\s\S]*requestId, request\.outputId, request\.sourceDesktopId, request\.sourceIndex,[\s\S]*request\.geometryEpoch,[\s\S]*request\.layout\.contentHeight, request\.desktopIds\.length\);/u,
+    );
+    expect(wheelNavigation).toMatch(
+      /function completeSpatialVerticalWheelSettle[\s\S]*requestId !== overviewVerticalWheelSettleRequestId[\s\S]*deferredSpatialWheelWorkspaceRequest\([\s\S]*planSpatialWorkspaceSettle\(request\)[\s\S]*requestSpatialWheelWorkspaceIndex\(request, plan\.targetIndex\)/u,
     );
     expect(wheelNavigation).toMatch(
       /runtime\.planOverviewSpatialWorkspaceSettle\(\{[\s\S]*cardHeight: request\.cardHeight,[\s\S]*contentHeight: request\.layout\.contentHeight,[\s\S]*contentY: request\.contentY,[\s\S]*gap: request\.gap,[\s\S]*sceneHeight: request\.sceneHeight,[\s\S]*workspaceCount: request\.desktopIds\.length/u,
@@ -3073,7 +3129,28 @@ describe("overview effect package", () => {
       /function spatialWheelWorkspaceRequestIsExact[\s\S]*desktopIds === request\.desktopIds[\s\S]*currentDesktop === request\.sourceDesktop[\s\S]*overviewSpatialLayout === request\.layout[\s\S]*spatialContentY === request\.contentY[\s\S]*desktopContextIsExact/u,
     );
     expect(wheelNavigation).toMatch(
-      /function resetOverviewVerticalWheelState[\s\S]*overviewWheelPixelRemainder = 0;[\s\S]*overviewWheelRemainder = 0;[\s\S]*overviewVerticalWheelSettlePending = false;/u,
+      /function resetOverviewVerticalWheelState[\s\S]*resetOverviewPreciseVerticalWheelState\(\);[\s\S]*clearOverviewVerticalWheelWorkspaceRequest\(\);[\s\S]*advanceOverviewVerticalWheelWorkspaceRequestId\(\);[\s\S]*overviewWheelRemainder = 0;[\s\S]*function resetOverviewPreciseVerticalWheelState[\s\S]*advanceOverviewVerticalWheelSettleRequestId\(\);[\s\S]*overviewWheelPixelRemainder = 0;[\s\S]*overviewVerticalWheelSettlePending = false;/u,
+    );
+    expect(wheelNavigation).toMatch(
+      /function requestSpatialWheelWorkspace[\s\S]*Qt\.callLater\(root\.completeSpatialWheelWorkspaceSelection,[\s\S]*targetPlan\.targetIndex\);[\s\S]*function completeSpatialWheelWorkspaceSelection[\s\S]*requestId !== overviewVerticalWheelWorkspaceRequestId[\s\S]*deferredSpatialWheelWorkspaceRequest\([\s\S]*requestSpatialWheelWorkspaceIndex\(request, expectedTargetIndex\)/u,
+    );
+    expect(wheelWorkspaceSchedule).toMatch(
+      /Qt\.callLater\(root\.completeSpatialWheelWorkspaceSelection,\s*requestId,\s*request\.outputId,\s*request\.sourceDesktopId,\s*request\.sourceIndex,\s*request\.geometryEpoch,\s*request\.contentY,\s*request\.cardHeight,\s*request\.gap,\s*request\.sceneHeight,\s*request\.layout\.contentHeight,\s*request\.desktopIds\.length,\s*targetPlan\.targetIndex\);/u,
+    );
+    expect(wheelWorkspaceSchedule).not.toMatch(
+      /requestSpatialWheelWorkspaceIndex|requestDesktopSelection/u,
+    );
+    expect(preciseWorkspaceSettleSchedule).toMatch(
+      /Qt\.callLater\(root\.completeSpatialVerticalWheelSettle,\s*requestId,\s*request\.outputId,\s*request\.sourceDesktopId,\s*request\.sourceIndex,\s*request\.geometryEpoch,\s*request\.contentY,\s*request\.cardHeight,\s*request\.gap,\s*request\.sceneHeight,\s*request\.layout\.contentHeight,\s*request\.desktopIds\.length\);/u,
+    );
+    expect(preciseWorkspaceSettleSchedule).not.toMatch(
+      /requestSpatialWheelWorkspaceIndex|requestDesktopSelection/u,
+    );
+    expect(wheelWorkspaceCompletion).toContain(
+      "return requestSpatialWheelWorkspaceIndex(request, expectedTargetIndex)",
+    );
+    expect(wheelNavigation).toMatch(
+      /const planningSourceIndex = overviewVerticalWheelWorkspaceRequestIsExact\(request\)[\s\S]*\? overviewVerticalWheelWorkspaceTargetIndex : request\.sourceIndex;[\s\S]*currentIndex: planningSourceIndex[\s\S]*rememberOverviewVerticalWheelWorkspaceRequest\(request, targetPlan\.targetIndex\)/u,
     );
     expect(wheelNavigation).toContain(
       "plan.appliedSteps !== Math.abs(plan.targetIndex - sourceIndex)",
@@ -3133,10 +3210,10 @@ describe("overview effect package", () => {
       /function resetOverviewHorizontalWheelState\(\) \{\s*overviewHorizontalWheelPixelRemainder = 0;\s*overviewHorizontalWheelRemainder = 0;\s*\}/u,
     );
     expect(wheelNavigation).toMatch(
-      /function resetOverviewVerticalWheelState\(\) \{\s*overviewWheelPixelRemainder = 0;\s*overviewWheelRemainder = 0;\s*overviewVerticalWheelSettlePending = false;\s*\}/u,
+      /function resetOverviewVerticalWheelState\(\) \{\s*resetOverviewPreciseVerticalWheelState\(\);\s*clearOverviewVerticalWheelWorkspaceRequest\(\);\s*advanceOverviewVerticalWheelWorkspaceRequestId\(\);\s*overviewWheelRemainder = 0;\s*\}/u,
     );
     expect(wheelNavigation).toMatch(
-      /if \(plan\.steps > 0\)[\s\S]*requestSpatialWheelWorkspace\(plan\.direction, plan\.steps\)[\s\S]*resetOverviewWheelState\(\);[\s\S]*else \{[\s\S]*overviewWheelRemainder = plan\.remainder;/u,
+      /if \(plan\.steps > 0\)[\s\S]*overviewWheelPixelRemainder = 0;[\s\S]*overviewWheelRemainder = 0;[\s\S]*requestSpatialWheelWorkspace\(plan\.direction, plan\.steps\)[\s\S]*else \{[\s\S]*overviewWheelRemainder = plan\.remainder;/u,
     );
     expect(`${wheelHandler}\n${wheelNavigation}`).not.toMatch(
       /candidate\.[A-Za-z0-9_]+\s*=(?!=)|overviewModel\.[A-Za-z0-9_]+\s*=(?!=)|\bTimer\s*\{|\.setValue\s*\(/u,

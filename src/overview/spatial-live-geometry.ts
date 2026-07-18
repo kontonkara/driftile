@@ -1,19 +1,17 @@
 import type { Rect } from "../core/geometry";
 import { LAYOUT_PERSISTENCE_LIMITS } from "../core/layout-persistence";
 
-export interface OverviewSpatialLiveGeometryColumnFrame {
-  readonly columnId: string;
-  readonly columnIndex: number;
-  readonly contentX: number;
-  readonly width: number;
-}
-
 export interface OverviewSpatialLiveGeometryInput {
   readonly columnIndex: number;
-  readonly liveFrame: Rect;
+  readonly liveHeight: number;
+  readonly liveWidth: number;
+  readonly liveX: number;
+  readonly liveY: number;
   readonly memberIndex: number;
-  readonly outputFrame: Rect;
-  readonly plannedColumnFrame: OverviewSpatialLiveGeometryColumnFrame;
+  readonly outputHeight: number;
+  readonly outputWidth: number;
+  readonly outputX: number;
+  readonly outputY: number;
   readonly projectionScale: number;
   readonly viewportOriginX: number;
   readonly viewportOriginY: number;
@@ -24,10 +22,8 @@ export interface OverviewSpatialLiveGeometryFrame extends Rect {
   readonly floating: false;
 }
 
-export interface OverviewSpatialLiveGeometryPlan {
-  readonly columnFrame: OverviewSpatialLiveGeometryColumnFrame;
+export interface OverviewSpatialLiveGeometryPlan extends OverviewSpatialLiveGeometryFrame {
   readonly columnIndex: number;
-  readonly frame: OverviewSpatialLiveGeometryFrame;
   readonly memberIndex: number;
   readonly windowId: string;
 }
@@ -46,10 +42,15 @@ export function projectOverviewSpatialLiveGeometry(
     }
 
     const columnIndex = input["columnIndex"];
-    const liveFrame = readRect(input["liveFrame"]);
+    const liveHeight = input["liveHeight"];
+    const liveWidth = input["liveWidth"];
+    const liveX = input["liveX"];
+    const liveY = input["liveY"];
     const memberIndex = input["memberIndex"];
-    const outputFrame = readRect(input["outputFrame"]);
-    const plannedColumnFrame = readColumnFrame(input["plannedColumnFrame"]);
+    const outputHeight = input["outputHeight"];
+    const outputWidth = input["outputWidth"];
+    const outputX = input["outputX"];
+    const outputY = input["outputY"];
     const projectionScale = input["projectionScale"];
     const viewportOriginX = input["viewportOriginX"];
     const viewportOriginY = input["viewportOriginY"];
@@ -60,28 +61,44 @@ export function projectOverviewSpatialLiveGeometry(
         columnIndex,
         LAYOUT_PERSISTENCE_LIMITS.columnsPerContext,
       ) ||
-      liveFrame === null ||
+      !isBoundedNumber(liveX) ||
+      !isBoundedNumber(liveY) ||
+      !isPositiveBoundedNumber(liveWidth) ||
+      !isPositiveBoundedNumber(liveHeight) ||
+      !isBoundedNumber(liveX + liveWidth) ||
+      !isBoundedNumber(liveY + liveHeight) ||
       !isBoundedIndex(
         memberIndex,
         LAYOUT_PERSISTENCE_LIMITS.membersPerColumn,
       ) ||
-      outputFrame === null ||
-      plannedColumnFrame === null ||
-      plannedColumnFrame.columnIndex !== columnIndex ||
-      plannedColumnFrame.columnId !== plannedColumnId(columnIndex) ||
+      !isBoundedNumber(outputX) ||
+      !isBoundedNumber(outputY) ||
+      !isPositiveBoundedNumber(outputWidth) ||
+      !isPositiveBoundedNumber(outputHeight) ||
+      !isBoundedNumber(outputX + outputWidth) ||
+      !isBoundedNumber(outputY + outputHeight) ||
       !isPositiveBoundedNumber(projectionScale) ||
       !isBoundedNumber(viewportOriginX) ||
       !isBoundedNumber(viewportOriginY) ||
       !isIdentifier(windowId) ||
-      !rectIntersectsOutputEnvelope(liveFrame, outputFrame)
+      !rectIntersectsOutputEnvelope(
+        liveX,
+        liveY,
+        liveWidth,
+        liveHeight,
+        outputX,
+        outputY,
+        outputWidth,
+        outputHeight,
+      )
     ) {
       return null;
     }
 
-    const x = viewportOriginX + (liveFrame.x - outputFrame.x) * projectionScale;
-    const y = viewportOriginY + (liveFrame.y - outputFrame.y) * projectionScale;
-    const width = liveFrame.width * projectionScale;
-    const height = liveFrame.height * projectionScale;
+    const x = viewportOriginX + (liveX - outputX) * projectionScale;
+    const y = viewportOriginY + (liveY - outputY) * projectionScale;
+    const width = liveWidth * projectionScale;
+    const height = liveHeight * projectionScale;
 
     if (
       !isBoundedNumber(x) ||
@@ -93,88 +110,45 @@ export function projectOverviewSpatialLiveGeometry(
     }
 
     return Object.freeze({
-      columnFrame: plannedColumnFrame,
       columnIndex,
-      frame: Object.freeze({
-        floating: false,
-        height: normalizeZero(height),
-        width: normalizeZero(width),
-        x: normalizeZero(x),
-        y: normalizeZero(y),
-      }),
+      floating: false,
+      height: normalizeZero(height),
       memberIndex,
+      width: normalizeZero(width),
       windowId,
+      x: normalizeZero(x),
+      y: normalizeZero(y),
     });
   } catch {
     return null;
   }
 }
 
-function readColumnFrame(
-  value: unknown,
-): OverviewSpatialLiveGeometryColumnFrame | null {
-  if (!isRecord(value)) {
-    return null;
-  }
-
-  const columnId = value["columnId"];
-  const columnIndex = value["columnIndex"];
-  const contentX = value["contentX"];
-  const width = value["width"];
-
-  if (
-    !isIdentifier(columnId) ||
-    !isBoundedIndex(columnIndex, LAYOUT_PERSISTENCE_LIMITS.columnsPerContext) ||
-    !isBoundedNumber(contentX) ||
-    !isPositiveBoundedNumber(width) ||
-    !isBoundedNumber(contentX + width)
-  ) {
-    return null;
-  }
-
-  return Object.freeze({ columnId, columnIndex, contentX, width });
-}
-
-function readRect(value: unknown): Rect | null {
-  if (!isRecord(value)) {
-    return null;
-  }
-
-  const height = value["height"];
-  const width = value["width"];
-  const x = value["x"];
-  const y = value["y"];
-
-  if (
-    !isPositiveBoundedNumber(height) ||
-    !isPositiveBoundedNumber(width) ||
-    !isBoundedNumber(x) ||
-    !isBoundedNumber(y) ||
-    !isBoundedNumber(x + width) ||
-    !isBoundedNumber(y + height)
-  ) {
-    return null;
-  }
-
-  return Object.freeze({ height, width, x, y });
-}
-
-function rectIntersectsOutputEnvelope(liveFrame: Rect, outputFrame: Rect) {
-  const outputRight = outputFrame.x + outputFrame.width;
-  const outputBottom = outputFrame.y + outputFrame.height;
-  const liveRight = liveFrame.x + liveFrame.width;
-  const liveBottom = liveFrame.y + liveFrame.height;
+function rectIntersectsOutputEnvelope(
+  liveX: number,
+  liveY: number,
+  liveWidth: number,
+  liveHeight: number,
+  outputX: number,
+  outputY: number,
+  outputWidth: number,
+  outputHeight: number,
+) {
+  const outputRight = outputX + outputWidth;
+  const outputBottom = outputY + outputHeight;
+  const liveRight = liveX + liveWidth;
+  const liveBottom = liveY + liveHeight;
   const horizontalReach = Math.min(
     MAXIMUM_GEOMETRY_MAGNITUDE,
-    outputFrame.width * HORIZONTAL_OUTPUT_ENVELOPE_SPANS,
+    outputWidth * HORIZONTAL_OUTPUT_ENVELOPE_SPANS,
   );
   const verticalReach = Math.min(
     MAXIMUM_GEOMETRY_MAGNITUDE,
-    outputFrame.height * VERTICAL_OUTPUT_ENVELOPE_SPANS,
+    outputHeight * VERTICAL_OUTPUT_ENVELOPE_SPANS,
   );
   const envelopeLeft = Math.max(
     -MAXIMUM_GEOMETRY_MAGNITUDE,
-    outputFrame.x - horizontalReach,
+    outputX - horizontalReach,
   );
   const envelopeRight = Math.min(
     MAXIMUM_GEOMETRY_MAGNITUDE,
@@ -182,7 +156,7 @@ function rectIntersectsOutputEnvelope(liveFrame: Rect, outputFrame: Rect) {
   );
   const envelopeTop = Math.max(
     -MAXIMUM_GEOMETRY_MAGNITUDE,
-    outputFrame.y - verticalReach,
+    outputY - verticalReach,
   );
   const envelopeBottom = Math.min(
     MAXIMUM_GEOMETRY_MAGNITUDE,
@@ -191,14 +165,10 @@ function rectIntersectsOutputEnvelope(liveFrame: Rect, outputFrame: Rect) {
 
   return (
     liveRight > envelopeLeft &&
-    liveFrame.x < envelopeRight &&
+    liveX < envelopeRight &&
     liveBottom > envelopeTop &&
-    liveFrame.y < envelopeBottom
+    liveY < envelopeBottom
   );
-}
-
-function plannedColumnId(columnIndex: number): string {
-  return `overview-column-${String(columnIndex)}`;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

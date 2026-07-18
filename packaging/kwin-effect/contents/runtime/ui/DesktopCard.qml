@@ -2289,71 +2289,130 @@ Rectangle {
     }
 
     function planSpatialLiveWindowFrame(window, windowId, tiled) {
-        if (!liveGeometryEnabled || !current || !window || window.deleted === true || window.minimized === true
-                || window.output !== screen || String(window.internalId) !== windowId || !tiled
-                || !Number.isInteger(tiled.columnIndex) || !Number.isInteger(tiled.memberIndex)
-                || !tiled.plannedColumnFrame || !context || !context.columns
-                || tiled.columnIndex < 0 || tiled.columnIndex >= context.columns.length) {
-            return null;
-        }
-
-        const column = context.columns[tiled.columnIndex];
-        if (!column || !column.members || tiled.memberIndex < 0 || tiled.memberIndex >= column.members.length
-                || !column.members[tiled.memberIndex]
-                || column.members[tiled.memberIndex].windowId !== windowId) {
-            return null;
-        }
-
-        const sourceColumnFrame = spatialSourceColumnFrame(tiled.columnIndex);
-        const liveFrame = window.frameGeometry;
-        const outputFrame = screen.geometry;
-        if (sourceColumnFrame !== tiled.plannedColumnFrame || !projectionGeometryIsValid(liveFrame)
-                || !projectionGeometryIsValid(outputFrame) || !Number.isFinite(projectionScale)
-                || projectionScale <= 0 || !Number.isFinite(viewportOriginX)
-                || !Number.isFinite(viewportOriginY)) {
-            return null;
-        }
-
-        const runtime = OverviewRuntime.DriftileOverview;
-        if (!runtime || typeof runtime.projectOverviewSpatialLiveGeometry !== "function") {
-            return null;
-        }
-
-        let plan = null;
         try {
-            plan = runtime.projectOverviewSpatialLiveGeometry({
-                                                                  columnIndex: tiled.columnIndex,
-                                                                  liveFrame,
-                                                                  memberIndex: tiled.memberIndex,
-                                                                  outputFrame,
-                                                                  plannedColumnFrame: sourceColumnFrame,
-                                                                  projectionScale,
-                                                                  viewportOriginX,
-                                                                  viewportOriginY,
-                                                                  windowId
-                                                              });
+            if (!liveGeometryEnabled || !current || !window || !tiled || !context || !context.columns
+                    || !screen || typeof windowId !== "string" || windowId.length === 0
+                    || !Number.isInteger(tiled.columnIndex) || !Number.isInteger(tiled.memberIndex)
+                    || tiled.columnIndex < 0 || tiled.columnIndex >= context.columns.length) {
+                return null;
+            }
+
+            const expectedContext = context;
+            const expectedColumns = expectedContext.columns;
+            const expectedScreen = screen;
+            const columnIndex = tiled.columnIndex;
+            const memberIndex = tiled.memberIndex;
+            const column = expectedColumns[columnIndex];
+            if (!column || column.presentation === "tabbed" || !column.members
+                    || memberIndex < 0 || memberIndex >= column.members.length) {
+                return null;
+            }
+
+            const expectedMembers = column.members;
+            const member = expectedMembers[memberIndex];
+            const sourceColumnFrame = spatialSourceColumnFrame(columnIndex);
+            if (!member || member.windowId !== windowId || !sourceColumnFrame
+                    || sourceColumnFrame !== tiled.plannedColumnFrame) {
+                return null;
+            }
+
+            const deleted = window.deleted;
+            const minimized = window.minimized;
+            const output = window.output;
+            const internalId = window.internalId;
+            if (deleted !== false || minimized !== false || output !== expectedScreen
+                    || internalId === undefined || internalId === null || String(internalId) !== windowId) {
+                return null;
+            }
+
+            const liveGeometry = window.frameGeometry;
+            const outputGeometry = expectedScreen.geometry;
+            const liveX = liveGeometry ? Number(liveGeometry.x) : Number.NaN;
+            const liveY = liveGeometry ? Number(liveGeometry.y) : Number.NaN;
+            const liveWidth = liveGeometry ? Number(liveGeometry.width) : Number.NaN;
+            const liveHeight = liveGeometry ? Number(liveGeometry.height) : Number.NaN;
+            const outputX = outputGeometry ? Number(outputGeometry.x) : Number.NaN;
+            const outputY = outputGeometry ? Number(outputGeometry.y) : Number.NaN;
+            const outputWidth = outputGeometry ? Number(outputGeometry.width) : Number.NaN;
+            const outputHeight = outputGeometry ? Number(outputGeometry.height) : Number.NaN;
+            const scale = Number(projectionScale);
+            const originX = Number(viewportOriginX);
+            const originY = Number(viewportOriginY);
+
+            if (!projectionGeometryScalarsAreValid(liveX, liveY, liveWidth, liveHeight)
+                    || !projectionGeometryScalarsAreValid(outputX, outputY, outputWidth, outputHeight)
+                    || !Number.isFinite(scale) || scale <= 0 || !Number.isFinite(originX)
+                    || !Number.isFinite(originY)) {
+                return null;
+            }
+
+            const confirmedLiveGeometry = window.frameGeometry;
+            const confirmedOutputGeometry = expectedScreen.geometry;
+            if (!liveGeometryEnabled || !current || context !== expectedContext || screen !== expectedScreen
+                    || expectedContext.columns !== expectedColumns || expectedColumns[columnIndex] !== column
+                    || column.presentation === "tabbed" || column.members !== expectedMembers
+                    || expectedMembers[memberIndex] !== member || member.windowId !== windowId
+                    || tiledPresentations[windowId] !== tiled || tiled.columnIndex !== columnIndex
+                    || tiled.memberIndex !== memberIndex || tiled.plannedColumnFrame !== sourceColumnFrame
+                    || spatialSourceColumnFrame(columnIndex) !== sourceColumnFrame || window.deleted !== false
+                    || window.minimized !== false || window.output !== expectedScreen
+                    || window.internalId === undefined || window.internalId === null
+                    || String(window.internalId) !== windowId
+                    || !projectionGeometryMatches(confirmedLiveGeometry, liveX, liveY, liveWidth, liveHeight)
+                    || !projectionGeometryMatches(confirmedOutputGeometry, outputX, outputY,
+                                                  outputWidth, outputHeight)
+                    || Number(projectionScale) !== scale || Number(viewportOriginX) !== originX
+                    || Number(viewportOriginY) !== originY) {
+                return null;
+            }
+
+            const runtime = OverviewRuntime.DriftileOverview;
+            if (!runtime || typeof runtime.projectOverviewSpatialLiveGeometry !== "function") {
+                return null;
+            }
+
+            const plan = runtime.projectOverviewSpatialLiveGeometry({
+                                                                        columnIndex,
+                                                                        liveHeight,
+                                                                        liveWidth,
+                                                                        liveX,
+                                                                        liveY,
+                                                                        memberIndex,
+                                                                        outputHeight,
+                                                                        outputWidth,
+                                                                        outputX,
+                                                                        outputY,
+                                                                        projectionScale: scale,
+                                                                        viewportOriginX: originX,
+                                                                        viewportOriginY: originY,
+                                                                        windowId
+                                                                    });
+            return spatialLiveWindowPlanIsExact(plan, windowId, tiled) ? plan : null;
         } catch (error) {
             return null;
         }
-        if (!spatialLiveWindowPlanIsExact(plan, windowId, tiled, sourceColumnFrame)) {
-            return null;
-        }
-
-        return plan.frame;
     }
 
-    function spatialLiveWindowPlanIsExact(plan, windowId, tiled, sourceColumnFrame) {
+    function spatialLiveWindowPlanIsExact(plan, windowId, tiled) {
         if (!plan || Array.isArray(plan) || plan.windowId !== windowId
                 || plan.columnIndex !== tiled.columnIndex || plan.memberIndex !== tiled.memberIndex
-                || !plan.columnFrame || plan.columnFrame.columnId !== sourceColumnFrame.columnId
-                || plan.columnFrame.columnIndex !== sourceColumnFrame.columnIndex
-                || plan.columnFrame.contentX !== sourceColumnFrame.contentX
-                || plan.columnFrame.width !== sourceColumnFrame.width || !plan.frame
-                || plan.frame.floating !== false || !projectionGeometryIsValid(plan.frame)) {
+                || plan.floating !== false
+                || !projectionGeometryScalarsAreValid(plan.x, plan.y, plan.width, plan.height)) {
             return false;
         }
 
         return true;
+    }
+
+    function projectionGeometryScalarsAreValid(x, y, width, height) {
+        return Number.isFinite(x) && Number.isFinite(y) && Number.isFinite(width) && width > 0
+            && Number.isFinite(height) && height > 0 && Number.isFinite(x + width)
+            && Number.isFinite(y + height);
+    }
+
+    function projectionGeometryMatches(geometry, x, y, width, height) {
+        return geometry && Number(geometry.x) === x && Number(geometry.y) === y
+            && Number(geometry.width) === width && Number(geometry.height) === height;
     }
 
     function spatialSourceColumnFrame(columnIndex) {
