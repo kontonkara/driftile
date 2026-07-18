@@ -12468,8 +12468,10 @@ describe("RuntimeController", () => {
   it("leaves automatic-floating window classes exclusively to KWin", () => {
     const output = createOutput("DP-1", 0);
     const desktop = { id: "desktop-1" };
+    const lateWindowRoleChanged = new Signal<[]>();
     const regular = createTrackedWindow("regular", output, desktop, {
       windowRole: "main",
+      windowRoleChanged: lateWindowRoleChanged,
     });
     const transientParent = createTrackedWindow("parent", output, desktop);
     const dialog = createTrackedWindow("dialog", output, desktop, {
@@ -12636,6 +12638,48 @@ describe("RuntimeController", () => {
     expect(controller.automaticFloatingCount).toBe(8);
     expect(pictureInPicture.window.frameGeometry).toEqual(movedFrame);
     expect(pictureInPicture.writeCount).toBe(0);
+
+    fixture.workspace.activeWindow = regular.window;
+    expect(controller.toggleFloating()).toBe(true);
+    expect(controller.managedCount).toBe(1);
+    expect(controller.floatingCount).toBe(1);
+    expect(controller.automaticFloatingCount).toBe(8);
+    const writesBeforeLateRole = regular.writeCount;
+    Object.defineProperty(regular.window, "windowRole", {
+      configurable: true,
+      value: "Toolkit:PictureInPicture",
+    });
+    lateWindowRoleChanged.emit();
+
+    expect(controller.managedCount).toBe(1);
+    expect(controller.floatingCount).toBe(0);
+    expect(controller.automaticFloatingCount).toBe(9);
+    expect(controller.toggleFloating()).toBe(false);
+    const lateRoleMovedFrame = {
+      ...regular.window.frameGeometry,
+      x: 260,
+      y: 240,
+    };
+    Object.defineProperty(regular.window, "move", {
+      configurable: true,
+      value: true,
+    });
+    regular.moveResizedChanged.emit();
+    regular.interactiveMoveResizeStarted.emit();
+    regular.setFrameGeometry(lateRoleMovedFrame);
+    fixture.setCursorPosition(410, 330);
+    Object.defineProperty(regular.window, "move", {
+      configurable: true,
+      value: false,
+    });
+    regular.moveResizedChanged.emit();
+    regular.interactiveMoveResizeFinished.emit();
+
+    expect(controller.managedCount).toBe(1);
+    expect(controller.floatingCount).toBe(0);
+    expect(controller.automaticFloatingCount).toBe(9);
+    expect(regular.window.frameGeometry).toEqual(lateRoleMovedFrame);
+    expect(regular.writeCount).toBe(writesBeforeLateRole);
   });
 
   it("keeps matching applications outside layout ownership and persistence", () => {
