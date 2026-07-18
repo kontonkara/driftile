@@ -241,7 +241,7 @@ describe("touchpad navigation", () => {
     expect(configurationUi).toContain('name="kcfg_TouchpadNaturalScroll"');
   });
 
-  it("creates only two activation-only variable-finger touchpad handlers", () => {
+  it("keeps horizontal activation inside one fresh workspace context", () => {
     expect(touchpadQml.match(/SwipeGestureHandler \{/gu)).toHaveLength(2);
     expect(
       touchpadQml.match(/deviceType: SwipeGestureHandler\.Device\.Touchpad/gu),
@@ -257,8 +257,31 @@ describe("touchpad navigation", () => {
     expect(touchpadQml).toMatch(
       /direction: SwipeGestureHandler\.Direction\.Right[\s\S]*if \(root\.naturalScroll\) \{\s*root\.focusLeftRequested\(\);\s*\} else \{\s*root\.focusRightRequested\(\);/u,
     );
+    expect(touchpadQml).toMatch(
+      /function beginGesture\(owner, progress\) \{[\s\S]*if \(!\(progress > 0\)\) \{\s*return;\s*\}[\s\S]*if \(root\.activeGestureOwner !== ""\) \{\s*return;\s*\}[\s\S]*const contextKey = root\.currentContextKey\(\);[\s\S]*root\.activeGestureOwner = owner;[\s\S]*root\.gestureContextKey = contextKey;[\s\S]*\}/u,
+    );
+    expect(touchpadQml).toMatch(
+      /function cancelGesture\(owner\) \{\s*if \(owner === root\.activeGestureOwner\) \{\s*root\.resetGesture\(\);\s*\}\s*\}/u,
+    );
+    expect(touchpadQml).toMatch(
+      /function completeGesture\(owner\) \{[\s\S]*owner === root\.activeGestureOwner[\s\S]*!root\.gestureContextInvalidated[\s\S]*root\.gestureContextKey === root\.currentContextKey\(\)[\s\S]*root\.resetGesture\(\);[\s\S]*return accepted;[\s\S]*\}/u,
+    );
+    expect(
+      touchpadQml.match(/onProgressChanged: root\.beginGesture\(/gu),
+    ).toHaveLength(2);
+    expect(
+      touchpadQml.match(/onCancelled: root\.cancelGesture\(/gu),
+    ).toHaveLength(2);
+    expect(touchpadQml.match(/root\.completeGesture\(/gu)).toHaveLength(2);
+    expect(touchpadQml).toMatch(
+      /target: Workspace[\s\S]*onCurrentDesktopChanged[\s\S]*onCurrentActivityChanged[\s\S]*onScreensChanged[\s\S]*onVirtualScreenGeometryChanged[\s\S]*onWindowActivated/u,
+    );
+    expect(touchpadQml).toContain("target: Workspace.activeWindow");
+    expect(touchpadQml).toContain("function onOutputChanged()");
+    expect(touchpadQml).toContain("function onDesktopsChanged()");
+    expect(touchpadQml).toContain("function onActivitiesChanged()");
     expect(touchpadQml).not.toMatch(
-      /onCancelled|onProgressChanged|\bprogress\s*:|ShortcutHandler|sequence\s*:|Timer|action/iu,
+      /\bprogress\s*:|ShortcutHandler|sequence\s*:|Timer|action/iu,
     );
     expect(touchpadQml).toContain(
       'Component.onCompleted: console.info("[driftile] touchpad-navigation lifecycle=created")',
@@ -270,7 +293,7 @@ describe("touchpad navigation", () => {
     expect(touchpadQml.match(/console\.info\(/gu)).toHaveLength(2);
   });
 
-  it("creates only two activation-only vertical desktop handlers", () => {
+  it("keeps vertical activation on one pointer output and desktop", () => {
     expect(touchpadWorkspaceQml.match(/SwipeGestureHandler \{/gu)).toHaveLength(
       2,
     );
@@ -292,8 +315,36 @@ describe("touchpad navigation", () => {
     expect(touchpadWorkspaceQml).toMatch(
       /direction: SwipeGestureHandler\.Direction\.Down[\s\S]*if \(root\.naturalScroll\) \{\s*root\.focusPreviousDesktopRequested\(\);\s*\} else \{\s*root\.focusNextDesktopRequested\(\);/u,
     );
+    expect(touchpadWorkspaceQml).toMatch(
+      /function desktopForOutput\(output\) \{[\s\S]*if \(typeof Workspace\.currentDesktopForScreen !== "function"\) \{\s*return Workspace\.currentDesktop;\s*\}[\s\S]*try \{[\s\S]*Workspace\.currentDesktopForScreen\(output\)[\s\S]*return desktop \|\| null;[\s\S]*\} catch \(_error\) \{\s*return null;\s*\}[\s\S]*\}/u,
+    );
+    expect(touchpadWorkspaceQml).toMatch(
+      /function outputUnderPointer\(\) \{[\s\S]*matches \+= 1;[\s\S]*return matches === 1 \? match : null;[\s\S]*\}/u,
+    );
+    expect(touchpadWorkspaceQml).toMatch(
+      /function invalidateGestureForPointerOutput\(\) \{[\s\S]*root\.gestureOutputKey !== root\.outputKey\(root\.outputUnderPointer\(\)\)[\s\S]*root\.gestureContextInvalidated = true;[\s\S]*\}/u,
+    );
+    expect(touchpadWorkspaceQml).toMatch(
+      /function currentGestureContext\(\) \{[\s\S]*if \(!output\) \{\s*return null;\s*\}[\s\S]*if \(!desktop\) \{\s*return null;\s*\}[\s\S]*return \{[\s\S]*key:[\s\S]*outputKey:[\s\S]*\};[\s\S]*\}/u,
+    );
+    expect(touchpadWorkspaceQml).toMatch(
+      /function beginGesture\(owner, progress\) \{[\s\S]*if \(root\.activeGestureOwner !== ""\) \{\s*return;\s*\}[\s\S]*const context = root\.currentGestureContext\(\);[\s\S]*if \(!context\) \{\s*root\.resetGesture\(\);\s*return;\s*\}[\s\S]*root\.gestureContextKey = context\.key;[\s\S]*root\.gestureOutputKey = context\.outputKey;[\s\S]*\}/u,
+    );
+    expect(
+      touchpadWorkspaceQml.match(/onProgressChanged: root\.beginGesture\(/gu),
+    ).toHaveLength(2);
+    expect(
+      touchpadWorkspaceQml.match(/onCancelled: root\.cancelGesture\(/gu),
+    ).toHaveLength(2);
+    expect(
+      touchpadWorkspaceQml.match(/root\.completeGesture\(/gu),
+    ).toHaveLength(2);
+    expect(touchpadWorkspaceQml).toMatch(
+      /target: Workspace[\s\S]*onCurrentDesktopChanged[\s\S]*onCurrentActivityChanged[\s\S]*onScreensChanged[\s\S]*onVirtualScreenGeometryChanged/u,
+    );
+    expect(touchpadWorkspaceQml).toContain("function onCursorPosChanged()");
     expect(touchpadWorkspaceQml).not.toMatch(
-      /onCancelled|onProgressChanged|\bprogress\s*:|ShortcutHandler|sequence\s*:|Timer|action/iu,
+      /\bprogress\s*:|ShortcutHandler|sequence\s*:|Timer|action/iu,
     );
   });
 
