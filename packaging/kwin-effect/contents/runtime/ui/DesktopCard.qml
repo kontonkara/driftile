@@ -37,6 +37,9 @@ Rectangle {
                          string expectedTargetDesktopId, var expectedScreen)
     signal windowCloseRequested(var candidate, string expectedWindowId, var expectedDesktop,
                                 string expectedDesktopId, var expectedScreen)
+    signal windowSpatialDragStarted(var source, real sceneX, real sceneY)
+    signal windowSpatialDragMoved(var source, real sceneX, real sceneY)
+    signal windowSpatialDragFinished(var source)
     signal windowTapped(var candidate, string expectedWindowId, var expectedDesktop, string expectedDesktopId,
                         var expectedScreen)
 
@@ -324,6 +327,7 @@ Rectangle {
                 readonly property var thumbnailTarget: thumbnailShell
                 readonly property var tabTarget: tabShell
                 readonly property var minimizedPlaceholderTarget: minimizedPlaceholderShell
+                property bool spatialDragLifecycleActive: false
 
                 width: viewport.width
                 height: viewport.height
@@ -684,14 +688,23 @@ Rectangle {
                         acceptedModifiers: Qt.NoModifier
                         enabled: thumbnailShell.visible && windowPresentation.dragEligible
 
+                        onActiveTranslationChanged: {
+                            if (thumbnailDragHandler.active) {
+                                card.moveWindowSpatialDrag(windowPresentation,
+                                                           thumbnailDragHandler.centroid.scenePosition);
+                            }
+                        }
+
                         onGrabChanged: (transition, point) => {
                             if (transition === PointerDevice.GrabExclusive) {
                                 thumbnailShell.Drag.active = true;
+                                card.beginWindowSpatialDrag(windowPresentation, point.scenePosition);
                             } else if (transition === PointerDevice.UngrabExclusive) {
                                 if (point.state === EventPoint.Released) {
                                     const source = windowPresentation;
                                     const action = thumbnailShell.Drag.drop();
                                     thumbnailShell.Drag.active = false;
+                                    card.finishWindowSpatialDrag(source);
                                     if (action === Qt.MoveAction) {
                                         return;
                                     }
@@ -699,11 +712,13 @@ Rectangle {
                                 } else {
                                     thumbnailShell.Drag.cancel();
                                     thumbnailShell.Drag.active = false;
+                                    card.finishWindowSpatialDrag(windowPresentation);
                                 }
                             } else if (transition === PointerDevice.CancelGrabExclusive
                                        || transition === PointerDevice.CancelGrabPassive) {
                                 thumbnailShell.Drag.cancel();
                                 thumbnailShell.Drag.active = false;
+                                card.finishWindowSpatialDrag(windowPresentation);
                             }
                         }
                     }
@@ -885,14 +900,22 @@ Rectangle {
                         enabled: tabShell.visible && windowPresentation.tiledPresentation
                                  && !windowPresentation.minimizedWindow && windowPresentation.dragEligible
 
+                        onActiveTranslationChanged: {
+                            if (tabDragHandler.active) {
+                                card.moveWindowSpatialDrag(windowPresentation, tabDragHandler.centroid.scenePosition);
+                            }
+                        }
+
                         onGrabChanged: (transition, point) => {
                             if (transition === PointerDevice.GrabExclusive) {
                                 tabShell.Drag.active = true;
+                                card.beginWindowSpatialDrag(windowPresentation, point.scenePosition);
                             } else if (transition === PointerDevice.UngrabExclusive) {
                                 if (point.state === EventPoint.Released) {
                                     const source = windowPresentation;
                                     const action = tabShell.Drag.drop();
                                     tabShell.Drag.active = false;
+                                    card.finishWindowSpatialDrag(source);
                                     if (action === Qt.MoveAction) {
                                         return;
                                     }
@@ -900,11 +923,13 @@ Rectangle {
                                 } else {
                                     tabShell.Drag.cancel();
                                     tabShell.Drag.active = false;
+                                    card.finishWindowSpatialDrag(windowPresentation);
                                 }
                             } else if (transition === PointerDevice.CancelGrabExclusive
                                        || transition === PointerDevice.CancelGrabPassive) {
                                 tabShell.Drag.cancel();
                                 tabShell.Drag.active = false;
+                                card.finishWindowSpatialDrag(windowPresentation);
                             }
                         }
                     }
@@ -1396,6 +1421,65 @@ Rectangle {
         } catch (error) {
             return;
         }
+    }
+
+    function beginWindowSpatialDrag(source, scenePosition) {
+        try {
+            if (!spatialDragSourceIsOwned(source) || source.dragEligible !== true
+                    || source.minimizedWindow === true || source.spatialDragLifecycleActive === true
+                    || !spatialDragScenePointIsFinite(scenePosition)) {
+                return;
+            }
+
+            source.spatialDragLifecycleActive = true;
+            windowSpatialDragStarted(source, scenePosition.x, scenePosition.y);
+        } catch (error) {
+            return;
+        }
+    }
+
+    function moveWindowSpatialDrag(source, scenePosition) {
+        try {
+            if (!spatialDragSourceIsOwned(source) || source.spatialDragLifecycleActive !== true
+                    || !spatialDragScenePointIsFinite(scenePosition)) {
+                return;
+            }
+
+            windowSpatialDragMoved(source, scenePosition.x, scenePosition.y);
+        } catch (error) {
+            return;
+        }
+    }
+
+    function finishWindowSpatialDrag(source) {
+        try {
+            if (!source || source.spatialDragLifecycleActive !== true) {
+                return;
+            }
+
+            source.spatialDragLifecycleActive = false;
+            windowSpatialDragFinished(source);
+        } catch (error) {
+            return;
+        }
+    }
+
+    function spatialDragSourceIsOwned(source) {
+        try {
+            const candidate = source ? source.candidate : null;
+            return source && candidate && typeof source.windowId === "string" && source.windowId.length > 0
+                    && candidate.internalId !== undefined && candidate.internalId !== null
+                    && String(candidate.internalId) === source.windowId
+                    && source.sourceDesktop === desktop && typeof source.sourceDesktopId === "string"
+                    && source.sourceDesktopId.length > 0 && source.sourceDesktopId === desktopId
+                    && source.sourceScreen === screen;
+        } catch (error) {
+            return false;
+        }
+    }
+
+    function spatialDragScenePointIsFinite(scenePosition) {
+        return scenePosition && Number.isFinite(scenePosition.x) && Number.isFinite(scenePosition.y);
     }
 
     function windowDropIsValid(source, keys) {
