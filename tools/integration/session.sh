@@ -858,17 +858,14 @@ overview_number_gutter_click_point() {
   local output_name=$1
   local desktop_index=$2
   local desktop_count=$3
-  local card_gap
-  local card_height
-  local content_left=42
+  local current_workspace_index=$4
   local height
-  local minimum_dimension
-  local outer_margin
   local width
   local x
   local y
 
   ((desktop_index >= 0 && desktop_index < desktop_count)) || return 1
+  ((current_workspace_index >= 0 && current_workspace_index < desktop_count)) || return 1
   read -r x y width height < <(
     kscreen-doctor -j 2>/dev/null | jq --exit-status --raw-output \
       --arg outputName "$output_name" '
@@ -886,18 +883,34 @@ overview_number_gutter_click_point() {
       '
   ) || return 1
 
-  minimum_dimension=$((width < height ? width : height))
-  outer_margin=$((minimum_dimension * 35 / 1000))
-  ((outer_margin < 20)) && outer_margin=20
-  card_gap=$((height * 12 / 1000))
-  ((card_gap < 2)) && card_gap=2
-  ((card_gap > 10)) && card_gap=10
-  card_height=$(((height - outer_margin * 2 - card_gap * (desktop_count - 1)) / desktop_count))
-  ((card_height > 0)) || return 1
-
-  printf '%s %s\n' \
-    "$((x + outer_margin + content_left / 2))" \
-    "$((y + outer_margin + desktop_index * (card_height + card_gap) + card_height / 2))"
+  jq --exit-status --null-input --raw-output \
+    --argjson currentWorkspaceIndex "$current_workspace_index" \
+    --argjson desktopIndex "$desktop_index" \
+    --argjson outputHeight "$height" \
+    --argjson outputWidth "$width" \
+    --argjson outputX "$x" \
+    --argjson outputY "$y" '
+      ($outputWidth * 0.5) as $cardWidth
+      | ($outputHeight * 0.5) as $cardHeight
+      | (($outputWidth - $cardWidth) / 2) as $cardX
+      | (($outputHeight - $cardHeight) / 2) as $edgeMargin
+      | ([48, $cardHeight * 0.12] | min) as $cardGap
+      | ($cardHeight + $cardGap) as $stride
+      | ($outputY + $edgeMargin
+         + ($desktopIndex - $currentWorkspaceIndex) * $stride) as $cardTop
+      | ([$outputY, $cardTop] | max) as $visibleTop
+      | ([$outputY + $outputHeight, $cardTop + $cardHeight] | min) as $visibleBottom
+      | select(
+          $outputWidth > 0
+          and $outputHeight > 0
+          and $visibleBottom - $visibleTop >= 4
+        )
+      | [
+          ($outputX + $cardX + 21 | floor),
+          (($visibleTop + $visibleBottom) / 2 | floor)
+        ]
+      | @tsv
+    '
 }
 
 overview_window_thumbnail_click_point() {
@@ -905,6 +918,7 @@ overview_window_thumbnail_click_point() {
   local desktop_index=$2
   local desktop_count=$3
   local window_title=$4
+  local current_workspace_index=$5
   local output_height
   local output_width
   local output_x
@@ -912,6 +926,7 @@ overview_window_thumbnail_click_point() {
   local window_frame
 
   ((desktop_index >= 0 && desktop_index < desktop_count)) || return 1
+  ((current_workspace_index >= 0 && current_workspace_index < desktop_count)) || return 1
   read -r output_x output_y output_width output_height < <(
     kscreen-doctor -j 2>/dev/null | jq --exit-status --raw-output \
       --arg outputName "$output_name" '
@@ -933,7 +948,7 @@ overview_window_thumbnail_click_point() {
 
   jq --exit-status --null-input --raw-output \
     --arg frame "$window_frame" \
-    --argjson desktopCount "$desktop_count" \
+    --argjson currentWorkspaceIndex "$current_workspace_index" \
     --argjson desktopIndex "$desktop_index" \
     --argjson outputHeight "$output_height" \
     --argjson outputWidth "$output_width" \
@@ -941,40 +956,51 @@ overview_window_thumbnail_click_point() {
     --argjson outputY "$output_y" '
       ($frame | split(",") | map(tonumber)) as $window
       | select(($window | length) == 4)
-      | ([$outputWidth, $outputHeight] | min) as $minimumDimension
-      | ([20, $minimumDimension * 0.035] | max) as $outerMargin
-      | ([2, ([10, $outputHeight * 0.012] | min)] | max) as $cardGap
-      | (($outputHeight - $outerMargin * 2 - $cardGap * ($desktopCount - 1)) / $desktopCount) as $cardHeight
-      | ([1, $outputWidth - $outerMargin * 2 - 52] | max) as $contentWidth
+      | ($outputWidth * 0.5) as $cardWidth
+      | ($outputHeight * 0.5) as $cardHeight
+      | (($outputWidth - $cardWidth) / 2) as $cardX
+      | (($outputHeight - $cardHeight) / 2) as $edgeMargin
+      | ([48, $cardHeight * 0.12] | min) as $cardGap
+      | ($cardHeight + $cardGap) as $stride
+      | ($outputY + $edgeMargin
+         + ($desktopIndex - $currentWorkspaceIndex) * $stride) as $cardTop
+      | (if $cardWidth >= 560 and $cardHeight >= 72
+         then [112, ([170, $cardWidth * 0.14] | min)] | max
+         else 42
+         end) as $contentLeft
+      | ([1, $cardWidth - $contentLeft - 10] | max) as $contentWidth
       | ([1, $cardHeight - 20] | max) as $contentHeight
-      | ($window[0] + $window[2] / 2) as $windowCenterX
-      | ($window[1] + $window[3] / 2) as $windowCenterY
       | select(
           $outputWidth > 0
           and $outputHeight > 0
           and $cardHeight > 20
           and $window[2] > 0
           and $window[3] > 0
-          and $windowCenterX >= $outputX
-          and $windowCenterX < $outputX + $outputWidth
-          and $windowCenterY >= $outputY
-          and $windowCenterY < $outputY + $outputHeight
+          and $window[0] >= $outputX
+          and $window[0] + $window[2] <= $outputX + $outputWidth
+          and $window[1] >= $outputY
+          and $window[1] + $window[3] <= $outputY + $outputHeight
         )
-      | (
-          $outputX + $outerMargin + 42
-          + ($windowCenterX - $outputX) * $contentWidth / $outputWidth
-        ) as $clickX
-      | (
-          $outputY + $outerMargin + $desktopIndex * ($cardHeight + $cardGap) + 10
-          + ($windowCenterY - $outputY) * $contentHeight / $outputHeight
-        ) as $clickY
+      | ($outputX + $cardX + $contentLeft
+         + ($window[0] - $outputX) * $contentWidth / $outputWidth) as $thumbnailLeft
+      | ($outputX + $cardX + $contentLeft
+         + ($window[0] + $window[2] - $outputX) * $contentWidth / $outputWidth) as $thumbnailRight
+      | ($cardTop + 10
+         + ($window[1] - $outputY) * $contentHeight / $outputHeight) as $thumbnailTop
+      | ($cardTop + 10
+         + ($window[1] + $window[3] - $outputY) * $contentHeight / $outputHeight) as $thumbnailBottom
+      | ([$outputX, $outputX + $cardX + $contentLeft, $thumbnailLeft] | max) as $visibleLeft
+      | ([$outputX + $outputWidth, $outputX + $cardX + $cardWidth - 10, $thumbnailRight] | min) as $visibleRight
+      | ([$outputY, $cardTop + 10, $thumbnailTop] | max) as $visibleTop
+      | ([$outputY + $outputHeight, $cardTop + $cardHeight - 10, $thumbnailBottom] | min) as $visibleBottom
       | select(
-          $clickX > $outputX + $outerMargin + 42
-          and $clickX < $outputX + $outputWidth - $outerMargin - 10
-          and $clickY > $outputY + $outerMargin + $desktopIndex * ($cardHeight + $cardGap) + 10
-          and $clickY < $outputY + $outerMargin + $desktopIndex * ($cardHeight + $cardGap) + $cardHeight - 10
+          $visibleRight - $visibleLeft >= 4
+          and $visibleBottom - $visibleTop >= 4
         )
-      | [($clickX | floor), ($clickY | floor)]
+      | [
+          (($visibleLeft + $visibleRight) / 2 | floor),
+          (($visibleTop + $visibleBottom) / 2 | floor)
+        ]
       | @tsv
     '
 }
@@ -1293,11 +1319,11 @@ verify_overview_desktop_selection() {
       "${desktop_ids[2]}" == "$trailing_desktop_id"
   ]] || fail "the $protocol overview desktop selector target was not exact card index 1"
   read -r click_x click_y < <(
-    overview_number_gutter_click_point Virtual-0 1 "${#desktop_ids[@]}"
+    overview_number_gutter_click_point Virtual-0 1 "${#desktop_ids[@]}" 0
   ) || fail "KScreen did not expose the left $protocol overview number-gutter geometry"
   read -r target_click_x target_click_y < <(
     overview_window_thumbnail_click_point \
-      Virtual-0 1 "${#desktop_ids[@]}" "$target_title"
+      Virtual-0 1 "${#desktop_ids[@]}" "$target_title" 0
   ) || fail "KScreen did not expose the exact left $protocol overview target-thumbnail geometry"
 
   invoke_shortcut "$overview_shortcut" || \
@@ -10315,6 +10341,8 @@ run_multi_output_scenario() {
   local index
   local left_live_ids
   local live_ids
+  local overview_click_x
+  local overview_click_y
   local output_frame
   local reachable_frame
   local reduced_layout_catalog
@@ -10431,9 +10459,14 @@ run_multi_output_scenario() {
     mapfile -t overview_desktop_ids < <(virtual_desktop_ids)
     ((${#overview_desktop_ids[@]} == 2)) || \
       fail "the multi-output $protocol overview click fixture did not expose exactly two desktop cards"
+    read -r overview_click_x overview_click_y < <(
+      overview_window_thumbnail_click_point \
+        Virtual-0 0 "${#overview_desktop_ids[@]}" "${titles[1]}" 0
+    ) || fail "KScreen did not expose the current $protocol overview target-thumbnail geometry"
     verify_overview_effect_lifecycle \
       "$protocol" \
-      --click-focus "${titles[0]}" "${titles[1]}" 956 190 \
+      --click-focus \
+      "${titles[0]}" "${titles[1]}" "$overview_click_x" "$overview_click_y" \
       "${titles[0]}" "${titles[1]}" "${titles[3]}" "${titles[4]}"
     verify_overview_desktop_selection \
       "$protocol" \
