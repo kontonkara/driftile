@@ -8,6 +8,7 @@ import type {
   KWinWorkspace,
 } from "../../../src/platform/kwin/api";
 import {
+  hasAutomaticFloatingRole,
   normalizeWindow,
   WindowObserver,
 } from "../../../src/platform/kwin/window-observer";
@@ -131,6 +132,44 @@ function createWorkspace(
     windowRemoved,
   };
 }
+
+describe("hasAutomaticFloatingRole", () => {
+  it.each([
+    { dialog: true },
+    { modal: true },
+    { transient: true },
+    { transientFor: {} },
+    { utility: true },
+    { windowRole: "Toolkit:Picture-In_Picture" },
+    { windowRole: "Toolkit:PICTURE IN PICTURE" },
+  ])("accepts an exact automatic-floating source", (source) => {
+    expect(hasAutomaticFloatingRole(source)).toBe(true);
+  });
+
+  it.each([
+    null,
+    undefined,
+    "PictureInPicture",
+    Object.assign([], { dialog: true }),
+    { caption: "PictureInPicture" },
+    { desktopFileName: "PictureInPicture" },
+    { dialog: "true" },
+    { transientFor: 1 },
+    { windowRole: "PictureInPictureExtra" },
+  ])("rejects an untrusted non-role source", (source) => {
+    expect(hasAutomaticFloatingRole(source)).toBe(false);
+  });
+
+  it("fails closed when an external property cannot be read", () => {
+    const source = Object.defineProperty({}, "dialog", {
+      get: () => {
+        throw new Error("unreadable");
+      },
+    });
+
+    expect(hasAutomaticFloatingRole(source)).toBe(false);
+  });
+});
 
 describe("normalizeWindow", () => {
   it("normalizes a regular window", () => {

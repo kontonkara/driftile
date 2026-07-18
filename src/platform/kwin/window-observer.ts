@@ -1,4 +1,7 @@
+import { hasAutomaticFloatingRole } from "../../core/window-classification";
 import type { KWinOutput, KWinRect, KWinWindow, KWinWorkspace } from "./api";
+
+export { hasAutomaticFloatingRole };
 
 export type ObservedWindowKind = "dialog" | "normal" | "other";
 export type ObservedWindowChangeCause =
@@ -76,7 +79,6 @@ interface WindowEntry {
 
 const INVALID_CONSTRAINT_FINGERPRINT = "invalid";
 const CONSTRAINT_EPSILON = 1e-6;
-const PICTURE_IN_PICTURE_WINDOW_ROLE = "pictureinpicture";
 
 export class WindowObserver {
   private readonly events: WindowObserverEvents;
@@ -587,53 +589,6 @@ function isTrackableWindow(window: KWinWindow): boolean {
   return (
     !window.deleted && window.managed && !window.desktopWindow && !window.dock
   );
-}
-
-export function hasAutomaticFloatingRole(window: KWinWindow): boolean {
-  try {
-    return Boolean(
-      window.dialog ||
-      window.modal ||
-      window.transient ||
-      window.transientFor ||
-      window.utility ||
-      isPictureInPictureWindowRole(window.windowRole),
-    );
-  } catch {
-    return false;
-  }
-}
-
-function isPictureInPictureWindowRole(value: unknown): boolean {
-  if (typeof value !== "string") {
-    return false;
-  }
-
-  const roleStart = value.lastIndexOf(":") + 1;
-  let tokenIndex = 0;
-
-  for (let index = roleStart; index < value.length; index += 1) {
-    let code = value.charCodeAt(index);
-
-    if (code === 32 || code === 45 || code === 95) {
-      continue;
-    }
-
-    if (code >= 65 && code <= 90) {
-      code += 32;
-    }
-
-    if (
-      tokenIndex >= PICTURE_IN_PICTURE_WINDOW_ROLE.length ||
-      code !== PICTURE_IN_PICTURE_WINDOW_ROLE.charCodeAt(tokenIndex)
-    ) {
-      return false;
-    }
-
-    tokenIndex += 1;
-  }
-
-  return tokenIndex === PICTURE_IN_PICTURE_WINDOW_ROLE.length;
 }
 
 function windowId(window: KWinWindow): string {
