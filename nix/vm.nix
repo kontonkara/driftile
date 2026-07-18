@@ -4873,7 +4873,9 @@ let
         local horizontal_wheel_active_caption=""
         local journal_cursor
         local kwin_horizontal_wheel_process_id
+        local kwin_live_camera_process_id
         local kwin_search_process_id
+        local live_camera_initial_width
         local live_refresh_base_title="Driftile VM Overview Live Refresh"
         local live_refresh_pid=""
         local live_refresh_title=""
@@ -5009,6 +5011,55 @@ let
           return 1
         fi
 
+        live_camera_initial_width=$(window_frame_width "$xterm_title" 2>/dev/null || true)
+        if [[ ! "$live_camera_initial_width" =~ ^[1-9][0-9]*$ ]] \
+          || ! kwin_live_camera_process_id=$(kwin_process_id); then
+          overview_checkpoint_failure \
+            "the current tiled overview window did not expose its frame and KWin process"
+          return 1
+        fi
+
+        if ! invoke_shortcut "driftile_decrease_column_width" \
+          || ! wait_for_real_window_width \
+            "$xterm_title" \
+            less \
+            "$live_camera_initial_width" \
+          || [[ "$(effect_active_state "$overview_plugin_id" 2>/dev/null || true)" != true ]] \
+          || ! kwin_process_is_unchanged "$kwin_live_camera_process_id" \
+          || ! overview_component_errors_after "$journal_cursor"; then
+          overview_checkpoint_failure \
+            "a real tiled frame change did not preserve the active overview and KWin process"
+          return 1
+        fi
+
+        if ! invoke_shortcut "driftile_increase_column_width" \
+          || ! wait_for_real_window_width \
+            "$xterm_title" \
+            equal \
+            "$live_camera_initial_width"; then
+          overview_checkpoint_failure \
+            "the current tiled overview window did not restore its original frame width"
+          return 1
+        fi
+        after_checkpoint=$(capture_overview_checkpoint \
+          "$@" \
+          "$title_desktop_destination") || {
+          overview_checkpoint_failure \
+            "the live-camera frame-change checkpoint did not stabilize"
+          return 1
+        }
+        if [[ "$after_checkpoint" != "$fixture_checkpoint" ]] \
+          || [[ "$(effect_active_state "$overview_plugin_id" 2>/dev/null || true)" != true ]] \
+          || ! kwin_process_is_unchanged "$kwin_live_camera_process_id" \
+          || ! overview_component_errors_after "$journal_cursor"; then
+          overview_checkpoint_failure \
+            "the live-camera frame round trip changed applications, layout state, or the KWin process"
+          return 1
+        fi
+
+        record_focus_state \
+          "the active overview survived a real current-row tiled frame change"
+
         if ! kwin_horizontal_wheel_process_id=$(kwin_process_id) \
           || ! request_physical_overview_horizontal_wheel "$output_frame"; then
           overview_checkpoint_failure \
@@ -5051,9 +5102,11 @@ let
         fi
 
         if ! kwin_process_is_unchanged \
-            "$kwin_horizontal_wheel_process_id"; then
+            "$kwin_horizontal_wheel_process_id" \
+          || ! kwin_process_is_unchanged \
+            "$kwin_live_camera_process_id"; then
           overview_checkpoint_failure \
-            "the KWin process changed while closing the horizontal-wheel overview checkpoint"
+            "the KWin process changed while closing the live-camera overview checkpoint"
           return 1
         fi
 
@@ -5077,14 +5130,15 @@ let
         }
         if [[ "$after_checkpoint" != "$fixture_checkpoint" ]] \
           || ! kwin_process_is_unchanged "$kwin_horizontal_wheel_process_id" \
+          || ! kwin_process_is_unchanged "$kwin_live_camera_process_id" \
           || ! overview_component_errors_after "$journal_cursor"; then
           overview_checkpoint_failure \
-            "horizontal wheel controls changed applications, layout state, or the KWin process"
+            "live-camera and horizontal wheel controls changed applications, layout state, or the KWin process"
           return 1
         fi
 
         record_focus_state \
-          "physical horizontal wheel controls preserved the multi-column overview and KWin process"
+          "a real current-row frame change and physical horizontal wheel controls closed cleanly without restarting KWin"
 
         if ! invoke_shortcut "$overview_shortcut" \
           || ! wait_for_effect_active_state "$overview_plugin_id" true; then
