@@ -2560,6 +2560,12 @@ describe("overview effect package", () => {
     expect(wheelNavigation).toContain("event.modifiers !== Qt.NoModifier");
     expect(wheelNavigation).toContain("keyboardHelpVisible");
     expect(wheelNavigation).toMatch(
+      /spatialViewportDragHandler\.active \|\| spatialWindowDragSource !== null[\s\S]*\|\| desktopReorderActive[\s\S]*overviewWheelRemainder = 0;[\s\S]*event\.accepted = true;[\s\S]*return;/u,
+    );
+    expect(
+      wheelNavigation.indexOf("if (spatialViewportDragHandler.active"),
+    ).toBeLessThan(wheelNavigation.indexOf("const handled = pixelDeltaY"));
+    expect(wheelNavigation).toMatch(
       /const handled = pixelDeltaY !== 0[\s\S]*handleSpatialViewportWheel\(angleDeltaY, pixelDeltaY\)[\s\S]*searchQuery\.length > 0[\s\S]*handleSearchResultWheel\(angleDeltaY\)[\s\S]*handleSpatialWorkspaceWheel\(angleDeltaY\)/u,
     );
     expect(wheelNavigation).toContain(
@@ -2617,6 +2623,15 @@ describe("overview effect package", () => {
     );
     expect(scene).toMatch(
       /function onActiveChanged\(\)[\s\S]*sceneEffect\.active !== true[\s\S]*root\.overviewWheelRemainder = 0;/u,
+    );
+    expect(scene).toMatch(
+      /DragHandler \{[\s\S]*id: spatialViewportDragHandler[\s\S]*onActiveChanged: \{[\s\S]*if \(active\) \{\s*root\.overviewWheelRemainder = 0;/u,
+    );
+    expect(scene).toMatch(
+      /function beginWindowSpatialEdgePan\([\s\S]*overviewWheelRemainder = 0;\s*spatialWindowDragSource = source;/u,
+    );
+    expect(scene).toMatch(
+      /function beginDesktopReorder\([\s\S]*overviewWheelRemainder = 0;\s*desktopReorderActive = true;/u,
     );
     expect(`${wheelHandler}\n${wheelNavigation}`).not.toMatch(
       /candidate\.[A-Za-z0-9_]+\s*=(?!=)|overviewModel\.[A-Za-z0-9_]+\s*=(?!=)|\bTimer\s*\{|\.setValue\s*\(/u,

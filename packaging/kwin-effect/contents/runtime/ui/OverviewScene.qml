@@ -303,6 +303,7 @@ Rectangle {
 
             onActiveChanged: {
                 if (active) {
+                    root.overviewWheelRemainder = 0;
                     spatialViewportInput.panLayout = root.overviewSpatialLayout;
                     spatialViewportInput.panStartContentY = root.spatialContentY;
                     root.setSpatialContentY(spatialViewportInput.panStartContentY - activeTranslation.y);
@@ -835,6 +836,7 @@ Rectangle {
             return;
         }
 
+        overviewWheelRemainder = 0;
         spatialWindowDragSource = source;
         spatialWindowDragSourceDesktopId = expectedDesktopId;
     }
@@ -1226,6 +1228,7 @@ Rectangle {
             return;
         }
 
+        overviewWheelRemainder = 0;
         desktopReorderActive = true;
         desktopReorderCardGap = cardGap;
         desktopReorderCardHeight = cardHeight;
@@ -1688,6 +1691,12 @@ Rectangle {
             const pixelDeltaY = event.pixelDelta.y;
             const angleDeltaY = event.angleDelta.y;
             if (pixelDeltaY === 0 && angleDeltaY === 0) {
+                return;
+            }
+            if (spatialViewportDragHandler.active || spatialWindowDragSource !== null
+                    || desktopReorderActive) {
+                overviewWheelRemainder = 0;
+                event.accepted = true;
                 return;
             }
 
