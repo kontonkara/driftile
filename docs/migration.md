@@ -1,7 +1,27 @@
 # Migration
 
-The latest stable release is 1.74.2. Use the steps below when changing release
+The latest stable release is 1.75.0. Use the steps below when changing release
 generations, and never combine files from different releases.
+
+## Upgrade from 1.74.2 to 1.75.0
+
+1. Release a helper-owned shortcut profile with the installed helper.
+2. Disable Driftile and both optional effects in System Settings.
+3. Install matching 1.75.0 artifacts, or pin the Nix input to `v1.75.0` and
+   rebuild.
+4. Re-enable Driftile and only the optional effects you use, then reclaim the
+   helper profile if needed.
+
+No shortcut, setting, layout, or persistence migration is required. Active
+Overview sessions now refresh after window changes, gestures remain bound to
+their captured context, and desktop-handoff focus accepts vertical intent.
+
+## Roll back from 1.75.0 to 1.74.2
+
+Release a helper-owned profile, disable Driftile and both optional effects,
+then restore matching verified 1.74.2 artifacts or pin the Nix input to
+`v1.74.2` and rebuild. Logical persistence v4 remains compatible; no option
+deletion or schema migration is required.
 
 ## Upgrade from 1.74.1 to 1.74.2
 

@@ -1,6 +1,7 @@
-# Driftile 1.75.0 (unreleased)
+# Driftile 1.75.0
 
-Driftile 1.75.0 is prepared but has not been published.
+Driftile 1.75.0 improves spatial session continuity, gesture ownership, and
+desktop-handoff focus without changing existing configuration.
 
 ## Changes
 

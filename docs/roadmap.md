@@ -1,16 +1,13 @@
 # Roadmap
 
-Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.74.2 are
+Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.75.0 are
 released. The delivered milestones and release criteria below are a historical
 record. Later direction is not a committed release schedule.
 
-Stable 1.74.2 preserves immediate horizontal navigation across desktop
-activation handoffs and isolates partial wheel input across spatial Overview
-positions. Logical persistence remains v4.
-
-Version 1.75.0 is prepared but unreleased. It extends spatial session
-continuity, gesture ownership, and immediate vertical desktop-handoff focus
-without changing settings, shortcuts, or logical persistence.
+Stable 1.75.0 keeps active Overview sessions current after window changes,
+binds navigation gestures to their captured context, bounds rapid Overview
+wheel input, and replays the latest vertical desktop-handoff focus intent.
+Settings, shortcuts, and logical persistence v4 remain compatible.
 
 ## Foundation (delivered)
 
@@ -2592,7 +2589,7 @@ Release criteria (met):
 - Existing shortcuts, settings, and logical persistence v4 remain compatible;
   no private API or KWin fork is introduced.
 
-### 1.75.0 (prepared, unreleased)
+### 1.75.0 (released)
 
 - Keep an active Overview open after window additions and removals while its
   model refreshes in place, with one retry for an unstable sample.
