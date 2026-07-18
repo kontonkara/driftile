@@ -13896,6 +13896,13 @@ describe("RuntimeController", () => {
       gap: 10,
       schedule: scheduler.schedule,
     });
+    let focusDuringActivation: (() => void) | null = null;
+
+    fixture.windowActivated.connect((window) => {
+      if (window === first.window) {
+        focusDuringActivation?.();
+      }
+    });
 
     expect(controller.start()).toBe(true);
     const layout = installTestLayout(
@@ -14040,9 +14047,141 @@ describe("RuntimeController", () => {
     expect(fixture.workspace.activeWindow).toBe(first.window);
     expect(first.window.frameGeometry).toMatchObject({ width: 980, x: 10 });
 
+    fixture.setCurrentDesktop(output, sourceDesktop);
+    fixture.workspace.activeWindow = source.window;
+    flushManualScheduler(scheduler);
+    fixture.setCurrentDesktop(output, targetDesktop);
+    expect(controller.focusRight()).toBe(true);
+    let supersedingFocusResult: boolean | null = null;
+    focusDuringActivation = () => {
+      focusDuringActivation = null;
+      supersedingFocusResult = controller.focusLeft();
+    };
+    fixture.workspace.activeWindow = first.window;
+
+    expect(supersedingFocusResult).toBe(false);
+    flushManualScheduler(scheduler);
+    expect(fixture.workspace.activeWindow).toBe(first.window);
+    expect(scheduler.pendingCount).toBe(0);
+
     fixture.setCurrentDesktop(output, emptyDesktop);
     expect(controller.focusRight()).toBe(false);
   });
+
+  it.each(["stacked", "tabbed"] as const)(
+    "replays immediate vertical focus in a %s column after desktop activation",
+    (presentation) => {
+      const output = createOutput("DP-1", 0);
+      const sourceDesktop = { id: "desktop-1" };
+      const targetDesktop = { id: "desktop-2" };
+      const source = createTrackedWindow("source", output, sourceDesktop);
+      const top = createTrackedWindow("target-top", output, targetDesktop);
+      const middle = createTrackedWindow(
+        "target-middle",
+        output,
+        targetDesktop,
+      );
+      const bottom = createTrackedWindow(
+        "target-bottom",
+        output,
+        targetDesktop,
+      );
+      const next = createTrackedWindow("target-next", output, targetDesktop);
+      const fixture = createWorkspace(
+        output,
+        sourceDesktop,
+        [output],
+        [sourceDesktop, targetDesktop],
+        [top.window, middle.window, bottom.window, next.window, source.window],
+      );
+      const scheduler = new ManualScheduler();
+      const controller = new RuntimeController(fixture.workspace, {
+        clientAreaOption: 2,
+        gap: 10,
+        schedule: scheduler.schedule,
+      });
+
+      expect(controller.start()).toBe(true);
+      const layout = installTestLayout(
+        controller,
+        output,
+        sourceDesktop,
+        "column:source",
+        [
+          {
+            id: "column:source",
+            width: { kind: "proportion", value: 0.33 },
+            windowIds: ["source"],
+          },
+        ],
+      );
+      expect(
+        layout.restoreColumns({
+          activityId: FALLBACK_ACTIVITY_ID,
+          activeColumnId: columnId("column:target-stack"),
+          columns: [
+            {
+              column: {
+                id: columnId("column:target-stack"),
+                presentation,
+                selectedWindowId: windowId("target-middle"),
+                width: { kind: "proportion", value: 0.5 },
+                windowIds: [
+                  windowId("target-top"),
+                  windowId("target-middle"),
+                  windowId("target-bottom"),
+                ],
+              },
+              index: 0,
+            },
+            {
+              column: {
+                id: columnId("column:target-next"),
+                presentation: "stacked",
+                selectedWindowId: windowId("target-next"),
+                width: { kind: "proportion", value: 0.5 },
+                windowIds: [windowId("target-next")],
+              },
+              index: 1,
+            },
+          ],
+          desktopId: desktopId(targetDesktop.id),
+          outputId: outputId(output.name),
+        }),
+      ).toBe(true);
+
+      fixture.setCurrentDesktop(output, targetDesktop);
+      expect(controller.focusDown()).toBe(true);
+      fixture.workspace.activeWindow = middle.window;
+      flushManualScheduler(scheduler);
+      expect(fixture.workspace.activeWindow).toBe(bottom.window);
+
+      fixture.setCurrentDesktop(output, sourceDesktop);
+      fixture.workspace.activeWindow = source.window;
+      flushManualScheduler(scheduler);
+      fixture.setCurrentDesktop(output, targetDesktop);
+      expect(controller.focusRight()).toBe(true);
+      expect(controller.focusUp()).toBe(true);
+      fixture.workspace.activeWindow = middle.window;
+      flushManualScheduler(scheduler);
+      expect(fixture.workspace.activeWindow).toBe(top.window);
+
+      fixture.setCurrentDesktop(output, sourceDesktop);
+      fixture.workspace.activeWindow = source.window;
+      flushManualScheduler(scheduler);
+      fixture.setCurrentDesktop(output, targetDesktop);
+      expect(controller.focusWindowDownOrColumnRight()).toBe(true);
+      fixture.workspace.activeWindow = bottom.window;
+      flushManualScheduler(scheduler);
+      expect(fixture.workspace.activeWindow).toBe(next.window);
+
+      expect(controller.focusDown()).toBe(false);
+      fixture.workspace.activeWindow = middle.window;
+      flushManualScheduler(scheduler);
+      expect(fixture.workspace.activeWindow).toBe(middle.window);
+      expect(scheduler.pendingCount).toBe(0);
+    },
+  );
 
   it("toggles previous focus across tiled and manual-floating windows while skipping ineligible history", () => {
     const output = createOutput("DP-1", 0);

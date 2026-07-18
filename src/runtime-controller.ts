@@ -612,14 +612,29 @@ interface ActiveColumnCommand {
   readonly sampledGeometries: ReadonlyMap<string, ContextGeometry>;
 }
 
-interface PendingDesktopHorizontalFocus {
-  readonly boundaryDestination: HorizontalEdge | undefined;
-  readonly boundaryOutputDirection: OutputDirection | undefined;
+type DesktopFocusIntent =
+  | {
+      readonly boundaryDestination: HorizontalEdge | undefined;
+      readonly boundaryOutputDirection: OutputDirection | undefined;
+      readonly destination: HorizontalDirection | HorizontalEdge;
+      readonly kind: "horizontal";
+    }
+  | {
+      readonly boundary: VerticalFocusBoundary | undefined;
+      readonly direction: VerticalDirection;
+      readonly kind: "vertical";
+    }
+  | {
+      readonly destination: VerticalEdge;
+      readonly kind: "vertical-edge";
+    };
+
+interface PendingDesktopFocus {
   readonly contextKey: string;
-  readonly destination: HorizontalDirection | HorizontalEdge;
+  readonly intent: DesktopFocusIntent;
 }
 
-interface ScheduledDesktopHorizontalFocus extends PendingDesktopHorizontalFocus {
+interface ScheduledDesktopFocus extends PendingDesktopFocus {
   readonly activationId: WindowId;
 }
 
@@ -1204,14 +1219,12 @@ export class RuntimeController {
     DesktopSelectionHistory
   >();
   private readonly desktopFocusCaptureContexts = new Map<OutputId, string>();
-  private desktopHorizontalFocusReplay: ScheduledDesktopHorizontalFocus | null =
-    null;
+  private desktopFocusReplay: ScheduledDesktopFocus | null = null;
   private readonly createRect: KWinRectFactory;
   private readonly dirtyContexts = new Set<string>();
   private readonly desktopLifecycle: DesktopLifecycle;
   private pendingExpelFocusHandoff: PendingExpelFocusHandoff | null = null;
-  private pendingDesktopHorizontalFocus: PendingDesktopHorizontalFocus | null =
-    null;
+  private pendingDesktopFocus: PendingDesktopFocus | null = null;
   private stackEditOperation: object | null = null;
   private windowTransferOperation: WindowTransferOperation | null = null;
   private stackedNativeStateOperation: StackedNativeStateOperation | null =
@@ -8778,7 +8791,7 @@ export class RuntimeController {
     allowSuspended = false,
   ): void => {
     if (!window) {
-      this.cancelDesktopHorizontalFocusReplay();
+      this.cancelDesktopFocusReplay();
     }
 
     this.handlePendingWindowRemovalFocusActivation();
@@ -8828,14 +8841,14 @@ export class RuntimeController {
     const id = windowId(String(window.internalId));
 
     if (
-      this.desktopHorizontalFocusReplay !== null &&
-      this.desktopHorizontalFocusReplay.activationId !== id
+      this.desktopFocusReplay !== null &&
+      this.desktopFocusReplay.activationId !== id
     ) {
-      this.cancelDesktopHorizontalFocusReplay();
+      this.cancelDesktopFocusReplay();
     }
 
     this.recordWindowFocus(id, window);
-    const pendingDesktopFocus = this.takePendingDesktopHorizontalFocus(window);
+    const pendingDesktopFocus = this.takePendingDesktopFocus(window);
 
     if (this.stackEditOperation) {
       return;
@@ -8902,7 +8915,7 @@ export class RuntimeController {
     }
 
     if (pendingDesktopFocus) {
-      this.scheduleDesktopHorizontalFocusReplay(pendingDesktopFocus, id);
+      this.scheduleDesktopFocusReplay(pendingDesktopFocus, id);
     }
   };
 
@@ -10190,31 +10203,26 @@ export class RuntimeController {
     boundaryOutputDirection?: OutputDirection,
     boundaryDestination?: HorizontalEdge,
   ): boolean {
-    this.cancelDesktopHorizontalFocusReplay();
+    this.supersedeDesktopFocusIntent();
+    const intent: DesktopFocusIntent = {
+      boundaryDestination,
+      boundaryOutputDirection,
+      destination,
+      kind: "horizontal",
+    };
     const floatingResult = this.focusFloatingWindow(
       destination,
       boundaryDestination,
     );
 
     if (floatingResult !== null) {
-      return (
-        floatingResult ||
-        this.captureDesktopHorizontalFocus(
-          destination,
-          boundaryOutputDirection,
-          boundaryDestination,
-        )
-      );
+      return floatingResult || this.captureDesktopFocus(intent);
     }
 
     const command = this.prepareActiveColumnCommand();
 
     if (!command) {
-      return this.captureDesktopHorizontalFocus(
-        destination,
-        boundaryOutputDirection,
-        boundaryDestination,
-      );
+      return this.captureDesktopFocus(intent);
     }
 
     return this.focusHorizontalTarget(
@@ -10225,11 +10233,7 @@ export class RuntimeController {
     );
   }
 
-  private captureDesktopHorizontalFocus(
-    destination: HorizontalDirection | HorizontalEdge,
-    boundaryOutputDirection?: OutputDirection,
-    boundaryDestination?: HorizontalEdge,
-  ): boolean {
+  private captureDesktopFocus(intent: DesktopFocusIntent): boolean {
     if (
       !this.started ||
       this.stackEditOperation ||
@@ -10268,18 +10272,16 @@ export class RuntimeController {
       return false;
     }
 
-    this.pendingDesktopHorizontalFocus = {
-      boundaryDestination,
-      boundaryOutputDirection,
+    this.pendingDesktopFocus = {
       contextKey: key,
-      destination,
+      intent,
     };
     return true;
   }
 
-  private takePendingDesktopHorizontalFocus(
+  private takePendingDesktopFocus(
     window: KWinWindow,
-  ): PendingDesktopHorizontalFocus | null {
+  ): PendingDesktopFocus | null {
     const liveContext = this.resolveLayerFocusContext(window);
 
     if (!liveContext) {
@@ -10292,30 +10294,30 @@ export class RuntimeController {
       this.desktopFocusCaptureContexts.delete(liveContext.outputId);
     }
 
-    const pending = this.pendingDesktopHorizontalFocus;
+    const pending = this.pendingDesktopFocus;
 
     if (!pending || pending.contextKey !== key) {
       return null;
     }
 
-    this.pendingDesktopHorizontalFocus = null;
+    this.pendingDesktopFocus = null;
     return pending;
   }
 
-  private scheduleDesktopHorizontalFocusReplay(
-    pending: PendingDesktopHorizontalFocus,
+  private scheduleDesktopFocusReplay(
+    pending: PendingDesktopFocus,
     activationId: WindowId,
   ): void {
     const replay = { ...pending, activationId };
-    this.desktopHorizontalFocusReplay = replay;
+    this.desktopFocusReplay = replay;
 
     try {
       this.schedule(() => {
-        if (this.desktopHorizontalFocusReplay !== replay || !this.started) {
+        if (this.desktopFocusReplay !== replay || !this.started) {
           return;
         }
 
-        this.cancelDesktopHorizontalFocusReplay();
+        this.cancelDesktopFocusReplay();
         const active = this.workspace.activeWindow;
         const activeContext = active
           ? this.resolveLayerFocusContext(active)
@@ -10325,27 +10327,42 @@ export class RuntimeController {
           return;
         }
 
-        this.focusHorizontal(
-          replay.destination,
-          replay.boundaryOutputDirection,
-          replay.boundaryDestination,
-        );
+        this.replayDesktopFocus(replay.intent);
       });
     } catch {
-      if (this.desktopHorizontalFocusReplay === replay) {
-        this.cancelDesktopHorizontalFocusReplay();
+      if (this.desktopFocusReplay === replay) {
+        this.cancelDesktopFocusReplay();
       }
     }
   }
 
-  private cancelDesktopHorizontalFocusReplay(): void {
-    this.desktopHorizontalFocusReplay = null;
+  private replayDesktopFocus(intent: DesktopFocusIntent): void {
+    if (intent.kind === "horizontal") {
+      this.focusHorizontal(
+        intent.destination,
+        intent.boundaryOutputDirection,
+        intent.boundaryDestination,
+      );
+    } else if (intent.kind === "vertical") {
+      this.focusWithinActiveColumn(intent.direction, intent.boundary);
+    } else {
+      this.focusActiveColumnEdge(intent.destination);
+    }
+  }
+
+  private cancelDesktopFocusReplay(): void {
+    this.desktopFocusReplay = null;
+  }
+
+  private supersedeDesktopFocusIntent(): void {
+    this.cancelDesktopFocusReplay();
+    this.pendingDesktopFocus = null;
   }
 
   private clearDesktopFocusTransition(): void {
     this.desktopFocusCaptureContexts.clear();
-    this.cancelDesktopHorizontalFocusReplay();
-    this.pendingDesktopHorizontalFocus = null;
+    this.cancelDesktopFocusReplay();
+    this.pendingDesktopFocus = null;
   }
 
   private focusHorizontalTarget(
@@ -10637,19 +10654,25 @@ export class RuntimeController {
     direction: VerticalDirection,
     boundary?: VerticalFocusBoundary,
   ): boolean {
+    this.supersedeDesktopFocusIntent();
+    const intent: DesktopFocusIntent = {
+      boundary,
+      direction,
+      kind: "vertical",
+    };
     const floatingResult = this.focusFloatingWindow(
       direction,
       boundary?.kind === "edge" ? boundary.destination : undefined,
     );
 
     if (floatingResult !== null) {
-      return floatingResult;
+      return floatingResult || this.captureDesktopFocus(intent);
     }
 
     const command = this.prepareActiveColumnCommand();
 
     if (!command) {
-      return false;
+      return this.captureDesktopFocus(intent);
     }
 
     const selectedId =
@@ -10674,21 +10697,29 @@ export class RuntimeController {
           .every((id) => this.observer.source(id)?.minimized === true);
 
       if (!boundary || !atVisibleBoundary) {
-        return false;
+        return this.captureDesktopFocus(intent);
       }
 
       if (boundary.kind === "desktop") {
-        return boundary.direction === -1
-          ? this.focusPreviousDesktop()
-          : this.focusNextDesktop();
+        const focused =
+          boundary.direction === -1
+            ? this.focusPreviousDesktop()
+            : this.focusNextDesktop();
+        return focused || this.captureDesktopFocus(intent);
       }
 
       if (boundary.kind === "output") {
-        return this.focusAdjacentOutputAtBoundary(command, boundary.direction);
+        return (
+          this.focusAdjacentOutputAtBoundary(command, boundary.direction) ||
+          this.captureDesktopFocus(intent)
+        );
       }
 
       if (boundary.kind === "column") {
-        return this.focusHorizontalTarget(command, boundary.direction);
+        return (
+          this.focusHorizontalTarget(command, boundary.direction) ||
+          this.captureDesktopFocus(intent)
+        );
       }
 
       targetId = this.activeColumnEdgeTarget(
@@ -10697,20 +10728,28 @@ export class RuntimeController {
       );
     }
 
-    return this.focusActiveColumnMember(command, selectedId, targetId);
+    return (
+      this.focusActiveColumnMember(command, selectedId, targetId) ||
+      this.captureDesktopFocus(intent)
+    );
   }
 
   private focusActiveColumnEdge(destination: VerticalEdge): boolean {
+    this.supersedeDesktopFocusIntent();
+    const intent: DesktopFocusIntent = {
+      destination,
+      kind: "vertical-edge",
+    };
     const floatingResult = this.focusFloatingWindow(destination);
 
     if (floatingResult !== null) {
-      return floatingResult;
+      return floatingResult || this.captureDesktopFocus(intent);
     }
 
     const command = this.prepareActiveColumnCommand();
 
     if (!command) {
-      return false;
+      return this.captureDesktopFocus(intent);
     }
 
     const selectedId =
@@ -10722,7 +10761,10 @@ export class RuntimeController {
       destination,
     );
 
-    return this.focusActiveColumnMember(command, selectedId, targetId);
+    return (
+      this.focusActiveColumnMember(command, selectedId, targetId) ||
+      this.captureDesktopFocus(intent)
+    );
   }
 
   private activeColumnEdgeTarget(
