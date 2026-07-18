@@ -69,7 +69,8 @@ input first.
 
 Wheel input is consumed without navigation while a workspace, window, or
 viewport drag owns the scene. Partial discrete steps are cleared when a drag
-starts or when search or help changes the meaning of the next wheel event.
+starts, when search or help changes the meaning of the next wheel event, or
+when panning and workspace selection establish a new spatial position.
 
 Dragging a window or desktop card into the top or bottom edge zone pans toward
 still-hidden workspaces. Panning stops outside the edge zone and at the first

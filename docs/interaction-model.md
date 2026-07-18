@@ -26,6 +26,14 @@ no-ops. Adjacent navigation and the explicit **Focus last-used desktop** action
 are unchanged. Toggling the setting does not switch desktops, mutate selection
 history, or alter layout.
 
+If horizontal focus is requested immediately after a desktop changes but
+before KWin publishes that desktop's active window, Driftile retains only the
+latest direction for the selected non-empty context. The first matching
+activation consumes the request and, when it is an eligible tiled target,
+replays it once after activation handling completes. A newer
+desktop, activity, topology, or window-context change discards the request;
+empty and stale contexts remain no-ops.
+
 Optional `3`–`5`-finger touchpad navigation reuses horizontal column focus and
 adjacent-desktop selection. Horizontal and vertical gesture pairs can be
 enabled independently. With natural direction, completed left and up swipes
