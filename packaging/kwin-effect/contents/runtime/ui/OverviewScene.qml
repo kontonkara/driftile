@@ -1086,15 +1086,23 @@ Rectangle {
     }
 
     function refreshSpatialHorizontalViewports(preserveViewport) {
+        const currentDesktopIds = desktopIds;
+        if (!desktopIdListShapeIsValid(currentDesktopIds)) {
+            spatialHorizontalDesktopIds = [];
+            spatialHorizontalViewportOffsets = [];
+            resetOverviewHorizontalWheelState();
+            return false;
+        }
+
         const previousDesktopIds = spatialHorizontalDesktopIds;
         const previousOffsets = spatialHorizontalViewportOffsets;
-        const preserve = preserveViewport === true && sameStringList(previousDesktopIds, desktopIds)
-            && previousOffsets && previousOffsets.length === desktopIds.length;
+        const preserve = preserveViewport === true && sameStringList(previousDesktopIds, currentDesktopIds)
+            && previousOffsets && previousOffsets.length === currentDesktopIds.length;
         const nextDesktopIds = [];
         const nextOffsets = [];
 
-        for (let index = 0; index < desktopIds.length; index += 1) {
-            const desktopId = desktopIds[index];
+        for (let index = 0; index < currentDesktopIds.length; index += 1) {
+            const desktopId = currentDesktopIds[index];
             const bounds = spatialHorizontalViewportBounds(index, desktopId);
             if (!bounds) {
                 spatialHorizontalDesktopIds = [];
@@ -1116,8 +1124,10 @@ Rectangle {
     }
 
     function spatialHorizontalViewportBounds(index, expectedDesktopId) {
-        if (!Number.isInteger(index) || index < 0 || index >= desktopIds.length
-                || desktopIds[index] !== expectedDesktopId || typeof expectedDesktopId !== "string"
+        const currentDesktopIds = desktopIds;
+        if (!desktopIdListShapeIsValid(currentDesktopIds)
+                || !Number.isInteger(index) || index < 0 || index >= currentDesktopIds.length
+                || currentDesktopIds[index] !== expectedDesktopId || typeof expectedDesktopId !== "string"
                 || expectedDesktopId.length === 0 || !targetScreen || !targetScreen.geometry) {
             return null;
         }
@@ -1799,6 +1809,11 @@ Rectangle {
         }
 
         return true;
+    }
+
+    function desktopIdListShapeIsValid(candidate) {
+        return candidate !== undefined && candidate !== null && Number.isInteger(candidate.length)
+            && candidate.length >= 0 && candidate.length <= 512;
     }
 
     function collectNavigationTargets() {

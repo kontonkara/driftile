@@ -2698,6 +2698,14 @@ describe("overview effect package", () => {
       scene.indexOf("function requestSpatialWheelWorkspace("),
       scene.indexOf("function spatialWorkspaceWheelTargetPlanIsValid("),
     );
+    const horizontalViewportRefresh = scene.slice(
+      scene.indexOf("function refreshSpatialHorizontalViewports("),
+      scene.indexOf("function spatialHorizontalViewportBounds("),
+    );
+    const horizontalViewportBounds = scene.slice(
+      scene.indexOf("function spatialHorizontalViewportBounds("),
+      scene.indexOf("function spatialHorizontalViewportOffsetAt("),
+    );
 
     expect(scene).toContain("property real overviewWheelPixelRemainder: 0");
     expect(scene).toContain("property int overviewWheelRemainder: 0");
@@ -2774,7 +2782,22 @@ describe("overview effect package", () => {
       "property var spatialHorizontalViewportOffsets: []",
     );
     expect(scene).toMatch(
-      /function refreshSpatialHorizontalViewports[\s\S]*previousOffsets\.length === desktopIds\.length[\s\S]*nextOffsets\.push\(Math\.min\(bounds\.maximum, Math\.max\(bounds\.minimum, previous\)\)\)/u,
+      /function desktopIdListShapeIsValid\(candidate\) \{\s*return candidate !== undefined && candidate !== null && Number\.isInteger\(candidate\.length\)[\s\S]*candidate\.length >= 0 && candidate\.length <= 512;\s*\}/u,
+    );
+    expect(horizontalViewportRefresh).toMatch(
+      /function refreshSpatialHorizontalViewports[\s\S]*const currentDesktopIds = desktopIds;[\s\S]*!desktopIdListShapeIsValid\(currentDesktopIds\)[\s\S]*return false;[\s\S]*previousOffsets\.length === currentDesktopIds\.length[\s\S]*index < currentDesktopIds\.length[\s\S]*nextOffsets\.push\(Math\.min\(bounds\.maximum, Math\.max\(bounds\.minimum, previous\)\)\)/u,
+    );
+    expect(horizontalViewportRefresh).toMatch(
+      /!desktopIdListShapeIsValid\(currentDesktopIds\)[\s\S]*spatialHorizontalDesktopIds = \[\];[\s\S]*spatialHorizontalViewportOffsets = \[\];[\s\S]*resetOverviewHorizontalWheelState\(\);[\s\S]*return false;/u,
+    );
+    expect(horizontalViewportBounds).toMatch(
+      /function spatialHorizontalViewportBounds[\s\S]*const currentDesktopIds = desktopIds;[\s\S]*!desktopIdListShapeIsValid\(currentDesktopIds\)[\s\S]*index >= currentDesktopIds\.length/u,
+    );
+    expect(horizontalViewportRefresh).not.toMatch(
+      /\bdesktopIds\.length\b|desktopIds\[index\]/u,
+    );
+    expect(horizontalViewportBounds).not.toMatch(
+      /\bdesktopIds\.length\b|desktopIds\[index\]/u,
     );
     expect(scene).toMatch(
       /function spatialHorizontalViewportBounds[\s\S]*context\.columns\.length > 512[\s\S]*stripWidth > Number\.MAX_SAFE_INTEGER/u,
