@@ -2838,11 +2838,7 @@ describe("RuntimeController", () => {
       const activationCount = fixture.activationCount;
       flushManualScheduler(scheduler);
 
-      expect(fixture.workspace.activeWindow).toBe(
-        handoffTiming === "before-removal"
-          ? replacement.window
-          : previous.window,
-      );
+      expect(fixture.workspace.activeWindow).toBe(replacement.window);
       expect(fixture.activationCount).toBe(activationCount + 1);
       controller.stop();
     },

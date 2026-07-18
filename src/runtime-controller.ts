@@ -8396,7 +8396,11 @@ export class RuntimeController {
       return;
     }
 
-    const target = this.windowRemovalFocusTarget(focus, removedId);
+    const target = this.windowRemovalFocusTarget(
+      focus,
+      removedId,
+      recovery.requestedWindowId,
+    );
 
     if (!target) {
       return;
@@ -8505,7 +8509,25 @@ export class RuntimeController {
   private windowRemovalFocusTarget(
     focus: WindowRemovalFocus,
     removedId: WindowId,
+    preferredId: WindowId | null = null,
   ): KWinWindow | null {
+    const preferred = preferredId
+      ? this.observer.source(preferredId)
+      : undefined;
+
+    if (
+      preferredId &&
+      preferredId !== removedId &&
+      preferred &&
+      this.windowRemovalFocusCandidateLayer(
+        preferredId,
+        preferred,
+        focus.contextKey,
+      )
+    ) {
+      return preferred;
+    }
+
     const previousId = focus.previousWindowId;
     const previous = previousId ? this.observer.source(previousId) : undefined;
 
