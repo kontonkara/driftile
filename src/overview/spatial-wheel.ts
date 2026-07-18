@@ -42,8 +42,9 @@ export interface OverviewSpatialWorkspaceWheelTargetPlan {
 
 const ANGLE_DELTA_PER_STEP = 120;
 const MAXIMUM_STEPS_PER_EVENT = 4;
-const MAXIMUM_ANGLE_DELTA_PER_EVENT =
+const MAXIMUM_ANGLE_DELTA_CONTRIBUTION =
   ANGLE_DELTA_PER_STEP * MAXIMUM_STEPS_PER_EVENT;
+const MAXIMUM_ANGLE_DELTA_INPUT = 1_000_000;
 const MAXIMUM_PIXEL_DELTA_PER_EVENT = 4_096;
 const MAXIMUM_COORDINATE = Number.MAX_SAFE_INTEGER;
 
@@ -95,10 +96,15 @@ export function planOverviewSpatialWheel(
       });
     }
 
+    const boundedAngleDelta = clamp(
+      angleDeltaY,
+      -MAXIMUM_ANGLE_DELTA_CONTRIBUTION,
+      MAXIMUM_ANGLE_DELTA_CONTRIBUTION,
+    );
     const accumulated =
-      remainder !== 0 && Math.sign(remainder) !== Math.sign(angleDeltaY)
-        ? angleDeltaY
-        : remainder + angleDeltaY;
+      remainder !== 0 && Math.sign(remainder) !== Math.sign(boundedAngleDelta)
+        ? boundedAngleDelta
+        : remainder + boundedAngleDelta;
     const steps = Math.min(
       Math.floor(Math.abs(accumulated) / ANGLE_DELTA_PER_STEP),
       MAXIMUM_STEPS_PER_EVENT,
@@ -191,7 +197,7 @@ function isAngleDelta(value: unknown): value is number {
   return (
     typeof value === "number" &&
     Number.isSafeInteger(value) &&
-    Math.abs(value) <= MAXIMUM_ANGLE_DELTA_PER_EVENT
+    Math.abs(value) <= MAXIMUM_ANGLE_DELTA_INPUT
   );
 }
 

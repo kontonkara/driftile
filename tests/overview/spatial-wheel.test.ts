@@ -71,6 +71,44 @@ describe("planOverviewSpatialWheel", () => {
       remainder: -100,
       steps: 0,
     });
+    expect(
+      planOverviewSpatialWheel({
+        ...baseInput,
+        angleDeltaY: 481,
+      }),
+    ).toEqual({
+      contentY: 600,
+      direction: "previous",
+      intent: "workspace",
+      remainder: 0,
+      steps: 4,
+    });
+    expect(
+      planOverviewSpatialWheel({
+        ...baseInput,
+        angleDeltaY: 1_000_000,
+        remainder: 60,
+      }),
+    ).toEqual({
+      contentY: 600,
+      direction: "previous",
+      intent: "workspace",
+      remainder: 60,
+      steps: 4,
+    });
+    expect(
+      planOverviewSpatialWheel({
+        ...baseInput,
+        angleDeltaY: -1_000_000,
+        remainder: 60,
+      }),
+    ).toEqual({
+      contentY: 600,
+      direction: "next",
+      intent: "workspace",
+      remainder: 0,
+      steps: 4,
+    });
   });
 
   it("uses pixel input exclusively for precise viewport movement", () => {
@@ -133,8 +171,11 @@ describe("planOverviewSpatialWheel", () => {
     null,
     [],
     {},
-    { ...baseInput, angleDeltaY: 481 },
+    { ...baseInput, angleDeltaY: 1_000_001 },
+    { ...baseInput, angleDeltaY: Number.MAX_SAFE_INTEGER },
     { ...baseInput, angleDeltaY: 0.5 },
+    { ...baseInput, angleDeltaY: Number.NaN },
+    { ...baseInput, angleDeltaY: Number.POSITIVE_INFINITY },
     { ...baseInput, contentHeight: 799 },
     { ...baseInput, contentHeight: Number.MAX_VALUE },
     { ...baseInput, contentY: Number.NaN },
