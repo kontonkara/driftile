@@ -2279,7 +2279,7 @@ describe("RuntimeController", () => {
     },
   );
 
-  it.each(["dialog", "application-excluded"] as const)(
+  it.each(["dialog", "utility", "transient", "application-excluded"] as const)(
     "restores a previously focused automatic-floating %s after a tiled window closes",
     (kind) => {
       const output = createOutput("DP-1", 0);
@@ -2290,7 +2290,11 @@ describe("RuntimeController", () => {
         desktop,
         kind === "dialog"
           ? { dialog: true, normalWindow: false }
-          : { desktopFileName: "org.example.Excluded" },
+          : kind === "utility"
+            ? { normalWindow: false, utility: true }
+            : kind === "transient"
+              ? { normalWindow: false, transient: true }
+              : { desktopFileName: "org.example.Excluded" },
       );
       const adjacent = createTrackedWindow("adjacent", output, desktop);
       const removed = createTrackedWindow("removed", output, desktop);
@@ -2315,6 +2319,7 @@ describe("RuntimeController", () => {
       });
 
       expect(controller.start()).toBe(true);
+      expect(controller.automaticFloatingCount).toBe(1);
       fixture.workspace.activeWindow = previous.window;
       fixture.workspace.activeWindow = removed.window;
       fixture.workspace.activeWindow = null;
@@ -2457,41 +2462,44 @@ describe("RuntimeController", () => {
     controller.stop();
   });
 
-  it("restores previous focus past an ineligible interim activation", () => {
-    const output = createOutput("DP-1", 0);
-    const desktop = { id: "desktop-1" };
-    const previous = createTrackedWindow("previous", output, desktop);
-    const removed = createTrackedWindow("removed", output, desktop);
-    const interim = createTrackedWindow("interim", output, desktop, {
-      desktopWindow: true,
-      normalWindow: false,
-    });
-    const fixture = createWorkspace(
-      output,
-      desktop,
-      [output],
-      [desktop],
-      [previous.window, removed.window, interim.window],
-    );
-    const scheduler = new ManualScheduler();
-    const controller = new RuntimeController(fixture.workspace, {
-      clientAreaOption: 2,
-      schedule: scheduler.schedule,
-    });
+  it.each(["desktop-window", "ordinary-non-normal"] as const)(
+    "restores previous focus past an ineligible %s interim activation",
+    (kind) => {
+      const output = createOutput("DP-1", 0);
+      const desktop = { id: "desktop-1" };
+      const previous = createTrackedWindow("previous", output, desktop);
+      const removed = createTrackedWindow("removed", output, desktop);
+      const interim = createTrackedWindow("interim", output, desktop, {
+        desktopWindow: kind === "desktop-window",
+        normalWindow: false,
+      });
+      const fixture = createWorkspace(
+        output,
+        desktop,
+        [output],
+        [desktop],
+        [previous.window, removed.window, interim.window],
+      );
+      const scheduler = new ManualScheduler();
+      const controller = new RuntimeController(fixture.workspace, {
+        clientAreaOption: 2,
+        schedule: scheduler.schedule,
+      });
 
-    expect(controller.start()).toBe(true);
-    fixture.workspace.activeWindow = previous.window;
-    fixture.workspace.activeWindow = removed.window;
-    fixture.workspace.activeWindow = interim.window;
-    const activationCount = fixture.activationCount;
+      expect(controller.start()).toBe(true);
+      fixture.workspace.activeWindow = previous.window;
+      fixture.workspace.activeWindow = removed.window;
+      fixture.workspace.activeWindow = interim.window;
+      const activationCount = fixture.activationCount;
 
-    fixture.windowRemoved.emit(removed.window);
-    flushManualScheduler(scheduler);
+      fixture.windowRemoved.emit(removed.window);
+      flushManualScheduler(scheduler);
 
-    expect(fixture.workspace.activeWindow).toBe(previous.window);
-    expect(fixture.activationCount).toBe(activationCount + 1);
-    controller.stop();
-  });
+      expect(fixture.workspace.activeWindow).toBe(previous.window);
+      expect(fixture.activationCount).toBe(activationCount + 1);
+      controller.stop();
+    },
+  );
 
   it.each(["desktop", "output"] as const)(
     "restores previous focus past an active managed window on another %s",

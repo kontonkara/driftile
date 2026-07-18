@@ -8525,17 +8525,13 @@ export class RuntimeController {
     const context = this.resolveLayerFocusContext(active);
 
     if (
-      this.observer.source(activeId) !== active ||
-      !active.managed ||
-      active.deleted ||
-      active.minimized ||
-      active.desktopWindow ||
-      active.dock ||
-      active.specialWindow ||
-      active.onAllDesktops ||
-      (!active.normalWindow && !active.dialog) ||
       !context ||
-      !this.isContextVisible(context)
+      !this.isContextVisible(context) ||
+      !this.windowRemovalFocusCandidateLayer(
+        activeId,
+        active,
+        contextKey(context),
+      )
     ) {
       return null;
     }
@@ -9390,14 +9386,24 @@ export class RuntimeController {
       source.dock ||
       source.specialWindow ||
       source.onAllDesktops ||
-      (!source.normalWindow && !source.dialog) ||
       this.suspendedWindows.has(id) ||
       this.requestedSuspensions.has(id)
     ) {
       return null;
     }
 
-    return this.windowLayer(id, source, key);
+    const layer = this.windowLayer(id, source, key);
+
+    if (
+      !layer ||
+      (!source.normalWindow &&
+        !source.dialog &&
+        !(layer === "floating" && hasAutomaticFloatingRole(source)))
+    ) {
+      return null;
+    }
+
+    return layer;
   }
 
   private requestWindowRemovalFocus(
