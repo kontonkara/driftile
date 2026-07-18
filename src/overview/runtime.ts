@@ -58,6 +58,12 @@ export type {
   OverviewSpatialViewportPlan,
   OverviewSpatialWorkspaceCenterInput,
 } from "./spatial-viewport";
+export { planOverviewSpatialEdgePan } from "./spatial-edge-pan";
+export type {
+  OverviewSpatialEdgePanDirection,
+  OverviewSpatialEdgePanInput,
+  OverviewSpatialEdgePanPlan,
+} from "./spatial-edge-pan";
 export { planOverviewSpatialVisibleRange } from "./spatial-visible-range";
 export type {
   OverviewSpatialVisibleRangeInput,

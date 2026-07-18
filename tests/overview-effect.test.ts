@@ -1247,6 +1247,14 @@ describe("overview effect package", () => {
       scene.indexOf("function beginDesktopReorder("),
       scene.indexOf("function collectNavigationTargets("),
     );
+    const spatialEdgePanTimer = scene.slice(
+      scene.indexOf("id: spatialEdgePanTimer"),
+      scene.indexOf("WheelHandler {"),
+    );
+    const spatialEdgePan = scene.slice(
+      scene.indexOf("function beginWindowSpatialEdgePan("),
+      scene.indexOf("function centerKeyboardSelectionWorkspace("),
+    );
     const staleClose = scene.slice(
       scene.indexOf("function closeStaleOverview("),
       scene.indexOf("function outputIdForScreen("),
@@ -1303,6 +1311,7 @@ describe("overview effect package", () => {
       "planOverviewSpatialWorkspaceCenter",
     );
     expect(overviewRuntimeIndex).toContain("planOverviewSpatialVisibleRange");
+    expect(overviewRuntimeIndex).toContain("planOverviewSpatialEdgePan");
     expect(spatialLayout).toContain(
       'typeof runtime.planOverviewSpatialVisibleRange !== "function"',
     );
@@ -1316,6 +1325,9 @@ describe("overview effect package", () => {
     expect(spatialLayout).toContain("if (searchQuery.length > 0");
     expect(spatialLayout).toContain(
       "desktopReorderSourceId === expectedDesktopId",
+    );
+    expect(spatialLayout).toContain(
+      "spatialWindowDragSourceDesktopId === expectedDesktopId",
     );
     expect(spatialLayout).toMatch(
       /runtime\.planOverviewSpatialViewport\(\{[\s\S]*sceneHeight: height,[\s\S]*contentHeight: overviewSpatialLayout\.contentHeight,[\s\S]*contentY: requestedContentY/u,
@@ -1466,10 +1478,66 @@ describe("overview effect package", () => {
     expect(reorder.match(/KWin\.Workspace\.moveDesktop\(/gu)).toHaveLength(1);
     expect(reorder).not.toContain("deactivate()");
     expect(staleClose).toMatch(
-      /resetDesktopReorder\(\);\s*if \(sceneEffect\) \{\s*sceneEffect\.deactivate\(\);/u,
+      /resetDesktopReorder\(\);\s*resetSpatialEdgePanTracking\(\);\s*if \(sceneEffect\) \{\s*sceneEffect\.deactivate\(\);/u,
+    );
+
+    expect(scene.match(/\bTimer\s*\{/gu)).toHaveLength(1);
+    expect(spatialEdgePanTimer).toContain("interval: 16");
+    expect(spatialEdgePanTimer).toContain("repeat: true");
+    expect(spatialEdgePanTimer).toContain(
+      "running: root.spatialEdgePanCanRun()",
+    );
+    expect(spatialEdgePanTimer).toContain("triggeredOnStart: false");
+    expect(spatialEdgePanTimer).toContain(
+      "onTriggered: root.advanceSpatialEdgePan(interval)",
+    );
+    for (const signal of [
+      "onWindowSpatialDragStarted:",
+      "onWindowSpatialDragMoved:",
+      "onWindowSpatialDragFinished:",
+    ]) {
+      expect(reorderDelegate).toContain(signal);
+    }
+    expect(spatialEdgePan).toContain(
+      "function windowSpatialDragSourceIsExact(source, expectedDesktopId)",
+    );
+    expect(spatialEdgePan).toContain("source === spatialWindowDragSource");
+    expect(spatialEdgePan).toContain(
+      "source.sourceDesktopId !== expectedDesktopId",
+    );
+    expect(spatialEdgePan).toContain(
+      "point = root.mapFromItem(null, sceneX, sceneY)",
+    );
+    expect(spatialEdgePan).toContain("desktopReorderSpatialEdgePanIsExact()");
+    expect(spatialEdgePan).toContain(
+      "const edgeZone = Math.min(height * 0.12, 96)",
+    );
+    expect(spatialEdgePan).toContain(
+      "spatialEdgePanPointerY < edgeZone && spatialContentY > 0",
+    );
+    expect(spatialEdgePan).toContain(
+      "spatialEdgePanPointerY > height - edgeZone",
+    );
+    expect(spatialEdgePan).toContain("!canMoveUp && !canMoveDown");
+    expect(spatialEdgePan).toMatch(
+      /runtime\.planOverviewSpatialEdgePan\(\{[\s\S]*sceneHeight: height,[\s\S]*contentHeight: overviewSpatialLayout\.contentHeight,[\s\S]*contentY: spatialContentY,[\s\S]*pointerY: spatialEdgePanPointerY,[\s\S]*elapsedMilliseconds/u,
+    );
+    expect(spatialEdgePan).toContain(
+      "spatialEdgePanPlanIsValid(plan, elapsedMilliseconds)",
+    );
+    expect(spatialEdgePan).toContain(
+      "const maximumDistance = Math.min(height * 1.5, 1800) * elapsedMilliseconds / 1000",
+    );
+    expect(spatialEdgePan).toContain("desktopReorderCardTop = cardTop");
+    expect(spatialEdgePan).toContain(
+      "updateDesktopReorder(desktopReorderSourceId, spatialEdgePanSceneX, spatialEdgePanSceneY)",
+    );
+    expect(reorder).toContain("storeSpatialEdgePanScenePoint(sceneX, sceneY)");
+    expect(scene).toMatch(
+      /function onActiveChanged\(\)[\s\S]*root\.resetSpatialEdgePanTracking\(\);/u,
     );
     expect(`${scene}\n${desktopCard}`).not.toMatch(
-      /\b(?:MouseArea|Timer)\s*\{|KWin\.Workspace\.(?:stackingOrder|windows)\b|\.setValue\s*\(/u,
+      /\bMouseArea\s*\{|KWin\.Workspace\.(?:stackingOrder|windows)\b|\.setValue\s*\(/u,
     );
   });
 
@@ -2402,7 +2470,7 @@ describe("overview effect package", () => {
       /windowTapped|windowCloseRequested|closeWindow|activeWindow\s*=|\.setValue\s*\(|Settings/u,
     );
     expect(`${scene}\n${desktopCard}`).not.toMatch(
-      /\bTimer\s*\{|KWin\.Workspace\.(?:stackingOrder|windows)\b|\.setValue\s*\(/u,
+      /KWin\.Workspace\.(?:stackingOrder|windows)\b|\.setValue\s*\(/u,
     );
   });
 
@@ -2792,7 +2860,7 @@ describe("overview effect package", () => {
     expect(overviewRuntimeIndex).toContain("planOverviewWindowSearchQuery");
     expect(overviewRuntimeIndex).toContain("removeLastOverviewSearchClause");
     expect(`${scene}\n${desktopCard}`).not.toMatch(
-      /\b(?:Timer|TextInput)\s*\{|\.setValue\s*\(/u,
+      /\bTextInput\s*\{|\.setValue\s*\(/u,
     );
   });
 
@@ -3276,7 +3344,7 @@ describe("overview effect package", () => {
     );
 
     expect(`${scene}\n${desktopCard}`).not.toMatch(
-      /\b(?:Action|MouseArea|Settings|ShortcutHandler|Timer)\s*\{|\.setValue\s*\(|\bsequence\s*:/u,
+      /\b(?:Action|MouseArea|Settings|ShortcutHandler)\s*\{|\.setValue\s*\(|\bsequence\s*:/u,
     );
     expect(`${selector}\n${desktopRequest}\n${outputProjection}`).not.toMatch(
       /KWin\.Workspace\.(?:stackingOrder|windows)\b|KWin\.WindowModel|layoutStateReader|model\.(?:contexts|desktopIds|floatingWindows)/u,

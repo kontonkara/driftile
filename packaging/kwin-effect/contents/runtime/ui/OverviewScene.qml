@@ -71,6 +71,11 @@ Rectangle {
     property string keyboardSelectionId: ""
     property int overviewWheelRemainder: 0
     property real spatialContentY: 0
+    property var spatialWindowDragSource: null
+    property string spatialWindowDragSourceDesktopId: ""
+    property real spatialEdgePanSceneX: Number.NaN
+    property real spatialEdgePanSceneY: Number.NaN
+    property real spatialEdgePanPointerY: Number.NaN
     property string searchQuery: ""
     property int searchResultCount: 0
     property var searchResultCountsByDesktop: Object.create(null)
@@ -103,6 +108,9 @@ Rectangle {
     onOverviewSpatialLayoutChanged: {
         if (desktopReorderActive) {
             resetDesktopReorder();
+        }
+        if (!spatialLayoutIsValid(overviewSpatialLayout)) {
+            resetSpatialEdgePanTracking();
         }
         resetSpatialViewport();
     }
@@ -198,6 +206,7 @@ Rectangle {
                 root.overviewWheelRemainder = 0;
                 root.searchQuery = "";
                 root.spatialContentY = 0;
+                root.resetSpatialEdgePanTracking();
             } else {
                 root.refreshEmptyDesktopBoundarySetting();
                 root.resetSpatialViewport();
@@ -236,6 +245,16 @@ Rectangle {
         function onWindowRemoved() {
             root.closeStaleOverview();
         }
+    }
+
+    Timer {
+        id: spatialEdgePanTimer
+
+        interval: 16
+        repeat: true
+        running: root.spatialEdgePanCanRun()
+        triggeredOnStart: false
+        onTriggered: root.advanceSpatialEdgePan(interval)
     }
 
     WheelHandler {
@@ -365,6 +384,14 @@ Rectangle {
                                          root.moveWindowToDesktop(candidate, expectedWindowId, expectedSourceDesktop,
                                                                   expectedSourceDesktopId, expectedTargetDesktop,
                                                                   expectedTargetDesktopId, expectedScreen)
+                    onWindowSpatialDragStarted: (source, sceneX, sceneY) =>
+                                                    root.beginWindowSpatialEdgePan(
+                                                        source, desktopCardLoader.modelData, sceneX, sceneY)
+                    onWindowSpatialDragMoved: (source, sceneX, sceneY) =>
+                                                  root.updateWindowSpatialEdgePan(
+                                                      source, desktopCardLoader.modelData, sceneX, sceneY)
+                    onWindowSpatialDragFinished: source => root.finishWindowSpatialEdgePan(
+                                                     source, desktopCardLoader.modelData)
                 }
             }
         }
@@ -766,7 +793,9 @@ Rectangle {
             return true;
         }
         if (searchQuery.length > 0
-                || (desktopReorderActive && desktopReorderSourceId === expectedDesktopId)) {
+                || (desktopReorderActive && desktopReorderSourceId === expectedDesktopId)
+                || (spatialWindowDragSource !== null
+                    && spatialWindowDragSourceDesktopId === expectedDesktopId)) {
             return true;
         }
 
@@ -790,14 +819,113 @@ Rectangle {
         return loader.item;
     }
 
+    function beginWindowSpatialEdgePan(source, expectedDesktopId, sceneX, sceneY) {
+        if (desktopReorderActive || spatialWindowDragSource !== null
+                || !windowSpatialDragSourceIsExact(source, expectedDesktopId)
+                || !storeSpatialEdgePanScenePoint(sceneX, sceneY)) {
+            return;
+        }
+
+        spatialWindowDragSource = source;
+        spatialWindowDragSourceDesktopId = expectedDesktopId;
+    }
+
+    function updateWindowSpatialEdgePan(source, expectedDesktopId, sceneX, sceneY) {
+        if (source !== spatialWindowDragSource
+                || expectedDesktopId !== spatialWindowDragSourceDesktopId) {
+            return;
+        }
+        if (!windowSpatialDragSourceIsExact(source, expectedDesktopId)) {
+            resetSpatialEdgePanTracking();
+            return;
+        }
+
+        storeSpatialEdgePanScenePoint(sceneX, sceneY);
+    }
+
+    function finishWindowSpatialEdgePan(source, expectedDesktopId) {
+        if (source === spatialWindowDragSource
+                && expectedDesktopId === spatialWindowDragSourceDesktopId) {
+            resetSpatialEdgePanTracking();
+        }
+    }
+
+    function windowSpatialDragSourceIsExact(source, expectedDesktopId) {
+        try {
+            if (!sceneEffect || sceneEffect.active !== true || !source
+                    || source.spatialDragLifecycleActive !== true || source.dragEligible !== true
+                    || source.minimizedWindow === true || typeof expectedDesktopId !== "string"
+                    || expectedDesktopId.length === 0 || source.sourceDesktopId !== expectedDesktopId
+                    || typeof source.windowId !== "string" || source.windowId.length === 0) {
+                return false;
+            }
+
+            const candidate = source.candidate;
+            const liveDesktop = source.sourceDesktop;
+            const liveScreen = source.sourceScreen;
+            if (!candidate || candidate.deleted || candidate.internalId === undefined
+                    || candidate.internalId === null || String(candidate.internalId) !== source.windowId
+                    || !liveDesktop || liveDesktop.id === undefined || liveDesktop.id === null
+                    || String(liveDesktop.id) !== expectedDesktopId
+                    || !liveScreen || liveScreen !== targetScreen
+                    || candidate.output !== liveScreen) {
+                return false;
+            }
+
+            const desktops = candidate.desktops;
+            return desktops && desktops.length === 1 && desktops[0] === liveDesktop
+                && String(desktops[0].id) === expectedDesktopId;
+        } catch (error) {
+            return false;
+        }
+    }
+
+    function storeSpatialEdgePanScenePoint(sceneX, sceneY) {
+        if (!Number.isFinite(sceneX) || !Number.isFinite(sceneY)) {
+            clearSpatialEdgePanScenePoint();
+            return false;
+        }
+
+        let point;
+        try {
+            point = root.mapFromItem(null, sceneX, sceneY);
+        } catch (error) {
+            clearSpatialEdgePanScenePoint();
+            return false;
+        }
+        if (!point || !Number.isFinite(point.x) || !Number.isFinite(point.y)) {
+            clearSpatialEdgePanScenePoint();
+            return false;
+        }
+
+        spatialEdgePanSceneX = sceneX;
+        spatialEdgePanSceneY = sceneY;
+        spatialEdgePanPointerY = point.y;
+        return true;
+    }
+
+    function clearSpatialEdgePanScenePoint() {
+        spatialEdgePanSceneX = Number.NaN;
+        spatialEdgePanSceneY = Number.NaN;
+        spatialEdgePanPointerY = Number.NaN;
+    }
+
+    function resetSpatialEdgePanTracking() {
+        spatialWindowDragSource = null;
+        spatialWindowDragSourceDesktopId = "";
+        clearSpatialEdgePanScenePoint();
+    }
+
     function resetSpatialViewport() {
         if (!spatialLayoutIsValid(overviewSpatialLayout)) {
+            resetSpatialEdgePanTracking();
             spatialContentY = 0;
             return false;
         }
 
         const plan = planSpatialViewport(overviewSpatialLayout.initialContentY);
         if (!plan) {
+            resetSpatialEdgePanTracking();
             spatialContentY = 0;
             return false;
         }
@@ -846,6 +974,122 @@ Rectangle {
         const expectedMaximum = overviewSpatialLayout.contentHeight - height;
         return Number.isFinite(expectedMaximum)
             && Math.abs(plan.maximumContentY - expectedMaximum) <= Math.max(1, height) * 0.000001;
+    }
+
+    function spatialEdgePanCanRun() {
+        if (!sceneEffect || sceneEffect.active !== true
+                || !spatialLayoutIsValid(overviewSpatialLayout)
+                || overviewSpatialLayout.contentHeight <= height
+                || !Number.isFinite(spatialContentY) || spatialContentY < 0
+                || spatialContentY > overviewSpatialLayout.contentHeight - height
+                || !Number.isFinite(spatialEdgePanSceneX)
+                || !Number.isFinite(spatialEdgePanSceneY)
+                || !Number.isFinite(spatialEdgePanPointerY)) {
+            return false;
+        }
+
+        const maximumContentY = overviewSpatialLayout.contentHeight - height;
+        const edgeZone = Math.min(height * 0.12, 96);
+        const canMoveUp = spatialEdgePanPointerY < edgeZone && spatialContentY > 0;
+        const canMoveDown = spatialEdgePanPointerY > height - edgeZone
+            && spatialContentY < maximumContentY;
+        if (!Number.isFinite(edgeZone) || edgeZone <= 0 || (!canMoveUp && !canMoveDown)) {
+            return false;
+        }
+
+        return windowSpatialDragSourceIsExact(spatialWindowDragSource,
+                                              spatialWindowDragSourceDesktopId)
+            || desktopReorderSpatialEdgePanIsExact();
+    }
+
+    function desktopReorderSpatialEdgePanIsExact() {
+        try {
+            return desktopReorderActive && desktopReorderEffect === sceneEffect
+                && desktopReorderEffect && desktopReorderEffect.active === true
+                && desktopReorderModel === overviewModel && desktopReorderScreen === targetScreen
+                && typeof desktopReorderSourceId === "string" && desktopReorderSourceId.length > 0
+                && desktopReorderSource && desktopReorderSource.id !== undefined
+                && desktopReorderSource.id !== null
+                && String(desktopReorderSource.id) === desktopReorderSourceId
+                && desktopReorderSourceIndex >= 0
+                && desktopReorderSourceIndex < desktopReorderDesktopIds.length
+                && desktopReorderDesktopIds[desktopReorderSourceIndex] === desktopReorderSourceId
+                && desktopReorderDesktopObjects[desktopReorderSourceIndex] === desktopReorderSource
+                && desktopReorderSceneWidth === width && desktopReorderSceneHeight === height
+                && desktopReorderCardX === cardX && desktopReorderCardWidth === cardWidth
+                && desktopReorderCardHeight === cardHeight && desktopReorderCardGap === cardGap;
+        } catch (error) {
+            return false;
+        }
+    }
+
+    function advanceSpatialEdgePan(elapsedMilliseconds) {
+        if (!spatialEdgePanCanRun() || elapsedMilliseconds !== 16) {
+            return false;
+        }
+
+        const runtime = OverviewRuntime.DriftileOverview;
+        if (!runtime || typeof runtime.planOverviewSpatialEdgePan !== "function") {
+            clearSpatialEdgePanScenePoint();
+            return false;
+        }
+
+        let plan = null;
+        try {
+            plan = runtime.planOverviewSpatialEdgePan({
+                                                         sceneHeight: height,
+                                                         contentHeight: overviewSpatialLayout.contentHeight,
+                                                         contentY: spatialContentY,
+                                                         pointerY: spatialEdgePanPointerY,
+                                                         elapsedMilliseconds
+                                                     });
+        } catch (error) {
+            clearSpatialEdgePanScenePoint();
+            return false;
+        }
+        if (!spatialEdgePanPlanIsValid(plan, elapsedMilliseconds)) {
+            clearSpatialEdgePanScenePoint();
+            return false;
+        }
+        if (!plan.active) {
+            return false;
+        }
+
+        const reorderWasExact = desktopReorderSpatialEdgePanIsExact();
+        if (!setSpatialContentY(plan.contentY) || spatialContentY !== plan.contentY) {
+            clearSpatialEdgePanScenePoint();
+            return false;
+        }
+
+        if (reorderWasExact && desktopReorderActive) {
+            desktopReorderCardTop = cardTop;
+            updateDesktopReorder(desktopReorderSourceId, spatialEdgePanSceneX, spatialEdgePanSceneY);
+        }
+        return true;
+    }
+
+    function spatialEdgePanPlanIsValid(plan, elapsedMilliseconds) {
+        if (!plan || Array.isArray(plan) || typeof plan.active !== "boolean"
+                || !Number.isFinite(plan.contentY) || plan.contentY < 0
+                || plan.contentY > overviewSpatialLayout.contentHeight - height
+                || elapsedMilliseconds !== spatialEdgePanTimer.interval) {
+            return false;
+        }
+
+        const viewportPlan = planSpatialViewport(plan.contentY);
+        if (!spatialViewportPlanIsValid(viewportPlan) || viewportPlan.contentY !== plan.contentY) {
+            return false;
+        }
+
+        const delta = plan.contentY - spatialContentY;
+        const tolerance = Math.max(1, height) * 0.000001;
+        if (!plan.active) {
+            return plan.direction === null && Math.abs(delta) <= tolerance;
+        }
+
+        const maximumDistance = Math.min(height * 1.5, 1800) * elapsedMilliseconds / 1000;
+        return (plan.direction === "up" && delta < 0 || plan.direction === "down" && delta > 0)
+            && Math.abs(delta) <= maximumDistance + tolerance;
     }
 
     function centerKeyboardSelectionWorkspace() {
@@ -937,7 +1181,7 @@ Rectangle {
     }
 
     function beginDesktopReorder(candidate, expectedDesktopId, expectedScreen, sceneX, sceneY) {
-        if (desktopReorderActive || !desktopReorderAvailable) {
+        if (desktopReorderActive || spatialWindowDragSource !== null || !desktopReorderAvailable) {
             return;
         }
         resetDesktopReorder();
@@ -996,6 +1240,10 @@ Rectangle {
         if (!desktopReorderActive || expectedDesktopId !== desktopReorderSourceId) {
             return;
         }
+        if (!storeSpatialEdgePanScenePoint(sceneX, sceneY)) {
+            desktopReorderInsertionSlot = -1;
+            return;
+        }
 
         const insertionSlot = desktopReorderSlotAt(sceneX, sceneY);
         const targetIndex = plannedDesktopReorderIndex(insertionSlot);
@@ -1006,6 +1254,8 @@ Rectangle {
         if (!desktopReorderActive || expectedDesktopId !== desktopReorderSourceId) {
             return;
         }
+
+        storeSpatialEdgePanScenePoint(sceneX, sceneY);
 
         const insertionSlot = desktopReorderSlotAt(sceneX, sceneY);
         const targetIndex = plannedDesktopReorderIndex(insertionSlot);
@@ -1082,6 +1332,9 @@ Rectangle {
         desktopReorderSource = null;
         desktopReorderSourceId = "";
         desktopReorderSourceIndex = -1;
+        if (spatialWindowDragSource === null) {
+            clearSpatialEdgePanScenePoint();
+        }
     }
 
     function desktopReorderSlotAt(sceneX, sceneY) {
@@ -2200,6 +2453,7 @@ Rectangle {
 
     function closeStaleOverview() {
         resetDesktopReorder();
+        resetSpatialEdgePanTracking();
         if (sceneEffect) {
             sceneEffect.deactivate();
         }
