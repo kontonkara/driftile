@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { LAYOUT_PERSISTENCE_LIMITS } from "../../src/core/layout-persistence";
-import { planOverviewSpatialRowGeometry } from "../../src/overview/runtime";
+import {
+  planOverviewSpatialLiveCamera,
+  planOverviewSpatialRowGeometry,
+} from "../../src/overview/runtime";
 
 const thirds = [
   { width: { kind: "proportion", value: 1 / 3 } },
@@ -295,6 +298,115 @@ describe("planOverviewSpatialRowGeometry", () => {
   });
 });
 
+describe("planOverviewSpatialLiveCamera", () => {
+  it("infers an exact bounded viewport from the live active column", () => {
+    const result = planLiveCamera({
+      camera: { maximum: 400, minimum: 0 },
+      columnFrame: { contentX: 420, width: 400 },
+      liveFrame: { width: 400, x: 270 },
+      workAreaX: 100,
+    });
+
+    expect(result).toEqual({ viewportOffset: 250 });
+    expect(Object.isFrozen(result)).toBe(true);
+  });
+
+  it("snaps inferred offsets to a fractional-DPR physical pixel", () => {
+    const result = planLiveCamera({
+      camera: { maximum: 400, minimum: 0 },
+      columnFrame: { contentX: 500, width: 320 },
+      devicePixelRatio: 1.25,
+      liveFrame: { width: 320, x: 349.69 },
+      workAreaX: 100,
+    });
+
+    expect(result).toEqual({ viewportOffset: 250.4 });
+    expect((result?.viewportOffset ?? 0) * 1.25).toBeCloseTo(313, 12);
+  });
+
+  it("clamps only rounding-distance values at camera boundaries", () => {
+    expect(
+      planLiveCamera({
+        camera: { maximum: 100, minimum: 0 },
+        devicePixelRatio: 2,
+        liveFrame: { width: 400, x: -0.24 },
+      }),
+    ).toEqual({ viewportOffset: 100 });
+    expect(
+      planLiveCamera({
+        camera: { maximum: 100, minimum: 0 },
+        devicePixelRatio: 2,
+        liveFrame: { width: 400, x: 100.24 },
+      }),
+    ).toEqual({ viewportOffset: 0 });
+
+    expect(
+      planLiveCamera({
+        camera: { maximum: 100, minimum: 0 },
+        devicePixelRatio: 2,
+        liveFrame: { width: 400, x: -0.26 },
+      }),
+    ).toBeNull();
+    expect(
+      planLiveCamera({
+        camera: { maximum: 100, minimum: 0 },
+        devicePixelRatio: 2,
+        liveFrame: { width: 400, x: 100.26 },
+      }),
+    ).toBeNull();
+  });
+
+  it("accepts at most one physical pixel of width difference", () => {
+    expect(
+      planLiveCamera({
+        devicePixelRatio: 2,
+        liveFrame: { width: 400.5, x: -50 },
+      }),
+    ).toEqual({ viewportOffset: 150 });
+    expect(
+      planLiveCamera({
+        columnFrame: { contentX: 100, width: 333.3 },
+        devicePixelRatio: 1.25,
+        liveFrame: { width: 334.1, x: -50 },
+      }),
+    ).toEqual({ viewportOffset: 150.4 });
+    expect(
+      planLiveCamera({
+        devicePixelRatio: 2,
+        liveFrame: { width: 400.500_001, x: -50 },
+      }),
+    ).toBeNull();
+  });
+
+  it.each([
+    null,
+    [],
+    {},
+    liveCameraInput({ camera: { maximum: -1, minimum: 0 } }),
+    liveCameraInput({ camera: { maximum: 100.25, minimum: 0 } }),
+    liveCameraInput({ columnFrame: { contentX: Number.NaN, width: 400 } }),
+    liveCameraInput({ columnFrame: { contentX: 100, width: 0 } }),
+    liveCameraInput({ devicePixelRatio: 0 }),
+    liveCameraInput({ liveFrame: { width: 0, x: 0 } }),
+    liveCameraInput({ liveFrame: { width: 400, x: Number.POSITIVE_INFINITY } }),
+    liveCameraInput({ workAreaX: Number.NaN }),
+  ])("fails closed for malformed live camera input (%o)", (input) => {
+    expect(planOverviewSpatialLiveCamera(input)).toBeNull();
+  });
+
+  it("fails closed when a live frame accessor throws", () => {
+    const liveFrame = Object.defineProperty({}, "x", {
+      get(): never {
+        throw new Error("unavailable");
+      },
+    });
+
+    expect(
+      planOverviewSpatialLiveCamera(liveCameraInput({ liveFrame })),
+    ).toBeNull();
+  });
+});
+
 function plan(overrides: Record<string, unknown> = {}) {
   return planOverviewSpatialRowGeometry(baseInput(overrides));
 }
@@ -309,6 +421,21 @@ function baseInput(overrides: Record<string, unknown> = {}) {
     outputGeometry: { height: 900, width: 1200, x: 0, y: 0 },
     viewportOffset: 0,
     workArea: { height: 900, width: 1200, x: 0, y: 0 },
+    ...overrides,
+  };
+}
+
+function planLiveCamera(overrides: Record<string, unknown> = {}) {
+  return planOverviewSpatialLiveCamera(liveCameraInput(overrides));
+}
+
+function liveCameraInput(overrides: Record<string, unknown> = {}) {
+  return {
+    camera: { maximum: 200, minimum: 0 },
+    columnFrame: { contentX: 100, width: 400 },
+    devicePixelRatio: 1,
+    liveFrame: { width: 400, x: 0 },
+    workAreaX: 0,
     ...overrides,
   };
 }

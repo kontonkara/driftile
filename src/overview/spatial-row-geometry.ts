@@ -57,10 +57,125 @@ export interface OverviewSpatialRowGeometryPlan {
   readonly dimensions: OverviewSpatialRowDimensions;
 }
 
+export interface OverviewSpatialLiveCameraInput {
+  readonly camera: {
+    readonly maximum: number;
+    readonly minimum: number;
+  };
+  readonly columnFrame: {
+    readonly contentX: number;
+    readonly width: number;
+  };
+  readonly devicePixelRatio: number;
+  readonly liveFrame: {
+    readonly width: number;
+    readonly x: number;
+  };
+  readonly workAreaX: number;
+}
+
+export interface OverviewSpatialLiveCameraPlan {
+  readonly viewportOffset: number;
+}
+
 const OVERVIEW_ACTIVITY_ID = activityId("overview-activity");
 const OVERVIEW_DESKTOP_ID = desktopId("overview-desktop");
 const OVERVIEW_OUTPUT_ID = outputId("overview-output");
 const MAXIMUM_GEOMETRY_MAGNITUDE = LAYOUT_PERSISTENCE_LIMITS.numericMagnitude;
+
+export function planOverviewSpatialLiveCamera(
+  input: unknown,
+): OverviewSpatialLiveCameraPlan | null {
+  try {
+    if (!isRecord(input)) {
+      return null;
+    }
+
+    const camera = input["camera"];
+    const columnFrame = input["columnFrame"];
+    const devicePixelRatio = input["devicePixelRatio"];
+    const liveFrame = input["liveFrame"];
+    const workAreaX = input["workAreaX"];
+
+    if (
+      !isRecord(camera) ||
+      !isRecord(columnFrame) ||
+      !isPositiveBoundedNumber(devicePixelRatio) ||
+      !isRecord(liveFrame) ||
+      !isBoundedNumber(workAreaX)
+    ) {
+      return null;
+    }
+
+    const maximum = camera["maximum"];
+    const minimum = camera["minimum"];
+    const contentX = columnFrame["contentX"];
+    const plannedWidth = columnFrame["width"];
+    const liveWidth = liveFrame["width"];
+    const liveX = liveFrame["x"];
+
+    if (
+      !isBoundedNumber(maximum) ||
+      !isBoundedNumber(minimum) ||
+      minimum > maximum ||
+      !isBoundedNumber(contentX) ||
+      !isPositiveBoundedNumber(plannedWidth) ||
+      !isPositiveBoundedNumber(liveWidth) ||
+      !isBoundedNumber(liveX) ||
+      !isPixelGridAligned(minimum, devicePixelRatio) ||
+      !isPixelGridAligned(maximum, devicePixelRatio)
+    ) {
+      return null;
+    }
+
+    const plannedPhysicalWidth = plannedWidth * devicePixelRatio;
+    const livePhysicalWidth = liveWidth * devicePixelRatio;
+    const physicalWidthDifference =
+      Math.abs(plannedWidth - liveWidth) * devicePixelRatio;
+    const physicalWidthTolerance = floatingPointTolerance(
+      plannedPhysicalWidth,
+      livePhysicalWidth,
+    );
+
+    if (
+      !Number.isFinite(plannedPhysicalWidth) ||
+      !Number.isFinite(livePhysicalWidth) ||
+      !Number.isFinite(physicalWidthDifference) ||
+      physicalWidthDifference > 1 + physicalWidthTolerance
+    ) {
+      return null;
+    }
+
+    const inferredOffset = workAreaX + contentX - liveX;
+
+    if (!isBoundedNumber(inferredOffset)) {
+      return null;
+    }
+
+    const boundaryTolerance =
+      0.5 / devicePixelRatio +
+      floatingPointTolerance(inferredOffset, minimum, maximum);
+
+    if (
+      inferredOffset < minimum - boundaryTolerance ||
+      inferredOffset > maximum + boundaryTolerance
+    ) {
+      return null;
+    }
+
+    const snappedOffset = snapToPixelGrid(inferredOffset, devicePixelRatio);
+
+    if (!isBoundedNumber(snappedOffset)) {
+      return null;
+    }
+
+    const viewportOffset = Math.min(maximum, Math.max(minimum, snappedOffset));
+
+    return Object.freeze({ viewportOffset: normalizeZero(viewportOffset) });
+  } catch {
+    return null;
+  }
+}
 
 export function planOverviewSpatialRowGeometry(
   input: unknown,
@@ -352,4 +467,28 @@ function isPositiveBoundedNumber(value: unknown): value is number {
 
 function normalizeZero(value: number): number {
   return Object.is(value, -0) ? 0 : value;
+}
+
+function snapToPixelGrid(value: number, devicePixelRatio: number): number {
+  return Math.round(value * devicePixelRatio) / devicePixelRatio;
+}
+
+function isPixelGridAligned(value: number, devicePixelRatio: number): boolean {
+  const physicalValue = value * devicePixelRatio;
+
+  return (
+    Number.isFinite(physicalValue) &&
+    Math.abs(physicalValue - Math.round(physicalValue)) <=
+      floatingPointTolerance(physicalValue)
+  );
+}
+
+function floatingPointTolerance(...values: readonly number[]): number {
+  let magnitude = 1;
+
+  for (const value of values) {
+    magnitude = Math.max(magnitude, Math.abs(value));
+  }
+
+  return Number.EPSILON * magnitude * 16;
 }
