@@ -55,17 +55,23 @@ backdrop without changing layout state.
 
 Each output presents its virtual desktops as a centered vertical stack at the
 configured zoom. The current desktop opens in the center. Keyboard selection
-reveals an off-screen workspace, while touchpad or touchscreen movement pans
-the stack within its finite bounds. Desktop cards outside a small visible
-range are not instantiated; search and keyboard navigation retain their
-geometry without keeping their window previews loaded.
+reveals an off-screen workspace, while dragging the empty backdrop with a
+mouse, touchpad, or touchscreen pans the stack within its finite bounds.
+Desktop cards outside a small visible range are not instantiated; search and
+keyboard navigation retain their geometry without keeping their window
+previews loaded.
 
 An unmodified mouse-wheel step selects the previous or next desktop without
-closing the Overview and never wraps. High-resolution wheel input accumulates
-before a step. Precise touchpad deltas pan the stack directly and take
-precedence over a discrete step from the same event. During search, discrete
-wheel input retains result cycling; the F1 panel always consumes its own wheel
-input first.
+closing the Overview and never wraps. High-resolution wheel input retains a
+bounded subpixel remainder, so small deltas are not discarded. Precise
+touchpad deltas pan the stack directly and take precedence over a discrete step
+from the same event. During search, discrete wheel input retains result
+cycling; the F1 panel always consumes its own wheel input first.
+
+The card under the viewport center remains at the same local position when a
+live window refresh, zoom change, or scene resize rebuilds the projection. A
+real desktop selection still recenters that desktop. The captured anchor is
+bounded and validated again on every rebuild.
 
 Wheel input is consumed without navigation while a workspace, window, or
 viewport drag owns the scene. Partial discrete steps are cleared when a drag

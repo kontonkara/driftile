@@ -9,6 +9,13 @@ binds navigation gestures to their captured context, bounds rapid Overview
 wheel input, and replays the latest vertical desktop-handoff focus intent.
 Settings, shortcuts, and logical persistence v4 remain compatible.
 
+Development after 1.75.0 preserves the workspace card under the Overview
+camera across live model, zoom, and scene-size changes; adds guarded background
+mouse panning; retains bounded subpixel wheel movement; and keeps an in-flight
+window transition replayable when a workspace effect temporarily owns the
+screen. This is incremental spatial continuity, not completion of the planned
+Overview architecture.
+
 ## Current direction
 
 The optional Overview remains an intermediate card-based projection over

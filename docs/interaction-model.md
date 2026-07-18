@@ -100,18 +100,23 @@ its source state is invalid. It accepts no input and changes no window, layout,
 setting, shortcut, persistence, or KWin state.
 
 Inside the optional overview, unmodified mouse-wheel steps select adjacent
-workspaces without wrapping or closing the effect. Precise touchpad deltas pan
-the bounded spatial workspace stack directly. A non-empty search keeps wheel
+workspaces without wrapping or closing the effect. Precise touchpad deltas and
+an empty-backdrop drag with a mouse, touchpad, or touchscreen pan the bounded
+spatial workspace stack directly. Subpixel wheel movement is retained in one
+bounded scalar until it becomes visible. A non-empty search keeps wheel
 cycling within matching actionable windows. The search overlay reports the
-unique window-result count or an explicit no-match message as plain text.
-One rapid discrete wheel burst advances at most four workspaces. These
-interactions do not mutate Driftile's layout or persistence.
+unique window-result count or an explicit no-match message as plain text. One
+rapid discrete wheel burst advances at most four workspaces. These interactions
+do not mutate Driftile's layout or persistence.
 
 While the Overview is open, window additions and removals refresh its model in
 place with at most one retry for an unstable sample. Search text, help
 visibility, and a still-valid keyboard selection are preserved. Stale drag,
 wheel, and keyboard-boundary state is cleared before the refreshed spatial
-session is shown; the Overview remains open throughout.
+session is shown; the Overview remains open throughout. The desktop nearest
+the viewport center retains its local camera offset across a live refresh,
+zoom change, or scene resize. An actual desktop selection recenters the new
+desktop instead of preserving the old anchor.
 
 The current Overview is an intermediate card-based projection of captured
 layout state. It does not yet share the continuous camera and live geometry of
