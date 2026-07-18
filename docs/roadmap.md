@@ -2693,3 +2693,15 @@ Release criteria (met):
   retained state, and writes to authoritative layout or window state.
 - This milestone is a current-row bridge only; it is not a complete continuous
   spatial Overview.
+
+### 1.80.0 (in development)
+
+- Queue up to four immediate horizontal focus intents across a desktop handoff,
+  beginning after the exact handoff activation and advancing only after each
+  replayed destination activates exactly; keep vertical and boundary-edge
+  input as one superseding intent.
+- Let one unresolved output-local handoff own immediate focus input without
+  redirecting it through a temporarily active window on another output.
+- Accept eligible same-context automatic-floating utilities, transients, and
+  application-excluded windows during close-focus recovery while rejecting
+  ordinary non-normal windows.

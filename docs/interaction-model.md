@@ -26,13 +26,19 @@ no-ops. Adjacent navigation and the explicit **Focus last-used desktop** action
 are unchanged. Toggling the setting does not switch desktops, mutate selection
 history, or alter layout.
 
-If horizontal or vertical focus is requested immediately after a desktop
-changes but before KWin publishes that desktop's active window, Driftile keeps
-only the latest intent for the selected non-empty context. This includes the
-existing vertical boundary alternatives. The first matching eligible tiled
-activation consumes and replays the intent once. A newer desktop, activity,
-topology, or window-context change discards it; empty and stale contexts remain
-no-ops.
+Immediately after a desktop handoff, horizontal focus requests for the selected
+non-empty context enter a bounded FIFO of at most four intents. The first
+request waits for an exact eligible tiled activation in that context; each
+later request advances only after the destination of the preceding replay is
+exactly activated. Vertical focus and boundary-edge alternatives retain one
+superseding intent. A newer desktop, activity, topology, or window-context
+change discards pending input; empty and stale contexts remain no-ops.
+
+With output-local desktop selection, one exact unresolved output and context
+owns immediate focus input even while KWin temporarily reports an active window
+on another output. Driftile never redirects that input through the unrelated
+active window. Ambiguous ownership, a global desktop handoff, or stale context
+fails closed without moving focus on the other output.
 
 Optional `3`–`5`-finger touchpad navigation reuses horizontal column focus and
 adjacent-desktop selection. Horizontal and vertical gesture pairs can be
@@ -275,15 +281,17 @@ repeated use toggle between the latest pair.
 
 Closing the active tiled, manually floating, or automatic-floating window
 restores the latest eligible MRU entry from the same visible output, desktop,
-and activity after KWin settles removal. Automatic dialogs, transients, and
-application exclusions remain outside layout ownership. Two scheduled probes
-cover ordinary settlement. A separate two-entry non-null activation chain keeps
-a provisional same-context KWin handoff available when an interim null
-activation arrives. If the handoff stays active, Driftile leaves it focused; if
-KWin clears it, one final event-driven retry restores the captured handoff or
-prior MRU target. This tracking adds no scheduled work. A close with no eligible
-target schedules no work. An unrelated legitimate replacement or a context
-change cancels recovery, preventing a stale focus steal.
+and activity after KWin settles removal. A same-context KWin handoff may also
+be an eligible automatic-floating utility, transient, or application-excluded
+window; these roles remain outside layout ownership. An ordinary window with a
+non-normal role fails closed. Two scheduled probes cover ordinary settlement. A
+separate two-entry non-null activation chain keeps a provisional same-context
+KWin handoff available when an interim null activation arrives. If the handoff
+stays active, Driftile leaves it focused; if KWin clears it, one final
+event-driven retry restores the captured handoff or prior MRU target. This
+tracking adds no scheduled work. A close with no eligible target schedules no
+work. An unrelated legitimate replacement or a context change cancels
+recovery, preventing a stale focus steal.
 
 Unbound send-without-follow actions transfer either the active window or its
 complete tiled column to the previous, next, or a numbered desktop while the
