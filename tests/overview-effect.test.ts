@@ -2559,6 +2559,9 @@ describe("overview effect package", () => {
     expect(wheelNavigation).toContain("event.accepted = false");
     expect(wheelNavigation).toContain("event.modifiers !== Qt.NoModifier");
     expect(wheelNavigation).toContain("keyboardHelpVisible");
+    expect(scene).toContain(
+      "onKeyboardHelpVisibleChanged: overviewWheelRemainder = 0",
+    );
     expect(wheelNavigation).toMatch(
       /spatialViewportDragHandler\.active \|\| spatialWindowDragSource !== null[\s\S]*\|\| desktopReorderActive[\s\S]*overviewWheelRemainder = 0;[\s\S]*event\.accepted = true;[\s\S]*return;/u,
     );
@@ -2886,7 +2889,7 @@ describe("overview effect package", () => {
       "readonly property bool searchQueryValid: searchQueryPlan !== null",
     );
     expect(scene).toMatch(
-      /onSearchQueryChanged: \{\s*cancelKeyboardBoundaryNavigation\(\);\s*Qt\.callLater\(root\.repairKeyboardSelection\);\s*\}/u,
+      /onSearchQueryChanged: \{\s*overviewWheelRemainder = 0;\s*cancelKeyboardBoundaryNavigation\(\);\s*Qt\.callLater\(root\.repairKeyboardSelection\);\s*\}/u,
     );
     expect(keyHandler).toContain("event.key === Qt.Key_Backspace");
     expect(keyHandler).toContain("root.removeLastSearchCharacter()");

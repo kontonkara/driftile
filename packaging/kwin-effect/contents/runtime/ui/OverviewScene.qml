@@ -107,6 +107,7 @@ Rectangle {
     property int desktopReorderSourceIndex: -1
 
     onKeyboardSelectionIdChanged: root.centerKeyboardSelectionWorkspace()
+    onKeyboardHelpVisibleChanged: overviewWheelRemainder = 0
     onOverviewSpatialLayoutChanged: {
         cancelKeyboardBoundaryNavigation();
         if (desktopReorderActive) {
@@ -118,6 +119,7 @@ Rectangle {
         resetSpatialViewport();
     }
     onSearchQueryChanged: {
+        overviewWheelRemainder = 0;
         cancelKeyboardBoundaryNavigation();
         Qt.callLater(root.repairKeyboardSelection);
     }
