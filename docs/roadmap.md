@@ -1,11 +1,12 @@
 # Roadmap
 
-Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.74.1 are
+Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.74.2 are
 released. The delivered milestones and release criteria below are a historical
 record. Later direction is not a committed release schedule.
 
-Stable 1.74.1 isolates spatial Overview input during drags and preserves the
-latest eligible close-focus handoff. Logical persistence remains v4.
+Stable 1.74.2 preserves immediate horizontal navigation across desktop
+activation handoffs and isolates partial wheel input across spatial Overview
+positions. Logical persistence remains v4.
 
 ## Foundation (delivered)
 
@@ -2565,5 +2566,24 @@ Release criteria (met):
 - Wheel, drag, search, and help paths cannot reuse state owned by another input
   mode or race drag-owned viewport geometry.
 - Close-focus recovery never restores an ineligible or cross-context target.
+- Existing shortcuts, settings, and logical persistence v4 remain compatible;
+  no private API or KWin fork is introduced.
+
+### 1.74.2 (released)
+
+- Retain only the latest horizontal focus direction requested after a desktop
+  changes but before KWin publishes that desktop's active tiled window.
+- Replay the retained request once after matching activation handling, without
+  polling, reentrancy, or a stale cross-context focus write.
+- Clear incomplete discrete Overview wheel input when panning or workspace
+  selection establishes a new spatial position.
+
+Release criteria (met):
+
+- Immediate desktop handoff input updates focus and column geometry together.
+- Duplicate activation cannot cancel or repeat a scheduled replay, while a
+  newer activation or context invalidation discards it.
+- A partial wheel step cannot combine with input from a different spatial
+  position.
 - Existing shortcuts, settings, and logical persistence v4 remain compatible;
   no private API or KWin fork is introduced.
