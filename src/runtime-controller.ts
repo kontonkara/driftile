@@ -612,6 +612,17 @@ interface ActiveColumnCommand {
   readonly sampledGeometries: ReadonlyMap<string, ContextGeometry>;
 }
 
+interface PendingDesktopHorizontalFocus {
+  readonly boundaryDestination: HorizontalEdge | undefined;
+  readonly boundaryOutputDirection: OutputDirection | undefined;
+  readonly contextKey: string;
+  readonly destination: HorizontalDirection | HorizontalEdge;
+}
+
+interface ScheduledDesktopHorizontalFocus extends PendingDesktopHorizontalFocus {
+  readonly activationId: WindowId;
+}
+
 interface FocusedColumnView {
   readonly context: LayoutContextSnapshot;
   readonly layout: ReturnType<typeof solveStripGeometry>;
@@ -1192,10 +1203,15 @@ export class RuntimeController {
     KWinOutput,
     DesktopSelectionHistory
   >();
+  private readonly desktopFocusCaptureContexts = new Map<OutputId, string>();
+  private desktopHorizontalFocusReplay: ScheduledDesktopHorizontalFocus | null =
+    null;
   private readonly createRect: KWinRectFactory;
   private readonly dirtyContexts = new Set<string>();
   private readonly desktopLifecycle: DesktopLifecycle;
   private pendingExpelFocusHandoff: PendingExpelFocusHandoff | null = null;
+  private pendingDesktopHorizontalFocus: PendingDesktopHorizontalFocus | null =
+    null;
   private stackEditOperation: object | null = null;
   private windowTransferOperation: WindowTransferOperation | null = null;
   private stackedNativeStateOperation: StackedNativeStateOperation | null =
@@ -4426,6 +4442,7 @@ export class RuntimeController {
       this.pointerResizeSettlement = null;
       this.startupCompleted = false;
       this.pendingWindowRemovalFocusRecovery = null;
+      this.clearDesktopFocusTransition();
       this.runGeneration += 1;
       this.started = true;
       this.lastOutputCount = this.workspace.screens.length;
@@ -4508,6 +4525,7 @@ export class RuntimeController {
     this.workScheduled = false;
     this.runGeneration += 1;
     this.pendingWindowRemovalFocusRecovery = null;
+    this.clearDesktopFocusTransition();
     this.pendingExpelFocusHandoff = null;
     this.borderlessContextReconciliationPending = false;
     this.borderlessReconciliationPending = false;
@@ -4888,6 +4906,7 @@ export class RuntimeController {
     current?: KWinVirtualDesktop | null,
     output?: KWinOutput,
   ): void => {
+    this.clearDesktopFocusTransition();
     this.pointerResizeIntent = null;
     this.cancelInvalidWindowRemovalFocusRecovery();
     this.invalidatePointerExternalPreviewForDesktopSelection(output);
@@ -4937,6 +4956,7 @@ export class RuntimeController {
           desktopId: desktopId(liveCurrent.id),
           outputId: outputId(name),
         });
+        this.desktopFocusCaptureContexts.set(outputId(name), key);
         const context = this.contexts.get(key);
 
         if (context) {
@@ -4961,6 +4981,7 @@ export class RuntimeController {
       return;
     }
 
+    this.clearDesktopFocusTransition();
     this.clearPointerMoveIntent();
     this.pointerResizeIntent = null;
     this.cancelInvalidWindowRemovalFocusRecovery();
@@ -4985,11 +5006,13 @@ export class RuntimeController {
   };
 
   private readonly handleDesktopsChanged = (): void => {
+    this.clearDesktopFocusTransition();
     this.reconcileDesktopSelectionHistory();
     this.cancelInvalidWindowRemovalFocusRecovery();
   };
 
   private readonly handleWindowAdded = (window: ObservedWindow): void => {
+    this.clearDesktopFocusTransition();
     const addedId = windowId(window.id);
     const source = this.observer.source(window.id);
 
@@ -7578,6 +7601,10 @@ export class RuntimeController {
     id: string,
     cause: ObservedWindowChangeCause,
   ): void => {
+    if (cause === "context") {
+      this.clearDesktopFocusTransition();
+    }
+
     const changedId = windowId(id);
     const source = this.observer.source(id);
 
@@ -7985,6 +8012,7 @@ export class RuntimeController {
   };
 
   private readonly handleWindowRemoved = (id: string): void => {
+    this.clearDesktopFocusTransition();
     const managedId = windowId(id);
     this.windowFocusHistory.delete(managedId);
     this.windowRemovalFocusHistory.delete(managedId);
@@ -8749,6 +8777,10 @@ export class RuntimeController {
     window: KWinWindow | null,
     allowSuspended = false,
   ): void => {
+    if (!window) {
+      this.cancelDesktopHorizontalFocusReplay();
+    }
+
     this.handlePendingWindowRemovalFocusActivation();
 
     if (this.pointerMoveIntent && window !== this.pointerMoveIntent.source) {
@@ -8794,7 +8826,16 @@ export class RuntimeController {
     }
 
     const id = windowId(String(window.internalId));
+
+    if (
+      this.desktopHorizontalFocusReplay !== null &&
+      this.desktopHorizontalFocusReplay.activationId !== id
+    ) {
+      this.cancelDesktopHorizontalFocusReplay();
+    }
+
     this.recordWindowFocus(id, window);
+    const pendingDesktopFocus = this.takePendingDesktopHorizontalFocus(window);
 
     if (this.stackEditOperation) {
       return;
@@ -8858,6 +8899,10 @@ export class RuntimeController {
 
     if (!this.initializing) {
       this.announceTabSelection(id);
+    }
+
+    if (pendingDesktopFocus) {
+      this.scheduleDesktopHorizontalFocusReplay(pendingDesktopFocus, id);
     }
   };
 
@@ -10145,19 +10190,31 @@ export class RuntimeController {
     boundaryOutputDirection?: OutputDirection,
     boundaryDestination?: HorizontalEdge,
   ): boolean {
+    this.cancelDesktopHorizontalFocusReplay();
     const floatingResult = this.focusFloatingWindow(
       destination,
       boundaryDestination,
     );
 
     if (floatingResult !== null) {
-      return floatingResult;
+      return (
+        floatingResult ||
+        this.captureDesktopHorizontalFocus(
+          destination,
+          boundaryOutputDirection,
+          boundaryDestination,
+        )
+      );
     }
 
     const command = this.prepareActiveColumnCommand();
 
     if (!command) {
-      return false;
+      return this.captureDesktopHorizontalFocus(
+        destination,
+        boundaryOutputDirection,
+        boundaryDestination,
+      );
     }
 
     return this.focusHorizontalTarget(
@@ -10166,6 +10223,129 @@ export class RuntimeController {
       boundaryOutputDirection,
       boundaryDestination,
     );
+  }
+
+  private captureDesktopHorizontalFocus(
+    destination: HorizontalDirection | HorizontalEdge,
+    boundaryOutputDirection?: OutputDirection,
+    boundaryDestination?: HorizontalEdge,
+  ): boolean {
+    if (
+      !this.started ||
+      this.stackEditOperation ||
+      this.windowTransferOperation ||
+      this.startupStabilizationToken !== null ||
+      this.hasTopologyBarrier()
+    ) {
+      return false;
+    }
+
+    const active = this.workspace.activeWindow;
+    const activeContext = active ? this.resolveLayerFocusContext(active) : null;
+    const output = this.workspace.activeScreen ?? active?.output;
+
+    if (!output || !this.workspace.screens.includes(output)) {
+      return false;
+    }
+
+    const activeOutputId = outputId(output.name);
+    const key = this.desktopFocusCaptureContexts.get(activeOutputId);
+
+    if (!key) {
+      return false;
+    }
+
+    if (!this.selectedTiledFocusTarget(key)) {
+      this.desktopFocusCaptureContexts.delete(activeOutputId);
+      return false;
+    }
+
+    if (
+      activeContext !== null &&
+      (contextKey(activeContext) === key ||
+        this.isContextVisible(activeContext))
+    ) {
+      return false;
+    }
+
+    this.pendingDesktopHorizontalFocus = {
+      boundaryDestination,
+      boundaryOutputDirection,
+      contextKey: key,
+      destination,
+    };
+    return true;
+  }
+
+  private takePendingDesktopHorizontalFocus(
+    window: KWinWindow,
+  ): PendingDesktopHorizontalFocus | null {
+    const liveContext = this.resolveLayerFocusContext(window);
+
+    if (!liveContext) {
+      return null;
+    }
+
+    const key = contextKey(liveContext);
+
+    if (this.desktopFocusCaptureContexts.get(liveContext.outputId) === key) {
+      this.desktopFocusCaptureContexts.delete(liveContext.outputId);
+    }
+
+    const pending = this.pendingDesktopHorizontalFocus;
+
+    if (!pending || pending.contextKey !== key) {
+      return null;
+    }
+
+    this.pendingDesktopHorizontalFocus = null;
+    return pending;
+  }
+
+  private scheduleDesktopHorizontalFocusReplay(
+    pending: PendingDesktopHorizontalFocus,
+    activationId: WindowId,
+  ): void {
+    const replay = { ...pending, activationId };
+    this.desktopHorizontalFocusReplay = replay;
+
+    try {
+      this.schedule(() => {
+        if (this.desktopHorizontalFocusReplay !== replay || !this.started) {
+          return;
+        }
+
+        this.cancelDesktopHorizontalFocusReplay();
+        const active = this.workspace.activeWindow;
+        const activeContext = active
+          ? this.resolveLayerFocusContext(active)
+          : null;
+
+        if (!activeContext || contextKey(activeContext) !== replay.contextKey) {
+          return;
+        }
+
+        this.focusHorizontal(
+          replay.destination,
+          replay.boundaryOutputDirection,
+          replay.boundaryDestination,
+        );
+      });
+    } catch {
+      if (this.desktopHorizontalFocusReplay === replay) {
+        this.cancelDesktopHorizontalFocusReplay();
+      }
+    }
+  }
+
+  private cancelDesktopHorizontalFocusReplay(): void {
+    this.desktopHorizontalFocusReplay = null;
+  }
+
+  private clearDesktopFocusTransition(): void {
+    this.desktopFocusCaptureContexts.clear();
+    this.cancelDesktopHorizontalFocusReplay();
+    this.pendingDesktopHorizontalFocus = null;
   }
 
   private focusHorizontalTarget(
@@ -25784,6 +25964,7 @@ export class RuntimeController {
       return;
     }
 
+    this.clearDesktopFocusTransition();
     this.clearPointerMoveIntent();
     this.pointerResizeIntent = null;
     this.pendingWindowRemovalFocusRecovery = null;

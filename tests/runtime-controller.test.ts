@@ -13873,6 +13873,177 @@ describe("RuntimeController", () => {
     expect(fixture.activationCount).toBe(activationCount + 3);
   });
 
+  it("replays immediate workspace focus after the new context activates", () => {
+    const output = createOutput("DP-1", 0);
+    const sourceDesktop = { id: "desktop-1" };
+    const targetDesktop = { id: "desktop-2" };
+    const emptyDesktop = { id: "desktop-empty" };
+    const source = createTrackedWindow("source", output, sourceDesktop);
+    const first = createTrackedWindow("target-first", output, targetDesktop);
+    const second = createTrackedWindow("target-second", output, targetDesktop);
+    const third = createTrackedWindow("target-third", output, targetDesktop);
+    const fixture = createWorkspace(
+      output,
+      sourceDesktop,
+      [output],
+      [sourceDesktop, targetDesktop, emptyDesktop],
+      [first.window, second.window, third.window, source.window],
+    );
+    const scheduler = new ManualScheduler();
+    const controller = new RuntimeController(fixture.workspace, {
+      centerFocusedColumnOnOverflow: true,
+      clientAreaOption: 2,
+      gap: 10,
+      schedule: scheduler.schedule,
+    });
+
+    expect(controller.start()).toBe(true);
+    const layout = installTestLayout(
+      controller,
+      output,
+      sourceDesktop,
+      "column:source",
+      [
+        {
+          id: "column:source",
+          width: { kind: "proportion", value: 0.33 },
+          windowIds: ["source"],
+        },
+      ],
+    );
+    expect(
+      layout.restoreColumns({
+        activityId: FALLBACK_ACTIVITY_ID,
+        activeColumnId: columnId("column:target-first"),
+        columns: [
+          {
+            column: {
+              id: columnId("column:target-first"),
+              presentation: "stacked",
+              selectedWindowId: windowId("target-first"),
+              width: { kind: "proportion", value: 1 },
+              windowIds: [windowId("target-first")],
+            },
+            index: 0,
+          },
+          ...["second", "third"].map((suffix, index) => ({
+            column: {
+              id: columnId(`column:target-${suffix}`),
+              presentation: "stacked" as const,
+              selectedWindowId: windowId(`target-${suffix}`),
+              width: { kind: "proportion" as const, value: 0.33 },
+              windowIds: [windowId(`target-${suffix}`)],
+            },
+            index: index + 1,
+          })),
+        ],
+        desktopId: desktopId(targetDesktop.id),
+        outputId: outputId(output.name),
+      }),
+    ).toBe(true);
+
+    fixture.setCurrentDesktop(output, targetDesktop);
+    const activationIds: string[] = [];
+    fixture.windowActivated.connect((window) => {
+      if (window) {
+        activationIds.push(String(window.internalId));
+      }
+    });
+
+    expect(controller.focusRight()).toBe(true);
+    expect(fixture.workspace.activeWindow).toBe(source.window);
+    fixture.workspace.activeWindow = source.window;
+    expect(fixture.workspace.activeWindow).toBe(source.window);
+    fixture.workspace.activeWindow = first.window;
+    fixture.workspace.activeWindow = first.window;
+    flushManualScheduler(scheduler);
+    expect(fixture.workspace.activeWindow).toBe(second.window);
+    expect(activationIds).toEqual([
+      "source",
+      "target-first",
+      "target-first",
+      "target-second",
+    ]);
+    expect(
+      layout.snapshot(
+        outputId(output.name),
+        desktopId(targetDesktop.id),
+        FALLBACK_ACTIVITY_ID,
+      ),
+    ).toMatchObject({
+      activeColumnId: columnId("column:target-second"),
+      viewportOffset: 659,
+    });
+    expect(second.window.frameGeometry).toMatchObject({ width: 317, x: 341 });
+    expect(third.window.frameGeometry.x).toBe(668);
+
+    expect(controller.focusLeft()).toBe(true);
+    expect(fixture.workspace.activeWindow).toBe(first.window);
+    expect(
+      layout.snapshot(
+        outputId(output.name),
+        desktopId(targetDesktop.id),
+        FALLBACK_ACTIVITY_ID,
+      ),
+    ).toMatchObject({
+      activeColumnId: columnId("column:target-first"),
+      viewportOffset: 0,
+    });
+    expect(first.window.frameGeometry).toMatchObject({ width: 980, x: 10 });
+    expect(scheduler.pendingCount).toBe(0);
+
+    fixture.setCurrentDesktop(output, sourceDesktop);
+    fixture.workspace.activeWindow = source.window;
+    flushManualScheduler(scheduler);
+    fixture.setCurrentDesktop(output, targetDesktop);
+
+    expect(controller.focusRight()).toBe(true);
+    expect(controller.focusLeft()).toBe(true);
+    fixture.workspace.activeWindow = first.window;
+    flushManualScheduler(scheduler);
+
+    expect(fixture.workspace.activeWindow).toBe(first.window);
+    expect(
+      layout.snapshot(
+        outputId(output.name),
+        desktopId(targetDesktop.id),
+        FALLBACK_ACTIVITY_ID,
+      ),
+    ).toMatchObject({
+      activeColumnId: columnId("column:target-first"),
+      viewportOffset: 0,
+    });
+    expect(first.window.frameGeometry).toMatchObject({ width: 980, x: 10 });
+    expect(second.window.frameGeometry.x).toBe(1010);
+
+    fixture.setCurrentDesktop(output, sourceDesktop);
+    fixture.workspace.activeWindow = source.window;
+    flushManualScheduler(scheduler);
+    fixture.setCurrentDesktop(output, targetDesktop);
+    expect(controller.focusRight()).toBe(true);
+    fixture.workspace.activeWindow = first.window;
+    fixture.workspace.activeWindow = second.window;
+    flushManualScheduler(scheduler);
+
+    expect(fixture.workspace.activeWindow).toBe(second.window);
+
+    fixture.setCurrentDesktop(output, sourceDesktop);
+    fixture.workspace.activeWindow = source.window;
+    flushManualScheduler(scheduler);
+    fixture.setCurrentDesktop(output, targetDesktop);
+    expect(controller.focusRight()).toBe(true);
+    fixture.setCurrentDesktop(output, sourceDesktop);
+    fixture.setCurrentDesktop(output, targetDesktop);
+    fixture.workspace.activeWindow = first.window;
+    flushManualScheduler(scheduler);
+
+    expect(fixture.workspace.activeWindow).toBe(first.window);
+    expect(first.window.frameGeometry).toMatchObject({ width: 980, x: 10 });
+
+    fixture.setCurrentDesktop(output, emptyDesktop);
+    expect(controller.focusRight()).toBe(false);
+  });
+
   it("toggles previous focus across tiled and manual-floating windows while skipping ineligible history", () => {
     const output = createOutput("DP-1", 0);
     const desktop = { id: "desktop-1" };
