@@ -31,6 +31,11 @@ progress; cancellation or a context change performs no open or close action.
 While open, the Overview refreshes in place after windows are added or removed
 and retries an unstable sample once. It preserves search, help, and a valid
 keyboard selection while clearing stale drag, wheel, and boundary input.
+Precise vertical wheel input pans the workspace stack and settles on the nearest
+workspace when the gesture ends. Discrete vertical steps select workspaces;
+rapid steps accumulate before one deferred selection. Horizontal wheel input
+pans the current spatial row, and a manual horizontal offset detaches live
+geometry only for that output and workspace until the Overview session resets.
 
 Home Manager leaves these KConfig values unmanaged by default. It can manage
 them independently of package installation:
@@ -715,7 +720,10 @@ override restored tiled or floating ownership when the setting changes. A
 window snapshots the policy when Driftile first tracks it, including while it
 waits behind a KWin-owned state. An exact application initial-layout rule takes
 precedence. Tiling exclusions and automatic floating roles such as dialogs,
-transients, and fixed-size windows take priority.
+transients, fixed-size windows, and picture-in-picture windows take priority.
+Picture-in-picture ownership survives a temporarily unavailable window role
+and ends only after KWin publishes a different explicit role or removes the
+window.
 
 The normal **Toggle floating** action can tile a window that started manually
 floating. Its application-specific initial column width applies at that point.

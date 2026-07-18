@@ -2705,3 +2705,17 @@ Release criteria (met):
 - Accept eligible same-context automatic-floating utilities, transients, and
   application-excluded windows during close-focus recovery while rejecting
   ordinary non-normal windows.
+
+### 1.81.0 (in development)
+
+- Project guarded live frame geometry for eligible tiled windows in the current
+  Overview row, with planned geometry as the fallback for stale, tabbed, or
+  unavailable sources.
+- Settle precise vertical wheel gestures on the nearest workspace and combine
+  rapid discrete steps into one deferred, context-checked selection.
+- Scope manual live-geometry detachment to one output and workspace instead of
+  disabling it for the entire Overview session.
+- Preserve picture-in-picture automatic-floating ownership while its public
+  window role is temporarily unavailable.
+- Suppress outgoing desktop motion while the workspace transition owns visual
+  presentation.
