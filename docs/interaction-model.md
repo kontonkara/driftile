@@ -26,13 +26,13 @@ no-ops. Adjacent navigation and the explicit **Focus last-used desktop** action
 are unchanged. Toggling the setting does not switch desktops, mutate selection
 history, or alter layout.
 
-If horizontal focus is requested immediately after a desktop changes but
-before KWin publishes that desktop's active window, Driftile retains only the
-latest direction for the selected non-empty context. The first matching
-activation consumes the request and, when it is an eligible tiled target,
-replays it once after activation handling completes. A newer
-desktop, activity, topology, or window-context change discards the request;
-empty and stale contexts remain no-ops.
+If horizontal or vertical focus is requested immediately after a desktop
+changes but before KWin publishes that desktop's active window, Driftile keeps
+only the latest intent for the selected non-empty context. This includes the
+existing vertical boundary alternatives. The first matching eligible tiled
+activation consumes and replays the intent once. A newer desktop, activity,
+topology, or window-context change discards it; empty and stale contexts remain
+no-ops.
 
 Optional `3`–`5`-finger touchpad navigation reuses horizontal column focus and
 adjacent-desktop selection. Horizontal and vertical gesture pairs can be
@@ -42,7 +42,10 @@ column and desktop. The gestures add no shortcut actions, and partial or
 cancelled gestures perform no command. Vertical gestures use the single output
 under the pointer; output gaps, overlapping output geometry, and invalid pointer
 coordinates are no-ops. Keyboard desktop navigation still uses the active
-output.
+output. Each navigation gesture owns the activity, desktop, output, and output
+topology captured at its first progress and completes only while that context
+remains exact. The optional Overview open and close gestures use the same
+bounded ownership rule; an opposite handler cannot replace the active owner.
 
 The optional overview's current-card path accepts left clicks only on valid
 thumbnails. It revalidates the direct live window against that output, desktop,
@@ -101,7 +104,14 @@ workspaces without wrapping or closing the effect. Precise touchpad deltas pan
 the bounded spatial workspace stack directly. A non-empty search keeps wheel
 cycling within matching actionable windows. The search overlay reports the
 unique window-result count or an explicit no-match message as plain text.
-These interactions do not mutate Driftile's layout or persistence.
+One rapid discrete wheel burst advances at most four workspaces. These
+interactions do not mutate Driftile's layout or persistence.
+
+While the Overview is open, window additions and removals refresh its model in
+place with at most one retry for an unstable sample. Search text, help
+visibility, and a still-valid keyboard selection are preserved. Stale drag,
+wheel, and keyboard-boundary state is cleared before the refreshed spatial
+session is shown; the Overview remains open throughout.
 
 `F1` opens a modal, bounded keyboard reference inside the overview. `F1` or
 `Escape` closes it before other input is processed, while its pointer button

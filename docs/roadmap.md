@@ -8,6 +8,10 @@ Stable 1.74.2 preserves immediate horizontal navigation across desktop
 activation handoffs and isolates partial wheel input across spatial Overview
 positions. Logical persistence remains v4.
 
+Version 1.75.0 is prepared but unreleased. It extends spatial session
+continuity, gesture ownership, and immediate vertical desktop-handoff focus
+without changing settings, shortcuts, or logical persistence.
+
 ## Foundation (delivered)
 
 - Build and package a declarative KWin script with a TypeScript runtime.
@@ -2587,3 +2591,15 @@ Release criteria (met):
   position.
 - Existing shortcuts, settings, and logical persistence v4 remain compatible;
   no private API or KWin fork is introduced.
+
+### 1.75.0 (prepared, unreleased)
+
+- Keep an active Overview open after window additions and removals while its
+  model refreshes in place, with one retry for an unstable sample.
+- Preserve search, help, and a still-valid keyboard selection across refresh;
+  clear stale drag, wheel, and keyboard-boundary state.
+- Limit one rapid discrete Overview wheel burst to four workspace steps.
+- Complete horizontal, vertical-desktop, and Overview open or close touchpad
+  gestures only in their captured activity, desktop, output, and topology.
+- Retain only the latest immediate vertical focus intent during a desktop
+  handoff and replay it once after the matching tiled activation.

@@ -24,7 +24,13 @@ The separately installed **Driftile Overview** effect uses a four-finger up
 swipe to open and a down swipe to close by default. Configure or disable the
 gesture from the effect's settings. Finger counts range from `3` to `5`. A
 pointer screen edge can also open the effect and is disabled by default. The
-same page controls the backdrop color and opacity.
+same page controls the backdrop color and opacity. A swipe completes only in
+the activity, desktop selections, and output topology captured at its first
+progress; cancellation or a context change performs no open or close action.
+
+While open, the Overview refreshes in place after windows are added or removed
+and retries an unstable sample once. It preserves search, help, and a valid
+keyboard selection while clearing stale drag, wheel, and boundary input.
 
 Home Manager leaves these KConfig values unmanaged by default. It can manage
 them independently of package installation:
@@ -414,10 +420,13 @@ Vertical desktop swipes target the single output under the pointer. A pointer
 in an output gap or overlapping output geometry produces no desktop change.
 Keyboard desktop actions continue to target the active output.
 
-Partial and cancelled gestures do nothing. Changing either enable option, the
-finger count, or natural direction recreates only the enabled gesture handlers
-without restarting KWin. Native X11 treats both enabled options as safe no-ops,
-and neither option adds a shortcut action or default key binding.
+Each swipe completes only while its captured activity, desktop, output, and
+output topology remain exact. Partial, cancelled, and context-invalidated
+gestures do nothing, and an opposite direction cannot take over an active
+gesture. Changing either enable option, the finger count, or natural direction
+recreates only the enabled gesture handlers without restarting KWin. Native
+X11 treats both enabled options as safe no-ops, and neither option adds a
+shortcut action or default key binding.
 
 ## Numbered desktop targets and back-and-forth
 
