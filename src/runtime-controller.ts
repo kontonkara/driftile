@@ -10244,6 +10244,12 @@ export class RuntimeController {
       return appendedReplay;
     }
 
+    const pendingOutputCapture = this.capturePendingOutputDesktopFocus(intent);
+
+    if (pendingOutputCapture !== null) {
+      return pendingOutputCapture;
+    }
+
     const floatingResult = this.focusFloatingWindow(
       destination,
       boundaryDestination,
@@ -10273,7 +10279,89 @@ export class RuntimeController {
     );
   }
 
-  private captureDesktopFocus(intent: DesktopFocusIntent): boolean {
+  private capturePendingOutputDesktopFocus(
+    intent: DesktopFocusIntent,
+  ): boolean | null {
+    if (this.desktopFocusCaptureContexts.size === 0) {
+      return null;
+    }
+
+    if (
+      typeof this.workspace.currentDesktopForScreen !== "function" ||
+      typeof this.workspace.setCurrentDesktopForScreen !== "function" ||
+      this.desktopFocusCaptureContexts.size !== 1
+    ) {
+      this.pendingDesktopFocus = null;
+      return false;
+    }
+
+    const capture = this.desktopFocusCaptureContexts.entries().next().value;
+
+    if (!capture) {
+      this.pendingDesktopFocus = null;
+      return false;
+    }
+
+    const [pendingOutputId, key] = capture;
+    const pendingContext = managedContextFromKey(key);
+    const active = this.workspace.activeWindow;
+    const activeContext = active ? this.resolveLayerFocusContext(active) : null;
+
+    if (!pendingContext || pendingContext.outputId !== pendingOutputId) {
+      this.desktopFocusCaptureContexts.delete(pendingOutputId);
+      this.pendingDesktopFocus = null;
+      return false;
+    }
+
+    let output: KWinOutput | null = null;
+
+    for (const candidate of this.workspace.screens) {
+      if (outputId(candidate.name) !== pendingOutputId) {
+        continue;
+      }
+
+      if (output) {
+        this.pendingDesktopFocus = null;
+        return false;
+      }
+
+      output = candidate;
+    }
+
+    if (!output) {
+      this.desktopFocusCaptureContexts.delete(pendingOutputId);
+      this.pendingDesktopFocus = null;
+      return false;
+    }
+
+    if (
+      !this.isContextVisible(pendingContext) ||
+      !this.selectedTiledFocusTarget(key)
+    ) {
+      this.desktopFocusCaptureContexts.delete(pendingOutputId);
+      this.pendingDesktopFocus = null;
+      return false;
+    }
+
+    if (activeContext && contextKey(activeContext) === key) {
+      return null;
+    }
+
+    return this.captureDesktopFocus(intent, {
+      contextKey: key,
+      output,
+      outputId: pendingOutputId,
+    });
+  }
+
+  private captureDesktopFocus(
+    intent: DesktopFocusIntent,
+    pendingOutput?: {
+      readonly contextKey: string;
+      readonly output: KWinOutput;
+      readonly outputId: OutputId;
+    },
+  ): boolean {
     if (
       !this.started ||
       this.stackEditOperation ||
@@ -10287,7 +10375,8 @@ export class RuntimeController {
 
     const active = this.workspace.activeWindow;
     const activeContext = active ? this.resolveLayerFocusContext(active) : null;
-    const output = this.workspace.activeScreen ?? active?.output;
+    const output =
+      pendingOutput?.output ?? this.workspace.activeScreen ?? active?.output;
 
     if (!output || !this.workspace.screens.includes(output)) {
       this.pendingDesktopFocus = null;
@@ -10297,7 +10386,12 @@ export class RuntimeController {
     const activeOutputId = outputId(output.name);
     const key = this.desktopFocusCaptureContexts.get(activeOutputId);
 
-    if (!key) {
+    if (
+      !key ||
+      (pendingOutput !== undefined &&
+        (pendingOutput.outputId !== activeOutputId ||
+          pendingOutput.contextKey !== key))
+    ) {
       this.pendingDesktopFocus = null;
       return false;
     }
@@ -10311,7 +10405,9 @@ export class RuntimeController {
     if (
       activeContext !== null &&
       (contextKey(activeContext) === key ||
-        this.isContextVisible(activeContext))
+        (this.isContextVisible(activeContext) &&
+          (pendingOutput === undefined ||
+            activeContext.outputId === pendingOutput.outputId)))
     ) {
       this.pendingDesktopFocus = null;
       return false;
@@ -10838,6 +10934,12 @@ export class RuntimeController {
       direction,
       kind: "vertical",
     };
+    const pendingOutputCapture = this.capturePendingOutputDesktopFocus(intent);
+
+    if (pendingOutputCapture !== null) {
+      return pendingOutputCapture;
+    }
+
     const floatingResult = this.focusFloatingWindow(
       direction,
       boundary?.kind === "edge" ? boundary.destination : undefined,
@@ -10918,6 +11020,12 @@ export class RuntimeController {
       destination,
       kind: "vertical-edge",
     };
+    const pendingOutputCapture = this.capturePendingOutputDesktopFocus(intent);
+
+    if (pendingOutputCapture !== null) {
+      return pendingOutputCapture;
+    }
+
     const floatingResult = this.focusFloatingWindow(destination);
 
     if (floatingResult !== null) {

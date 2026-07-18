@@ -14253,6 +14253,159 @@ describe("RuntimeController", () => {
 
     fixture.setCurrentDesktop(output, emptyDesktop);
     expect(controller.focusRight()).toBe(false);
+
+    {
+      const pendingOutput = createOutput("DP-pending", 0);
+      const activeOutput = createOutput("DP-active", 1000);
+      const pendingFirst = createTrackedWindow(
+        "pending-first",
+        pendingOutput,
+        targetDesktop,
+        { frameGeometry: { height: 780, width: 238, x: 10, y: 10 } },
+      );
+      const pendingSecond = createTrackedWindow(
+        "pending-second",
+        pendingOutput,
+        targetDesktop,
+        { frameGeometry: { height: 780, width: 237, x: 258, y: 10 } },
+      );
+      const pendingThird = createTrackedWindow(
+        "pending-third",
+        pendingOutput,
+        targetDesktop,
+        { frameGeometry: { height: 780, width: 238, x: 505, y: 10 } },
+      );
+      const activeFirst = createTrackedWindow(
+        "active-first",
+        activeOutput,
+        sourceDesktop,
+        { frameGeometry: { height: 780, width: 386, x: 1010, y: 10 } },
+      );
+      const activeSecond = createTrackedWindow(
+        "active-second",
+        activeOutput,
+        sourceDesktop,
+        { frameGeometry: { height: 780, width: 386, x: 1406, y: 10 } },
+      );
+      const crossOutputFixture = createWorkspace(
+        activeOutput,
+        sourceDesktop,
+        [pendingOutput, activeOutput],
+        [sourceDesktop, targetDesktop, emptyDesktop],
+        [
+          pendingFirst.window,
+          pendingSecond.window,
+          pendingThird.window,
+          activeSecond.window,
+          activeFirst.window,
+        ],
+      );
+      const crossOutputScheduler = new ManualScheduler();
+      const crossOutputController = new RuntimeController(
+        crossOutputFixture.workspace,
+        {
+          centerFocusedColumnOnOverflow: true,
+          clientAreaOption: 2,
+          columnWidth: { kind: "proportion", value: 0.25 },
+          gap: 10,
+          schedule: crossOutputScheduler.schedule,
+        },
+      );
+
+      expect(crossOutputController.start()).toBe(true);
+      const crossOutputLayout = installTestLayout(
+        crossOutputController,
+        activeOutput,
+        sourceDesktop,
+        "column:active-first",
+        [
+          {
+            id: "column:active-first",
+            width: { kind: "proportion", value: 0.4 },
+            windowIds: ["active-first"],
+          },
+          {
+            id: "column:active-second",
+            width: { kind: "proportion", value: 0.4 },
+            windowIds: ["active-second"],
+          },
+        ],
+      );
+      expect(
+        crossOutputLayout.restoreColumns({
+          activityId: FALLBACK_ACTIVITY_ID,
+          activeColumnId: columnId("column:pending-first"),
+          columns: ["first", "second", "third"].map((suffix, index) => ({
+            column: {
+              id: columnId(`column:pending-${suffix}`),
+              presentation: "stacked" as const,
+              selectedWindowId: windowId(`pending-${suffix}`),
+              width: { kind: "proportion" as const, value: 0.25 },
+              windowIds: [windowId(`pending-${suffix}`)],
+            },
+            index,
+          })),
+          desktopId: desktopId(targetDesktop.id),
+          outputId: outputId(pendingOutput.name),
+        }),
+      ).toBe(true);
+
+      crossOutputFixture.setCurrentDesktop(pendingOutput, emptyDesktop);
+      expect(crossOutputController.focusRight()).toBe(false);
+      expect(crossOutputFixture.workspace.activeWindow).toBe(
+        activeFirst.window,
+      );
+
+      crossOutputFixture.setCurrentDesktop(pendingOutput, targetDesktop);
+      crossOutputController.reconcile();
+      flushManualScheduler(crossOutputScheduler);
+      expect(crossOutputController.focusRight()).toBe(true);
+      expect(crossOutputController.focusRight()).toBe(true);
+      expect(crossOutputController.focusLeft()).toBe(true);
+      expect(crossOutputFixture.workspace.activeWindow).toBe(
+        activeFirst.window,
+      );
+      expect(
+        crossOutputLayout.snapshot(
+          outputId(activeOutput.name),
+          desktopId(sourceDesktop.id),
+          FALLBACK_ACTIVITY_ID,
+        ).activeColumnId,
+      ).toBe(columnId("column:active-first"));
+
+      const crossOutputActivationIds: string[] = [];
+      crossOutputFixture.windowActivated.connect((window) => {
+        if (window) {
+          crossOutputActivationIds.push(String(window.internalId));
+        }
+      });
+      Object.defineProperty(crossOutputFixture.workspace, "activeScreen", {
+        configurable: true,
+        value: pendingOutput,
+      });
+      crossOutputFixture.workspace.activeWindow = pendingFirst.window;
+      flushManualScheduler(crossOutputScheduler);
+
+      expect(crossOutputActivationIds).toEqual([
+        "pending-first",
+        "pending-second",
+        "pending-third",
+        "pending-second",
+      ]);
+      expect(crossOutputFixture.workspace.activeWindow).toBe(
+        pendingSecond.window,
+      );
+
+      Object.defineProperty(crossOutputFixture.workspace, "activeScreen", {
+        configurable: true,
+        value: activeOutput,
+      });
+      crossOutputFixture.workspace.activeWindow = activeFirst.window;
+      expect(crossOutputController.focusRight()).toBe(true);
+      expect(crossOutputFixture.workspace.activeWindow).toBe(
+        activeSecond.window,
+      );
+    }
   });
 
   it.each(["stacked", "tabbed"] as const)(
