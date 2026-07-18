@@ -15,8 +15,9 @@ compositor and window manager.
   and transfers between outputs or desktops.
 - Full-width columns, floating windows, native fullscreen and maximize, and
   stable minimized-window slots.
-- An optional spatial Overview with workspace navigation, search, and guarded
-  drag-and-drop between desktops and outputs.
+- An optional Overview with workspace navigation and guarded drag-and-drop.
+  Its card-based projection is an intermediate implementation, not yet the
+  planned continuous spatial view.
 - Configurable gaps, sizing presets, application rules, borders, overview,
   transitions, shortcuts, and layout restoration. An optional native KDE
   shortcut editor is available separately.

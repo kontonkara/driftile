@@ -9,6 +9,16 @@ binds navigation gestures to their captured context, bounds rapid Overview
 wheel input, and replays the latest vertical desktop-handoff focus intent.
 Settings, shortcuts, and logical persistence v4 remain compatible.
 
+## Current direction
+
+The optional Overview remains an intermediate card-based projection over
+captured layout state. It does not yet share a continuous camera or live
+geometry with the normal scrollable workspace, so it differs materially from
+the planned spatial Overview in both architecture and interaction. Search and
+keyboard help do not close that gap. Continuous spatial behavior is the next
+primary direction; complete wheel control follows within the limits of public
+KWin APIs.
+
 ## Foundation (delivered)
 
 - Build and package a declarative KWin script with a TypeScript runtime.

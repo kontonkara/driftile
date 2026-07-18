@@ -113,6 +113,12 @@ visibility, and a still-valid keyboard selection are preserved. Stale drag,
 wheel, and keyboard-boundary state is cleared before the refreshed spatial
 session is shown; the Overview remains open throughout.
 
+The current Overview is an intermediate card-based projection of captured
+layout state. It does not yet share the continuous camera and live geometry of
+the normal scrollable workspace, so its architecture and interaction remain
+materially different from the planned spatial Overview. Search and keyboard
+help are supporting tools, not completion criteria for that work.
+
 `F1` opens a modal, bounded keyboard reference inside the overview. `F1` or
 `Escape` closes it before other input is processed, while its pointer button
 provides the same action. The reference includes the existing structured-search
