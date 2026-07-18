@@ -1,6 +1,6 @@
 {
   "name": "driftile",
-  "version": "1.76.0-dev.0",
+  "version": "1.76.0",
   "private": true,
   "description": "A KWin extension for KDE Plasma providing scrollable tiling and dynamic workspaces.",
   "type": "module",

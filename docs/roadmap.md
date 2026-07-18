@@ -1,20 +1,14 @@
 # Roadmap
 
-Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.75.0 are
+Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.76.0 are
 released. The delivered milestones and release criteria below are a historical
 record. Later direction is not a committed release schedule.
 
-Stable 1.75.0 keeps active Overview sessions current after window changes,
-binds navigation gestures to their captured context, bounds rapid Overview
-wheel input, and replays the latest vertical desktop-handoff focus intent.
+Stable 1.76.0 preserves the workspace card under the Overview camera across
+live model, zoom, and scene-size changes; adds guarded background mouse
+panning; retains bounded subpixel wheel movement; and keeps an in-flight window
+transition replayable when a workspace effect temporarily owns the screen.
 Settings, shortcuts, and logical persistence v4 remain compatible.
-
-Development after 1.75.0 preserves the workspace card under the Overview
-camera across live model, zoom, and scene-size changes; adds guarded background
-mouse panning; retains bounded subpixel wheel movement; and keeps an in-flight
-window transition replayable when a workspace effect temporarily owns the
-screen. This is incremental spatial continuity, not completion of the planned
-Overview architecture.
 
 ## Current direction
 
@@ -2621,3 +2615,24 @@ Release criteria (met):
   gestures only in their captured activity, desktop, output, and topology.
 - Retain only the latest immediate vertical focus intent during a desktop
   handoff and replay it once after the matching tiled activation.
+
+### 1.76.0 (released)
+
+- Preserve the workspace card under the Overview camera across live model,
+  zoom, and scene-size changes while real desktop selection still recenters.
+- Pan the empty Overview backdrop with a mouse, touchpad, or touchscreen
+  without stealing window or desktop drags.
+- Retain bounded subpixel wheel movement, reset it across input modes and
+  direction changes, and keep rapid discrete bursts bounded.
+- Transfer an active geometry animation's earliest baseline into the deferred
+  pipeline when a workspace effect takes ownership, then replay and retarget it
+  without requiring another geometry signal.
+
+Release criteria (met):
+
+- Camera anchors and wheel state are bounded, fail closed, and add no retained
+  object cache or periodic work.
+- Full local, Wayland, multi-output Wayland, X11, Nix, and hidden VM checks pass
+  with no retained QEMU process.
+- This is incremental spatial continuity, not completion of the planned
+  Overview architecture; no private API or KWin fork is introduced.
