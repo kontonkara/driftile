@@ -180,6 +180,34 @@ describe("planOverviewSpatialRowGeometry", () => {
     });
   });
 
+  it.each([
+    { maximum: 0, minimum: -100, viewportOffset: -100 },
+    { maximum: 100, minimum: 0, viewportOffset: 100 },
+  ])(
+    "preserves a valid row without an active column at camera $viewportOffset",
+    ({ maximum, minimum, viewportOffset }) => {
+      const result = plan({
+        activeColumnIndex: null,
+        columns: [{ width: { kind: "fixed", value: 300 } }],
+        viewportOffset,
+      });
+
+      expect(result?.camera).toEqual({
+        base: viewportOffset,
+        maximum,
+        minimum,
+      });
+      expect(result?.columnFrames).toEqual([
+        {
+          columnId: "overview-column-0",
+          columnIndex: 0,
+          contentX: 12,
+          width: 300,
+        },
+      ]);
+    },
+  );
+
   it("keeps full-width neighboring columns reachable within camera bounds", () => {
     const successor = plan({
       activeColumnIndex: 0,
@@ -234,7 +262,6 @@ describe("planOverviewSpatialRowGeometry", () => {
     null,
     [],
     {},
-    baseInput({ activeColumnIndex: null, columns: thirds }),
     baseInput({ activeColumnIndex: 3, columns: thirds }),
     baseInput({ alwaysCenterSingleColumn: "true" }),
     baseInput({ columns: [{ width: { kind: "unknown", value: 1 } }] }),

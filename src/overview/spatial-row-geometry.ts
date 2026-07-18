@@ -153,10 +153,12 @@ export function planOverviewSpatialRowGeometry(
 
     const lockCenteredSingleton =
       alwaysCenterSingleColumn && columns.length === 1;
-    const cameraMinimum = lockCenteredSingleton ? solved.viewportOffset : 0;
+    const cameraMinimum = lockCenteredSingleton
+      ? solved.viewportOffset
+      : Math.min(0, solved.viewportOffset);
     const cameraMaximum = lockCenteredSingleton
       ? solved.viewportOffset
-      : solved.maxViewportOffset;
+      : Math.max(solved.maxViewportOffset, solved.viewportOffset);
     const viewportInsetX = workArea.x - outputGeometry.x;
     const viewportInsetY = workArea.y - outputGeometry.y;
 
@@ -300,12 +302,14 @@ function isActiveColumnIndex(
   value: unknown,
   columnCount: number,
 ): value is number | null {
-  return columnCount === 0
-    ? value === null
-    : typeof value === "number" &&
-        Number.isSafeInteger(value) &&
-        value >= 0 &&
-        value < columnCount;
+  return (
+    value === null ||
+    (columnCount > 0 &&
+      typeof value === "number" &&
+      Number.isSafeInteger(value) &&
+      value >= 0 &&
+      value < columnCount)
+  );
 }
 
 function rectContains(outer: Rect, inner: Rect): boolean {
