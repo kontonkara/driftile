@@ -138,10 +138,10 @@ describe("overview live model refresh", () => {
     }
     expect(workspaceLifecycle).not.toMatch(/onWindow(?:Added|Removed)/u);
     expect(scene).toContain(
-      "onOverviewModelChanged: root.refreshOverviewSpatialSession()",
+      "onOverviewModelChanged: root.refreshOverviewSpatialSession(true)",
     );
     expect(scene).toMatch(
-      /function refreshOverviewSpatialSession\(\)[\s\S]*Qt\.callLater\(root\.repairKeyboardSelection\);/u,
+      /function refreshOverviewSpatialSession\(preserveViewport\)[\s\S]*Qt\.callLater\(root\.repairKeyboardSelection\);/u,
     );
     expect(spatialSessionRefresh).toMatch(
       /const selectedWorkspaceIndex = desktopIds\s*&& typeof desktopIds\.indexOf === "function"\s*\? desktopIds\.indexOf\(selectedDesktopId\) : -1;/u,
@@ -159,6 +159,12 @@ describe("overview live model refresh", () => {
       spatialSessionRefresh.indexOf(
         "planSpatialWorkspaceCenter(selectedWorkspaceIndex)",
       ),
+    );
+    expect(spatialSessionRefresh).toMatch(
+      /const previousViewportSnapshot = preserveViewport === true \? spatialViewportSnapshot : null;[\s\S]*planSpatialViewportAnchor\(previousViewportSnapshot, nextViewportGeometry\)[\s\S]*spatialContentY = anchorPlan\.contentY;/u,
+    );
+    expect(spatialSessionRefresh.indexOf("anchorPlan")).toBeLessThan(
+      spatialSessionRefresh.indexOf("resetSpatialViewport();"),
     );
     expect(spatialSessionRefresh).not.toMatch(
       /keyboardSelectionId = ""|keyboardHelpVisible = false|searchQuery = ""/u,

@@ -10,6 +10,7 @@ const baseInput = Object.freeze({
   contentHeight: 2400,
   contentY: 600,
   pixelDeltaY: 0,
+  pixelRemainder: 0,
   remainder: 0,
   sceneHeight: 800,
 });
@@ -25,6 +26,7 @@ describe("planOverviewSpatialWheel", () => {
       contentY: 600,
       direction: null,
       intent: "workspace",
+      pixelRemainder: 0,
       remainder: 50,
       steps: 0,
     });
@@ -38,6 +40,7 @@ describe("planOverviewSpatialWheel", () => {
       contentY: 600,
       direction: "previous",
       intent: "workspace",
+      pixelRemainder: 0,
       remainder: 0,
       steps: 1,
     });
@@ -55,6 +58,7 @@ describe("planOverviewSpatialWheel", () => {
       contentY: 600,
       direction: "next",
       intent: "workspace",
+      pixelRemainder: 0,
       remainder: -119,
       steps: 4,
     });
@@ -68,6 +72,7 @@ describe("planOverviewSpatialWheel", () => {
       contentY: 600,
       direction: null,
       intent: "workspace",
+      pixelRemainder: 0,
       remainder: -100,
       steps: 0,
     });
@@ -80,6 +85,7 @@ describe("planOverviewSpatialWheel", () => {
       contentY: 600,
       direction: "previous",
       intent: "workspace",
+      pixelRemainder: 0,
       remainder: 0,
       steps: 4,
     });
@@ -93,6 +99,7 @@ describe("planOverviewSpatialWheel", () => {
       contentY: 600,
       direction: "previous",
       intent: "workspace",
+      pixelRemainder: 0,
       remainder: 60,
       steps: 4,
     });
@@ -106,6 +113,7 @@ describe("planOverviewSpatialWheel", () => {
       contentY: 600,
       direction: "next",
       intent: "workspace",
+      pixelRemainder: 0,
       remainder: 0,
       steps: 4,
     });
@@ -123,6 +131,7 @@ describe("planOverviewSpatialWheel", () => {
     expect(plan).toEqual({
       contentY: 588.25,
       intent: "viewport",
+      pixelRemainder: 0,
       remainder: 0,
     });
     expect(Object.isFrozen(plan)).toBe(true);
@@ -145,16 +154,118 @@ describe("planOverviewSpatialWheel", () => {
       ).toEqual({
         contentY: expectedContentY,
         intent: "viewport",
+        pixelRemainder: 0,
         remainder: 0,
       });
     },
   );
+
+  it("accumulates subpixel movement in bounded viewport state", () => {
+    let contentY: number = baseInput.contentY;
+    let pixelRemainder = 0;
+
+    for (let event = 0; event < 4; event += 1) {
+      const plan = planOverviewSpatialWheel({
+        ...baseInput,
+        contentY,
+        pixelDeltaY: 1 / 256,
+        pixelRemainder,
+      });
+
+      expect(plan?.intent).toBe("viewport");
+      if (plan?.intent !== "viewport") {
+        throw new Error("expected viewport wheel plan");
+      }
+      contentY = plan.contentY;
+      pixelRemainder = plan.pixelRemainder;
+    }
+
+    expect(contentY).toBe(600 - 1 / 64);
+    expect(pixelRemainder).toBe(0);
+  });
+
+  it("drops stale subpixel state on direction and input mode changes", () => {
+    expect(
+      planOverviewSpatialWheel({
+        ...baseInput,
+        pixelDeltaY: -1 / 256,
+        pixelRemainder: 3 / 256,
+      }),
+    ).toEqual({
+      contentY: 600,
+      intent: "viewport",
+      pixelRemainder: -1 / 256,
+      remainder: 0,
+    });
+    expect(
+      planOverviewSpatialWheel({
+        ...baseInput,
+        angleDeltaY: 40,
+        pixelRemainder: 3 / 256,
+      }),
+    ).toEqual({
+      contentY: 600,
+      direction: null,
+      intent: "workspace",
+      pixelRemainder: 0,
+      remainder: 40,
+      steps: 0,
+    });
+  });
+
+  it("discards subpixel pressure that reaches a viewport boundary", () => {
+    expect(
+      planOverviewSpatialWheel({
+        ...baseInput,
+        contentY: 0,
+        pixelDeltaY: 1 / 256,
+        pixelRemainder: 3 / 256,
+      }),
+    ).toEqual({
+      contentY: 0,
+      intent: "viewport",
+      pixelRemainder: 0,
+      remainder: 0,
+    });
+  });
+
+  it("honors a direction reversal after a saturated discrete burst", () => {
+    const saturated = planOverviewSpatialWheel({
+      ...baseInput,
+      angleDeltaY: -1_000_000,
+      remainder: -90,
+    });
+
+    expect(saturated).toEqual({
+      contentY: 600,
+      direction: "next",
+      intent: "workspace",
+      pixelRemainder: 0,
+      remainder: -90,
+      steps: 4,
+    });
+    expect(
+      planOverviewSpatialWheel({
+        ...baseInput,
+        angleDeltaY: 30,
+        remainder: saturated?.remainder,
+      }),
+    ).toEqual({
+      contentY: 600,
+      direction: null,
+      intent: "workspace",
+      pixelRemainder: 0,
+      remainder: 30,
+      steps: 0,
+    });
+  });
 
   it("normalizes an out-of-range viewport for either intent", () => {
     expect(planOverviewSpatialWheel({ ...baseInput, contentY: -500 })).toEqual({
       contentY: 0,
       direction: null,
       intent: "workspace",
+      pixelRemainder: 0,
       remainder: 0,
       steps: 0,
     });
@@ -164,7 +275,12 @@ describe("planOverviewSpatialWheel", () => {
         contentY: 3000,
         pixelDeltaY: -20,
       }),
-    ).toEqual({ contentY: 1600, intent: "viewport", remainder: 0 });
+    ).toEqual({
+      contentY: 1600,
+      intent: "viewport",
+      pixelRemainder: 0,
+      remainder: 0,
+    });
   });
 
   it.each([
@@ -181,6 +297,9 @@ describe("planOverviewSpatialWheel", () => {
     { ...baseInput, contentY: Number.NaN },
     { ...baseInput, pixelDeltaY: 4096.01 },
     { ...baseInput, pixelDeltaY: Number.POSITIVE_INFINITY },
+    { ...baseInput, pixelRemainder: 1 / 64 },
+    { ...baseInput, pixelRemainder: Number.NaN },
+    { ...baseInput, pixelRemainder: null },
     { ...baseInput, remainder: 120 },
     { ...baseInput, remainder: 0.5 },
     { ...baseInput, sceneHeight: 0 },

@@ -50,10 +50,14 @@ export type {
   OverviewSpatialLayoutPlan,
 } from "./spatial-layout";
 export {
+  planOverviewSpatialViewportAnchor,
   planOverviewSpatialViewport,
   planOverviewSpatialWorkspaceCenter,
 } from "./spatial-viewport";
 export type {
+  OverviewSpatialViewportAnchorInput,
+  OverviewSpatialViewportAnchorLayoutInput,
+  OverviewSpatialViewportAnchorPlan,
   OverviewSpatialViewportInput,
   OverviewSpatialViewportPlan,
   OverviewSpatialWorkspaceCenterInput,

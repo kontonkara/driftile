@@ -71,8 +71,10 @@ Rectangle {
     property string keyboardSelectionId: ""
     property int keyboardBoundaryNavigationRequestId: 0
     property bool keyboardBoundaryNavigationPending: false
+    property real overviewWheelPixelRemainder: 0
     property int overviewWheelRemainder: 0
     property real spatialContentY: 0
+    property var spatialViewportSnapshot: null
     property var spatialWindowDragSource: null
     property string spatialWindowDragSourceDesktopId: ""
     property real spatialEdgePanSceneX: Number.NaN
@@ -107,13 +109,16 @@ Rectangle {
     property int desktopReorderSourceIndex: -1
 
     onKeyboardSelectionIdChanged: root.centerKeyboardSelectionWorkspace()
-    onKeyboardHelpVisibleChanged: overviewWheelRemainder = 0
-    onCurrentDesktopChanged: root.refreshOverviewSpatialSession()
-    onOverviewModelChanged: root.refreshOverviewSpatialSession()
-    onOverviewSpatialLayoutChanged: root.refreshOverviewSpatialSession()
-    onSpatialContentYChanged: overviewWheelRemainder = 0
+    onKeyboardHelpVisibleChanged: root.resetOverviewWheelState()
+    onCurrentDesktopChanged: root.refreshOverviewSpatialSession(false)
+    onOverviewModelChanged: root.refreshOverviewSpatialSession(true)
+    onOverviewSpatialLayoutChanged: root.refreshOverviewSpatialSession(true)
+    onSpatialContentYChanged: {
+        root.resetOverviewWheelState();
+        root.captureSpatialViewportSnapshot();
+    }
     onSearchQueryChanged: {
-        overviewWheelRemainder = 0;
+        resetOverviewWheelState();
         cancelKeyboardBoundaryNavigation();
         Qt.callLater(root.repairKeyboardSelection);
     }
@@ -283,7 +288,7 @@ Rectangle {
 
             onActiveChanged: {
                 if (active) {
-                    root.overviewWheelRemainder = 0;
+                    root.resetOverviewWheelState();
                     spatialViewportInput.panLayout = root.overviewSpatialLayout;
                     spatialViewportInput.panStartContentY = root.spatialContentY;
                     root.setSpatialContentY(spatialViewportInput.panStartContentY - activeTranslation.y);
@@ -816,7 +821,7 @@ Rectangle {
             return;
         }
 
-        overviewWheelRemainder = 0;
+        resetOverviewWheelState();
         spatialWindowDragSource = source;
         spatialWindowDragSourceDesktopId = expectedDesktopId;
     }
@@ -911,12 +916,15 @@ Rectangle {
         keyboardSelectionId = "";
         keyboardHelpVisible = false;
         searchQuery = "";
-        refreshOverviewSpatialSession();
+        spatialViewportSnapshot = null;
+        refreshOverviewSpatialSession(false);
     }
 
-    function refreshOverviewSpatialSession() {
+    function refreshOverviewSpatialSession(preserveViewport) {
+        const previousViewportSnapshot = preserveViewport === true ? spatialViewportSnapshot : null;
         let selectedDesktopId = "";
-        if (sceneEffect && sceneEffect.active === true && keyboardSelectionId.length > 0) {
+        if (previousViewportSnapshot && sceneEffect && sceneEffect.active === true
+                && keyboardSelectionId.length > 0) {
             const selectedTarget = navigationTargetForId(collectNavigationTargets(), keyboardSelectionId);
             if (selectedTarget && typeof selectedTarget.desktopId === "string") {
                 selectedDesktopId = selectedTarget.desktopId;
@@ -927,25 +935,117 @@ Rectangle {
         searchResultCount = 0;
         searchResultCountsByDesktop = Object.create(null);
         searchResultOrdinalsByTarget = Object.create(null);
-        overviewWheelRemainder = 0;
+        resetOverviewWheelState();
         spatialViewportInput.panLayout = null;
         spatialViewportInput.panStartContentY = 0;
         resetDesktopReorder();
         resetSpatialEdgePanTracking();
 
         if (sceneEffect && sceneEffect.active === true) {
-            resetSpatialViewport();
-            const selectedWorkspaceIndex = desktopIds && typeof desktopIds.indexOf === "function"
-                ? desktopIds.indexOf(selectedDesktopId) : -1;
-            const selectionPlan = selectedWorkspaceIndex >= 0
-                ? planSpatialWorkspaceCenter(selectedWorkspaceIndex) : null;
-            if (selectionPlan) {
-                spatialContentY = selectionPlan.contentY;
+            const nextViewportGeometry = currentSpatialViewportGeometry();
+            const anchorPlan = previousViewportSnapshot && nextViewportGeometry
+                ? planSpatialViewportAnchor(previousViewportSnapshot, nextViewportGeometry) : null;
+            if (anchorPlan) {
+                spatialContentY = anchorPlan.contentY;
+            } else {
+                resetSpatialViewport();
+                const selectedWorkspaceIndex = desktopIds && typeof desktopIds.indexOf === "function"
+                    ? desktopIds.indexOf(selectedDesktopId) : -1;
+                const selectionPlan = selectedWorkspaceIndex >= 0
+                    ? planSpatialWorkspaceCenter(selectedWorkspaceIndex) : null;
+                if (selectionPlan) {
+                    spatialContentY = selectionPlan.contentY;
+                }
             }
+            captureSpatialViewportSnapshot();
             Qt.callLater(root.repairKeyboardSelection);
         } else {
             spatialContentY = 0;
+            spatialViewportSnapshot = null;
         }
+    }
+
+    function currentSpatialViewportGeometry() {
+        if (!spatialLayoutIsValid(overviewSpatialLayout) || !desktopIds
+                || !Number.isInteger(desktopIds.length) || desktopIds.length < 1
+                || desktopIds.length > 512 || !Number.isFinite(height) || height <= 0) {
+            return null;
+        }
+
+        const copiedDesktopIds = [];
+        for (let index = 0; index < desktopIds.length; index += 1) {
+            const desktopId = desktopIds[index];
+            if (typeof desktopId !== "string" || desktopId.length === 0) {
+                return null;
+            }
+            copiedDesktopIds.push(desktopId);
+        }
+
+        return {
+            desktopIds: copiedDesktopIds,
+            layout: {
+                cardHeight: overviewSpatialLayout.cardHeight,
+                contentHeight: overviewSpatialLayout.contentHeight,
+                edgeMargin: overviewSpatialLayout.edgeMargin,
+                gap: overviewSpatialLayout.gap
+            },
+            sceneHeight: height
+        };
+    }
+
+    function captureSpatialViewportSnapshot() {
+        const geometry = currentSpatialViewportGeometry();
+        if (!geometry || !Number.isFinite(spatialContentY) || spatialContentY < 0
+                || spatialContentY > geometry.layout.contentHeight - geometry.sceneHeight) {
+            return false;
+        }
+
+        spatialViewportSnapshot = {
+            contentY: spatialContentY,
+            desktopIds: geometry.desktopIds,
+            layout: geometry.layout,
+            sceneHeight: geometry.sceneHeight
+        };
+        return true;
+    }
+
+    function planSpatialViewportAnchor(previousSnapshot, nextGeometry) {
+        const runtime = OverviewRuntime.DriftileOverview;
+        if (!runtime || typeof runtime.planOverviewSpatialViewportAnchor !== "function") {
+            return null;
+        }
+
+        let plan = null;
+        try {
+            plan = runtime.planOverviewSpatialViewportAnchor({
+                                                                 nextDesktopIds: nextGeometry.desktopIds,
+                                                                 nextLayout: nextGeometry.layout,
+                                                                 nextSceneHeight: nextGeometry.sceneHeight,
+                                                                 previousContentY: previousSnapshot.contentY,
+                                                                 previousDesktopIds: previousSnapshot.desktopIds,
+                                                                 previousLayout: previousSnapshot.layout,
+                                                                 previousSceneHeight: previousSnapshot.sceneHeight
+                                                             });
+        } catch (error) {
+            return null;
+        }
+
+        return spatialViewportAnchorPlanIsValid(plan, nextGeometry) ? plan : null;
+    }
+
+    function spatialViewportAnchorPlanIsValid(plan, nextGeometry) {
+        if (!spatialViewportPlanIsValid(plan) || !nextGeometry || !nextGeometry.desktopIds
+                || !Number.isInteger(plan.anchorWorkspaceIndex)
+                || plan.anchorWorkspaceIndex < 0
+                || plan.anchorWorkspaceIndex >= nextGeometry.desktopIds.length
+                || typeof plan.anchorDesktopId !== "string"
+                || plan.anchorDesktopId !== nextGeometry.desktopIds[plan.anchorWorkspaceIndex]
+                || !Number.isFinite(plan.anchorOffsetFraction)
+                || plan.anchorOffsetFraction < -0.5 || plan.anchorOffsetFraction > 0.5) {
+            return false;
+        }
+
+        return true;
     }
 
     function resetSpatialViewport() {
@@ -1249,7 +1349,7 @@ Rectangle {
             return;
         }
 
-        overviewWheelRemainder = 0;
+        resetOverviewWheelState();
         desktopReorderActive = true;
         desktopReorderCardGap = cardGap;
         desktopReorderCardHeight = cardHeight;
@@ -1716,7 +1816,7 @@ Rectangle {
             }
             if (spatialViewportDragHandler.active || spatialWindowDragSource !== null
                     || desktopReorderActive) {
-                overviewWheelRemainder = 0;
+                resetOverviewWheelState();
                 event.accepted = true;
                 return;
             }
@@ -1745,6 +1845,7 @@ Rectangle {
             return false;
         }
 
+        overviewWheelPixelRemainder = plan.pixelRemainder;
         overviewWheelRemainder = 0;
         return true;
     }
@@ -1758,11 +1859,15 @@ Rectangle {
         if (!spatialWorkspaceWheelPlanIsValid(plan) || !spatialWheelPresentationIsExact()) {
             return false;
         }
-        if (plan.steps > 0 && !requestSpatialWheelWorkspace(plan.direction, plan.steps)) {
-            return false;
+        if (plan.steps > 0) {
+            if (!requestSpatialWheelWorkspace(plan.direction, plan.steps)) {
+                return false;
+            }
+            resetOverviewWheelState();
+        } else {
+            overviewWheelPixelRemainder = 0;
+            overviewWheelRemainder = plan.remainder;
         }
-
-        overviewWheelRemainder = plan.remainder;
         return true;
     }
 
@@ -1788,6 +1893,7 @@ Rectangle {
             return false;
         }
 
+        overviewWheelPixelRemainder = 0;
         overviewWheelRemainder = plan.remainder;
         for (let step = 0; step < plan.steps; step += 1) {
             navigateKeyboardSequence(plan.direction);
@@ -1807,6 +1913,7 @@ Rectangle {
                                                         contentHeight: overviewSpatialLayout.contentHeight,
                                                         contentY: spatialContentY,
                                                         pixelDeltaY,
+                                                        pixelRemainder: overviewWheelPixelRemainder,
                                                         remainder: overviewWheelRemainder,
                                                         sceneHeight: height
                                                     });
@@ -1816,16 +1923,29 @@ Rectangle {
     }
 
     function spatialViewportWheelPlanIsValid(plan, pixelDeltaY) {
+        const accumulatedPixelDelta = overviewWheelPixelRemainder !== 0
+            && Math.sign(overviewWheelPixelRemainder) !== Math.sign(pixelDeltaY)
+            ? pixelDeltaY : overviewWheelPixelRemainder + pixelDeltaY;
+        const quantizedPixelDelta = Math.trunc(accumulatedPixelDelta * 64) / 64;
         const expectedContentY = Math.min(overviewSpatialLayout.contentHeight - height,
-                                          Math.max(0, spatialContentY - pixelDeltaY));
+                                          Math.max(0, spatialContentY - quantizedPixelDelta));
+        const reachedBoundary = (accumulatedPixelDelta > 0 && expectedContentY === 0)
+            || (accumulatedPixelDelta < 0
+                && expectedContentY === overviewSpatialLayout.contentHeight - height);
+        const expectedPixelRemainder = reachedBoundary
+            ? 0 : accumulatedPixelDelta - quantizedPixelDelta;
         return plan && !Array.isArray(plan) && plan.intent === "viewport"
-            && plan.remainder === 0 && plan.direction === undefined && plan.steps === undefined
-            && spatialWheelContentYIsValid(plan.contentY) && plan.contentY === expectedContentY;
+            && plan.remainder === 0 && Number.isFinite(plan.pixelRemainder)
+            && Math.abs(plan.pixelRemainder) < 1 / 64
+            && plan.direction === undefined && plan.steps === undefined
+            && spatialWheelContentYIsValid(plan.contentY) && plan.contentY === expectedContentY
+            && Math.abs(plan.pixelRemainder - expectedPixelRemainder) <= Number.EPSILON * 8;
     }
 
     function spatialWorkspaceWheelPlanIsValid(plan) {
         return plan && !Array.isArray(plan) && plan.intent === "workspace"
             && spatialWheelContentYIsValid(plan.contentY) && plan.contentY === spatialContentY
+            && plan.pixelRemainder === 0
             && spatialWorkspaceWheelPlanShapeIsValid(plan);
     }
 
@@ -1839,6 +1959,11 @@ Rectangle {
     function spatialWheelContentYIsValid(contentY) {
         return Number.isFinite(contentY) && contentY >= 0
             && contentY <= overviewSpatialLayout.contentHeight - height;
+    }
+
+    function resetOverviewWheelState() {
+        overviewWheelPixelRemainder = 0;
+        overviewWheelRemainder = 0;
     }
 
     function spatialWheelPresentationIsExact() {

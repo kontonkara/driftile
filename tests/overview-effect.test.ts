@@ -1410,6 +1410,7 @@ describe("overview effect package", () => {
     );
 
     expect(overviewRuntimeIndex).toContain("planOverviewSpatialViewport");
+    expect(overviewRuntimeIndex).toContain("planOverviewSpatialViewportAnchor");
     expect(overviewRuntimeIndex).toContain(
       "planOverviewSpatialWorkspaceCenter",
     );
@@ -1439,13 +1440,13 @@ describe("overview effect package", () => {
       /function resetSpatialViewport\(\)[\s\S]*planSpatialViewport\(overviewSpatialLayout\.initialContentY\)[\s\S]*spatialContentY = plan\.contentY/u,
     );
     expect(scene).toContain(
-      "onOverviewSpatialLayoutChanged: root.refreshOverviewSpatialSession()",
+      "onOverviewSpatialLayoutChanged: root.refreshOverviewSpatialSession(true)",
     );
     expect(scene).toContain(
-      "onOverviewModelChanged: root.refreshOverviewSpatialSession()",
+      "onOverviewModelChanged: root.refreshOverviewSpatialSession(true)",
     );
     expect(scene).toContain(
-      "onCurrentDesktopChanged: root.refreshOverviewSpatialSession()",
+      "onCurrentDesktopChanged: root.refreshOverviewSpatialSession(false)",
     );
     expect(scene).toMatch(
       /Component\.onCompleted:[\s\S]*resetOverviewSession\(\);[\s\S]*forceActiveFocus\(\);/u,
@@ -1454,10 +1455,10 @@ describe("overview effect package", () => {
       /function onActiveChanged\(\) \{\s*root\.resetOverviewSession\(\);/u,
     );
     expect(sessionReset).toMatch(
-      /function resetOverviewSession\(\)[\s\S]*keyboardSelectionId = "";[\s\S]*keyboardHelpVisible = false;[\s\S]*searchQuery = "";[\s\S]*refreshOverviewSpatialSession\(\);/u,
+      /function resetOverviewSession\(\)[\s\S]*keyboardSelectionId = "";[\s\S]*keyboardHelpVisible = false;[\s\S]*searchQuery = "";[\s\S]*spatialViewportSnapshot = null;[\s\S]*refreshOverviewSpatialSession\(false\);/u,
     );
     expect(spatialSessionRefresh).toMatch(
-      /function refreshOverviewSpatialSession\(\)[\s\S]*cancelKeyboardBoundaryNavigation\(\);/u,
+      /function refreshOverviewSpatialSession\(preserveViewport\)[\s\S]*cancelKeyboardBoundaryNavigation\(\);/u,
     );
     expect(spatialSessionRefresh).toMatch(
       /navigationTargetForId\(collectNavigationTargets\(\), keyboardSelectionId\)[\s\S]*selectedDesktopId = selectedTarget\.desktopId;/u,
@@ -1466,19 +1467,25 @@ describe("overview effect package", () => {
       /searchResultCount = 0;[\s\S]*searchResultCountsByDesktop = Object\.create\(null\);[\s\S]*searchResultOrdinalsByTarget = Object\.create\(null\);/u,
     );
     expect(spatialSessionRefresh).toMatch(
-      /overviewWheelRemainder = 0;[\s\S]*spatialViewportInput\.panLayout = null;[\s\S]*spatialViewportInput\.panStartContentY = 0;/u,
+      /resetOverviewWheelState\(\);[\s\S]*spatialViewportInput\.panLayout = null;[\s\S]*spatialViewportInput\.panStartContentY = 0;/u,
     );
     expect(spatialSessionRefresh).toMatch(
       /resetDesktopReorder\(\);[\s\S]*resetSpatialEdgePanTracking\(\);/u,
     );
     expect(spatialSessionRefresh).toMatch(
-      /sceneEffect && sceneEffect\.active === true[\s\S]*resetSpatialViewport\(\);[\s\S]*Qt\.callLater\(root\.repairKeyboardSelection\);[\s\S]*spatialContentY = 0;/u,
+      /sceneEffect && sceneEffect\.active === true[\s\S]*planSpatialViewportAnchor\(previousViewportSnapshot, nextViewportGeometry\)[\s\S]*spatialContentY = anchorPlan\.contentY;[\s\S]*resetSpatialViewport\(\);[\s\S]*captureSpatialViewportSnapshot\(\);[\s\S]*Qt\.callLater\(root\.repairKeyboardSelection\);[\s\S]*spatialContentY = 0;[\s\S]*spatialViewportSnapshot = null;/u,
     );
     expect(spatialSessionRefresh).toMatch(
       /desktopIds\.indexOf\(selectedDesktopId\)[\s\S]*planSpatialWorkspaceCenter\(selectedWorkspaceIndex\)[\s\S]*spatialContentY = selectionPlan\.contentY;/u,
     );
     expect(spatialSessionRefresh).not.toMatch(
       /keyboardSelectionId = ""|keyboardHelpVisible = false|searchQuery = ""/u,
+    );
+    expect(spatialSessionRefresh).toMatch(
+      /runtime\.planOverviewSpatialViewportAnchor\(\{[\s\S]*nextDesktopIds: nextGeometry\.desktopIds,[\s\S]*previousContentY: previousSnapshot\.contentY,[\s\S]*previousDesktopIds: previousSnapshot\.desktopIds/u,
+    );
+    expect(spatialSessionRefresh).toContain(
+      "plan.anchorDesktopId !== nextGeometry.desktopIds[plan.anchorWorkspaceIndex]",
     );
 
     expect(scene).toContain(
@@ -2685,6 +2692,7 @@ describe("overview effect package", () => {
       scene.indexOf("function spatialWorkspaceWheelTargetPlanIsValid("),
     );
 
+    expect(scene).toContain("property real overviewWheelPixelRemainder: 0");
     expect(scene).toContain("property int overviewWheelRemainder: 0");
     expect(wheelHandler).toMatch(
       /target: null[\s\S]*acceptedDevices: PointerDevice\.Mouse \| PointerDevice\.TouchPad[\s\S]*acceptedModifiers: Qt\.NoModifier[\s\S]*orientation: Qt\.Vertical[\s\S]*onWheel: event => root\.handleOverviewWheel\(event\)/u,
@@ -2693,13 +2701,13 @@ describe("overview effect package", () => {
     expect(wheelNavigation).toContain("event.modifiers !== Qt.NoModifier");
     expect(wheelNavigation).toContain("keyboardHelpVisible");
     expect(scene).toContain(
-      "onKeyboardHelpVisibleChanged: overviewWheelRemainder = 0",
+      "onKeyboardHelpVisibleChanged: root.resetOverviewWheelState()",
     );
-    expect(scene).toContain(
-      "onSpatialContentYChanged: overviewWheelRemainder = 0",
+    expect(scene).toMatch(
+      /onSpatialContentYChanged: \{\s*root\.resetOverviewWheelState\(\);\s*root\.captureSpatialViewportSnapshot\(\);\s*\}/u,
     );
     expect(wheelNavigation).toMatch(
-      /spatialViewportDragHandler\.active \|\| spatialWindowDragSource !== null[\s\S]*\|\| desktopReorderActive[\s\S]*overviewWheelRemainder = 0;[\s\S]*event\.accepted = true;[\s\S]*return;/u,
+      /spatialViewportDragHandler\.active \|\| spatialWindowDragSource !== null[\s\S]*\|\| desktopReorderActive[\s\S]*resetOverviewWheelState\(\);[\s\S]*event\.accepted = true;[\s\S]*return;/u,
     );
     expect(
       wheelNavigation.indexOf("if (spatialViewportDragHandler.active"),
@@ -2711,12 +2719,12 @@ describe("overview effect package", () => {
       'typeof runtime.planOverviewSpatialWheel !== "function"',
     );
     expect(wheelNavigation).toMatch(
-      /runtime\.planOverviewSpatialWheel\(\{[\s\S]*angleDeltaY,[\s\S]*contentHeight: overviewSpatialLayout\.contentHeight,[\s\S]*contentY: spatialContentY,[\s\S]*pixelDeltaY,[\s\S]*remainder: overviewWheelRemainder,[\s\S]*sceneHeight: height/u,
+      /runtime\.planOverviewSpatialWheel\(\{[\s\S]*angleDeltaY,[\s\S]*contentHeight: overviewSpatialLayout\.contentHeight,[\s\S]*contentY: spatialContentY,[\s\S]*pixelDeltaY,[\s\S]*pixelRemainder: overviewWheelPixelRemainder,[\s\S]*remainder: overviewWheelRemainder,[\s\S]*sceneHeight: height/u,
     );
     expect(wheelNavigation).toContain('plan.intent === "viewport"');
     expect(wheelNavigation).toContain('plan.intent === "workspace"');
     expect(wheelNavigation).toMatch(
-      /function handleSpatialViewportWheel[\s\S]*setSpatialContentY\(plan\.contentY\)[\s\S]*overviewWheelRemainder = 0;[\s\S]*return true;/u,
+      /function handleSpatialViewportWheel[\s\S]*setSpatialContentY\(plan\.contentY\)[\s\S]*overviewWheelPixelRemainder = plan\.pixelRemainder;[\s\S]*overviewWheelRemainder = 0;[\s\S]*return true;/u,
     );
     expect(wheelNavigation).toContain(
       "runtime.planOverviewWheelNavigation(overviewWheelRemainder,",
@@ -2761,16 +2769,22 @@ describe("overview effect package", () => {
       "planOverviewSpatialWorkspaceWheelTarget",
     );
     expect(scene).toMatch(
-      /function refreshOverviewSpatialSession\(\)[\s\S]*overviewWheelRemainder = 0;/u,
+      /function refreshOverviewSpatialSession\(preserveViewport\)[\s\S]*resetOverviewWheelState\(\);/u,
     );
     expect(scene).toMatch(
-      /DragHandler \{[\s\S]*id: spatialViewportDragHandler[\s\S]*onActiveChanged: \{[\s\S]*if \(active\) \{\s*root\.overviewWheelRemainder = 0;/u,
+      /DragHandler \{[\s\S]*id: spatialViewportDragHandler[\s\S]*onActiveChanged: \{[\s\S]*if \(active\) \{\s*root\.resetOverviewWheelState\(\);/u,
     );
     expect(scene).toMatch(
-      /function beginWindowSpatialEdgePan\([\s\S]*overviewWheelRemainder = 0;\s*spatialWindowDragSource = source;/u,
+      /function beginWindowSpatialEdgePan\([\s\S]*resetOverviewWheelState\(\);\s*spatialWindowDragSource = source;/u,
     );
     expect(scene).toMatch(
-      /function beginDesktopReorder\([\s\S]*overviewWheelRemainder = 0;\s*desktopReorderActive = true;/u,
+      /function beginDesktopReorder\([\s\S]*resetOverviewWheelState\(\);\s*desktopReorderActive = true;/u,
+    );
+    expect(wheelNavigation).toMatch(
+      /function resetOverviewWheelState\(\) \{\s*overviewWheelPixelRemainder = 0;\s*overviewWheelRemainder = 0;\s*\}/u,
+    );
+    expect(wheelNavigation).toMatch(
+      /if \(plan\.steps > 0\)[\s\S]*requestSpatialWheelWorkspace\(plan\.direction, plan\.steps\)[\s\S]*resetOverviewWheelState\(\);[\s\S]*else \{[\s\S]*overviewWheelRemainder = plan\.remainder;/u,
     );
     expect(`${wheelHandler}\n${wheelNavigation}`).not.toMatch(
       /candidate\.[A-Za-z0-9_]+\s*=(?!=)|overviewModel\.[A-Za-z0-9_]+\s*=(?!=)|\bTimer\s*\{|\.setValue\s*\(/u,
@@ -3027,7 +3041,7 @@ describe("overview effect package", () => {
       "readonly property bool searchQueryValid: searchQueryPlan !== null",
     );
     expect(scene).toMatch(
-      /onSearchQueryChanged: \{\s*overviewWheelRemainder = 0;\s*cancelKeyboardBoundaryNavigation\(\);\s*Qt\.callLater\(root\.repairKeyboardSelection\);\s*\}/u,
+      /onSearchQueryChanged: \{\s*resetOverviewWheelState\(\);\s*cancelKeyboardBoundaryNavigation\(\);\s*Qt\.callLater\(root\.repairKeyboardSelection\);\s*\}/u,
     );
     expect(keyHandler).toContain("event.key === Qt.Key_Backspace");
     expect(keyHandler).toContain("root.removeLastSearchCharacter()");

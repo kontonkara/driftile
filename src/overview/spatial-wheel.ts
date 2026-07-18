@@ -5,6 +5,7 @@ export interface OverviewSpatialWheelInput {
   readonly contentHeight: number;
   readonly contentY: number;
   readonly pixelDeltaY: number;
+  readonly pixelRemainder?: number;
   readonly remainder: number;
   readonly sceneHeight: number;
 }
@@ -15,6 +16,7 @@ export interface OverviewSpatialWorkspaceWheelPlan {
   readonly contentY: number;
   readonly direction: OverviewSpatialWheelDirection | null;
   readonly intent: "workspace";
+  readonly pixelRemainder: 0;
   readonly remainder: number;
   readonly steps: number;
 }
@@ -22,6 +24,7 @@ export interface OverviewSpatialWorkspaceWheelPlan {
 export interface OverviewSpatialViewportWheelPlan {
   readonly contentY: number;
   readonly intent: "viewport";
+  readonly pixelRemainder: number;
   readonly remainder: 0;
 }
 
@@ -47,6 +50,8 @@ const MAXIMUM_ANGLE_DELTA_CONTRIBUTION =
 const MAXIMUM_ANGLE_DELTA_INPUT = 1_000_000;
 const MAXIMUM_PIXEL_DELTA_PER_EVENT = 4_096;
 const MAXIMUM_COORDINATE = Number.MAX_SAFE_INTEGER;
+const PIXEL_SCROLL_QUANTA_PER_UNIT = 64;
+const PIXEL_SCROLL_QUANTUM = 1 / PIXEL_SCROLL_QUANTA_PER_UNIT;
 
 export function planOverviewSpatialWheel(
   input: unknown,
@@ -60,6 +65,9 @@ export function planOverviewSpatialWheel(
     const contentHeight = input["contentHeight"];
     const contentY = input["contentY"];
     const pixelDeltaY = input["pixelDeltaY"];
+    const pixelRemainderValue = input["pixelRemainder"];
+    const pixelRemainder =
+      pixelRemainderValue === undefined ? 0 : pixelRemainderValue;
     const remainder = input["remainder"];
     const sceneHeight = input["sceneHeight"];
 
@@ -70,6 +78,7 @@ export function planOverviewSpatialWheel(
       !isCoordinate(contentY) ||
       !isAngleDelta(angleDeltaY) ||
       !isPixelDelta(pixelDeltaY) ||
+      !isPixelRemainder(pixelRemainder) ||
       !isRemainder(remainder)
     ) {
       return null;
@@ -79,9 +88,26 @@ export function planOverviewSpatialWheel(
     const boundedContentY = clamp(contentY, 0, maximumContentY);
 
     if (pixelDeltaY !== 0) {
+      const accumulatedPixelDelta = accumulateDirectionalRemainder(
+        pixelDeltaY,
+        pixelRemainder,
+      );
+      const quantizedPixelDelta = quantizePixelDelta(accumulatedPixelDelta);
+      const contentY = moveViewport(
+        boundedContentY,
+        maximumContentY,
+        quantizedPixelDelta,
+      );
+      const reachedBoundary =
+        (accumulatedPixelDelta > 0 && contentY === 0) ||
+        (accumulatedPixelDelta < 0 && contentY === maximumContentY);
+
       return Object.freeze({
-        contentY: moveViewport(boundedContentY, maximumContentY, pixelDeltaY),
+        contentY,
         intent: "viewport",
+        pixelRemainder: reachedBoundary
+          ? 0
+          : normalizeZero(accumulatedPixelDelta - quantizedPixelDelta),
         remainder: 0,
       });
     }
@@ -91,6 +117,7 @@ export function planOverviewSpatialWheel(
         contentY: normalizeZero(boundedContentY),
         direction: null,
         intent: "workspace",
+        pixelRemainder: 0,
         remainder: normalizeZero(remainder),
         steps: 0,
       });
@@ -101,10 +128,10 @@ export function planOverviewSpatialWheel(
       -MAXIMUM_ANGLE_DELTA_CONTRIBUTION,
       MAXIMUM_ANGLE_DELTA_CONTRIBUTION,
     );
-    const accumulated =
-      remainder !== 0 && Math.sign(remainder) !== Math.sign(boundedAngleDelta)
-        ? boundedAngleDelta
-        : remainder + boundedAngleDelta;
+    const accumulated = accumulateDirectionalRemainder(
+      boundedAngleDelta,
+      remainder,
+    );
     const steps = Math.min(
       Math.floor(Math.abs(accumulated) / ANGLE_DELTA_PER_STEP),
       MAXIMUM_STEPS_PER_EVENT,
@@ -116,12 +143,29 @@ export function planOverviewSpatialWheel(
       contentY: normalizeZero(boundedContentY),
       direction: steps === 0 ? null : accumulated > 0 ? "previous" : "next",
       intent: "workspace",
+      pixelRemainder: 0,
       remainder: normalizeZero(nextRemainder),
       steps,
     });
   } catch {
     return null;
   }
+}
+
+function accumulateDirectionalRemainder(
+  delta: number,
+  remainder: number,
+): number {
+  return remainder !== 0 && Math.sign(remainder) !== Math.sign(delta)
+    ? delta
+    : remainder + delta;
+}
+
+function quantizePixelDelta(value: number): number {
+  return normalizeZero(
+    Math.trunc(value * PIXEL_SCROLL_QUANTA_PER_UNIT) /
+      PIXEL_SCROLL_QUANTA_PER_UNIT,
+  );
 }
 
 export function planOverviewSpatialWorkspaceWheelTarget(
@@ -206,6 +250,14 @@ function isPixelDelta(value: unknown): value is number {
     typeof value === "number" &&
     Number.isFinite(value) &&
     Math.abs(value) <= MAXIMUM_PIXEL_DELTA_PER_EVENT
+  );
+}
+
+function isPixelRemainder(value: unknown): value is number {
+  return (
+    typeof value === "number" &&
+    Number.isFinite(value) &&
+    Math.abs(value) < PIXEL_SCROLL_QUANTUM
   );
 }
 
