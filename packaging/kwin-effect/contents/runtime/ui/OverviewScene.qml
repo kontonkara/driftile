@@ -260,7 +260,7 @@ Rectangle {
     WheelHandler {
         target: null
         enabled: !root.keyboardHelpVisible
-        acceptedDevices: PointerDevice.Mouse
+        acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
         acceptedModifiers: Qt.NoModifier
         orientation: Qt.Vertical
 
@@ -288,7 +288,7 @@ Rectangle {
 
             target: null
             acceptedButtons: Qt.LeftButton
-            acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad | PointerDevice.TouchScreen
+            acceptedDevices: PointerDevice.TouchPad | PointerDevice.TouchScreen
             acceptedModifiers: Qt.NoModifier
             grabPermissions: PointerHandler.TakeOverForbidden
             xAxis.enabled: false
@@ -1524,37 +1524,237 @@ Rectangle {
         if (!event) {
             return;
         }
-        event.accepted = false;
-        if (!sceneEffect || sceneEffect.active !== true || event.modifiers !== Qt.NoModifier
-                || !event.angleDelta || !Number.isFinite(event.angleDelta.y) || event.angleDelta.y === 0) {
+        try {
+            event.accepted = false;
+            if (keyboardHelpVisible || !sceneEffect || sceneEffect.active !== true
+                    || event.modifiers !== Qt.NoModifier || !event.pixelDelta || !event.angleDelta
+                    || !Number.isFinite(event.pixelDelta.y) || !Number.isFinite(event.angleDelta.y)) {
+                return;
+            }
+
+            const pixelDeltaY = event.pixelDelta.y;
+            const angleDeltaY = event.angleDelta.y;
+            if (pixelDeltaY === 0 && angleDeltaY === 0) {
+                return;
+            }
+
+            const handled = pixelDeltaY !== 0
+                ? handleSpatialViewportWheel(angleDeltaY, pixelDeltaY)
+                : searchQuery.length > 0
+                    ? handleSearchResultWheel(angleDeltaY)
+                    : handleSpatialWorkspaceWheel(angleDeltaY);
+            if (handled) {
+                event.accepted = true;
+            }
+        } catch (error) {
             return;
+        }
+    }
+
+    function handleSpatialViewportWheel(angleDeltaY, pixelDeltaY) {
+        if (!spatialWheelPresentationIsExact()) {
+            return false;
+        }
+
+        const plan = planSpatialWheel(angleDeltaY, pixelDeltaY);
+        if (!spatialViewportWheelPlanIsValid(plan, pixelDeltaY) || !spatialWheelPresentationIsExact()
+                || !setSpatialContentY(plan.contentY) || spatialContentY !== plan.contentY) {
+            return false;
+        }
+
+        overviewWheelRemainder = 0;
+        return true;
+    }
+
+    function handleSpatialWorkspaceWheel(angleDeltaY) {
+        if (!spatialWheelPresentationIsExact()) {
+            return false;
+        }
+
+        const plan = planSpatialWheel(angleDeltaY, 0);
+        if (!spatialWorkspaceWheelPlanIsValid(plan) || !spatialWheelPresentationIsExact()) {
+            return false;
+        }
+        if (plan.steps > 0 && !requestSpatialWheelWorkspace(plan.direction, plan.steps)) {
+            return false;
+        }
+
+        overviewWheelRemainder = plan.remainder;
+        return true;
+    }
+
+    function handleSearchResultWheel(angleDeltaY) {
+        const expectedSearchQuery = searchQuery;
+        if (expectedSearchQuery.length === 0 || !spatialWheelPresentationIsExact()) {
+            return false;
         }
 
         const runtime = OverviewRuntime.DriftileOverview;
         if (!runtime || typeof runtime.planOverviewWheelNavigation !== "function") {
-            return;
+            return false;
         }
 
         let plan = null;
         try {
-            plan = runtime.planOverviewWheelNavigation(overviewWheelRemainder,
-                                                       event.angleDelta.y);
+            plan = runtime.planOverviewWheelNavigation(overviewWheelRemainder, angleDeltaY);
         } catch (error) {
-            return;
+            return false;
         }
-        if (!plan || !Number.isInteger(plan.remainder) || Math.abs(plan.remainder) >= 120
-                || !Number.isInteger(plan.steps) || plan.steps < 0
-                || plan.steps > 4
-                || (plan.steps === 0 ? plan.direction !== null
-                                     : plan.direction !== "next" && plan.direction !== "previous")) {
-            return;
+        if (!spatialWorkspaceWheelPlanShapeIsValid(plan)
+                || searchQuery !== expectedSearchQuery || !spatialWheelPresentationIsExact()) {
+            return false;
         }
 
         overviewWheelRemainder = plan.remainder;
         for (let step = 0; step < plan.steps; step += 1) {
             navigateKeyboardSequence(plan.direction);
         }
-        event.accepted = true;
+        return true;
+    }
+
+    function planSpatialWheel(angleDeltaY, pixelDeltaY) {
+        const runtime = OverviewRuntime.DriftileOverview;
+        if (!runtime || typeof runtime.planOverviewSpatialWheel !== "function") {
+            return null;
+        }
+
+        try {
+            return runtime.planOverviewSpatialWheel({
+                                                        angleDeltaY,
+                                                        contentHeight: overviewSpatialLayout.contentHeight,
+                                                        contentY: spatialContentY,
+                                                        pixelDeltaY,
+                                                        remainder: overviewWheelRemainder,
+                                                        sceneHeight: height
+                                                    });
+        } catch (error) {
+            return null;
+        }
+    }
+
+    function spatialViewportWheelPlanIsValid(plan, pixelDeltaY) {
+        const expectedContentY = Math.min(overviewSpatialLayout.contentHeight - height,
+                                          Math.max(0, spatialContentY - pixelDeltaY));
+        return plan && !Array.isArray(plan) && plan.intent === "viewport"
+            && plan.remainder === 0 && plan.direction === undefined && plan.steps === undefined
+            && spatialWheelContentYIsValid(plan.contentY) && plan.contentY === expectedContentY;
+    }
+
+    function spatialWorkspaceWheelPlanIsValid(plan) {
+        return plan && !Array.isArray(plan) && plan.intent === "workspace"
+            && spatialWheelContentYIsValid(plan.contentY) && plan.contentY === spatialContentY
+            && spatialWorkspaceWheelPlanShapeIsValid(plan);
+    }
+
+    function spatialWorkspaceWheelPlanShapeIsValid(plan) {
+        return plan && Number.isInteger(plan.remainder) && Math.abs(plan.remainder) < 120
+            && Number.isInteger(plan.steps) && plan.steps >= 0 && plan.steps <= 4
+            && (plan.steps === 0 ? plan.direction === null
+                                : plan.direction === "next" || plan.direction === "previous");
+    }
+
+    function spatialWheelContentYIsValid(contentY) {
+        return Number.isFinite(contentY) && contentY >= 0
+            && contentY <= overviewSpatialLayout.contentHeight - height;
+    }
+
+    function spatialWheelPresentationIsExact() {
+        try {
+            const effect = sceneEffect;
+            const model = overviewModel;
+            const liveDesktop = currentDesktop;
+            const expectedDesktopId = liveDesktop && liveDesktop.id !== undefined && liveDesktop.id !== null
+                ? String(liveDesktop.id) : "";
+            return effect && effect.active === true && effect.overviewModel === model
+                && model && targetScreen && outputId.length > 0
+                && expectedDesktopId.length > 0 && spatialLayoutIsValid(overviewSpatialLayout)
+                && currentWorkspaceIndex >= 0 && currentWorkspaceIndex < desktopIds.length
+                && desktopIds[currentWorkspaceIndex] === expectedDesktopId
+                && spatialWheelContentYIsValid(spatialContentY);
+        } catch (error) {
+            return false;
+        }
+    }
+
+    function requestSpatialWheelWorkspace(direction, steps) {
+        const effect = sceneEffect;
+        const model = overviewModel;
+        const liveScreen = liveScreenFor(targetScreen);
+        const expectedOutput = projectedOutput(model, liveScreen);
+        const expectedOutputId = expectedOutput ? String(expectedOutput.outputId) : "";
+        const expectedDesktopIds = desktopIds;
+        const sourceDesktop = currentDesktop;
+        const sourceDesktopId = sourceDesktop && sourceDesktop.id !== undefined && sourceDesktop.id !== null
+            ? String(sourceDesktop.id) : "";
+        const sourceIndex = currentWorkspaceIndex;
+        if (!spatialWheelPresentationIsExact() || sourceIndex < 0
+                || expectedDesktopIds[sourceIndex] !== sourceDesktopId) {
+            return false;
+        }
+
+        const runtime = OverviewRuntime.DriftileOverview;
+        if (!runtime || typeof runtime.planOverviewSpatialWorkspaceWheelTarget !== "function") {
+            return false;
+        }
+
+        let targetPlan = null;
+        try {
+            targetPlan = runtime.planOverviewSpatialWorkspaceWheelTarget({
+                                                                            currentIndex: sourceIndex,
+                                                                            direction,
+                                                                            steps,
+                                                                            workspaceCount: expectedDesktopIds.length
+                                                                        });
+        } catch (error) {
+            return false;
+        }
+        if (!spatialWorkspaceWheelTargetPlanIsValid(targetPlan, sourceIndex, direction, steps,
+                                                    expectedDesktopIds.length)
+                || desktopIds !== expectedDesktopIds || currentDesktop !== sourceDesktop
+                || currentWorkspaceIndex !== sourceIndex || !spatialWheelPresentationIsExact()) {
+            return false;
+        }
+        if (targetPlan.appliedSteps === 0) {
+            return targetPlan.targetIndex === sourceIndex;
+        }
+
+        const targetDesktopId = expectedDesktopIds[targetPlan.targetIndex];
+        if (typeof targetDesktopId !== "string" || targetDesktopId.length === 0) {
+            return false;
+        }
+        const targetDesktop = liveDesktopFor(desktopForId(targetDesktopId), targetDesktopId);
+        if (!desktopContextIsExact(effect, model, liveScreen, expectedOutput, expectedOutputId,
+                                   sourceDesktop, sourceDesktopId)
+                || !desktopContextIsExact(effect, model, liveScreen, expectedOutput, expectedOutputId,
+                                          targetDesktop, targetDesktopId)
+                || !requestDesktopSelection(effect, model, liveScreen, expectedOutput, expectedOutputId,
+                                            targetDesktop, targetDesktopId)) {
+            return false;
+        }
+
+        const selectionConfirmed = sceneEffect === effect && effect.active === true && overviewModel === model
+            && currentDesktop === targetDesktop && currentWorkspaceIndex === targetPlan.targetIndex
+            && desktopIds === expectedDesktopIds;
+        if (!selectionConfirmed) {
+            return false;
+        }
+
+        keyboardSelectionId = "";
+        Qt.callLater(root.repairKeyboardSelection);
+        return true;
+    }
+
+    function spatialWorkspaceWheelTargetPlanIsValid(plan, sourceIndex, direction, steps, workspaceCount) {
+        if (!plan || Array.isArray(plan) || !Number.isInteger(plan.targetIndex)
+                || plan.targetIndex < 0 || plan.targetIndex >= workspaceCount
+                || !Number.isInteger(plan.appliedSteps) || plan.appliedSteps < 0
+                || plan.appliedSteps > steps
+                || plan.appliedSteps !== Math.abs(plan.targetIndex - sourceIndex)) {
+            return false;
+        }
+
+        return direction === "previous" ? plan.targetIndex <= sourceIndex
+                                        : direction === "next" && plan.targetIndex >= sourceIndex;
     }
 
     function activateKeyboardSelection() {

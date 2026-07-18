@@ -58,6 +58,19 @@ export type {
   OverviewSpatialViewportPlan,
   OverviewSpatialWorkspaceCenterInput,
 } from "./spatial-viewport";
+export {
+  planOverviewSpatialWheel,
+  planOverviewSpatialWorkspaceWheelTarget,
+} from "./spatial-wheel";
+export type {
+  OverviewSpatialViewportWheelPlan,
+  OverviewSpatialWheelDirection,
+  OverviewSpatialWheelInput,
+  OverviewSpatialWheelPlan,
+  OverviewSpatialWorkspaceWheelPlan,
+  OverviewSpatialWorkspaceWheelTargetInput,
+  OverviewSpatialWorkspaceWheelTargetPlan,
+} from "./spatial-wheel";
 export { planOverviewSpatialEdgePan } from "./spatial-edge-pan";
 export type {
   OverviewSpatialEdgePanDirection,

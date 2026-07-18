@@ -1373,8 +1373,9 @@ describe("overview effect package", () => {
     expect(spatialInput).toContain("target: null");
     expect(spatialInput).toContain("acceptedButtons: Qt.LeftButton");
     expect(spatialInput).toContain(
-      "acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad | PointerDevice.TouchScreen",
+      "acceptedDevices: PointerDevice.TouchPad | PointerDevice.TouchScreen",
     );
+    expect(spatialInput).not.toContain("PointerDevice.Mouse");
     expect(spatialInput).toContain(
       "grabPermissions: PointerHandler.TakeOverForbidden",
     );
@@ -2474,7 +2475,7 @@ describe("overview effect package", () => {
     );
   });
 
-  it("cycles the current target set from bounded vertical mouse wheel input", () => {
+  it("routes bounded wheel and touchpad input through spatial intent", () => {
     const wheelHandlerStart = scene.indexOf("WheelHandler {");
     const wheelHandler = scene.slice(
       wheelHandlerStart,
@@ -2484,22 +2485,83 @@ describe("overview effect package", () => {
       scene.indexOf("function handleOverviewWheel("),
       scene.indexOf("function activateKeyboardSelection("),
     );
+    const wheelPresentationGuard = scene.slice(
+      scene.indexOf("function spatialWheelPresentationIsExact("),
+      scene.indexOf("function requestSpatialWheelWorkspace("),
+    );
+    const wheelWorkspaceSelection = scene.slice(
+      scene.indexOf("function requestSpatialWheelWorkspace("),
+      scene.indexOf("function spatialWorkspaceWheelTargetPlanIsValid("),
+    );
 
     expect(scene).toContain("property int overviewWheelRemainder: 0");
     expect(wheelHandler).toMatch(
-      /target: null[\s\S]*acceptedDevices: PointerDevice\.Mouse[\s\S]*acceptedModifiers: Qt\.NoModifier[\s\S]*orientation: Qt\.Vertical[\s\S]*onWheel: event => root\.handleOverviewWheel\(event\)/u,
+      /target: null[\s\S]*acceptedDevices: PointerDevice\.Mouse \| PointerDevice\.TouchPad[\s\S]*acceptedModifiers: Qt\.NoModifier[\s\S]*orientation: Qt\.Vertical[\s\S]*onWheel: event => root\.handleOverviewWheel\(event\)/u,
+    );
+    expect(wheelNavigation).toContain("event.accepted = false");
+    expect(wheelNavigation).toContain("event.modifiers !== Qt.NoModifier");
+    expect(wheelNavigation).toContain("keyboardHelpVisible");
+    expect(wheelNavigation).toMatch(
+      /const handled = pixelDeltaY !== 0[\s\S]*handleSpatialViewportWheel\(angleDeltaY, pixelDeltaY\)[\s\S]*searchQuery\.length > 0[\s\S]*handleSearchResultWheel\(angleDeltaY\)[\s\S]*handleSpatialWorkspaceWheel\(angleDeltaY\)/u,
+    );
+    expect(wheelNavigation).toContain(
+      'typeof runtime.planOverviewSpatialWheel !== "function"',
+    );
+    expect(wheelNavigation).toMatch(
+      /runtime\.planOverviewSpatialWheel\(\{[\s\S]*angleDeltaY,[\s\S]*contentHeight: overviewSpatialLayout\.contentHeight,[\s\S]*contentY: spatialContentY,[\s\S]*pixelDeltaY,[\s\S]*remainder: overviewWheelRemainder,[\s\S]*sceneHeight: height/u,
+    );
+    expect(wheelNavigation).toContain('plan.intent === "viewport"');
+    expect(wheelNavigation).toContain('plan.intent === "workspace"');
+    expect(wheelNavigation).toMatch(
+      /function handleSpatialViewportWheel[\s\S]*setSpatialContentY\(plan\.contentY\)[\s\S]*overviewWheelRemainder = 0;[\s\S]*return true;/u,
     );
     expect(wheelNavigation).toContain(
       "runtime.planOverviewWheelNavigation(overviewWheelRemainder,",
     );
     expect(wheelNavigation).toMatch(
-      /Math\.abs\(plan\.remainder\) >= 120[\s\S]*plan\.steps > 4[\s\S]*for \(let step = 0; step < plan\.steps; step \+= 1\)[\s\S]*navigateKeyboardSequence\(plan\.direction\)/u,
+      /function handleSearchResultWheel[\s\S]*for \(let step = 0; step < plan\.steps; step \+= 1\)[\s\S]*navigateKeyboardSequence\(plan\.direction\)/u,
+    );
+    expect(wheelNavigation).toContain(
+      'typeof runtime.planOverviewSpatialWorkspaceWheelTarget !== "function"',
+    );
+    expect(wheelNavigation).toMatch(
+      /runtime\.planOverviewSpatialWorkspaceWheelTarget\(\{[\s\S]*currentIndex: sourceIndex,[\s\S]*direction,[\s\S]*steps,[\s\S]*workspaceCount: expectedDesktopIds\.length/u,
+    );
+    expect(wheelNavigation).toContain(
+      "plan.appliedSteps !== Math.abs(plan.targetIndex - sourceIndex)",
+    );
+    expect(wheelNavigation).toContain(
+      'direction === "previous" ? plan.targetIndex <= sourceIndex',
+    );
+    expect(wheelNavigation).toContain("requestDesktopSelection(");
+    expect(wheelNavigation).toContain("effect.active === true");
+    expect(wheelWorkspaceSelection).toContain('keyboardSelectionId = ""');
+    expect(wheelWorkspaceSelection).toContain(
+      "Qt.callLater(root.repairKeyboardSelection)",
+    );
+    expect(wheelWorkspaceSelection.indexOf("selectionConfirmed")).toBeLessThan(
+      wheelWorkspaceSelection.indexOf('keyboardSelectionId = ""'),
+    );
+    expect(wheelPresentationGuard).not.toMatch(
+      /liveScreenFor|liveDesktopFor|projectedOutput|desktopContextIsExact|for\s*\(/u,
+    );
+    expect(wheelWorkspaceSelection).toContain(
+      "const liveScreen = liveScreenFor(targetScreen)",
+    );
+    expect(wheelWorkspaceSelection).toContain(
+      "const expectedOutput = projectedOutput(model, liveScreen)",
+    );
+    expect(wheelWorkspaceSelection).toContain("desktopContextIsExact(");
+    expect(wheelNavigation).not.toContain("deactivate()");
+    expect(overviewRuntimeIndex).toContain("planOverviewSpatialWheel");
+    expect(overviewRuntimeIndex).toContain(
+      "planOverviewSpatialWorkspaceWheelTarget",
     );
     expect(scene).toMatch(
       /function onActiveChanged\(\)[\s\S]*sceneEffect\.active !== true[\s\S]*root\.overviewWheelRemainder = 0;/u,
     );
     expect(`${wheelHandler}\n${wheelNavigation}`).not.toMatch(
-      /KWin\.|candidate\.[A-Za-z0-9_]+\s*=(?!=)|overviewModel\.[A-Za-z0-9_]+\s*=(?!=)|\bTimer\s*\{|\.setValue\s*\(/u,
+      /candidate\.[A-Za-z0-9_]+\s*=(?!=)|overviewModel\.[A-Za-z0-9_]+\s*=(?!=)|\bTimer\s*\{|\.setValue\s*\(/u,
     );
   });
 
@@ -3250,7 +3312,7 @@ describe("overview effect package", () => {
     );
     expect(selector).toContain("desktopContextIsExact(");
     expect(selector).toContain("requestDesktopSelection(");
-    expect(scene.match(/requestDesktopSelection\(/gu)).toHaveLength(3);
+    expect(scene.match(/requestDesktopSelection\(/gu)).toHaveLength(4);
 
     expect(liveScreenLookup).toContain(
       "for (const screen of KWin.Workspace.screens)",
