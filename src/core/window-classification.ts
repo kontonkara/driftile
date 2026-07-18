@@ -1,5 +1,7 @@
 const PICTURE_IN_PICTURE_WINDOW_ROLE = "pictureinpicture";
 
+export type PictureInPictureWindowRoleState = "match" | "other" | "unavailable";
+
 export function hasAutomaticFloatingRole(candidate: unknown): boolean {
   if (!isExternalObject(candidate)) {
     return false;
@@ -12,16 +14,36 @@ export function hasAutomaticFloatingRole(candidate: unknown): boolean {
       candidate["transient"] === true ||
       isExternalObject(candidate["transientFor"]) ||
       candidate["utility"] === true ||
-      isPictureInPictureWindowRole(candidate["windowRole"])
+      pictureInPictureWindowRoleState(candidate) === "match"
     );
   } catch {
     return false;
   }
 }
 
-function isPictureInPictureWindowRole(value: unknown): boolean {
+export function pictureInPictureWindowRoleState(
+  candidate: unknown,
+): PictureInPictureWindowRoleState {
+  if (!isExternalObject(candidate)) {
+    return "unavailable";
+  }
+
+  try {
+    return classifyPictureInPictureWindowRole(candidate["windowRole"]);
+  } catch {
+    return "unavailable";
+  }
+}
+
+function classifyPictureInPictureWindowRole(
+  value: unknown,
+): PictureInPictureWindowRoleState {
   if (typeof value !== "string") {
-    return false;
+    return "unavailable";
+  }
+
+  if (value.length === 0) {
+    return "unavailable";
   }
 
   const roleStart = value.lastIndexOf(":") + 1;
@@ -42,13 +64,15 @@ function isPictureInPictureWindowRole(value: unknown): boolean {
       tokenIndex >= PICTURE_IN_PICTURE_WINDOW_ROLE.length ||
       code !== PICTURE_IN_PICTURE_WINDOW_ROLE.charCodeAt(tokenIndex)
     ) {
-      return false;
+      return "other";
     }
 
     tokenIndex += 1;
   }
 
-  return tokenIndex === PICTURE_IN_PICTURE_WINDOW_ROLE.length;
+  return tokenIndex === PICTURE_IN_PICTURE_WINDOW_ROLE.length
+    ? "match"
+    : "other";
 }
 
 function isExternalObject(

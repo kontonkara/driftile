@@ -12477,6 +12477,7 @@ describe("RuntimeController", () => {
     const output = createOutput("DP-1", 0);
     const desktop = { id: "desktop-1" };
     const lateWindowRoleChanged = new Signal<[]>();
+    const pictureInPictureWindowRoleChanged = new Signal<[]>();
     const regular = createTrackedWindow("regular", output, desktop, {
       windowRole: "main",
       windowRoleChanged: lateWindowRoleChanged,
@@ -12517,6 +12518,7 @@ describe("RuntimeController", () => {
       desktop,
       {
         windowRole: "Toolkit:PictureInPicture",
+        windowRoleChanged: pictureInPictureWindowRoleChanged,
       },
     );
     const fixture = createWorkspace(
@@ -12621,6 +12623,13 @@ describe("RuntimeController", () => {
 
     fixture.workspace.activeWindow = pictureInPicture.window;
     expect(controller.toggleFloating()).toBe(false);
+    Object.defineProperty(pictureInPicture.window, "windowRole", {
+      configurable: true,
+      value: "",
+    });
+    pictureInPictureWindowRoleChanged.emit();
+    expect(controller.managedCount).toBe(2);
+    expect(controller.automaticFloatingCount).toBe(8);
     const movedFrame = {
       ...pictureInPicture.window.frameGeometry,
       x: 540,
@@ -12632,6 +12641,13 @@ describe("RuntimeController", () => {
     });
     pictureInPicture.moveResizedChanged.emit();
     pictureInPicture.interactiveMoveResizeStarted.emit();
+    Object.defineProperty(pictureInPicture.window, "windowRole", {
+      configurable: true,
+      get: () => {
+        throw new Error("window role is temporarily unavailable");
+      },
+    });
+    pictureInPictureWindowRoleChanged.emit();
     pictureInPicture.setFrameGeometry(movedFrame);
     fixture.setCursorPosition(700, 510);
     Object.defineProperty(pictureInPicture.window, "move", {
@@ -12646,6 +12662,11 @@ describe("RuntimeController", () => {
     expect(controller.automaticFloatingCount).toBe(8);
     expect(pictureInPicture.window.frameGeometry).toEqual(movedFrame);
     expect(pictureInPicture.writeCount).toBe(0);
+    Object.defineProperty(pictureInPicture.window, "windowRole", {
+      configurable: true,
+      value: "Toolkit:PictureInPicture",
+    });
+    pictureInPictureWindowRoleChanged.emit();
 
     fixture.workspace.activeWindow = regular.window;
     expect(controller.toggleFloating()).toBe(true);
@@ -12688,6 +12709,36 @@ describe("RuntimeController", () => {
     expect(controller.automaticFloatingCount).toBe(9);
     expect(regular.window.frameGeometry).toEqual(lateRoleMovedFrame);
     expect(regular.writeCount).toBe(writesBeforeLateRole);
+
+    Object.defineProperty(pictureInPicture.window, "windowRole", {
+      configurable: true,
+      value: "main",
+    });
+    Object.defineProperty(pictureInPicture.window, "desktopFileName", {
+      configurable: true,
+      value: "org.mozilla.firefox.picture-in-picture.desktop",
+    });
+    pictureInPictureWindowRoleChanged.emit();
+
+    expect(controller.managedCount).toBe(2);
+    expect(controller.automaticFloatingCount).toBe(8);
+
+    Object.defineProperty(regular.window, "windowRole", {
+      configurable: true,
+      value: "",
+    });
+    lateWindowRoleChanged.emit();
+    expect(controller.automaticFloatingCount).toBe(8);
+
+    fixture.workspace.activeWindow = transientParent.window;
+    fixture.windowRemoved.emit(regular.window);
+    const replacement = createTrackedWindow("regular", output, desktop, {
+      windowRole: "",
+    });
+    fixture.windowAdded.emit(replacement.window);
+
+    expect(controller.managedCount).toBe(3);
+    expect(controller.automaticFloatingCount).toBe(7);
   });
 
   it("keeps matching applications outside layout ownership and persistence", () => {

@@ -110,6 +110,7 @@ import {
   type WindowHeightBounds,
   type WindowGeometry,
 } from "./core/geometry";
+import { pictureInPictureWindowRoleState } from "./core/window-classification";
 import {
   activityId,
   columnId,
@@ -1172,6 +1173,7 @@ export class RuntimeController {
   private applicationTilingExclusions: ApplicationTilingExclusions;
   private readonly automaticFloatingContextKeys = new Map<WindowId, string>();
   private readonly automaticFloatingWindows = new Set<WindowId>();
+  private readonly pictureInPictureRoleWindowIds = new Set<WindowId>();
   private readonly borderlessClaimBackoffs = new Set<WindowId>();
   private readonly borderlessHelperClaimBackoffs = new Map<string, string>();
   private readonly borderlessSettlementEnabled: boolean;
@@ -4611,6 +4613,7 @@ export class RuntimeController {
       this.dirtyContexts.clear();
       this.automaticFloatingContextKeys.clear();
       this.automaticFloatingWindows.clear();
+      this.pictureInPictureRoleWindowIds.clear();
       this.borderlessClaimBackoffs.clear();
       this.borderlessHelperClaimBackoffs.clear();
       this.borderSynchronizationIds.clear();
@@ -7639,10 +7642,19 @@ export class RuntimeController {
       this.pendingTabbedNormalizations.add(changedId);
     }
 
+    if (cause === "classification" && source) {
+      this.hasAutomaticFloatingRole(source);
+    }
+
     const applicationRuleIdentityChange =
       cause === "classification" && source
         ? this.trackWindowApplicationRuleIdentityChange(changedId, source)
         : null;
+    const automaticFloatingOwnershipChanged =
+      cause === "classification" && source
+        ? this.automaticFloatingWindows.has(changedId) !==
+          this.automaticFloatingOwnershipApplies(changedId, source)
+        : false;
 
     if (applicationRuleIdentityChange) {
       this.clearBorderlessHelperClaimBackoffsForApplications(
@@ -7655,6 +7667,7 @@ export class RuntimeController {
     if (
       source &&
       applicationRuleIdentityChange &&
+      !automaticFloatingOwnershipChanged &&
       !this.applicationRuleIdentityChangeRequiresLayout(
         changedId,
         source,
@@ -8084,6 +8097,7 @@ export class RuntimeController {
     this.transientResumeProbes.delete(managedId);
     this.automaticFloatingContextKeys.delete(managedId);
     this.automaticFloatingWindows.delete(managedId);
+    this.pictureInPictureRoleWindowIds.delete(managedId);
     this.floatingWindows.delete(managedId);
     this.floatingPositionAdmissionHistory.delete(managedId);
     this.initialDestinationOperations.delete(managedId);
@@ -29904,7 +29918,7 @@ export class RuntimeController {
   }
 
   private automaticallyFloats(source: KWinWindow): boolean {
-    if (hasAutomaticFloatingRole(source)) {
+    if (this.hasAutomaticFloatingRole(source)) {
       return true;
     }
 
@@ -29954,6 +29968,31 @@ export class RuntimeController {
     }
 
     return constraintState === FIXED_SIZE_CONSTRAINTS && !geometryBlocked;
+  }
+
+  private hasAutomaticFloatingRole(source: KWinWindow): boolean {
+    const id = windowId(String(source.internalId));
+    const liveSource = this.observer.source(id) === source;
+
+    if (liveSource && this.pictureInPictureRoleWindowIds.has(id)) {
+      const roleState = pictureInPictureWindowRoleState(source);
+
+      if (roleState !== "other") {
+        return true;
+      }
+
+      this.pictureInPictureRoleWindowIds.delete(id);
+    }
+
+    if (!hasAutomaticFloatingRole(source)) {
+      return false;
+    }
+
+    if (liveSource && pictureInPictureWindowRoleState(source) === "match") {
+      this.pictureInPictureRoleWindowIds.add(id);
+    }
+
+    return true;
   }
 
   private applicationTilingExclusionApplies(
