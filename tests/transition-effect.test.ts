@@ -1511,7 +1511,12 @@ describe("transition effect package", () => {
       geometry: { x: 340, y: 30, width: 300, height: 200 },
       visible: false,
     });
+    const followingWindow = createWindow({
+      geometry: { x: 660, y: 30, width: 300, height: 200 },
+      visible: false,
+    });
     harness.effects.windowAdded.emit(nextWindow);
+    harness.effects.windowAdded.emit(followingWindow);
     harness.effects.activeWindow = harness.window;
     harness.setFullScreenEffectActive(true);
 
@@ -1539,14 +1544,20 @@ describe("transition effect package", () => {
       width: 520,
       height: 320,
     });
-
     harness.effects.activeWindow = nextWindow;
     harness.effects.windowActivated.emit(nextWindow);
+    changeGeometry(followingWindow, {
+      x: 800,
+      y: 90,
+      width: 520,
+      height: 320,
+    });
     harness.setFullScreenEffectActive(false);
 
     expect(harness.animationRequests.map(({ window }) => window)).toEqual([
       harness.window,
       nextWindow,
+      followingWindow,
     ]);
     expect(harness.animationRequests[0]).toMatchObject({
       animations: [
@@ -1576,7 +1587,7 @@ describe("transition effect package", () => {
       height: 340,
     });
 
-    expect(harness.animationRequests).toHaveLength(2);
+    expect(harness.animationRequests).toHaveLength(3);
     expect(harness.retargetCalls.map(({ animationId }) => animationId)).toEqual(
       [1, 2, 3, 4],
     );
@@ -1590,7 +1601,7 @@ describe("transition effect package", () => {
       width: 560,
       height: 360,
     });
-    expect(harness.animationRequests).toHaveLength(2);
+    expect(harness.animationRequests).toHaveLength(3);
     expect(harness.retargetCalls).toHaveLength(4);
     expect(harness.cancelledAnimations).toEqual([3, 4]);
 
@@ -1601,7 +1612,7 @@ describe("transition effect package", () => {
       width: 560,
       height: 360,
     });
-    expect(harness.animationRequests).toHaveLength(2);
+    expect(harness.animationRequests).toHaveLength(3);
     expect(harness.retargetCalls).toHaveLength(4);
 
     const afterReleaseHarness = createHarness({

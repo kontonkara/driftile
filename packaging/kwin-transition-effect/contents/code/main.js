@@ -240,6 +240,7 @@ class DriftileTransitionsEffect {
       this.clearVisibilityHandoff();
       this.visibilityLeasedWindows.clear();
       this.continuityLeasedWindows.clear();
+      this.visibilityHandoffAnchor = effects.activeWindow;
       this.rememberVisibilityLease(effects.activeWindow);
       for (const window of this.activeAnimationWindows) {
         this.cancelWindowAnimation(window);
@@ -259,6 +260,17 @@ class DriftileTransitionsEffect {
   }
 
   onWindowActivated(window) {
+    if (
+      effects.hasActiveFullScreenEffect &&
+      window &&
+      window !== this.visibilityHandoffAnchor &&
+      this.isWindowInCurrentVisibilityContext(window)
+    ) {
+      this.visibilityHandoffTarget = window;
+      for (const deferredWindow of this.deferredWindows) {
+        this.rememberVisibilityLease(deferredWindow);
+      }
+    }
     this.captureVisibilityHandoffTarget(window);
     this.rememberVisibilityLease(window);
     if (this.deferredWindows.has(window)) {
@@ -433,7 +445,10 @@ class DriftileTransitionsEffect {
     }
 
     if (
-      effects.activeWindow === window &&
+      (effects.activeWindow === window ||
+        (effects.hasActiveFullScreenEffect &&
+          this.visibilityHandoffTarget !== null &&
+          window[DEFERRED_PROPERTY] !== undefined)) &&
       this.isWindowInCurrentVisibilityContext(window)
     ) {
       this.visibilityLeasedWindows.add(window);
