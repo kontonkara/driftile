@@ -7,10 +7,16 @@ QtObject {
     id: controller
 
     property bool active: false
+    property int activeSessionId: 0
     property bool loading: false
     property var overviewModel: null
     property int lastActivationAttemptId: 0
+    property int lastLiveRefreshAttemptId: 0
     property int pendingActivationAttemptId: 0
+    property int pendingLiveRefreshAttemptId: 0
+    property var pendingLiveRefreshModel: null
+    property int pendingLiveRefreshRetryCount: 0
+    property int pendingLiveRefreshSessionId: 0
     property bool touchpadGestureEnabled: false
     property int touchpadGestureFingerCount: 4
     readonly property var overviewDelegate: Qt.createComponent("OverviewScene.qml")
@@ -65,6 +71,21 @@ QtObject {
 
         function onCloseRequested() {
             controller.closeFromTouchpadGesture()
+        }
+    }
+
+    readonly property Connections workspaceWindowLifecycleConnection: Connections {
+        id: workspaceWindowLifecycleConnection
+
+        target: KWin.Workspace
+        ignoreUnknownSignals: true
+
+        function onWindowAdded() {
+            controller.requestLiveModelRefresh();
+        }
+
+        function onWindowRemoved() {
+            controller.requestLiveModelRefresh();
         }
     }
 
@@ -153,6 +174,8 @@ QtObject {
             : lastActivationAttemptId + 1;
         lastActivationAttemptId = attemptId;
         pendingActivationAttemptId = attemptId;
+        activeSessionId = 0;
+        clearPendingLiveModelRefresh();
         overviewModel = null;
         loading = true;
         layoutStateReader.sample(attemptId);
@@ -160,8 +183,10 @@ QtObject {
 
     function deactivate() {
         pendingActivationAttemptId = 0;
+        clearPendingLiveModelRefresh();
         layoutStateReader.cancel();
         active = false;
+        activeSessionId = 0;
         loading = false;
         overviewModel = null;
     }
@@ -185,14 +210,20 @@ QtObject {
         }
 
         pendingActivationAttemptId = 0;
+        clearPendingLiveModelRefresh();
         layoutStateReader.cancel();
         active = false;
+        activeSessionId = 0;
         loading = false;
         overviewModel = null;
         return true;
     }
 
     function acceptLayoutState(attemptId, document) {
+        if (pendingLiveRefreshAttemptId > 0 && attemptId === pendingLiveRefreshAttemptId) {
+            acceptLiveModelRefresh(attemptId, document);
+            return;
+        }
         if (!loading || active || attemptId <= 0 || attemptId !== pendingActivationAttemptId) {
             return;
         }
@@ -221,6 +252,7 @@ QtObject {
             }
 
             pendingActivationAttemptId = 0;
+            activeSessionId = attemptId;
             overviewModel = result.value;
             loading = false;
             active = true;
@@ -230,6 +262,10 @@ QtObject {
     }
 
     function rejectLayoutState(attemptId, reason) {
+        if (pendingLiveRefreshAttemptId > 0 && attemptId === pendingLiveRefreshAttemptId) {
+            rejectLiveModelRefresh(attemptId);
+            return;
+        }
         if (!loading || active || attemptId <= 0 || attemptId !== pendingActivationAttemptId) {
             return;
         }
@@ -243,6 +279,106 @@ QtObject {
         console.warn(`[driftile-overview] activation rejected reason=${reason}`);
         rejectionOsdCall.arguments = ["dialog-warning", "Could not open Driftile overview"];
         rejectionOsdCall.call();
+    }
+
+    function requestLiveModelRefresh() {
+        if (!active || loading || activeSessionId <= 0 || !overviewModel) {
+            return;
+        }
+
+        startLiveModelRefresh(0);
+    }
+
+    function startLiveModelRefresh(retryCount) {
+        if (!Number.isInteger(retryCount) || retryCount < 0 || retryCount > 1
+                || !active || loading || pendingActivationAttemptId !== 0
+                || activeSessionId <= 0 || !overviewModel) {
+            return false;
+        }
+
+        const sessionId = activeSessionId;
+        const expectedModel = overviewModel;
+        layoutStateReader.cancel();
+        clearPendingLiveModelRefresh();
+
+        const attemptId = lastLiveRefreshAttemptId >= 2147483647
+            ? 1
+            : lastLiveRefreshAttemptId + 1;
+        lastLiveRefreshAttemptId = attemptId;
+        pendingLiveRefreshModel = expectedModel;
+        pendingLiveRefreshRetryCount = retryCount;
+        pendingLiveRefreshSessionId = sessionId;
+        pendingLiveRefreshAttemptId = attemptId;
+        layoutStateReader.sample(attemptId);
+        return true;
+    }
+
+    function acceptLiveModelRefresh(attemptId, document) {
+        const sessionId = pendingLiveRefreshSessionId;
+        const expectedModel = pendingLiveRefreshModel;
+        if (!liveModelRefreshIsExact(attemptId, sessionId, expectedModel)) {
+            return;
+        }
+
+        try {
+            const runtime = OverviewRuntime.DriftileOverview;
+            if (!runtime || typeof runtime.loadOverviewModel !== "function") {
+                controller.rejectLiveModelRefresh(attemptId);
+                return;
+            }
+
+            const result = runtime.loadOverviewModel(document, liveSnapshot());
+            if (!result || result.ok !== true || !result.value) {
+                controller.rejectLiveModelRefresh(attemptId);
+                return;
+            }
+            if (!liveModelRefreshIsExact(attemptId, sessionId, expectedModel)) {
+                return;
+            }
+
+            clearPendingLiveModelRefresh();
+            overviewModel = result.value;
+        } catch (error) {
+            controller.rejectLiveModelRefresh(attemptId);
+        }
+    }
+
+    function rejectLiveModelRefresh(attemptId) {
+        const sessionId = pendingLiveRefreshSessionId;
+        const expectedModel = pendingLiveRefreshModel;
+        if (!liveModelRefreshIsExact(attemptId, sessionId, expectedModel)) {
+            return;
+        }
+
+        const retryCount = pendingLiveRefreshRetryCount;
+        clearPendingLiveModelRefresh();
+        if (retryCount >= 1) {
+            return;
+        }
+        if (!active || loading || activeSessionId !== sessionId || overviewModel !== expectedModel) {
+            return;
+        }
+
+        startLiveModelRefresh(retryCount + 1);
+    }
+
+    function liveModelRefreshIsExact(attemptId, sessionId, expectedModel) {
+        return Number.isInteger(attemptId) && attemptId > 0
+            && attemptId === pendingLiveRefreshAttemptId
+            && Number.isInteger(sessionId) && sessionId > 0
+            && sessionId === pendingLiveRefreshSessionId
+            && active && !loading && pendingActivationAttemptId === 0
+            && activeSessionId === sessionId
+            && overviewModel === expectedModel
+            && expectedModel !== null
+            && pendingLiveRefreshModel === expectedModel;
+    }
+
+    function clearPendingLiveModelRefresh() {
+        pendingLiveRefreshAttemptId = 0;
+        pendingLiveRefreshModel = null;
+        pendingLiveRefreshRetryCount = 0;
+        pendingLiveRefreshSessionId = 0;
     }
 
     function liveSnapshot() {

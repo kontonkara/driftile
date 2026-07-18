@@ -108,17 +108,9 @@ Rectangle {
 
     onKeyboardSelectionIdChanged: root.centerKeyboardSelectionWorkspace()
     onKeyboardHelpVisibleChanged: overviewWheelRemainder = 0
-    onOverviewSpatialLayoutChanged: {
-        overviewWheelRemainder = 0;
-        cancelKeyboardBoundaryNavigation();
-        if (desktopReorderActive) {
-            resetDesktopReorder();
-        }
-        if (!spatialLayoutIsValid(overviewSpatialLayout)) {
-            resetSpatialEdgePanTracking();
-        }
-        resetSpatialViewport();
-    }
+    onCurrentDesktopChanged: root.refreshOverviewSpatialSession()
+    onOverviewModelChanged: root.refreshOverviewSpatialSession()
+    onOverviewSpatialLayoutChanged: root.refreshOverviewSpatialSession()
     onSpatialContentYChanged: overviewWheelRemainder = 0
     onSearchQueryChanged: {
         overviewWheelRemainder = 0;
@@ -201,9 +193,8 @@ Rectangle {
     Component.onCompleted: {
         desktopReorderAvailable = typeof KWin.Workspace.moveDesktop === "function";
         refreshEmptyDesktopBoundarySetting();
-        resetSpatialViewport();
+        resetOverviewSession();
         forceActiveFocus();
-        Qt.callLater(root.repairKeyboardSelection);
     }
 
     Connections {
@@ -211,16 +202,9 @@ Rectangle {
         ignoreUnknownSignals: true
 
         function onActiveChanged() {
-            root.cancelKeyboardBoundaryNavigation();
-            root.keyboardHelpVisible = false;
-            if (!root.sceneEffect || root.sceneEffect.active !== true) {
-                root.overviewWheelRemainder = 0;
-                root.searchQuery = "";
-                root.spatialContentY = 0;
-                root.resetSpatialEdgePanTracking();
-            } else {
+            root.resetOverviewSession();
+            if (root.sceneEffect && root.sceneEffect.active === true) {
                 root.refreshEmptyDesktopBoundarySetting();
-                root.resetSpatialViewport();
             }
         }
 
@@ -246,14 +230,6 @@ Rectangle {
         }
 
         function onScreensChanged() {
-            root.closeStaleOverview();
-        }
-
-        function onWindowAdded() {
-            root.closeStaleOverview();
-        }
-
-        function onWindowRemoved() {
             root.closeStaleOverview();
         }
     }
@@ -929,6 +905,46 @@ Rectangle {
         spatialWindowDragSource = null;
         spatialWindowDragSourceDesktopId = "";
         clearSpatialEdgePanScenePoint();
+    }
+
+    function resetOverviewSession() {
+        keyboardSelectionId = "";
+        keyboardHelpVisible = false;
+        searchQuery = "";
+        refreshOverviewSpatialSession();
+    }
+
+    function refreshOverviewSpatialSession() {
+        let selectedDesktopId = "";
+        if (sceneEffect && sceneEffect.active === true && keyboardSelectionId.length > 0) {
+            const selectedTarget = navigationTargetForId(collectNavigationTargets(), keyboardSelectionId);
+            if (selectedTarget && typeof selectedTarget.desktopId === "string") {
+                selectedDesktopId = selectedTarget.desktopId;
+            }
+        }
+
+        cancelKeyboardBoundaryNavigation();
+        searchResultCount = 0;
+        searchResultCountsByDesktop = Object.create(null);
+        searchResultOrdinalsByTarget = Object.create(null);
+        overviewWheelRemainder = 0;
+        spatialViewportInput.panLayout = null;
+        spatialViewportInput.panStartContentY = 0;
+        resetDesktopReorder();
+        resetSpatialEdgePanTracking();
+
+        if (sceneEffect && sceneEffect.active === true) {
+            resetSpatialViewport();
+            const selectedWorkspaceIndex = desktopIds.indexOf(selectedDesktopId);
+            const selectionPlan = selectedWorkspaceIndex >= 0
+                ? planSpatialWorkspaceCenter(selectedWorkspaceIndex) : null;
+            if (selectionPlan) {
+                spatialContentY = selectionPlan.contentY;
+            }
+            Qt.callLater(root.repairKeyboardSelection);
+        } else {
+            spatialContentY = 0;
+        }
     }
 
     function resetSpatialViewport() {
@@ -1955,7 +1971,7 @@ Rectangle {
     }
 
     function repairKeyboardSelection() {
-        if (keyboardBoundaryNavigationPending) {
+        if (!sceneEffect || sceneEffect.active !== true || keyboardBoundaryNavigationPending) {
             return;
         }
         repairKeyboardSelectionFrom(collectNavigationTargets());
@@ -2821,8 +2837,7 @@ Rectangle {
     }
 
     function closeStaleOverview() {
-        resetDesktopReorder();
-        resetSpatialEdgePanTracking();
+        resetOverviewSession();
         if (sceneEffect) {
             sceneEffect.deactivate();
         }

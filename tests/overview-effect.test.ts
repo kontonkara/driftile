@@ -202,6 +202,48 @@ describe("overview effect package", () => {
       controller.indexOf("function closeFromTouchpadGesture("),
       controller.indexOf("function activate("),
     );
+    const gestureContext = touchpadGesture.slice(
+      touchpadGesture.indexOf("function valueKey("),
+      touchpadGesture.indexOf(
+        "readonly property KWin.SwipeGestureHandler upSwipe",
+      ),
+    );
+    const beginGesture = gestureContext.slice(
+      gestureContext.indexOf("function beginGesture("),
+      gestureContext.indexOf("function invalidateGestureContext("),
+    );
+    const desktopForOutput = gestureContext.slice(
+      gestureContext.indexOf("function desktopForOutput("),
+      gestureContext.indexOf("function currentGestureContextKey("),
+    );
+    const invalidateGesture = gestureContext.slice(
+      gestureContext.indexOf("function invalidateGestureContext("),
+      gestureContext.indexOf("function resetGesture("),
+    );
+    const cancelGesture = gestureContext.slice(
+      gestureContext.indexOf("function cancelGesture("),
+      gestureContext.indexOf("function completeGesture("),
+    );
+    const completeGesture = gestureContext.slice(
+      gestureContext.indexOf("function completeGesture("),
+      gestureContext.indexOf(
+        "readonly property Connections workspaceContextConnection",
+      ),
+    );
+    const upSwipe = touchpadGesture.slice(
+      touchpadGesture.indexOf(
+        "readonly property KWin.SwipeGestureHandler upSwipe",
+      ),
+      touchpadGesture.indexOf(
+        "readonly property KWin.SwipeGestureHandler downSwipe",
+      ),
+    );
+    const downSwipe = touchpadGesture.slice(
+      touchpadGesture.indexOf(
+        "readonly property KWin.SwipeGestureHandler downSwipe",
+      ),
+      touchpadGesture.indexOf("Component.onCompleted:"),
+    );
 
     expect(main).toContain(
       "readonly property bool configuredTouchpadGesture: touchpadGestureEnabledFromConfig()",
@@ -270,11 +312,62 @@ describe("overview effect package", () => {
     expect(
       touchpadGesture.match(/fingerCount: root\.fingerCount/gu),
     ).toHaveLength(2);
-    expect(touchpadGesture).toMatch(
-      /direction: KWin\.SwipeGestureHandler\.Direction\.Up[\s\S]*onActivated: root\.openRequested\(\)/u,
+    expect(touchpadGesture).toContain('property string activeGestureOwner: ""');
+    expect(touchpadGesture).toContain(
+      'property string blockedGestureOwner: ""',
+    );
+    expect(touchpadGesture).toContain('property string gestureContextKey: ""');
+    expect(gestureContext).toContain("KWin.Workspace.currentActivity");
+    expect(gestureContext).toContain("KWin.Workspace.currentDesktopForScreen");
+    expect(gestureContext).toContain("KWin.Workspace.currentDesktop");
+    expect(gestureContext).toContain("KWin.Workspace.desktops");
+    expect(gestureContext).toContain("KWin.Workspace.screens");
+    expect(gestureContext).toContain("output.geometry");
+    expect(desktopForOutput).toMatch(
+      /if \(typeof KWin\.Workspace\.currentDesktopForScreen !== "function"\) \{\s*return KWin\.Workspace\.currentDesktop;\s*\}[\s\S]*return KWin\.Workspace\.currentDesktopForScreen\(output\) \|\| null;[\s\S]*catch \(error\) \{\s*return null;/u,
+    );
+    expect(desktopForOutput).not.toMatch(/desktop \|\|/u);
+    expect(beginGesture).toMatch(/if \(!\(progress > 0\)\) \{\s*return;\s*\}/u);
+    expect(beginGesture).toMatch(
+      /if \(root\.activeGestureOwner !== "" \|\| root\.blockedGestureOwner !== ""\) \{\s*return;\s*\}/u,
+    );
+    expect(beginGesture).toMatch(
+      /const contextKey = root\.currentGestureContextKey\(\);[\s\S]*if \(contextKey\.length === 0\) \{\s*return;\s*\}[\s\S]*root\.activeGestureOwner = owner;[\s\S]*root\.gestureContextKey = contextKey;/u,
+    );
+    expect(invalidateGesture).toMatch(
+      /if \(root\.activeGestureOwner === ""\) \{\s*return;\s*\}[\s\S]*root\.blockedGestureOwner = root\.activeGestureOwner;[\s\S]*root\.activeGestureOwner = "";[\s\S]*root\.gestureContextKey = "";/u,
+    );
+    expect(cancelGesture).toMatch(
+      /if \(owner === root\.activeGestureOwner \|\| owner === root\.blockedGestureOwner\) \{\s*root\.resetGesture\(\);\s*\}/u,
+    );
+    expect(completeGesture).toMatch(
+      /if \(owner === root\.blockedGestureOwner\) \{\s*root\.resetGesture\(\);\s*return false;\s*\}[\s\S]*if \(owner !== root\.activeGestureOwner\) \{\s*return false;\s*\}/u,
+    );
+    expect(completeGesture).toMatch(
+      /root\.gestureContextKey === root\.currentGestureContextKey\(\)[\s\S]*root\.resetGesture\(\);[\s\S]*return accepted;/u,
     );
     expect(touchpadGesture).toMatch(
-      /direction: KWin\.SwipeGestureHandler\.Direction\.Down[\s\S]*onActivated: root\.closeRequested\(\)/u,
+      /target: KWin\.Workspace[\s\S]*onCurrentDesktopChanged[\s\S]*onCurrentActivityChanged[\s\S]*onDesktopsChanged[\s\S]*onScreensChanged[\s\S]*onVirtualScreenGeometryChanged/u,
+    );
+    expect(upSwipe).toContain(
+      "direction: KWin.SwipeGestureHandler.Direction.Up",
+    );
+    expect(upSwipe).toContain(
+      'onProgressChanged: root.beginGesture("open", progress)',
+    );
+    expect(upSwipe).toContain('onCancelled: root.cancelGesture("open")');
+    expect(upSwipe).toMatch(
+      /if \(!root\.completeGesture\("open"\)\) \{\s*return;\s*\}[\s\S]*root\.openRequested\(\);/u,
+    );
+    expect(downSwipe).toContain(
+      "direction: KWin.SwipeGestureHandler.Direction.Down",
+    );
+    expect(downSwipe).toContain(
+      'onProgressChanged: root.beginGesture("close", progress)',
+    );
+    expect(downSwipe).toContain('onCancelled: root.cancelGesture("close")');
+    expect(downSwipe).toMatch(
+      /if \(!root\.completeGesture\("close"\)\) \{\s*return;\s*\}[\s\S]*root\.closeRequested\(\);/u,
     );
     expect(touchpadGesture).toContain(
       'Component.onCompleted: console.info("[driftile-overview] touchpad-gesture lifecycle=created")',
@@ -284,7 +377,7 @@ describe("overview effect package", () => {
     );
     expect(touchpadGesture.match(/console\.info\(/gu)).toHaveLength(2);
     expect(touchpadGesture).not.toMatch(
-      /onCancelled|onProgressChanged|\bprogress\s*:|ShortcutHandler|sequence\s*:|Timer/iu,
+      /\bprogress\s*:|ShortcutHandler|sequence\s*:|Timer|KWin\.DBusCall|callDBus/iu,
     );
   });
 
@@ -527,8 +620,10 @@ describe("overview effect package", () => {
     expect(scene).toContain("for (const desktop of KWin.Workspace.desktops)");
     expect(scene).toContain("function onCurrentActivityChanged()");
     expect(scene).toContain("function onActivitiesChanged()");
-    expect(scene).toContain("function onWindowAdded()");
-    expect(scene).toContain("function onWindowRemoved()");
+    expect(controller).toContain("function onWindowAdded()");
+    expect(controller).toContain("function onWindowRemoved()");
+    expect(scene).not.toContain("function onWindowAdded()");
+    expect(scene).not.toContain("function onWindowRemoved()");
     expect(desktopCard).toContain("KWin.WindowModel");
     expect(desktopCard).toContain("KWin.WindowFilterModel");
     expect(desktopCard).toContain("KWin.WindowThumbnail");
@@ -1259,6 +1354,14 @@ describe("overview effect package", () => {
       scene.indexOf("function closeStaleOverview("),
       scene.indexOf("function outputIdForScreen("),
     );
+    const sessionReset = scene.slice(
+      scene.indexOf("function resetOverviewSession("),
+      scene.indexOf("function refreshOverviewSpatialSession("),
+    );
+    const spatialSessionRefresh = scene.slice(
+      scene.indexOf("function refreshOverviewSpatialSession("),
+      scene.indexOf("function resetSpatialViewport("),
+    );
 
     expect(scene).toMatch(
       /readonly property int currentWorkspaceIndex:[\s\S]*desktopIds\.indexOf\(String\(currentDesktop\.id\)\)/u,
@@ -1335,14 +1438,47 @@ describe("overview effect package", () => {
     expect(spatialLayout).toMatch(
       /function resetSpatialViewport\(\)[\s\S]*planSpatialViewport\(overviewSpatialLayout\.initialContentY\)[\s\S]*spatialContentY = plan\.contentY/u,
     );
-    expect(scene).toMatch(
-      /onOverviewSpatialLayoutChanged: \{\s*overviewWheelRemainder = 0;[\s\S]*resetDesktopReorder\(\);[\s\S]*resetSpatialViewport\(\);/u,
+    expect(scene).toContain(
+      "onOverviewSpatialLayoutChanged: root.refreshOverviewSpatialSession()",
+    );
+    expect(scene).toContain(
+      "onOverviewModelChanged: root.refreshOverviewSpatialSession()",
+    );
+    expect(scene).toContain(
+      "onCurrentDesktopChanged: root.refreshOverviewSpatialSession()",
     );
     expect(scene).toMatch(
-      /Component\.onCompleted:[\s\S]*resetSpatialViewport\(\);[\s\S]*forceActiveFocus\(\);/u,
+      /Component\.onCompleted:[\s\S]*resetOverviewSession\(\);[\s\S]*forceActiveFocus\(\);/u,
     );
     expect(scene).toMatch(
-      /function onActiveChanged\(\)[\s\S]*sceneEffect\.active !== true[\s\S]*root\.spatialContentY = 0;[\s\S]*root\.resetSpatialViewport\(\);/u,
+      /function onActiveChanged\(\) \{\s*root\.resetOverviewSession\(\);/u,
+    );
+    expect(sessionReset).toMatch(
+      /function resetOverviewSession\(\)[\s\S]*keyboardSelectionId = "";[\s\S]*keyboardHelpVisible = false;[\s\S]*searchQuery = "";[\s\S]*refreshOverviewSpatialSession\(\);/u,
+    );
+    expect(spatialSessionRefresh).toMatch(
+      /function refreshOverviewSpatialSession\(\)[\s\S]*cancelKeyboardBoundaryNavigation\(\);/u,
+    );
+    expect(spatialSessionRefresh).toMatch(
+      /navigationTargetForId\(collectNavigationTargets\(\), keyboardSelectionId\)[\s\S]*selectedDesktopId = selectedTarget\.desktopId;/u,
+    );
+    expect(spatialSessionRefresh).toMatch(
+      /searchResultCount = 0;[\s\S]*searchResultCountsByDesktop = Object\.create\(null\);[\s\S]*searchResultOrdinalsByTarget = Object\.create\(null\);/u,
+    );
+    expect(spatialSessionRefresh).toMatch(
+      /overviewWheelRemainder = 0;[\s\S]*spatialViewportInput\.panLayout = null;[\s\S]*spatialViewportInput\.panStartContentY = 0;/u,
+    );
+    expect(spatialSessionRefresh).toMatch(
+      /resetDesktopReorder\(\);[\s\S]*resetSpatialEdgePanTracking\(\);/u,
+    );
+    expect(spatialSessionRefresh).toMatch(
+      /sceneEffect && sceneEffect\.active === true[\s\S]*resetSpatialViewport\(\);[\s\S]*Qt\.callLater\(root\.repairKeyboardSelection\);[\s\S]*spatialContentY = 0;/u,
+    );
+    expect(spatialSessionRefresh).toMatch(
+      /desktopIds\.indexOf\(selectedDesktopId\)[\s\S]*planSpatialWorkspaceCenter\(selectedWorkspaceIndex\)[\s\S]*spatialContentY = selectionPlan\.contentY;/u,
+    );
+    expect(spatialSessionRefresh).not.toMatch(
+      /keyboardSelectionId = ""|keyboardHelpVisible = false|searchQuery = ""/u,
     );
 
     expect(scene).toContain(
@@ -1482,7 +1618,7 @@ describe("overview effect package", () => {
     expect(reorder.match(/KWin\.Workspace\.moveDesktop\(/gu)).toHaveLength(1);
     expect(reorder).not.toContain("deactivate()");
     expect(staleClose).toMatch(
-      /resetDesktopReorder\(\);\s*resetSpatialEdgePanTracking\(\);\s*if \(sceneEffect\) \{\s*sceneEffect\.deactivate\(\);/u,
+      /resetOverviewSession\(\);\s*if \(sceneEffect\) \{\s*sceneEffect\.deactivate\(\);/u,
     );
 
     expect(scene.match(/\bTimer\s*\{/gu)).toHaveLength(1);
@@ -1537,9 +1673,7 @@ describe("overview effect package", () => {
       "updateDesktopReorder(desktopReorderSourceId, spatialEdgePanSceneX, spatialEdgePanSceneY)",
     );
     expect(reorder).toContain("storeSpatialEdgePanScenePoint(sceneX, sceneY)");
-    expect(scene).toMatch(
-      /function onActiveChanged\(\)[\s\S]*root\.resetSpatialEdgePanTracking\(\);/u,
-    );
+    expect(spatialSessionRefresh).toContain("resetSpatialEdgePanTracking();");
     expect(`${scene}\n${desktopCard}`).not.toMatch(
       /\bMouseArea\s*\{|KWin\.Workspace\.(?:stackingOrder|windows)\b|\.setValue\s*\(/u,
     );
@@ -2335,7 +2469,7 @@ describe("overview effect package", () => {
     );
     expect(boundaryCompletion).not.toContain("navigateKeyboardBoundary(");
     expect(scene).toMatch(
-      /function repairKeyboardSelection\(\) \{\s*if \(keyboardBoundaryNavigationPending\) \{\s*return;/u,
+      /function repairKeyboardSelection\(\) \{\s*if \(!sceneEffect \|\| sceneEffect\.active !== true \|\| keyboardBoundaryNavigationPending\) \{\s*return;/u,
     );
     expect(navigation).toContain(
       "focusWindow(target.candidate, target.windowId, target.desktop, target.desktopId, target.screen)",
@@ -2628,7 +2762,7 @@ describe("overview effect package", () => {
       "planOverviewSpatialWorkspaceWheelTarget",
     );
     expect(scene).toMatch(
-      /function onActiveChanged\(\)[\s\S]*sceneEffect\.active !== true[\s\S]*root\.overviewWheelRemainder = 0;/u,
+      /function refreshOverviewSpatialSession\(\)[\s\S]*overviewWheelRemainder = 0;/u,
     );
     expect(scene).toMatch(
       /DragHandler \{[\s\S]*id: spatialViewportDragHandler[\s\S]*onActiveChanged: \{[\s\S]*if \(active\) \{\s*root\.overviewWheelRemainder = 0;/u,
@@ -2747,7 +2881,9 @@ describe("overview effect package", () => {
     expect(modalKeyHandler).toMatch(
       /handleScrollKey\(event\.key\);[\s\S]*event\.accepted = true;[\s\S]*return;/u,
     );
-    expect(scene).toContain("root.keyboardHelpVisible = false;");
+    expect(scene).toMatch(
+      /function resetOverviewSession\(\)[\s\S]*keyboardHelpVisible = false;/u,
+    );
     expect(scene).toContain("enabled: !root.keyboardHelpVisible");
 
     expect(help).toContain("active: root.keyboardHelpVisible");
@@ -2928,7 +3064,9 @@ describe("overview effect package", () => {
     );
     expect(searchFunctions).not.toContain("repairKeyboardSelection()");
     expect(scene).toContain("function onActiveChanged()");
-    expect(scene).toContain('root.searchQuery = ""');
+    expect(scene).toMatch(
+      /function resetOverviewSession\(\)[\s\S]*searchQuery = "";/u,
+    );
     expect(scene).toContain("No matching windows: ${root.searchQuery}");
     expect(scene).toContain("Invalid search query: ${root.searchQuery}");
     expect(scene).toContain("textFormat: Text.PlainText");
@@ -3124,8 +3262,8 @@ describe("overview effect package", () => {
     expect(transaction).not.toMatch(
       /KWin\.(?:SceneView|Workspace)\.[A-Za-z0-9_]+\s*=(?!=)|candidate\.[A-Za-z0-9_]+\s*=(?!=)|\bTimer\s*\{|\.setValue\s*\(/u,
     );
-    expect(scene).toMatch(
-      /function onWindowRemoved\(\) \{\s*root\.closeStaleOverview\(\);/u,
+    expect(controller).toMatch(
+      /function onWindowRemoved\(\) \{\s*controller\.requestLiveModelRefresh\(\);/u,
     );
   });
 
