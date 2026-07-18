@@ -13988,10 +13988,13 @@ describe("RuntimeController", () => {
       schedule: scheduler.schedule,
     });
     let focusDuringActivation: (() => void) | null = null;
+    let focusDuringSecondActivation: (() => void) | null = null;
 
     fixture.windowActivated.connect((window) => {
       if (window === first.window) {
         focusDuringActivation?.();
+      } else if (window === second.window) {
+        focusDuringSecondActivation?.();
       }
     });
 
@@ -14094,25 +14097,110 @@ describe("RuntimeController", () => {
     fixture.workspace.activeWindow = source.window;
     flushManualScheduler(scheduler);
     fixture.setCurrentDesktop(output, targetDesktop);
-
     expect(controller.focusRight()).toBe(true);
-    expect(controller.focusLeft()).toBe(true);
+    Object.defineProperty(second.window, "minimized", {
+      configurable: true,
+      value: true,
+    });
+    fixture.workspace.activeWindow = second.window;
+    Object.defineProperty(second.window, "minimized", {
+      configurable: true,
+      value: false,
+    });
     fixture.workspace.activeWindow = first.window;
     flushManualScheduler(scheduler);
+    expect(fixture.workspace.activeWindow).toBe(second.window);
+    expect(controller.focusLeft()).toBe(true);
 
+    fixture.setCurrentDesktop(output, sourceDesktop);
+    fixture.workspace.activeWindow = source.window;
+    flushManualScheduler(scheduler);
+    fixture.setCurrentDesktop(output, targetDesktop);
+
+    expect(controller.focusRight()).toBe(true);
+    fixture.workspace.activeWindow = first.window;
+    expect(controller.focusRight()).toBe(true);
+    const awaitingFocusResults: boolean[] = [];
+    focusDuringSecondActivation = () => {
+      focusDuringSecondActivation = null;
+      awaitingFocusResults.push(
+        controller.focusLeft(),
+        controller.focusRight(),
+        controller.focusLeft(),
+        controller.focusRight(),
+      );
+    };
+    const queuedActivationStart = activationIds.length;
+    flushManualScheduler(scheduler);
+
+    expect(awaitingFocusResults).toEqual([true, true, true, false]);
+    expect(activationIds.slice(queuedActivationStart)).toEqual([
+      "target-second",
+      "target-third",
+      "target-second",
+      "target-third",
+      "target-second",
+    ]);
+    expect(controller.focusLeft()).toBe(true);
     expect(fixture.workspace.activeWindow).toBe(first.window);
-    expect(
-      layout.snapshot(
-        outputId(output.name),
-        desktopId(targetDesktop.id),
-        FALLBACK_ACTIVITY_ID,
-      ),
-    ).toMatchObject({
-      activeColumnId: columnId("column:target-first"),
-      viewportOffset: 0,
+
+    fixture.setCurrentDesktop(output, sourceDesktop);
+    fixture.workspace.activeWindow = source.window;
+    flushManualScheduler(scheduler);
+    fixture.setCurrentDesktop(output, targetDesktop);
+    expect(controller.focusRight()).toBe(true);
+    expect(controller.focusRight()).toBe(true);
+    fixture.workspace.activeWindow = first.window;
+    fixture.setActivationBehavior(() => undefined);
+    flushManualScheduler(scheduler);
+    fixture.setActivationBehavior(null);
+    expect(fixture.workspace.activeWindow).toBe(first.window);
+    expect(controller.focusLeft()).toBe(false);
+    fixture.workspace.activeWindow = second.window;
+    flushManualScheduler(scheduler);
+    expect(fixture.workspace.activeWindow).toBe(second.window);
+    expect(controller.focusLeft()).toBe(true);
+
+    fixture.setCurrentDesktop(output, sourceDesktop);
+    fixture.workspace.activeWindow = source.window;
+    flushManualScheduler(scheduler);
+    fixture.setCurrentDesktop(output, targetDesktop);
+    expect(controller.focusRight()).toBe(true);
+    expect(controller.focusRight()).toBe(true);
+    fixture.workspace.activeWindow = first.window;
+    let rejectedExpectedActivation = false;
+    fixture.setActivationBehavior((window, commit) => {
+      if (window === second.window && !rejectedExpectedActivation) {
+        Object.defineProperty(second.window, "minimized", {
+          configurable: true,
+          value: true,
+        });
+        rejectedExpectedActivation = true;
+      }
+
+      commit();
     });
-    expect(first.window.frameGeometry).toMatchObject({ width: 980, x: 10 });
-    expect(second.window.frameGeometry.x).toBe(1010);
+    for (
+      let attempt = 0;
+      !rejectedExpectedActivation && scheduler.pendingCount > 0;
+      attempt += 1
+    ) {
+      scheduler.flush();
+
+      if (attempt >= 20) {
+        throw new Error("desktop focus replay did not reach its target");
+      }
+    }
+    expect(rejectedExpectedActivation).toBe(true);
+    fixture.setActivationBehavior(null);
+    Object.defineProperty(second.window, "minimized", {
+      configurable: true,
+      value: false,
+    });
+    fixture.workspace.activeWindow = second.window;
+    flushManualScheduler(scheduler);
+    expect(fixture.workspace.activeWindow).toBe(second.window);
+    expect(controller.focusLeft()).toBe(true);
 
     fixture.setCurrentDesktop(output, sourceDesktop);
     fixture.workspace.activeWindow = source.window;

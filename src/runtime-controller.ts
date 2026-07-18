@@ -272,6 +272,7 @@ const MAX_CAPACITY_PARK_ATTEMPTS = 20;
 const MAX_EXTERNAL_FULLSCREEN_EXTRACTION_ATTEMPTS = 20;
 const MAX_FULLSCREEN_REQUEST_PROBES = 20;
 const MAX_LAYOUT_HYDRATION_PROBES = 1_000;
+const MAX_PENDING_DESKTOP_FOCUS_INTENTS = 4;
 const MAX_STACK_EDIT_FOCUS_PROBES = 20;
 const MAX_TOPOLOGY_SAMPLE_ATTEMPTS = 20;
 const MAX_TRANSIENT_RESUME_PROBES = 20;
@@ -632,11 +633,12 @@ type DesktopFocusIntent =
 
 interface PendingDesktopFocus {
   readonly contextKey: string;
-  readonly intent: DesktopFocusIntent;
+  readonly intents: readonly DesktopFocusIntent[];
 }
 
 interface ScheduledDesktopFocus extends PendingDesktopFocus {
   readonly activationId: WindowId;
+  readonly expectedActivationId: WindowId | null;
 }
 
 interface FocusedColumnView {
@@ -8840,18 +8842,24 @@ export class RuntimeController {
     }
 
     const id = windowId(String(window.internalId));
+    const desktopFocusReplay = this.desktopFocusReplay;
+    const expectedDesktopFocusReplay =
+      desktopFocusReplay?.expectedActivationId === id
+        ? desktopFocusReplay
+        : null;
 
     if (
-      this.desktopFocusReplay !== null &&
-      this.desktopFocusReplay.activationId !== id
+      desktopFocusReplay !== null &&
+      desktopFocusReplay.activationId !== id &&
+      desktopFocusReplay.expectedActivationId !== id
     ) {
       this.cancelDesktopFocusReplay();
     }
 
     this.recordWindowFocus(id, window);
-    const pendingDesktopFocus = this.takePendingDesktopFocus(window);
 
     if (this.stackEditOperation) {
+      this.rejectDesktopFocusReplayActivation(expectedDesktopFocusReplay);
       return;
     }
 
@@ -8867,6 +8875,7 @@ export class RuntimeController {
       this.topologyStabilizing ||
       this.topologyRetryPending
     ) {
+      this.rejectDesktopFocusReplayActivation(expectedDesktopFocusReplay);
       return;
     }
 
@@ -8877,6 +8886,7 @@ export class RuntimeController {
       (!allowSuspended &&
         (this.suspendedWindows.has(id) || !isGeometryWritable(window)))
     ) {
+      this.rejectDesktopFocusReplayActivation(expectedDesktopFocusReplay);
       return;
     }
 
@@ -8889,15 +8899,19 @@ export class RuntimeController {
       !liveContext ||
       contextKey(liveContext) !== owner.contextKey
     ) {
+      this.rejectDesktopFocusReplayActivation(expectedDesktopFocusReplay);
       return;
     }
 
-    const changed = this.layout.activateWindow(id);
     const context = this.contexts.get(owner.contextKey);
 
     if (!context) {
+      this.rejectDesktopFocusReplayActivation(expectedDesktopFocusReplay);
       return;
     }
+
+    const pendingDesktopFocus = this.takePendingDesktopFocus(window);
+    const changed = this.layout.activateWindow(id);
 
     if (changed) {
       this.markContextDirty(context);
@@ -8917,6 +8931,14 @@ export class RuntimeController {
 
     if (pendingDesktopFocus) {
       this.scheduleDesktopFocusReplay(pendingDesktopFocus, id);
+    } else if (
+      desktopFocusReplay?.expectedActivationId === id &&
+      this.desktopFocusReplay === desktopFocusReplay &&
+      desktopFocusReplay.contextKey === owner.contextKey
+    ) {
+      this.scheduleDesktopFocusReplay(desktopFocusReplay, id);
+    } else {
+      this.rejectDesktopFocusReplayActivation(expectedDesktopFocusReplay);
     }
   };
 
@@ -10204,20 +10226,30 @@ export class RuntimeController {
     boundaryOutputDirection?: OutputDirection,
     boundaryDestination?: HorizontalEdge,
   ): boolean {
-    this.supersedeDesktopFocusIntent();
     const intent: DesktopFocusIntent = {
       boundaryDestination,
       boundaryOutputDirection,
       destination,
       kind: "horizontal",
     };
+    const appendedReplay = this.appendDesktopFocusReplay(intent);
+
+    if (appendedReplay !== null) {
+      return appendedReplay;
+    }
+
     const floatingResult = this.focusFloatingWindow(
       destination,
       boundaryDestination,
     );
 
     if (floatingResult !== null) {
-      return floatingResult || this.captureDesktopFocus(intent);
+      if (!floatingResult) {
+        return this.captureDesktopFocus(intent);
+      }
+
+      this.pendingDesktopFocus = null;
+      return true;
     }
 
     const command = this.prepareActiveColumnCommand();
@@ -10226,6 +10258,7 @@ export class RuntimeController {
       return this.captureDesktopFocus(intent);
     }
 
+    this.pendingDesktopFocus = null;
     return this.focusHorizontalTarget(
       command,
       destination,
@@ -10242,6 +10275,7 @@ export class RuntimeController {
       this.startupStabilizationToken !== null ||
       this.hasTopologyBarrier()
     ) {
+      this.pendingDesktopFocus = null;
       return false;
     }
 
@@ -10250,6 +10284,7 @@ export class RuntimeController {
     const output = this.workspace.activeScreen ?? active?.output;
 
     if (!output || !this.workspace.screens.includes(output)) {
+      this.pendingDesktopFocus = null;
       return false;
     }
 
@@ -10257,11 +10292,13 @@ export class RuntimeController {
     const key = this.desktopFocusCaptureContexts.get(activeOutputId);
 
     if (!key) {
+      this.pendingDesktopFocus = null;
       return false;
     }
 
     if (!this.selectedTiledFocusTarget(key)) {
       this.desktopFocusCaptureContexts.delete(activeOutputId);
+      this.pendingDesktopFocus = null;
       return false;
     }
 
@@ -10270,13 +10307,31 @@ export class RuntimeController {
       (contextKey(activeContext) === key ||
         this.isContextVisible(activeContext))
     ) {
+      this.pendingDesktopFocus = null;
       return false;
     }
 
-    this.pendingDesktopFocus = {
-      contextKey: key,
-      intent,
-    };
+    const pending = this.pendingDesktopFocus;
+
+    if (
+      pending?.contextKey === key &&
+      pending.intents.every((candidate) =>
+        this.queueableDesktopFocusIntent(candidate),
+      ) &&
+      this.queueableDesktopFocusIntent(intent)
+    ) {
+      if (pending.intents.length >= MAX_PENDING_DESKTOP_FOCUS_INTENTS) {
+        return false;
+      }
+
+      this.pendingDesktopFocus = {
+        contextKey: key,
+        intents: [...pending.intents, intent],
+      };
+      return true;
+    }
+
+    this.pendingDesktopFocus = { contextKey: key, intents: [intent] };
     return true;
   }
 
@@ -10309,7 +10364,11 @@ export class RuntimeController {
     pending: PendingDesktopFocus,
     activationId: WindowId,
   ): void {
-    const replay = { ...pending, activationId };
+    const replay: ScheduledDesktopFocus = {
+      ...pending,
+      activationId,
+      expectedActivationId: null,
+    };
     this.desktopFocusReplay = replay;
 
     try {
@@ -10318,17 +10377,62 @@ export class RuntimeController {
           return;
         }
 
-        this.cancelDesktopFocusReplay();
         const active = this.workspace.activeWindow;
         const activeContext = active
           ? this.resolveLayerFocusContext(active)
           : null;
 
-        if (!activeContext || contextKey(activeContext) !== replay.contextKey) {
+        if (
+          !active ||
+          windowId(String(active.internalId)) !== replay.activationId ||
+          !activeContext ||
+          contextKey(activeContext) !== replay.contextKey
+        ) {
+          this.cancelDesktopFocusReplay();
           return;
         }
 
-        this.replayDesktopFocus(replay.intent);
+        const [intent, ...remainingIntents] = replay.intents;
+
+        if (!intent) {
+          this.cancelDesktopFocusReplay();
+          return;
+        }
+
+        if (
+          remainingIntents.length === 0 ||
+          !this.queueableDesktopFocusIntent(intent)
+        ) {
+          this.cancelDesktopFocusReplay();
+          this.replayDesktopFocus(intent);
+          return;
+        }
+
+        const command = this.prepareActiveColumnCommand();
+        const expectedActivationId =
+          command?.context.key === replay.contextKey
+            ? this.horizontalFocusTarget(command, intent.destination)
+            : null;
+
+        if (!command || expectedActivationId === null) {
+          this.cancelDesktopFocusReplay();
+          return;
+        }
+
+        const awaitingActivation: ScheduledDesktopFocus = {
+          activationId: replay.activationId,
+          contextKey: replay.contextKey,
+          expectedActivationId,
+          intents: remainingIntents,
+        };
+        this.desktopFocusReplay = awaitingActivation;
+
+        if (
+          !this.focusHorizontalTarget(command, intent.destination) &&
+          this.desktopFocusReplay === awaitingActivation
+        ) {
+          this.cancelDesktopFocusReplay();
+        }
       });
     } catch {
       if (this.desktopFocusReplay === replay) {
@@ -10348,6 +10452,73 @@ export class RuntimeController {
       this.focusWithinActiveColumn(intent.direction, intent.boundary);
     } else {
       this.focusActiveColumnEdge(intent.destination);
+    }
+  }
+
+  private queueableDesktopFocusIntent(
+    intent: DesktopFocusIntent,
+  ): intent is DesktopFocusIntent & {
+    readonly destination: HorizontalDirection;
+    readonly kind: "horizontal";
+  } {
+    return (
+      intent.kind === "horizontal" &&
+      (intent.destination === "left" || intent.destination === "right") &&
+      intent.boundaryDestination === undefined &&
+      intent.boundaryOutputDirection === undefined
+    );
+  }
+
+  private appendDesktopFocusReplay(intent: DesktopFocusIntent): boolean | null {
+    const replay = this.desktopFocusReplay;
+
+    if (!replay) {
+      return null;
+    }
+
+    const active = this.workspace.activeWindow;
+    const activeId = active ? windowId(String(active.internalId)) : null;
+    const activeContext = active ? this.resolveLayerFocusContext(active) : null;
+
+    if (
+      !activeContext ||
+      contextKey(activeContext) !== replay.contextKey ||
+      (activeId !== replay.activationId &&
+        activeId !== replay.expectedActivationId)
+    ) {
+      this.cancelDesktopFocusReplay();
+      return false;
+    }
+
+    if (
+      replay.intents.length >= MAX_PENDING_DESKTOP_FOCUS_INTENTS ||
+      !replay.intents.every((candidate) =>
+        this.queueableDesktopFocusIntent(candidate),
+      ) ||
+      !this.queueableDesktopFocusIntent(intent)
+    ) {
+      return false;
+    }
+
+    const updated = {
+      ...replay,
+      intents: [...replay.intents, intent],
+    };
+
+    if (replay.expectedActivationId === null) {
+      this.scheduleDesktopFocusReplay(updated, replay.activationId);
+    } else {
+      this.desktopFocusReplay = updated;
+    }
+
+    return true;
+  }
+
+  private rejectDesktopFocusReplayActivation(
+    replay: ScheduledDesktopFocus | null,
+  ): void {
+    if (replay && this.desktopFocusReplay === replay) {
+      this.cancelDesktopFocusReplay();
     }
   }
 
