@@ -124,6 +124,34 @@
             platforms = pkgs.lib.platforms.linux;
           };
         };
+      wheelControlFor =
+        pkgs: version:
+        pkgs.stdenv.mkDerivation {
+          pname = "driftile-wheel-control";
+          inherit version;
+          src = ./native/wheel-control;
+
+          dontWrapQtApps = true;
+          strictDeps = true;
+          nativeBuildInputs = [
+            pkgs.cmake
+            pkgs.kdePackages.extra-cmake-modules
+            pkgs.ninja
+          ];
+          buildInputs = [
+            pkgs.kdePackages.kcoreaddons
+            pkgs.kdePackages.kwin
+            pkgs.kdePackages.qtbase
+          ];
+          cmakeFlags = [ "-DDRIFTILE_VERSION=${version}" ];
+
+          meta = {
+            description = "Native wheel navigation effect for Driftile";
+            homepage = "https://github.com/kontonkara/driftile";
+            license = pkgs.lib.licenses.gpl3Plus;
+            platforms = pkgs.lib.platforms.linux;
+          };
+        };
     in
     {
       checks = forAllSystems (
@@ -137,6 +165,7 @@
             defaultOverviewPackage = self.packages.${system}."driftile-overview";
             defaultShortcutEditorPackage = self.packages.${system}."driftile-shortcut-editor";
             defaultTransitionsPackage = self.packages.${system}."driftile-transitions";
+            defaultWheelControlPackage = self.packages.${system}."driftile-wheel-control";
             inherit
               home-manager
               homeManagerModule
@@ -151,6 +180,7 @@
             defaultOverviewPackage = self.packages.${system}."driftile-overview";
             defaultShortcutEditorPackage = self.packages.${system}."driftile-shortcut-editor";
             defaultTransitionsPackage = self.packages.${system}."driftile-transitions";
+            defaultWheelControlPackage = self.packages.${system}."driftile-wheel-control";
             inherit
               homeManagerModule
               nixosModule
@@ -163,6 +193,7 @@
             overview=${self.packages.${system}."driftile-overview"}
             shortcut_editor=${self.packages.${system}."driftile-shortcut-editor"}
             transitions=${self.packages.${system}."driftile-transitions"}
+            wheel_control=${self.packages.${system}."driftile-wheel-control"}
 
             test -d "$main/share/kwin/scripts/io.github.kontonkara.driftile"
             test -x "$main/bin/driftile-shortcuts"
@@ -205,6 +236,13 @@
             test "$(find "$shortcut_editor/share/applications" -mindepth 1 -maxdepth 1 | wc -l)" -eq 1
             test "$(find "$shortcut_editor/share/metainfo" -mindepth 1 -maxdepth 1 | wc -l)" -eq 1
 
+            test -f "$wheel_control/lib/qt-6/plugins/kwin/effects/plugins/driftile_wheel_control.so"
+            test ! -e "$wheel_control/bin"
+            test ! -e "$wheel_control/share"
+            test ! -e "$wheel_control/libexec"
+            test "$(find "$wheel_control" -mindepth 1 -maxdepth 1 | wc -l)" -eq 1
+            test "$(find "$wheel_control/lib/qt-6/plugins/kwin/effects/plugins" -mindepth 1 -maxdepth 1 | wc -l)" -eq 1
+
             touch "$out"
           '';
         }
@@ -226,11 +264,13 @@
           pkgs = import nixpkgs { inherit system; };
           driftile = packageFor pkgs;
           shortcutEditor = shortcutEditorFor pkgs driftile.version;
+          wheelControl = wheelControlFor pkgs driftile.version;
         in
         {
           "driftile-overview" = driftile.overview;
           "driftile-shortcut-editor" = shortcutEditor;
           "driftile-transitions" = driftile.transitions;
+          "driftile-wheel-control" = wheelControl;
           inherit driftile;
           default = driftile;
         }

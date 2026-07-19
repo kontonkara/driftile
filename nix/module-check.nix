@@ -3,6 +3,7 @@
   defaultOverviewPackage,
   defaultShortcutEditorPackage,
   defaultTransitionsPackage,
+  defaultWheelControlPackage,
   homeManagerModule,
   lib,
   nixosModule,
@@ -78,6 +79,7 @@ let
           overview.package = pkgs.hello;
           shortcutEditor.package = pkgs.hello;
           transitions.package = pkgs.hello;
+          wheelControl.package = pkgs.hello;
         };
       } { };
       mainEnabled = evaluate module packageOptionPath {
@@ -116,6 +118,15 @@ let
           package = pkgs.hello;
         };
       } { };
+      wheelControlEnabled = evaluate module packageOptionPath {
+        programs.driftile.wheelControl.enable = true;
+      } { };
+      wheelControlOverridden = evaluate module packageOptionPath {
+        programs.driftile.wheelControl = {
+          enable = true;
+          package = pkgs.hello;
+        };
+      } { };
       bothEnabled = evaluate module packageOptionPath {
         programs.driftile = {
           enable = true;
@@ -128,6 +139,7 @@ let
           overview.enable = true;
           shortcutEditor.enable = true;
           transitions.enable = true;
+          wheelControl.enable = true;
         };
       } { };
     in
@@ -145,6 +157,11 @@ let
       packagePaths packageOptionPath transitionsEnabled == [ (toString defaultTransitionsPackage) ];
     assert packagePaths packageOptionPath transitionsOverridden == [ (toString pkgs.hello) ];
     assert
+      packagePaths packageOptionPath wheelControlEnabled == [
+        (toString defaultWheelControlPackage)
+      ];
+    assert packagePaths packageOptionPath wheelControlOverridden == [ (toString pkgs.hello) ];
+    assert
       packagePaths packageOptionPath bothEnabled == [
         (toString defaultPackage)
         (toString defaultOverviewPackage)
@@ -155,6 +172,7 @@ let
         (toString defaultOverviewPackage)
         (toString defaultShortcutEditorPackage)
         (toString defaultTransitionsPackage)
+        (toString defaultWheelControlPackage)
       ];
     true;
 
@@ -205,6 +223,18 @@ let
       }
       {
         programs.driftile.shortcutEditor.enable = true;
+      };
+  homeManagerWheelControlCollision =
+    evaluate homeManagerModule
+      [
+        "home"
+        "packages"
+      ]
+      {
+        programs.driftile.wheelControl.enable = true;
+      }
+      {
+        programs.driftile.wheelControl.enable = true;
       };
   homeManagerMainWithSystemOverview =
     evaluate homeManagerModule
@@ -1957,6 +1987,7 @@ assert map (entry: entry.assertion) homeManagerCollision.config.assertions == [ 
 assert map (entry: entry.assertion) homeManagerOverviewCollision.config.assertions == [ false ];
 assert map (entry: entry.assertion) homeManagerShortcutEditorCollision.config.assertions == [ false ];
 assert map (entry: entry.assertion) homeManagerTransitionsCollision.config.assertions == [ false ];
+assert map (entry: entry.assertion) homeManagerWheelControlCollision.config.assertions == [ false ];
 assert map (entry: entry.assertion) homeManagerMainWithSystemOverview.config.assertions == [ true ];
 assert map (entry: entry.assertion) homeManagerOverviewWithSystemMain.config.assertions == [ true ];
 assert
@@ -1974,6 +2005,9 @@ assert homeManagerOptionSurface.options.programs.driftile ? settings;
 assert homeManagerOptionSurface.options.programs.driftile ? shortcutEditor;
 assert homeManagerOptionSurface.options.programs.driftile.shortcutEditor ? enable;
 assert homeManagerOptionSurface.options.programs.driftile.shortcutEditor ? package;
+assert homeManagerOptionSurface.options.programs.driftile ? wheelControl;
+assert homeManagerOptionSurface.options.programs.driftile.wheelControl ? enable;
+assert homeManagerOptionSurface.options.programs.driftile.wheelControl ? package;
 assert homeManagerOptionSurface.options.programs.driftile.overview ? screenEdge;
 assert homeManagerOptionSurface.options.programs.driftile.overview ? backdropColor;
 assert homeManagerOptionSurface.options.programs.driftile.overview ? zoom;
@@ -1998,6 +2032,9 @@ assert nixosOptionSurface.options.programs.driftile ? transitions;
 assert nixosOptionSurface.options.programs.driftile ? shortcutEditor;
 assert nixosOptionSurface.options.programs.driftile.shortcutEditor ? enable;
 assert nixosOptionSurface.options.programs.driftile.shortcutEditor ? package;
+assert nixosOptionSurface.options.programs.driftile ? wheelControl;
+assert nixosOptionSurface.options.programs.driftile.wheelControl ? enable;
+assert nixosOptionSurface.options.programs.driftile.wheelControl ? package;
 assert !(nixosOptionSurface.options.programs.driftile.overview ? screenEdge);
 assert !(nixosOptionSurface.options.programs.driftile.overview ? backdropColor);
 assert !(nixosOptionSurface.options.programs.driftile.overview ? zoom);

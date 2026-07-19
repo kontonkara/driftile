@@ -444,6 +444,12 @@ let
     "transitions"
     "enable"
   ] false osConfig;
+  systemWheelControlInstallEnabled = lib.attrByPath [
+    "programs"
+    "driftile"
+    "wheelControl"
+    "enable"
+  ] false osConfig;
 in
 {
   options.programs.driftile = {
@@ -464,6 +470,17 @@ in
         default = self.packages.${system}."driftile-shortcut-editor";
         defaultText = lib.literalExpression "inputs.driftile.packages.\${pkgs.stdenv.hostPlatform.system}.\"driftile-shortcut-editor\"";
         description = "The Driftile shortcut editor package to install.";
+      };
+    };
+
+    wheelControl = {
+      enable = lib.mkEnableOption "installation of the Driftile wheel control effect";
+
+      package = lib.mkOption {
+        type = lib.types.package;
+        default = self.packages.${system}."driftile-wheel-control";
+        defaultText = lib.literalExpression "inputs.driftile.packages.\${pkgs.stdenv.hostPlatform.system}.\"driftile-wheel-control\"";
+        description = "The Driftile wheel control effect package to install.";
       };
     };
 
@@ -965,6 +982,19 @@ in
             {
               assertion = !systemTransitionsInstallEnabled;
               message = "Install the Driftile transition effect through either NixOS or Home Manager for a user, not both.";
+            }
+          ];
+        })
+      ]
+    ))
+    (lib.mkIf cfg.wheelControl.enable (
+      lib.mkMerge [
+        (lib.setAttrByPath packageOptionPath [ cfg.wheelControl.package ])
+        (lib.optionalAttrs preventSystemInstall {
+          assertions = [
+            {
+              assertion = !systemWheelControlInstallEnabled;
+              message = "Install the Driftile wheel control effect through either NixOS or Home Manager for a user, not both.";
             }
           ];
         })

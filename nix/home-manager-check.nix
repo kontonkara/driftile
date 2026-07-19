@@ -3,6 +3,7 @@
   defaultOverviewPackage,
   defaultShortcutEditorPackage,
   defaultTransitionsPackage,
+  defaultWheelControlPackage,
   home-manager,
   homeManagerModule,
   lib,
@@ -179,6 +180,9 @@ let
   shortcutEditorOnly = evaluateHome {
     programs.driftile.shortcutEditor.enable = true;
   } { };
+  wheelControlOnly = evaluateHome {
+    programs.driftile.wheelControl.enable = true;
+  } { };
   bothPackages = evaluateHome {
     programs.driftile = {
       enable = true;
@@ -191,6 +195,7 @@ let
       overview.enable = true;
       shortcutEditor.enable = true;
       transitions.enable = true;
+      wheelControl.enable = true;
     };
   } { };
   overviewOverride = evaluateHome {
@@ -578,6 +583,16 @@ let
       }
     ];
   };
+  systemWheelControlConfiguration = lib.nixosSystem {
+    inherit system;
+    modules = [
+      nixosModule
+      {
+        programs.driftile.wheelControl.enable = true;
+        system.stateVersion = "26.05";
+      }
+    ];
+  };
   settingsOnly = evaluateHome {
     programs.driftile = {
       settings = {
@@ -609,6 +624,12 @@ let
   shortcutEditorCollisionEvaluation = builtins.tryEval (
     builtins.deepSeq shortcutEditorCollision.activationPackage true
   );
+  wheelControlCollision = evaluateHome {
+    programs.driftile.wheelControl.enable = true;
+  } systemWheelControlConfiguration.config;
+  wheelControlCollisionEvaluation = builtins.tryEval (
+    builtins.deepSeq wheelControlCollision.activationPackage true
+  );
   mainWithSystemOverview = evaluateHome {
     programs.driftile.enable = true;
   } systemOverviewConfiguration.config;
@@ -619,6 +640,7 @@ let
   overviewPackagePath = toString defaultOverviewPackage;
   shortcutEditorPackagePath = toString defaultShortcutEditorPackage;
   transitionsPackagePath = toString defaultTransitionsPackage;
+  wheelControlPackagePath = toString defaultWheelControlPackage;
   homePackagePaths = configuration: map toString configuration.config.home.packages;
   systemPackagePaths = map toString systemConfiguration.config.environment.systemPackages;
   systemOverviewPackagePaths = map toString systemOverviewConfiguration.config.environment.systemPackages;
@@ -626,6 +648,8 @@ let
     map toString systemTransitionsConfiguration.config.environment.systemPackages;
   systemShortcutEditorPackagePaths =
     map toString systemShortcutEditorConfiguration.config.environment.systemPackages;
+  systemWheelControlPackagePaths =
+    map toString systemWheelControlConfiguration.config.environment.systemPackages;
   packageCount =
     configuration: lib.count (path: path == packagePath) (homePackagePaths configuration);
   overviewPackageCount =
@@ -634,11 +658,14 @@ let
     configuration: lib.count (path: path == shortcutEditorPackagePath) (homePackagePaths configuration);
   transitionsPackageCount =
     configuration: lib.count (path: path == transitionsPackagePath) (homePackagePaths configuration);
+  wheelControlPackageCount =
+    configuration: lib.count (path: path == wheelControlPackagePath) (homePackagePaths configuration);
 in
 assert packageCount standalone == 1;
 assert overviewPackageCount standalone == 0;
 assert shortcutEditorPackageCount standalone == 0;
 assert transitionsPackageCount standalone == 0;
+assert wheelControlPackageCount standalone == 0;
 assert packageCount overviewOnly == 0;
 assert overviewPackageCount overviewOnly == 1;
 assert transitionsPackageCount overviewOnly == 0;
@@ -649,6 +676,12 @@ assert packageCount shortcutEditorOnly == 0;
 assert overviewPackageCount shortcutEditorOnly == 0;
 assert shortcutEditorPackageCount shortcutEditorOnly == 1;
 assert transitionsPackageCount shortcutEditorOnly == 0;
+assert wheelControlPackageCount shortcutEditorOnly == 0;
+assert packageCount wheelControlOnly == 0;
+assert overviewPackageCount wheelControlOnly == 0;
+assert shortcutEditorPackageCount wheelControlOnly == 0;
+assert transitionsPackageCount wheelControlOnly == 0;
+assert wheelControlPackageCount wheelControlOnly == 1;
 assert packageCount bothPackages == 1;
 assert overviewPackageCount bothPackages == 1;
 assert transitionsPackageCount bothPackages == 0;
@@ -656,6 +689,7 @@ assert packageCount allPackages == 1;
 assert overviewPackageCount allPackages == 1;
 assert shortcutEditorPackageCount allPackages == 1;
 assert transitionsPackageCount allPackages == 1;
+assert wheelControlPackageCount allPackages == 1;
 assert packageCount overviewOverride == 0;
 assert overviewPackageCount overviewOverride == 0;
 assert lib.elem (toString pkgs.hello) (homePackagePaths overviewOverride);
@@ -1192,6 +1226,9 @@ assert !lib.elem transitionsPackagePath systemShortcutEditorPackagePaths;
 assert lib.elem transitionsPackagePath systemTransitionsPackagePaths;
 assert !lib.elem packagePath systemTransitionsPackagePaths;
 assert !lib.elem overviewPackagePath systemTransitionsPackagePaths;
+assert lib.elem wheelControlPackagePath systemWheelControlPackagePaths;
+assert !lib.elem packagePath systemWheelControlPackagePaths;
+assert !lib.elem overviewPackagePath systemWheelControlPackagePaths;
 assert packageCount settingsOnly == 0;
 assert lib.all (assertion: assertion.assertion) settingsOnly.config.assertions;
 assert
@@ -1247,6 +1284,7 @@ assert !collisionEvaluation.success;
 assert !overviewCollisionEvaluation.success;
 assert !shortcutEditorCollisionEvaluation.success;
 assert !transitionsCollisionEvaluation.success;
+assert !wheelControlCollisionEvaluation.success;
 assert lib.all (assertion: assertion.assertion) mainWithSystemOverview.config.assertions;
 assert lib.all (assertion: assertion.assertion) overviewWithSystemMain.config.assertions;
 assert packageCount mainWithSystemOverview == 1;

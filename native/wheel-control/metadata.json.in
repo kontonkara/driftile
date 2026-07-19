@@ -1,0 +1,18 @@
+{
+  "KPlugin": {
+    "Authors": [
+      {
+        "Name": "Nikita Konton"
+      }
+    ],
+    "Category": "Window Management",
+    "Description": "Global modifier and wheel shortcuts for Driftile navigation.",
+    "EnabledByDefault": false,
+    "Icon": "input-mouse",
+    "Id": "driftile_wheel_control",
+    "License": "GPL-3.0-or-later",
+    "Name": "Driftile Wheel Control",
+    "Version": "@DRIFTILE_VERSION@",
+    "Website": "https://github.com/kontonkara/driftile"
+  }
+}
