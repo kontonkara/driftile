@@ -103,6 +103,23 @@ export type {
   OverviewSpatialDragHoverIntent,
   OverviewSpatialDragHoverPlan,
 } from "./spatial-drag-hover";
+export {
+  decodeSpatialDropCommand,
+  encodeSpatialDropCommand,
+} from "./spatial-drop-command";
+export type {
+  SpatialDropCommand,
+  SpatialDropSource,
+  SpatialDropTarget,
+} from "./spatial-drop-command";
+export {
+  buildOverviewSpatialWindowDropPlan,
+  hitTestOverviewSpatialWindowDrop,
+} from "./spatial-window-drop";
+export type {
+  OverviewSpatialWindowDropPlan,
+  OverviewSpatialWindowDropTarget,
+} from "./spatial-window-drop";
 export { planOverviewSpatialHorizontalEdgePan } from "./spatial-horizontal-edge-pan";
 export type {
   OverviewSpatialHorizontalEdgePanDirection,
