@@ -124,8 +124,10 @@ Rectangle {
     property var spatialViewportSnapshot: null
     property var spatialWindowDragSource: null
     property string spatialWindowDragSourceDesktopId: ""
+    property int spatialWindowDragSourceWorkspaceIndex: -1
     property real spatialEdgePanSceneX: Number.NaN
     property real spatialEdgePanSceneY: Number.NaN
+    property real spatialEdgePanPointerX: Number.NaN
     property real spatialEdgePanPointerY: Number.NaN
     property string searchQuery: ""
     property int searchResultCount: 0
@@ -1095,7 +1097,9 @@ Rectangle {
     }
 
     function beginWindowSpatialEdgePan(source, expectedDesktopId, sceneX, sceneY) {
+        const workspaceIndex = desktopIds.indexOf(expectedDesktopId);
         if (desktopReorderActive || spatialWindowDragSource !== null
+                || workspaceIndex < 0 || workspaceIndex >= desktopIds.length
                 || !windowSpatialDragSourceIsExact(source, expectedDesktopId)
                 || !storeSpatialEdgePanScenePoint(sceneX, sceneY)) {
             return;
@@ -1104,6 +1108,7 @@ Rectangle {
         resetOverviewWheelState();
         spatialWindowDragSource = source;
         spatialWindowDragSourceDesktopId = expectedDesktopId;
+        spatialWindowDragSourceWorkspaceIndex = workspaceIndex;
     }
 
     function updateWindowSpatialEdgePan(source, expectedDesktopId, sceneX, sceneY) {
@@ -1176,6 +1181,7 @@ Rectangle {
 
         spatialEdgePanSceneX = sceneX;
         spatialEdgePanSceneY = sceneY;
+        spatialEdgePanPointerX = point.x;
         spatialEdgePanPointerY = point.y;
         return true;
     }
@@ -1183,12 +1189,14 @@ Rectangle {
     function clearSpatialEdgePanScenePoint() {
         spatialEdgePanSceneX = Number.NaN;
         spatialEdgePanSceneY = Number.NaN;
+        spatialEdgePanPointerX = Number.NaN;
         spatialEdgePanPointerY = Number.NaN;
     }
 
     function resetSpatialEdgePanTracking() {
         spatialWindowDragSource = null;
         spatialWindowDragSourceDesktopId = "";
+        spatialWindowDragSourceWorkspaceIndex = -1;
         clearSpatialEdgePanScenePoint();
     }
 
@@ -2135,12 +2143,20 @@ Rectangle {
     function spatialEdgePanCanRun() {
         if (!sceneEffect || sceneEffect.active !== true
                 || !spatialLayoutIsValid(overviewSpatialLayout)
-                || overviewSpatialLayout.contentHeight <= height
                 || !Number.isFinite(spatialContentY) || spatialContentY < 0
                 || spatialContentY > overviewSpatialLayout.contentHeight - height
                 || !Number.isFinite(spatialEdgePanSceneX)
                 || !Number.isFinite(spatialEdgePanSceneY)
+                || !Number.isFinite(spatialEdgePanPointerX)
                 || !Number.isFinite(spatialEdgePanPointerY)) {
+            return false;
+        }
+
+        return spatialVerticalEdgePanCanRun() || spatialHorizontalEdgePanCanRun();
+    }
+
+    function spatialVerticalEdgePanCanRun() {
+        if (overviewSpatialLayout.contentHeight <= height) {
             return false;
         }
 
@@ -2156,6 +2172,77 @@ Rectangle {
         return windowSpatialDragSourceIsExact(spatialWindowDragSource,
                                               spatialWindowDragSourceDesktopId)
             || desktopReorderSpatialEdgePanIsExact();
+    }
+
+    function spatialHorizontalEdgePanContext() {
+        try {
+            const workspaceIndex = spatialWindowDragSourceWorkspaceIndex;
+            const expectedDesktopId = spatialWindowDragSourceDesktopId;
+            if (!Number.isInteger(workspaceIndex) || workspaceIndex !== currentWorkspaceIndex
+                    || workspaceIndex < 0 || workspaceIndex >= desktopIds.length
+                    || desktopIds[workspaceIndex] !== expectedDesktopId
+                    || !windowSpatialDragSourceIsExact(spatialWindowDragSource, expectedDesktopId)) {
+                return null;
+            }
+
+            const card = desktopCardAt(workspaceIndex);
+            const bounds = spatialHorizontalViewportBounds(workspaceIndex, expectedDesktopId);
+            if (!card || card.current !== true || !bounds || !Number.isFinite(card.projectionScale)
+                    || card.projectionScale <= 0 || !Number.isFinite(card.contentWidth)
+                    || card.contentWidth <= 0) {
+                return null;
+            }
+
+            let viewportPoint = null;
+            try {
+                viewportPoint = card.mapToItem(root, card.contentLeft, card.contentTop);
+            } catch (error) {
+                return null;
+            }
+            if (!viewportPoint || !Number.isFinite(viewportPoint.x)) {
+                return null;
+            }
+
+            const viewportOffset = spatialHorizontalViewportOffsetForBounds(workspaceIndex,
+                                                                            expectedDesktopId, bounds);
+            if (!Number.isFinite(viewportOffset) || viewportOffset < bounds.minimum
+                    || viewportOffset > bounds.maximum) {
+                return null;
+            }
+
+            return {
+                bounds,
+                card,
+                expectedDesktopId,
+                geometryEpoch: spatialHorizontalViewportRevision,
+                pointerX: spatialEdgePanPointerX,
+                projectionScale: card.projectionScale,
+                viewportLeft: viewportPoint.x,
+                viewportOffset,
+                viewportWidth: card.contentWidth,
+                workspaceIndex
+            };
+        } catch (error) {
+            return null;
+        }
+    }
+
+    function spatialHorizontalEdgePanCanRun() {
+        const context = spatialHorizontalEdgePanContext();
+        if (!context || !Number.isFinite(context.pointerX)) {
+            return false;
+        }
+
+        const edgeZone = Math.min(context.viewportWidth * 0.12, 96);
+        const viewportRight = context.viewportLeft + context.viewportWidth;
+        if (!Number.isFinite(edgeZone) || edgeZone <= 0 || !Number.isFinite(viewportRight)) {
+            return false;
+        }
+
+        return (context.pointerX < context.viewportLeft + edgeZone
+                && context.viewportOffset > context.bounds.minimum)
+            || (context.pointerX > viewportRight - edgeZone
+                && context.viewportOffset < context.bounds.maximum);
     }
 
     function desktopReorderSpatialEdgePanIsExact() {
@@ -2181,6 +2268,18 @@ Rectangle {
 
     function advanceSpatialEdgePan(elapsedMilliseconds) {
         if (!spatialEdgePanCanRun() || elapsedMilliseconds !== 16) {
+            return false;
+        }
+
+        const verticalAdvanced = spatialVerticalEdgePanCanRun()
+            && advanceSpatialVerticalEdgePan(elapsedMilliseconds);
+        const horizontalAdvanced = spatialHorizontalEdgePanCanRun()
+            && advanceSpatialHorizontalEdgePan(elapsedMilliseconds);
+        return verticalAdvanced || horizontalAdvanced;
+    }
+
+    function advanceSpatialVerticalEdgePan(elapsedMilliseconds) {
+        if (!spatialVerticalEdgePanCanRun() || elapsedMilliseconds !== spatialEdgePanTimer.interval) {
             return false;
         }
 
@@ -2222,6 +2321,87 @@ Rectangle {
             updateDesktopReorder(desktopReorderSourceId, spatialEdgePanSceneX, spatialEdgePanSceneY);
         }
         return true;
+    }
+
+    function advanceSpatialHorizontalEdgePan(elapsedMilliseconds) {
+        const context = spatialHorizontalEdgePanContext();
+        const runtime = OverviewRuntime.DriftileOverview;
+        if (!context || elapsedMilliseconds !== spatialEdgePanTimer.interval || !runtime
+                || typeof runtime.planOverviewSpatialHorizontalEdgePan !== "function") {
+            clearSpatialEdgePanScenePoint();
+            return false;
+        }
+
+        let plan = null;
+        try {
+            plan = runtime.planOverviewSpatialHorizontalEdgePan({
+                                                                    elapsedMilliseconds,
+                                                                    maximumViewportOffset: context.bounds.maximum,
+                                                                    minimumViewportOffset: context.bounds.minimum,
+                                                                    pointerX: context.pointerX,
+                                                                    projectionScale: context.projectionScale,
+                                                                    viewportLeft: context.viewportLeft,
+                                                                    viewportOffset: context.viewportOffset,
+                                                                    viewportWidth: context.viewportWidth
+                                                                });
+        } catch (error) {
+            clearSpatialEdgePanScenePoint();
+            return false;
+        }
+        if (!spatialHorizontalEdgePanPlanIsValid(plan, context, elapsedMilliseconds)) {
+            clearSpatialEdgePanScenePoint();
+            return false;
+        }
+        if (!plan.active) {
+            return false;
+        }
+
+        const confirmed = spatialHorizontalEdgePanContext();
+        if (!confirmed || confirmed.card !== context.card
+                || confirmed.geometryEpoch !== context.geometryEpoch
+                || confirmed.expectedDesktopId !== context.expectedDesktopId
+                || confirmed.pointerX !== context.pointerX
+                || confirmed.viewportLeft !== context.viewportLeft
+                || confirmed.viewportOffset !== context.viewportOffset
+                || confirmed.viewportWidth !== context.viewportWidth
+                || confirmed.projectionScale !== context.projectionScale
+                || !setSpatialHorizontalViewportOffsetForBounds(context.workspaceIndex,
+                                                                context.expectedDesktopId,
+                                                                plan.viewportOffset, context.bounds)) {
+            clearSpatialEdgePanScenePoint();
+            return false;
+        }
+        if (!detachSpatialLiveCameraForManualOffset(context.workspaceIndex, context.expectedDesktopId,
+                                                    context.viewportOffset, plan.viewportOffset)) {
+            const rollbackBounds = spatialHorizontalViewportBounds(context.workspaceIndex,
+                                                                   context.expectedDesktopId);
+            setSpatialHorizontalViewportOffsetForBounds(context.workspaceIndex, context.expectedDesktopId,
+                                                        context.viewportOffset, rollbackBounds);
+            clearSpatialEdgePanScenePoint();
+            return false;
+        }
+        return true;
+    }
+
+    function spatialHorizontalEdgePanPlanIsValid(plan, context, elapsedMilliseconds) {
+        if (!plan || Array.isArray(plan) || !context || typeof plan.active !== "boolean"
+                || !Number.isFinite(plan.viewportOffset)
+                || plan.viewportOffset < context.bounds.minimum
+                || plan.viewportOffset > context.bounds.maximum
+                || elapsedMilliseconds !== spatialEdgePanTimer.interval) {
+            return false;
+        }
+
+        const delta = plan.viewportOffset - context.viewportOffset;
+        const tolerance = Math.max(1, context.bounds.sourceWidth) * 0.000001;
+        if (!plan.active) {
+            return plan.direction === null && Math.abs(delta) <= tolerance;
+        }
+
+        const maximumDistance = Math.min(context.viewportWidth * 1.5, 1800)
+            * elapsedMilliseconds / (1000 * context.projectionScale);
+        return (plan.direction === "left" && delta < 0 || plan.direction === "right" && delta > 0)
+            && Math.abs(delta) <= maximumDistance + tolerance;
     }
 
     function spatialEdgePanPlanIsValid(plan, elapsedMilliseconds) {
@@ -2861,41 +3041,64 @@ Rectangle {
             return false;
         }
 
-        const pixelInput = event.pixelDelta.x !== 0 || event.pixelDelta.y !== 0;
-        const horizontalMagnitude = Math.abs(pixelInput ? event.pixelDelta.x : event.angleDelta.x);
-        const verticalMagnitude = Math.abs(pixelInput ? event.pixelDelta.y : event.angleDelta.y);
-        if (horizontalMagnitude === 0 && verticalMagnitude === 0) {
-            return false;
-        }
-        if (horizontalMagnitude === verticalMagnitude) {
-            if (overviewWheelAxisOwner.length > 0) {
-                event.accepted = true;
-                return true;
-            }
+        const runtime = OverviewRuntime.DriftileOverview;
+        if (!runtime || typeof runtime.planOverviewSpatialWheelAxis !== "function") {
             return false;
         }
 
-        const requestedAxis = horizontalMagnitude > verticalMagnitude ? "horizontal" : "vertical";
-        if (handlerAxis !== requestedAxis) {
+        const expectedAxisOwner = overviewWheelAxisOwner.length === 0 ? null : overviewWheelAxisOwner;
+        let plan = null;
+        try {
+            plan = runtime.planOverviewSpatialWheelAxis({
+                                                            angleDeltaX: event.angleDelta.x,
+                                                            angleDeltaY: event.angleDelta.y,
+                                                            axisOwner: expectedAxisOwner,
+                                                            pixelDeltaX: event.pixelDelta.x,
+                                                            pixelDeltaY: event.pixelDelta.y
+                                                        });
+        } catch (error) {
+            return false;
+        }
+        if (!spatialWheelAxisPlanIsValid(plan, expectedAxisOwner) || plan.axis === null
+                || handlerAxis !== plan.axis) {
             return false;
         }
 
         const claimedAxis = overviewWheelAxisOwner.length === 0;
         if (claimedAxis) {
-            overviewWheelAxisOwner = requestedAxis;
+            overviewWheelAxisOwner = plan.axisOwner;
         }
-        if (overviewWheelAxisOwner !== requestedAxis) {
+        if (plan.axis !== plan.axisOwner) {
             event.accepted = true;
             return true;
         }
 
-        const handled = requestedAxis === "horizontal"
+        const handled = plan.axis === "horizontal"
             ? handleOverviewHorizontalWheel(event, point)
             : handleOverviewWheel(event);
         if (claimedAxis && !handled) {
             overviewWheelAxisOwner = "";
         }
         return handled;
+    }
+
+    function spatialWheelAxisPlanIsValid(plan, expectedAxisOwner) {
+        if (!plan || Array.isArray(plan)
+                || (expectedAxisOwner !== null && expectedAxisOwner !== "horizontal"
+                    && expectedAxisOwner !== "vertical")
+                || (plan.axis !== null && plan.axis !== "horizontal" && plan.axis !== "vertical")
+                || (plan.axisOwner !== null && plan.axisOwner !== "horizontal"
+                    && plan.axisOwner !== "vertical")
+                || (plan.inputMode !== null && plan.inputMode !== "angle" && plan.inputMode !== "pixel")) {
+            return false;
+        }
+        if (plan.axis === null) {
+            return plan.inputMode === null && plan.axisOwner === expectedAxisOwner;
+        }
+
+        return plan.inputMode !== null && plan.axisOwner !== null
+            && (expectedAxisOwner === null ? plan.axisOwner === plan.axis
+                                           : plan.axisOwner === expectedAxisOwner);
     }
 
     function routeOverviewShiftHorizontalWheel(event, point) {

@@ -12,6 +12,24 @@ export interface OverviewSpatialWheelInput {
 
 export type OverviewSpatialWheelDirection = "next" | "previous";
 
+export type OverviewSpatialWheelAxis = "horizontal" | "vertical";
+
+export type OverviewSpatialWheelInputMode = "angle" | "pixel";
+
+export interface OverviewSpatialWheelAxisInput {
+  readonly angleDeltaX: number;
+  readonly angleDeltaY: number;
+  readonly axisOwner: OverviewSpatialWheelAxis | null;
+  readonly pixelDeltaX: number;
+  readonly pixelDeltaY: number;
+}
+
+export interface OverviewSpatialWheelAxisPlan {
+  readonly axis: OverviewSpatialWheelAxis | null;
+  readonly axisOwner: OverviewSpatialWheelAxis | null;
+  readonly inputMode: OverviewSpatialWheelInputMode | null;
+}
+
 export interface OverviewSpatialWorkspaceWheelPlan {
   readonly contentY: number;
   readonly direction: OverviewSpatialWheelDirection | null;
@@ -52,6 +70,63 @@ const MAXIMUM_PIXEL_DELTA_PER_EVENT = 4_096;
 const MAXIMUM_COORDINATE = Number.MAX_SAFE_INTEGER;
 const PIXEL_SCROLL_QUANTA_PER_UNIT = 64;
 const PIXEL_SCROLL_QUANTUM = 1 / PIXEL_SCROLL_QUANTA_PER_UNIT;
+
+export function planOverviewSpatialWheelAxis(
+  input: unknown,
+): OverviewSpatialWheelAxisPlan | null {
+  try {
+    if (!isRecord(input)) {
+      return null;
+    }
+
+    const angleDeltaX = input["angleDeltaX"];
+    const angleDeltaY = input["angleDeltaY"];
+    const axisOwner = input["axisOwner"];
+    const pixelDeltaX = input["pixelDeltaX"];
+    const pixelDeltaY = input["pixelDeltaY"];
+
+    if (
+      !isAngleDelta(angleDeltaX) ||
+      !isAngleDelta(angleDeltaY) ||
+      !isWheelAxisOwner(axisOwner) ||
+      !isPixelDelta(pixelDeltaX) ||
+      !isPixelDelta(pixelDeltaY)
+    ) {
+      return null;
+    }
+
+    const hasPixelInput = pixelDeltaX !== 0 || pixelDeltaY !== 0;
+    const horizontalMagnitude = Math.abs(
+      hasPixelInput ? pixelDeltaX : angleDeltaX,
+    );
+    const verticalMagnitude = Math.abs(
+      hasPixelInput ? pixelDeltaY : angleDeltaY,
+    );
+
+    if (horizontalMagnitude === 0 && verticalMagnitude === 0) {
+      return Object.freeze({
+        axis: null,
+        axisOwner,
+        inputMode: null,
+      });
+    }
+
+    const axis =
+      horizontalMagnitude === verticalMagnitude
+        ? (axisOwner ?? "vertical")
+        : horizontalMagnitude > verticalMagnitude
+          ? "horizontal"
+          : "vertical";
+
+    return Object.freeze({
+      axis,
+      axisOwner: axisOwner ?? axis,
+      inputMode: hasPixelInput ? "pixel" : "angle",
+    });
+  } catch {
+    return null;
+  }
+}
 
 export function planOverviewSpatialWheel(
   input: unknown,
@@ -294,6 +369,12 @@ function isWheelDirection(
   value: unknown,
 ): value is OverviewSpatialWheelDirection {
   return value === "next" || value === "previous";
+}
+
+function isWheelAxisOwner(
+  value: unknown,
+): value is OverviewSpatialWheelAxis | null {
+  return value === null || value === "horizontal" || value === "vertical";
 }
 
 function isStepCount(value: unknown): value is number {

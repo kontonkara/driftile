@@ -67,13 +67,18 @@ export type {
   OverviewSpatialWorkspaceSettlePlan,
 } from "./spatial-viewport";
 export {
+  planOverviewSpatialWheelAxis,
   planOverviewSpatialWheel,
   planOverviewSpatialWorkspaceWheelTarget,
 } from "./spatial-wheel";
 export type {
   OverviewSpatialViewportWheelPlan,
+  OverviewSpatialWheelAxis,
+  OverviewSpatialWheelAxisInput,
+  OverviewSpatialWheelAxisPlan,
   OverviewSpatialWheelDirection,
   OverviewSpatialWheelInput,
+  OverviewSpatialWheelInputMode,
   OverviewSpatialWheelPlan,
   OverviewSpatialWorkspaceWheelPlan,
   OverviewSpatialWorkspaceWheelTargetInput,
@@ -87,6 +92,12 @@ export type {
   OverviewSpatialHorizontalWheelInput,
   OverviewSpatialHorizontalWheelPlan,
 } from "./spatial-horizontal-wheel";
+export { planOverviewSpatialHorizontalEdgePan } from "./spatial-horizontal-edge-pan";
+export type {
+  OverviewSpatialHorizontalEdgePanDirection,
+  OverviewSpatialHorizontalEdgePanInput,
+  OverviewSpatialHorizontalEdgePanPlan,
+} from "./spatial-horizontal-edge-pan";
 export { planOverviewSpatialEdgePan } from "./spatial-edge-pan";
 export type {
   OverviewSpatialEdgePanDirection,

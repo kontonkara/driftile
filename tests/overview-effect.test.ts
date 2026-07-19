@@ -1670,6 +1670,10 @@ describe("overview effect package", () => {
     expect(spatialEdgePan).toContain(
       "point = root.mapFromItem(null, sceneX, sceneY)",
     );
+    expect(spatialEdgePan).toContain("spatialEdgePanPointerX = point.x");
+    expect(spatialEdgePan).toContain(
+      "spatialWindowDragSourceWorkspaceIndex = workspaceIndex",
+    );
     expect(spatialEdgePan).toContain("desktopReorderSpatialEdgePanIsExact()");
     expect(spatialEdgePan).toContain(
       "const edgeZone = Math.min(height * 0.12, 96)",
@@ -1682,10 +1686,28 @@ describe("overview effect package", () => {
     );
     expect(spatialEdgePan).toContain("!canMoveUp && !canMoveDown");
     expect(spatialEdgePan).toMatch(
+      /function spatialHorizontalEdgePanContext[\s\S]*workspaceIndex !== currentWorkspaceIndex[\s\S]*windowSpatialDragSourceIsExact\(spatialWindowDragSource, expectedDesktopId\)[\s\S]*card\.mapToItem\(root, card\.contentLeft, card\.contentTop\)[\s\S]*spatialHorizontalViewportOffsetForBounds/u,
+    );
+    expect(spatialEdgePan).toMatch(
+      /function spatialHorizontalEdgePanCanRun[\s\S]*context\.pointerX < context\.viewportLeft \+ edgeZone[\s\S]*context\.viewportOffset > context\.bounds\.minimum[\s\S]*context\.pointerX > viewportRight - edgeZone[\s\S]*context\.viewportOffset < context\.bounds\.maximum/u,
+    );
+    expect(spatialEdgePan).toMatch(
       /runtime\.planOverviewSpatialEdgePan\(\{[\s\S]*sceneHeight: height,[\s\S]*contentHeight: overviewSpatialLayout\.contentHeight,[\s\S]*contentY: spatialContentY,[\s\S]*pointerY: spatialEdgePanPointerY,[\s\S]*elapsedMilliseconds/u,
     );
     expect(spatialEdgePan).toContain(
       "spatialEdgePanPlanIsValid(plan, elapsedMilliseconds)",
+    );
+    expect(spatialEdgePan).toMatch(
+      /function advanceSpatialEdgePan[\s\S]*advanceSpatialVerticalEdgePan\(elapsedMilliseconds\)[\s\S]*advanceSpatialHorizontalEdgePan\(elapsedMilliseconds\)[\s\S]*verticalAdvanced \|\| horizontalAdvanced/u,
+    );
+    expect(spatialEdgePan).toMatch(
+      /runtime\.planOverviewSpatialHorizontalEdgePan\(\{[\s\S]*maximumViewportOffset: context\.bounds\.maximum,[\s\S]*minimumViewportOffset: context\.bounds\.minimum,[\s\S]*pointerX: context\.pointerX,[\s\S]*projectionScale: context\.projectionScale,[\s\S]*viewportLeft: context\.viewportLeft,[\s\S]*viewportOffset: context\.viewportOffset,[\s\S]*viewportWidth: context\.viewportWidth/u,
+    );
+    expect(spatialEdgePan).toMatch(
+      /setSpatialHorizontalViewportOffsetForBounds\(context\.workspaceIndex,[\s\S]*plan\.viewportOffset, context\.bounds\)[\s\S]*detachSpatialLiveCameraForManualOffset\(context\.workspaceIndex, context\.expectedDesktopId,[\s\S]*context\.viewportOffset, plan\.viewportOffset\)/u,
+    );
+    expect(spatialEdgePan).toMatch(
+      /function spatialHorizontalEdgePanPlanIsValid[\s\S]*plan\.viewportOffset < context\.bounds\.minimum[\s\S]*plan\.viewportOffset > context\.bounds\.maximum[\s\S]*plan\.direction === "left" && delta < 0[\s\S]*plan\.direction === "right" && delta > 0/u,
     );
     expect(spatialEdgePan).toContain(
       "const maximumDistance = Math.min(height * 1.5, 1800) * elapsedMilliseconds / 1000",
@@ -2854,19 +2876,19 @@ describe("overview effect package", () => {
     expect(wheelRouting).not.toContain("event.accepted === true");
     expect(wheelRouting).not.toContain("event.accepted = false");
     expect(wheelRouting).toMatch(
-      /const pixelInput = event\.pixelDelta\.x !== 0 \|\| event\.pixelDelta\.y !== 0;[\s\S]*horizontalMagnitude > verticalMagnitude \? "horizontal" : "vertical"/u,
+      /runtime\.planOverviewSpatialWheelAxis\(\{[\s\S]*angleDeltaX: event\.angleDelta\.x,[\s\S]*angleDeltaY: event\.angleDelta\.y,[\s\S]*axisOwner: expectedAxisOwner,[\s\S]*pixelDeltaX: event\.pixelDelta\.x,[\s\S]*pixelDeltaY: event\.pixelDelta\.y/u,
     );
     expect(wheelRouting).toMatch(
-      /horizontalMagnitude === verticalMagnitude[\s\S]*overviewWheelAxisOwner\.length > 0[\s\S]*event\.accepted = true;[\s\S]*return false;/u,
+      /spatialWheelAxisPlanIsValid\(plan, expectedAxisOwner\)[\s\S]*plan\.axis === null[\s\S]*handlerAxis !== plan\.axis/u,
     );
     expect(wheelRouting).toMatch(
-      /if \(handlerAxis !== requestedAxis\) \{\s*return false;\s*\}/u,
+      /overviewWheelAxisOwner = plan\.axisOwner;[\s\S]*if \(plan\.axis !== plan\.axisOwner\) \{\s*event\.accepted = true;\s*return true;/u,
     );
     expect(wheelRouting).toMatch(
-      /if \(overviewWheelAxisOwner !== requestedAxis\) \{\s*event\.accepted = true;\s*return true;/u,
+      /const handled = plan\.axis === "horizontal"[\s\S]*handleOverviewHorizontalWheel\(event, point\)[\s\S]*handleOverviewWheel\(event\)[\s\S]*if \(claimedAxis && !handled\)/u,
     );
     expect(wheelRouting).toMatch(
-      /const handled = requestedAxis === "horizontal"[\s\S]*handleOverviewHorizontalWheel\(event, point\)[\s\S]*handleOverviewWheel\(event\)[\s\S]*if \(claimedAxis && !handled\)/u,
+      /function spatialWheelAxisPlanIsValid[\s\S]*plan\.axis === null[\s\S]*plan\.inputMode === null && plan\.axisOwner === expectedAxisOwner[\s\S]*expectedAxisOwner === null \? plan\.axisOwner === plan\.axis[\s\S]*plan\.axisOwner === expectedAxisOwner/u,
     );
     expect(wheelRouting).toMatch(
       /function routeOverviewShiftHorizontalWheel[\s\S]*event\.modifiers !== Qt\.ShiftModifier[\s\S]*const pixelDeltaX = event\.pixelDelta\.y;[\s\S]*const angleDeltaX = event\.angleDelta\.y;[\s\S]*overviewWheelAxisOwner = "horizontal";[\s\S]*handleOverviewHorizontalWheelInput\(event, point, angleDeltaX, pixelDeltaX\)/u,

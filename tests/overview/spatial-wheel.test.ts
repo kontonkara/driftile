@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { LAYOUT_PERSISTENCE_LIMITS } from "../../src/core/layout-persistence";
 import {
+  planOverviewSpatialWheelAxis,
   planOverviewSpatialWheel,
   planOverviewSpatialWorkspaceWheelTarget,
 } from "../../src/overview/spatial-wheel";
@@ -13,6 +14,125 @@ const baseInput = Object.freeze({
   pixelRemainder: 0,
   remainder: 0,
   sceneHeight: 800,
+});
+
+const baseAxisInput = Object.freeze({
+  angleDeltaX: 0,
+  angleDeltaY: 0,
+  axisOwner: null,
+  pixelDeltaX: 0,
+  pixelDeltaY: 0,
+});
+
+describe("planOverviewSpatialWheelAxis", () => {
+  it("uses precise input exclusively when both input modes are present", () => {
+    const plan = planOverviewSpatialWheelAxis({
+      ...baseAxisInput,
+      angleDeltaY: 120,
+      pixelDeltaX: 0.25,
+    });
+
+    expect(plan).toEqual({
+      axis: "horizontal",
+      axisOwner: "horizontal",
+      inputMode: "pixel",
+    });
+    expect(Object.isFrozen(plan)).toBe(true);
+  });
+
+  it.each([
+    [80, 30, "horizontal"],
+    [30, 80, "vertical"],
+  ] as const)(
+    "chooses the dominant angle axis for (%i, %i)",
+    (angleDeltaX, angleDeltaY, axis) => {
+      expect(
+        planOverviewSpatialWheelAxis({
+          ...baseAxisInput,
+          angleDeltaX,
+          angleDeltaY,
+        }),
+      ).toEqual({ axis, axisOwner: axis, inputMode: "angle" });
+    },
+  );
+
+  it("routes an initial diagonal tie vertically instead of dropping it", () => {
+    expect(
+      planOverviewSpatialWheelAxis({
+        ...baseAxisInput,
+        pixelDeltaX: 4,
+        pixelDeltaY: -4,
+      }),
+    ).toEqual({
+      axis: "vertical",
+      axisOwner: "vertical",
+      inputMode: "pixel",
+    });
+  });
+
+  it("keeps an existing owner for a diagonal tie and reports cross-axis input", () => {
+    expect(
+      planOverviewSpatialWheelAxis({
+        ...baseAxisInput,
+        angleDeltaX: 40,
+        angleDeltaY: -40,
+        axisOwner: "horizontal",
+      }),
+    ).toEqual({
+      axis: "horizontal",
+      axisOwner: "horizontal",
+      inputMode: "angle",
+    });
+    expect(
+      planOverviewSpatialWheelAxis({
+        ...baseAxisInput,
+        axisOwner: "horizontal",
+        pixelDeltaY: 12,
+      }),
+    ).toEqual({
+      axis: "vertical",
+      axisOwner: "horizontal",
+      inputMode: "pixel",
+    });
+  });
+
+  it("preserves the owner in a frozen no-input plan", () => {
+    const plan = planOverviewSpatialWheelAxis({
+      ...baseAxisInput,
+      axisOwner: "vertical",
+    });
+
+    expect(plan).toEqual({
+      axis: null,
+      axisOwner: "vertical",
+      inputMode: null,
+    });
+    expect(Object.isFrozen(plan)).toBe(true);
+  });
+
+  it.each([
+    null,
+    [],
+    {},
+    { ...baseAxisInput, angleDeltaX: 0.5 },
+    { ...baseAxisInput, angleDeltaY: 1_000_001 },
+    { ...baseAxisInput, axisOwner: "diagonal" },
+    { ...baseAxisInput, axisOwner: undefined },
+    { ...baseAxisInput, pixelDeltaX: 4096.01 },
+    { ...baseAxisInput, pixelDeltaY: Number.NaN },
+  ])("fails closed for malformed axis input (%o)", (input) => {
+    expect(planOverviewSpatialWheelAxis(input)).toBeNull();
+  });
+
+  it("fails closed for hostile axis accessors", () => {
+    const hostile = Object.defineProperty({}, "axisOwner", {
+      get(): never {
+        throw new Error("unavailable");
+      },
+    });
+
+    expect(planOverviewSpatialWheelAxis(hostile)).toBeNull();
+  });
 });
 
 describe("planOverviewSpatialWheel", () => {
