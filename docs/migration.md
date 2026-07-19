@@ -1,7 +1,32 @@
 # Migration
 
-The latest stable release is 1.85.0. Use the steps below when changing release
+The latest stable release is 1.86.0. Use the steps below when changing release
 generations, and never combine files from different releases.
+
+## Upgrade from 1.85.0 to 1.86.0
+
+1. Release a helper-owned shortcut profile with the installed helper.
+2. Disable Driftile and its enabled companion effects in System Settings.
+3. Install matching 1.86.0 artifacts, or pin the Nix input to `v1.86.0` and
+   rebuild. Rebuild the optional native wheel effect against the running KWin
+   ABI.
+4. Re-enable Driftile and only the companion effects you use, then reclaim the
+   helper profile if needed.
+
+No shortcut, setting, schema, layout, or persistence migration is required.
+The optional Overview can create a workspace at an exact row gap and move a
+tiled window there transactionally. The optional native wheel effect adds
+global desktop and column controls through KWin's public effect API.
+
+Overview remains optional and under active development.
+
+## Roll back from 1.86.0 to 1.85.0
+
+Release a helper-owned profile, disable Driftile and its enabled companion
+effects, then restore matching verified 1.85.0 artifacts or pin the Nix input
+to `v1.85.0` and rebuild. Logical persistence v4 remains compatible; no option
+deletion or schema migration is required. Remove or disable the native wheel
+effect when returning to a release that does not provide it.
 
 ## Upgrade from 1.84.0 to 1.85.0
 

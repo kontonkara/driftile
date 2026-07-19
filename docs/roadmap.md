@@ -1,18 +1,14 @@
 # Roadmap
 
-Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.85.0 are
+Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.86.0 are
 released. The delivered milestones and release criteria below are a historical
 record. Later direction is not a committed release schedule.
 
-Stable 1.85.0 extends exact spatial placement across outputs and waits for
-KWin's final output and frame before publishing the layout. Touchpad swipes now
-drive Overview presentation continuously, and touchscreen window movement
-starts after a long press.
+Stable 1.86.0 creates workspaces at exact Overview row gaps and adds an optional
+native effect for global wheel navigation and movement. Created workspaces stay
+transactional through delayed cross-output settlement and runtime shutdown.
 Overview remains under active development. Settings, shortcuts, and logical
 persistence v4 remain compatible.
-
-The current unreleased batch adds guarded workspace creation between Overview
-rows and an optional native effect for global wheel navigation and movement.
 
 ## Current direction
 
@@ -2809,3 +2805,26 @@ Release criteria (met):
   stale Overview session after its workspace context changes.
 - Existing settings and persistence remain compatible; no private KWin API,
   schema change, polling, or retained object cache is introduced.
+
+### 1.86.0 (released)
+
+- Preview an exact insertion line between Overview workspace rows, including
+  while a window drag crosses outputs.
+- Create one virtual desktop at that exact global position and move the tiled
+  window there while keeping the Overview open.
+- Roll back the created desktop, selection, focus, and layout when placement is
+  rejected. Topology drift during delayed output settlement enters compensation
+  instead of committing at a stale position.
+- Add an optional native KWin effect for global modifier-and-wheel desktop
+  navigation, column focus, and column movement.
+- Package the native effect separately for NixOS and Home Manager while keeping
+  it disabled by default.
+
+Release criteria (met):
+
+- Workspace creation uses exact topology identity and never deletes an occupied,
+  selected, stale, or foreign desktop.
+- The native wheel companion uses only public KWin and KGlobalAccel APIs and is
+  built against the target KWin ABI.
+- Existing settings and logical persistence v4 remain compatible; no private
+  input API, KWin fork, or polling is introduced.
