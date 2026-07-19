@@ -354,6 +354,200 @@ describe("projectOverviewLayout", () => {
     expect(JSON.stringify(projected)).not.toContain("stored-");
   });
 
+  it("projects immutable live height bounds onto matching layout members", () => {
+    const projected = success(
+      documentFor(),
+      liveLayout({
+        windowHeightBounds: [
+          {
+            decorationHeight: 28,
+            maximumClientHeight: 900,
+            minimumClientHeight: 120,
+            windowId: "live-a",
+          },
+          {
+            decorationHeight: 0,
+            maximumClientHeight: Number.POSITIVE_INFINITY,
+            minimumClientHeight: 1,
+            windowId: "live-b",
+          },
+          {
+            decorationHeight: 12,
+            maximumClientHeight: 720,
+            minimumClientHeight: 80,
+            windowId: "unrelated",
+          },
+        ],
+        windowIds: [...liveLayout().windowIds, "unrelated"],
+      }),
+    );
+
+    expect(projected.contexts[0]?.columns[0]?.members).toEqual([
+      {
+        height: { clientHeight: 480, kind: "fixed" },
+        heightBounds: {
+          decorationHeight: 28,
+          maximumClientHeight: 900,
+          minimumClientHeight: 120,
+        },
+        windowId: "live-a",
+      },
+      {
+        heightBounds: {
+          decorationHeight: 0,
+          maximumClientHeight: Number.POSITIVE_INFINITY,
+          minimumClientHeight: 1,
+        },
+        windowId: "live-b",
+      },
+    ]);
+    expect(JSON.stringify(projected)).not.toContain("unrelated");
+    expectDeepFrozen(projected);
+  });
+
+  it("leaves members without a validly supplied live height bound unchanged", () => {
+    const projected = success(
+      documentFor(),
+      liveLayout({
+        windowHeightBounds: [
+          {
+            decorationHeight: 28,
+            maximumClientHeight: 900,
+            minimumClientHeight: 120,
+            windowId: "live-a",
+          },
+        ],
+      }),
+    );
+
+    expect(projected.contexts[0]?.columns[0]?.members[0]).toMatchObject({
+      heightBounds: {
+        decorationHeight: 28,
+        maximumClientHeight: 900,
+        minimumClientHeight: 120,
+      },
+      windowId: "live-a",
+    });
+    expect(projected.contexts[0]?.columns[0]?.members[1]).toEqual({
+      windowId: "live-b",
+    });
+  });
+
+  it.each([
+    ["a non-array value", {}],
+    ["a non-object entry", [null]],
+    [
+      "an unknown window",
+      [
+        {
+          decorationHeight: 0,
+          maximumClientHeight: Number.POSITIVE_INFINITY,
+          minimumClientHeight: 1,
+          windowId: "unknown",
+        },
+      ],
+    ],
+    [
+      "a duplicate window",
+      [
+        {
+          decorationHeight: 0,
+          maximumClientHeight: 800,
+          minimumClientHeight: 1,
+          windowId: "live-a",
+        },
+        {
+          decorationHeight: 0,
+          maximumClientHeight: 900,
+          minimumClientHeight: 1,
+          windowId: "live-a",
+        },
+      ],
+    ],
+    [
+      "an invalid decoration height",
+      [
+        {
+          decorationHeight: -1,
+          maximumClientHeight: 800,
+          minimumClientHeight: 1,
+          windowId: "live-a",
+        },
+      ],
+    ],
+    [
+      "an invalid minimum height",
+      [
+        {
+          decorationHeight: 0,
+          maximumClientHeight: 800,
+          minimumClientHeight: Number.NaN,
+          windowId: "live-a",
+        },
+      ],
+    ],
+    [
+      "a nonpositive maximum height",
+      [
+        {
+          decorationHeight: 0,
+          maximumClientHeight: 0,
+          minimumClientHeight: 0,
+          windowId: "live-a",
+        },
+      ],
+    ],
+    [
+      "an inverted height range",
+      [
+        {
+          decorationHeight: 0,
+          maximumClientHeight: 199,
+          minimumClientHeight: 200,
+          windowId: "live-a",
+        },
+      ],
+    ],
+    [
+      "an oversized number",
+      [
+        {
+          decorationHeight: LAYOUT_PERSISTENCE_LIMITS.numericMagnitude + 1,
+          maximumClientHeight: Number.POSITIVE_INFINITY,
+          minimumClientHeight: 1,
+          windowId: "live-a",
+        },
+      ],
+    ],
+  ])("rejects live height bounds with %s", (_label, windowHeightBounds) => {
+    expect(
+      projectOverviewLayout(
+        documentFor(),
+        liveLayout({
+          windowHeightBounds: windowHeightBounds as NonNullable<
+            OverviewLiveLayout["windowHeightBounds"]
+          >,
+        }),
+      ),
+    ).toEqual({ error: "invalid-live-window-height-bound", ok: false });
+  });
+
+  it("rejects an oversized live height-bound catalog", () => {
+    const windowHeightBounds = Array.from(
+      { length: LAYOUT_PERSISTENCE_LIMITS.windows + 1 },
+      (_value, index) => ({
+        decorationHeight: 0,
+        maximumClientHeight: Number.POSITIVE_INFINITY,
+        minimumClientHeight: 1,
+        windowId: `live-${String(index)}`,
+      }),
+    );
+
+    expect(
+      projectOverviewLayout(documentFor(), liveLayout({ windowHeightBounds })),
+    ).toEqual({ error: "invalid-live-window-height-bound", ok: false });
+  });
+
   it("projects only the current activity", () => {
     const base = representativeState();
     const state: LayoutPersistenceV4 = {

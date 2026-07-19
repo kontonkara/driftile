@@ -22,8 +22,8 @@ describe("overview output name configuration", () => {
     )?.[0];
 
     expect(entry).toContain('type="Bool"');
-    expect(entry).toContain("<default>true</default>");
-    expect(control).toContain("<bool>true</bool>");
+    expect(entry).toContain("<default>false</default>");
+    expect(control).toContain("<bool>false</bool>");
     expect(configurationUi).toMatch(
       /<widget class="QWidget" name="DriftileOverviewEffectConfig">[\s\S]*?<height>350<\/height>[\s\S]*?<layout class="QFormLayout"/u,
     );
@@ -41,7 +41,7 @@ describe("overview output name configuration", () => {
     );
     expect(reader).toContain("configuration.ShowOutputNames");
     expect(reader).toContain(
-      'return typeof value === "boolean" ? value : true;',
+      'return typeof value === "boolean" ? value : false;',
     );
   });
 });

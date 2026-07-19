@@ -31,7 +31,15 @@ export interface OverviewLiveLayout {
   readonly currentActivityId: string;
   readonly desktopIds: readonly string[];
   readonly outputs: readonly OverviewLiveOutput[];
+  readonly windowHeightBounds?: readonly OverviewLiveWindowHeightBounds[];
   readonly windowIds: readonly string[];
+}
+
+export interface OverviewLiveWindowHeightBounds {
+  readonly decorationHeight: number;
+  readonly maximumClientHeight: number;
+  readonly minimumClientHeight: number;
+  readonly windowId: string;
 }
 
 export interface OverviewProjectionMetrics {
@@ -44,7 +52,14 @@ export interface OverviewLayoutOutput extends OverviewLiveOutput {
 
 export interface OverviewLayoutMember {
   readonly height?: OverviewWindowHeight;
+  readonly heightBounds?: OverviewWindowHeightBounds;
   readonly windowId: string;
+}
+
+export interface OverviewWindowHeightBounds {
+  readonly decorationHeight: number;
+  readonly maximumClientHeight: number;
+  readonly minimumClientHeight: number;
 }
 
 export interface OverviewLayoutColumn {
@@ -100,6 +115,7 @@ export type OverviewLayoutProjectionError =
   | "invalid-live-desktop"
   | "desktop-mismatch"
   | "invalid-live-window"
+  | "invalid-live-window-height-bound"
   | "window-mismatch";
 
 export type OverviewLayoutProjectionResult =
@@ -120,6 +136,10 @@ interface ProjectionIndexes {
   readonly liveWindowIds: ReadonlySet<string>;
   readonly outputIdByKey: ReadonlyMap<string, string>;
   readonly outputs: readonly OverviewLayoutOutput[];
+  readonly windowHeightBoundsById: ReadonlyMap<
+    string,
+    OverviewWindowHeightBounds
+  >;
   readonly windowIdByKey: ReadonlyMap<string, string>;
 }
 
@@ -174,12 +194,23 @@ export function projectOverviewLayout(
     return windowResult;
   }
 
+  const windowHeightBoundsResult = indexWindowHeightBounds(
+    live.windowHeightBounds,
+    windowResult.liveWindowIds,
+    metrics,
+  );
+
+  if (!windowHeightBoundsResult.ok) {
+    return windowHeightBoundsResult;
+  }
+
   const indexes: ProjectionIndexes = {
     desktopIdSet: desktopResult.liveDesktopIds,
     desktopIds: desktopResult.value,
     liveWindowIds: windowResult.liveWindowIds,
     outputIdByKey: outputResult.outputIdByKey,
     outputs: outputResult.outputs,
+    windowHeightBoundsById: windowHeightBoundsResult.value,
     windowIdByKey: windowResult.windowIdByKey,
   };
 
@@ -210,14 +241,22 @@ export function projectOverviewLayout(
                   fullWidthRestore: freezeWidth(column.fullWidthRestore),
                 }),
             members: Object.freeze(
-              column.members.map((member) =>
-                Object.freeze({
+              column.members.map((member) => {
+                const windowId = required(
+                  indexes.windowIdByKey,
+                  member.windowKey,
+                );
+                const heightBounds =
+                  indexes.windowHeightBoundsById.get(windowId);
+
+                return Object.freeze({
                   ...(member.height === undefined
                     ? {}
                     : { height: freezeHeight(member.height) }),
-                  windowId: required(indexes.windowIdByKey, member.windowKey),
-                }),
-              ),
+                  ...(heightBounds === undefined ? {} : { heightBounds }),
+                  windowId,
+                });
+              }),
             ),
             presentation: column.presentation,
             selectedMemberIndex: column.selectedMemberIndex,
@@ -420,6 +459,67 @@ function indexWindows(
   };
 }
 
+function indexWindowHeightBounds(
+  liveBounds: readonly OverviewLiveWindowHeightBounds[] | undefined,
+  liveWindowIds: ReadonlySet<string>,
+  metrics: OverviewProjectionMetrics | undefined,
+):
+  | ProjectionFailure
+  | {
+      readonly ok: true;
+      readonly value: ReadonlyMap<string, OverviewWindowHeightBounds>;
+    } {
+  if (liveBounds === undefined) {
+    return { ok: true, value: new Map() };
+  }
+
+  if (
+    !Array.isArray(liveBounds) ||
+    liveBounds.length > LAYOUT_PERSISTENCE_LIMITS.windows
+  ) {
+    return failure("invalid-live-window-height-bound");
+  }
+
+  const boundsById = new Map<string, OverviewWindowHeightBounds>();
+
+  recordOperations(metrics, liveBounds.length);
+  for (const candidate of liveBounds) {
+    if (typeof candidate !== "object" || candidate === null) {
+      return failure("invalid-live-window-height-bound");
+    }
+
+    const record = candidate as Record<string, unknown>;
+    const windowId = record["windowId"];
+    const decorationHeight = record["decorationHeight"];
+    const minimumClientHeight = record["minimumClientHeight"];
+    const maximumClientHeight = record["maximumClientHeight"];
+
+    if (
+      !validIdentifier(windowId) ||
+      !liveWindowIds.has(windowId) ||
+      boundsById.has(windowId) ||
+      !validNonNegativeBoundedNumber(decorationHeight) ||
+      !validNonNegativeBoundedNumber(minimumClientHeight) ||
+      !validMaximumClientHeight(maximumClientHeight) ||
+      (maximumClientHeight !== Number.POSITIVE_INFINITY &&
+        maximumClientHeight < minimumClientHeight)
+    ) {
+      return failure("invalid-live-window-height-bound");
+    }
+
+    boundsById.set(
+      windowId,
+      Object.freeze({
+        decorationHeight,
+        maximumClientHeight,
+        minimumClientHeight,
+      }),
+    );
+  }
+
+  return { ok: true, value: boundsById };
+}
+
 function referencesAreCurrent(
   snapshot: LayoutPersistenceCatalogSnapshot,
   indexes: ProjectionIndexes,
@@ -568,6 +668,22 @@ function validIdentifier(value: unknown): value is string {
   }
 
   return true;
+}
+
+function validNonNegativeBoundedNumber(value: unknown): value is number {
+  return (
+    typeof value === "number" &&
+    Number.isFinite(value) &&
+    value >= 0 &&
+    value <= LAYOUT_PERSISTENCE_LIMITS.numericMagnitude
+  );
+}
+
+function validMaximumClientHeight(value: unknown): value is number {
+  return (
+    value === Number.POSITIVE_INFINITY ||
+    (validNonNegativeBoundedNumber(value) && value > 0)
+  );
 }
 
 function required(values: ReadonlyMap<string, string>, key: string): string {

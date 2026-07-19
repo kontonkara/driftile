@@ -19,7 +19,7 @@
      <property name="toolTip">
       <string>Swipe up to open the overview and down to close it.</string>
      </property>
-     <property name="checked">
+    <property name="checked">
       <bool>true</bool>
      </property>
     </widget>
@@ -137,7 +137,7 @@
        <blue>23</blue>
       </color>
      </property>
-     <property name="alphaChannelEnabled">
+    <property name="alphaChannelEnabled">
       <bool>true</bool>
      </property>
     </widget>
@@ -180,10 +180,10 @@
       <string>Show labels on large window thumbnails</string>
      </property>
      <property name="toolTip">
-      <string>Show a compact caption footer on large window thumbnails. Tab and minimized window labels remain visible.</string>
+      <string>Show a compact caption footer on sufficiently large window previews.</string>
      </property>
      <property name="checked">
-      <bool>true</bool>
+      <bool>false</bool>
      </property>
     </widget>
    </item>
@@ -196,7 +196,7 @@
       <string>Use the application identity as a caption fallback and, when available, as secondary thumbnail text.</string>
      </property>
      <property name="checked">
-      <bool>true</bool>
+      <bool>false</bool>
      </property>
     </widget>
    </item>
@@ -206,10 +206,10 @@
       <string>Show close buttons on window previews</string>
      </property>
      <property name="toolTip">
-      <string>Show a close button when a window thumbnail, tab, or minimized placeholder is hovered or selected from the keyboard.</string>
+      <string>Show a close button when a window preview is hovered or selected from the keyboard.</string>
      </property>
      <property name="checked">
-      <bool>true</bool>
+      <bool>false</bool>
      </property>
     </widget>
    </item>
@@ -222,7 +222,7 @@
       <string>Show the active fullscreen, maximized, or floating state on selected window previews.</string>
      </property>
      <property name="checked">
-      <bool>true</bool>
+      <bool>false</bool>
      </property>
     </widget>
    </item>
@@ -232,10 +232,10 @@
       <string>Show desktop names</string>
      </property>
      <property name="toolTip">
-      <string>Show the desktop name next to its number when the card has enough space.</string>
+      <string>Show the desktop name next to its number when the workspace row has enough space.</string>
      </property>
      <property name="checked">
-      <bool>true</bool>
+      <bool>false</bool>
      </property>
     </widget>
    </item>
@@ -245,10 +245,10 @@
       <string>Show application icons on window previews</string>
      </property>
      <property name="toolTip">
-      <string>Show an application icon on each window preview when one is available.</string>
+      <string>Show an application icon in eligible window preview labels when one is available.</string>
      </property>
      <property name="checked">
-      <bool>true</bool>
+      <bool>false</bool>
      </property>
     </widget>
    </item>
@@ -261,7 +261,7 @@
       <string>Identify each output in multi-output overviews.</string>
      </property>
      <property name="checked">
-      <bool>true</bool>
+      <bool>false</bool>
      </property>
     </widget>
    </item>

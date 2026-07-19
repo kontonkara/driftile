@@ -20,12 +20,8 @@ export interface OverviewSpatialLayoutPlan {
 
 const MINIMUM_ZOOM = 0.2;
 const MAXIMUM_ZOOM = 0.75;
-const CARD_GAP_RATIO = 0.12;
+const CARD_GAP_RATIO = 0.1;
 const MAXIMUM_CARD_GAP = 48;
-const HORIZONTAL_MARGIN_RATIO = 0.035;
-const MINIMUM_HORIZONTAL_MARGIN = 20;
-const MAXIMUM_HORIZONTAL_MARGIN = 64;
-const MAXIMUM_HORIZONTAL_MARGIN_RATIO = 0.2;
 
 export function planOverviewSpatialLayout(
   input: unknown,
@@ -59,15 +55,8 @@ export function planOverviewSpatialLayout(
     }
 
     const cardHeight = sceneHeight * zoom;
-    const cardX = Math.min(
-      Math.max(
-        Math.min(sceneWidth, sceneHeight) * HORIZONTAL_MARGIN_RATIO,
-        MINIMUM_HORIZONTAL_MARGIN,
-      ),
-      MAXIMUM_HORIZONTAL_MARGIN,
-      sceneWidth * MAXIMUM_HORIZONTAL_MARGIN_RATIO,
-    );
-    const cardWidth = sceneWidth - cardX * 2;
+    const cardX = 0;
+    const cardWidth = sceneWidth;
     const edgeMargin = (sceneHeight - cardHeight) / 2;
     const gap = Math.min(cardHeight * CARD_GAP_RATIO, MAXIMUM_CARD_GAP);
     const stride = cardHeight + gap;
@@ -80,7 +69,7 @@ export function planOverviewSpatialLayout(
     if (
       !isPositiveFiniteNumber(cardWidth) ||
       !isPositiveFiniteNumber(cardHeight) ||
-      !isPositiveFiniteNumber(cardX) ||
+      !isNonNegativeFiniteNumber(cardX) ||
       !isPositiveFiniteNumber(edgeMargin) ||
       !isPositiveFiniteNumber(gap) ||
       !isPositiveFiniteNumber(contentHeight) ||
@@ -109,6 +98,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function isPositiveFiniteNumber(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value) && value > 0;
+}
+
+function isNonNegativeFiniteNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0;
 }
 
 function isSafeInteger(value: unknown): value is number {

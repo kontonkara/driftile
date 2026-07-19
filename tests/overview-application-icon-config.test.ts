@@ -26,8 +26,8 @@ describe("overview application icon configuration", () => {
     )?.[0];
 
     expect(entry).toContain('type="Bool"');
-    expect(entry).toContain("<default>true</default>");
-    expect(control).toContain("<bool>true</bool>");
+    expect(entry).toContain("<default>false</default>");
+    expect(control).toContain("<bool>false</bool>");
     expect(configurationUi).toMatch(
       /<widget class="QWidget" name="DriftileOverviewEffectConfig">[\s\S]*?<height>350<\/height>[\s\S]*?<layout class="QFormLayout"/u,
     );
@@ -47,13 +47,13 @@ describe("overview application icon configuration", () => {
     );
     expect(reader).toContain("configuration.ShowApplicationIcons");
     expect(reader).toContain(
-      'return typeof value === "boolean" ? value : true;',
+      'return typeof value === "boolean" ? value : false;',
     );
   });
 
   it("propagates the live scene setting to every desktop card", () => {
     expect(scene).toMatch(
-      /readonly property bool showApplicationIcons: sceneEffect\s*&& typeof sceneEffect\.showApplicationIcons === "boolean"\s*\? sceneEffect\.showApplicationIcons\s*: true/u,
+      /readonly property bool showApplicationIcons: sceneEffect\s*&& typeof sceneEffect\.showApplicationIcons === "boolean"\s*\? sceneEffect\.showApplicationIcons\s*: false/u,
     );
     expect(scene).toContain("showApplicationIcons: root.showApplicationIcons");
   });

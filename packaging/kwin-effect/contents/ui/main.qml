@@ -36,6 +36,15 @@ KWin.SceneEffect {
     readonly property bool active: controller ? controller.active : false
     readonly property bool loading: controller ? controller.loading : false
     readonly property var overviewModel: controller ? controller.overviewModel : null
+    readonly property real presentationProgress: controller
+        && typeof controller.presentationProgress === "number"
+        && Number.isFinite(controller.presentationProgress)
+        ? Math.max(0, Math.min(1, controller.presentationProgress))
+        : 0
+    readonly property string presentationPhase: controller
+        && typeof controller.presentationPhase === "string"
+        ? controller.presentationPhase
+        : "closed"
 
     visible: controller ? controller.active : false
     delegate: controller ? controller.overviewDelegate : null
@@ -69,6 +78,12 @@ KWin.SceneEffect {
     function deactivate() {
         if (controller) {
             controller.deactivate();
+        }
+    }
+
+    function deactivateImmediately() {
+        if (controller && typeof controller.deactivateImmediately === "function") {
+            controller.deactivateImmediately();
         }
     }
 
@@ -137,37 +152,37 @@ KWin.SceneEffect {
 
     function showWindowLabelsFromConfig() {
         const value = configuration ? configuration.ShowWindowLabels : undefined;
-        return typeof value === "boolean" ? value : true;
+        return typeof value === "boolean" ? value : false;
     }
 
     function showApplicationIdentityFromConfig() {
         const value = configuration ? configuration.ShowApplicationIdentity : undefined;
-        return typeof value === "boolean" ? value : true;
+        return typeof value === "boolean" ? value : false;
     }
 
     function showWindowCloseButtonsFromConfig() {
         const value = configuration ? configuration.ShowWindowCloseButtons : undefined;
-        return typeof value === "boolean" ? value : true;
+        return typeof value === "boolean" ? value : false;
     }
 
     function showWindowStateBadgesFromConfig() {
         const value = configuration ? configuration.ShowWindowStateBadges : undefined;
-        return typeof value === "boolean" ? value : true;
+        return typeof value === "boolean" ? value : false;
     }
 
     function showDesktopNamesFromConfig() {
         const value = configuration ? configuration.ShowDesktopNames : undefined;
-        return typeof value === "boolean" ? value : true;
+        return typeof value === "boolean" ? value : false;
     }
 
     function showApplicationIconsFromConfig() {
         const value = configuration ? configuration.ShowApplicationIcons : undefined;
-        return typeof value === "boolean" ? value : true;
+        return typeof value === "boolean" ? value : false;
     }
 
     function showOutputNamesFromConfig() {
         const value = configuration ? configuration.ShowOutputNames : undefined;
-        return typeof value === "boolean" ? value : true;
+        return typeof value === "boolean" ? value : false;
     }
 
     function validColorChannel(value) {

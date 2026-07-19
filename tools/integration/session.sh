@@ -890,11 +890,11 @@ overview_number_gutter_click_point() {
     --argjson outputWidth "$width" \
     --argjson outputX "$x" \
     --argjson outputY "$y" '
-      ($outputWidth * 0.5) as $cardWidth
+      $outputWidth as $cardWidth
       | ($outputHeight * 0.5) as $cardHeight
-      | (($outputWidth - $cardWidth) / 2) as $cardX
+      | 0 as $cardX
       | (($outputHeight - $cardHeight) / 2) as $edgeMargin
-      | ([48, $cardHeight * 0.12] | min) as $cardGap
+      | ([48, $cardHeight * 0.10] | min) as $cardGap
       | ($cardHeight + $cardGap) as $stride
       | ($outputY + $edgeMargin
          + ($desktopIndex - $currentWorkspaceIndex) * $stride) as $cardTop
@@ -905,8 +905,15 @@ overview_number_gutter_click_point() {
           and $outputHeight > 0
           and $visibleBottom - $visibleTop >= 4
         )
+      | ($outputWidth * 0.25) as $viewportOriginX
+      | 36 as $gutterWidth
+      | (if $viewportOriginX >= $gutterWidth + 12
+         then $viewportOriginX - $gutterWidth - 10
+         else $viewportOriginX + 10
+         end) as $requestedGutterX
+      | ([6, ([$cardWidth - $gutterWidth - 6, $requestedGutterX] | min)] | max) as $gutterX
       | [
-          ($outputX + $cardX + 21 | floor),
+          ($outputX + $gutterX + $gutterWidth / 2 | floor),
           (($visibleTop + $visibleBottom) / 2 | floor)
         ]
       | @tsv
@@ -956,20 +963,16 @@ overview_window_thumbnail_click_point() {
     --argjson outputY "$output_y" '
       ($frame | split(",") | map(tonumber)) as $window
       | select(($window | length) == 4)
-      | ($outputWidth * 0.5) as $cardWidth
       | ($outputHeight * 0.5) as $cardHeight
-      | (($outputWidth - $cardWidth) / 2) as $cardX
+      | $outputWidth as $cardWidth
+      | ($cardHeight / $outputHeight) as $projectionScale
+      | ($outputWidth * $projectionScale) as $projectedViewportWidth
+      | (($cardWidth - $projectedViewportWidth) / 2) as $viewportOriginX
       | (($outputHeight - $cardHeight) / 2) as $edgeMargin
-      | ([48, $cardHeight * 0.12] | min) as $cardGap
+      | ([48, $cardHeight * 0.10] | min) as $cardGap
       | ($cardHeight + $cardGap) as $stride
       | ($outputY + $edgeMargin
          + ($desktopIndex - $currentWorkspaceIndex) * $stride) as $cardTop
-      | (if $cardWidth >= 560 and $cardHeight >= 72
-         then [112, ([170, $cardWidth * 0.14] | min)] | max
-         else 42
-         end) as $contentLeft
-      | ([1, $cardWidth - $contentLeft - 10] | max) as $contentWidth
-      | ([1, $cardHeight - 20] | max) as $contentHeight
       | select(
           $outputWidth > 0
           and $outputHeight > 0
@@ -981,18 +984,17 @@ overview_window_thumbnail_click_point() {
           and $window[1] >= $outputY
           and $window[1] + $window[3] <= $outputY + $outputHeight
         )
-      | ($outputX + $cardX + $contentLeft
-         + ($window[0] - $outputX) * $contentWidth / $outputWidth) as $thumbnailLeft
-      | ($outputX + $cardX + $contentLeft
-         + ($window[0] + $window[2] - $outputX) * $contentWidth / $outputWidth) as $thumbnailRight
-      | ($cardTop + 10
-         + ($window[1] - $outputY) * $contentHeight / $outputHeight) as $thumbnailTop
-      | ($cardTop + 10
-         + ($window[1] + $window[3] - $outputY) * $contentHeight / $outputHeight) as $thumbnailBottom
-      | ([$outputX, $outputX + $cardX + $contentLeft, $thumbnailLeft] | max) as $visibleLeft
-      | ([$outputX + $outputWidth, $outputX + $cardX + $cardWidth - 10, $thumbnailRight] | min) as $visibleRight
-      | ([$outputY, $cardTop + 10, $thumbnailTop] | max) as $visibleTop
-      | ([$outputY + $outputHeight, $cardTop + $cardHeight - 10, $thumbnailBottom] | min) as $visibleBottom
+      | ($outputX + $viewportOriginX
+         + ($window[0] - $outputX) * $projectionScale) as $thumbnailLeft
+      | ($outputX + $viewportOriginX
+         + ($window[0] + $window[2] - $outputX) * $projectionScale) as $thumbnailRight
+      | ($cardTop + ($window[1] - $outputY) * $projectionScale) as $thumbnailTop
+      | ($cardTop + ($window[1] + $window[3] - $outputY) * $projectionScale) as $thumbnailBottom
+      | ([$outputX, $outputX + $viewportOriginX, $thumbnailLeft] | max) as $visibleLeft
+      | ([$outputX + $outputWidth, $outputX + $viewportOriginX + $projectedViewportWidth,
+          $thumbnailRight] | min) as $visibleRight
+      | ([$outputY, $cardTop, $thumbnailTop] | max) as $visibleTop
+      | ([$outputY + $outputHeight, $cardTop + $cardHeight, $thumbnailBottom] | min) as $visibleBottom
       | select(
           $visibleRight - $visibleLeft >= 4
           and $visibleBottom - $visibleTop >= 4
@@ -10341,8 +10343,10 @@ run_multi_output_scenario() {
   local index
   local left_live_ids
   local live_ids
+  local overview_current_workspace_index=-1
   local overview_click_x
   local overview_click_y
+  local overview_target_workspace_index=-1
   local output_frame
   local reachable_frame
   local reduced_layout_catalog
@@ -10459,9 +10463,20 @@ run_multi_output_scenario() {
     mapfile -t overview_desktop_ids < <(virtual_desktop_ids)
     ((${#overview_desktop_ids[@]} == 2)) || \
       fail "the multi-output $protocol overview click fixture did not expose exactly two desktop cards"
+    for index in "${!overview_desktop_ids[@]}"; do
+      if window_is_on_desktop "${titles[0]}" "${overview_desktop_ids[index]}"; then
+        overview_current_workspace_index=$index
+      fi
+      if window_is_on_desktop "${titles[1]}" "${overview_desktop_ids[index]}"; then
+        overview_target_workspace_index=$index
+      fi
+    done
+    ((overview_current_workspace_index >= 0 && overview_target_workspace_index >= 0)) || \
+      fail "KWin did not map the current and target $protocol overview desktops"
     read -r overview_click_x overview_click_y < <(
       overview_window_thumbnail_click_point \
-        Virtual-0 0 "${#overview_desktop_ids[@]}" "${titles[1]}" 0
+        Virtual-0 "$overview_target_workspace_index" "${#overview_desktop_ids[@]}" "${titles[1]}" \
+        "$overview_current_workspace_index"
     ) || fail "KScreen did not expose the current $protocol overview target-thumbnail geometry"
     verify_overview_effect_lifecycle \
       "$protocol" \

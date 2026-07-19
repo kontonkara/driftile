@@ -31,31 +31,31 @@
     </entry>
     <entry name="ShowWindowLabels" type="Bool">
       <label>Show window labels</label>
-      <default>true</default>
+      <default>false</default>
     </entry>
     <entry name="ShowApplicationIdentity" type="Bool">
       <label>Show application identity</label>
-      <default>true</default>
+      <default>false</default>
     </entry>
     <entry name="ShowWindowCloseButtons" type="Bool">
       <label>Show window close buttons</label>
-      <default>true</default>
+      <default>false</default>
     </entry>
     <entry name="ShowWindowStateBadges" type="Bool">
       <label>Show window state badges</label>
-      <default>true</default>
+      <default>false</default>
     </entry>
     <entry name="ShowDesktopNames" type="Bool">
       <label>Show desktop names</label>
-      <default>true</default>
+      <default>false</default>
     </entry>
     <entry name="ShowApplicationIcons" type="Bool">
       <label>Show application icons</label>
-      <default>true</default>
+      <default>false</default>
     </entry>
     <entry name="ShowOutputNames" type="Bool">
       <label>Show output names</label>
-      <default>true</default>
+      <default>false</default>
     </entry>
   </group>
 </kcfg>

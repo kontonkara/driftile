@@ -26,8 +26,8 @@ describe("overview close button configuration", () => {
     )?.[0];
 
     expect(entry).toContain('type="Bool"');
-    expect(entry).toContain("<default>true</default>");
-    expect(control).toContain("<bool>true</bool>");
+    expect(entry).toContain("<default>false</default>");
+    expect(control).toContain("<bool>false</bool>");
   });
 
   it("accepts only live boolean values and otherwise keeps buttons enabled", () => {
@@ -44,13 +44,13 @@ describe("overview close button configuration", () => {
     );
     expect(reader).toContain("configuration.ShowWindowCloseButtons");
     expect(reader).toContain(
-      'return typeof value === "boolean" ? value : true;',
+      'return typeof value === "boolean" ? value : false;',
     );
   });
 
   it("propagates the live scene setting to every desktop card", () => {
     expect(scene).toMatch(
-      /readonly property bool showWindowCloseButtons: sceneEffect\s*&& typeof sceneEffect\.showWindowCloseButtons === "boolean"\s*\? sceneEffect\.showWindowCloseButtons\s*: true/u,
+      /readonly property bool showWindowCloseButtons: sceneEffect\s*&& typeof sceneEffect\.showWindowCloseButtons === "boolean"\s*\? sceneEffect\.showWindowCloseButtons\s*: false/u,
     );
     expect(scene).toContain(
       "showWindowCloseButtons: root.showWindowCloseButtons",

@@ -1,4 +1,8 @@
-import { solveStripGeometry, type Rect } from "../core/geometry";
+import {
+  solveStripGeometry,
+  type Rect,
+  type WindowHeightBounds,
+} from "../core/geometry";
 import {
   activityId,
   columnId,
@@ -7,11 +11,14 @@ import {
   windowId,
 } from "../core/ids";
 import type {
+  ColumnPresentation,
   ColumnWidth,
   LayoutColumnSnapshot,
   LayoutContextSnapshot,
+  WindowHeight,
 } from "../core/layout-engine";
 import { LAYOUT_PERSISTENCE_LIMITS } from "../core/layout-persistence";
+import { resolveWindowHeightPresetPolicy } from "../window-height-presets";
 
 export interface OverviewSpatialRowGeometryInput {
   readonly activeColumnIndex: number | null;
@@ -21,11 +28,27 @@ export interface OverviewSpatialRowGeometryInput {
   readonly gap: number;
   readonly outputGeometry: Rect;
   readonly viewportOffset: number;
+  readonly windowHeightBounds?: readonly OverviewSpatialRowWindowHeightBoundsInput[];
   readonly workArea: Rect;
 }
 
+export interface OverviewSpatialRowWindowHeightBoundsInput {
+  readonly decorationHeight: number;
+  readonly maximumClientHeight: number;
+  readonly minimumClientHeight: number;
+  readonly windowId: string;
+}
+
 export interface OverviewSpatialRowGeometryColumnInput {
+  readonly members: readonly OverviewSpatialRowGeometryMemberInput[];
+  readonly presentation: ColumnPresentation;
+  readonly selectedMemberIndex: number;
   readonly width: ColumnWidth;
+}
+
+export interface OverviewSpatialRowGeometryMemberInput {
+  readonly height?: WindowHeight;
+  readonly windowId: string;
 }
 
 export interface OverviewSpatialRowColumnFrame {
@@ -51,11 +74,23 @@ export interface OverviewSpatialRowDimensions {
   readonly viewportWidth: number;
 }
 
+export interface OverviewSpatialRowWindowFrame {
+  readonly columnId: string;
+  readonly columnIndex: number;
+  readonly height: number;
+  readonly memberIndex: number;
+  readonly width: number;
+  readonly windowId: string;
+  readonly x: number;
+  readonly y: number;
+}
+
 export interface OverviewSpatialRowGeometryPlan {
   readonly camera: OverviewSpatialRowCamera;
   readonly columnFrames: readonly OverviewSpatialRowColumnFrame[];
   readonly contentWidth: number;
   readonly dimensions: OverviewSpatialRowDimensions;
+  readonly windowFrames: readonly OverviewSpatialRowWindowFrame[];
 }
 
 export interface OverviewSpatialLiveCameraInput {
@@ -83,6 +118,10 @@ const OVERVIEW_ACTIVITY_ID = activityId("overview-activity");
 const OVERVIEW_DESKTOP_ID = desktopId("overview-desktop");
 const OVERVIEW_OUTPUT_ID = outputId("overview-output");
 const MAXIMUM_GEOMETRY_MAGNITUDE = LAYOUT_PERSISTENCE_LIMITS.numericMagnitude;
+const DEFAULT_WINDOW_HEIGHT: WindowHeight = Object.freeze({
+  kind: "auto",
+  weight: 1,
+});
 
 export function planOverviewSpatialLiveCamera(
   input: unknown,
@@ -193,6 +232,10 @@ export function planOverviewSpatialRowGeometry(
     const gap = input["gap"];
     const outputGeometry = readRect(input["outputGeometry"]);
     const viewportOffset = input["viewportOffset"];
+    const windowHeightBounds = readWindowHeightBounds(
+      input["windowHeightBounds"],
+      columns ?? [],
+    );
     const workArea = readRect(input["workArea"]);
 
     if (
@@ -203,6 +246,7 @@ export function planOverviewSpatialRowGeometry(
       !isNonNegativeBoundedNumber(gap) ||
       outputGeometry === null ||
       !isBoundedNumber(viewportOffset) ||
+      windowHeightBounds === null ||
       workArea === null ||
       !rectContains(outputGeometry, workArea)
     ) {
@@ -223,37 +267,100 @@ export function planOverviewSpatialRowGeometry(
         x: outputGeometry.x,
         y: outputGeometry.y,
       },
+      windowHeightBounds,
+      windowHeightPresetResolver: resolveWindowHeightPresetPolicy,
       workArea,
     });
+
+    const memberCount = columns.reduce(
+      (count, column) => count + column.members.length,
+      0,
+    );
 
     if (
       !isNonNegativeBoundedNumber(solved.stripWidth) ||
       !isBoundedNumber(solved.viewportOffset) ||
       !isNonNegativeBoundedNumber(solved.maxViewportOffset) ||
-      solved.windows.length !== columns.length
+      solved.windows.length !== memberCount
     ) {
       return null;
     }
 
     const columnFrames: OverviewSpatialRowColumnFrame[] = [];
+    const windowFrames: OverviewSpatialRowWindowFrame[] = [];
+    let solvedWindowIndex = 0;
 
     for (let columnIndex = 0; columnIndex < columns.length; columnIndex += 1) {
-      const solvedWindow = solved.windows[columnIndex];
+      const column = columns[columnIndex];
       const expectedColumnId = solverColumnId(columnIndex);
 
-      if (
-        solvedWindow === undefined ||
-        solvedWindow.columnId !== expectedColumnId ||
-        !isBoundedNumber(solvedWindow.frame.x) ||
-        !isPositiveBoundedNumber(solvedWindow.frame.width)
-      ) {
+      if (column === undefined) {
         return null;
       }
 
-      const contentX =
-        solvedWindow.frame.x - workArea.x + solved.viewportOffset;
+      let columnContentX: number | null = null;
+      let columnWidth: number | null = null;
 
-      if (!isBoundedNumber(contentX)) {
+      for (
+        let memberIndex = 0;
+        memberIndex < column.members.length;
+        memberIndex += 1
+      ) {
+        const member = column.members[memberIndex];
+        const solvedWindow = solved.windows[solvedWindowIndex];
+
+        if (
+          member === undefined ||
+          solvedWindow === undefined ||
+          solvedWindow.columnId !== expectedColumnId ||
+          solvedWindow.windowId !== member.windowId ||
+          !rectIsBounded(solvedWindow.frame)
+        ) {
+          return null;
+        }
+
+        const contentX =
+          solvedWindow.frame.x - workArea.x + solved.viewportOffset;
+        const localX =
+          solvedWindow.frame.x - outputGeometry.x + solved.viewportOffset;
+        const localY = solvedWindow.frame.y - outputGeometry.y;
+
+        if (
+          !isBoundedNumber(contentX) ||
+          !isBoundedNumber(localX) ||
+          !isBoundedNumber(localY) ||
+          !isBoundedNumber(localX + solvedWindow.frame.width) ||
+          !isBoundedNumber(localY + solvedWindow.frame.height)
+        ) {
+          return null;
+        }
+
+        if (columnContentX === null) {
+          columnContentX = contentX;
+          columnWidth = solvedWindow.frame.width;
+        } else if (
+          contentX !== columnContentX ||
+          solvedWindow.frame.width !== columnWidth
+        ) {
+          return null;
+        }
+
+        windowFrames.push(
+          Object.freeze({
+            columnId: expectedColumnId,
+            columnIndex,
+            height: solvedWindow.frame.height,
+            memberIndex,
+            width: solvedWindow.frame.width,
+            windowId: member.windowId,
+            x: normalizeZero(localX),
+            y: normalizeZero(localY),
+          }),
+        );
+        solvedWindowIndex += 1;
+      }
+
+      if (columnContentX === null || columnWidth === null) {
         return null;
       }
 
@@ -261,10 +368,14 @@ export function planOverviewSpatialRowGeometry(
         Object.freeze({
           columnId: expectedColumnId,
           columnIndex,
-          contentX: normalizeZero(contentX),
-          width: solvedWindow.frame.width,
+          contentX: normalizeZero(columnContentX),
+          width: columnWidth,
         }),
       );
+    }
+
+    if (solvedWindowIndex !== solved.windows.length) {
+      return null;
     }
 
     const lockCenteredSingleton =
@@ -305,10 +416,87 @@ export function planOverviewSpatialRowGeometry(
         viewportInsetY: normalizeZero(viewportInsetY),
         viewportWidth: workArea.width,
       }),
+      windowFrames: Object.freeze(windowFrames),
     });
   } catch {
     return null;
   }
+}
+
+function readWindowHeightBounds(
+  value: unknown,
+  columns: readonly OverviewSpatialRowGeometryColumnInput[],
+): ReadonlyMap<ReturnType<typeof windowId>, WindowHeightBounds> | null {
+  const requiredWindowIds = new Set<string>();
+
+  for (const column of columns) {
+    const requiresBounds = column.members.some(
+      (member) => member.height !== undefined,
+    );
+
+    for (const member of column.members) {
+      if (requiresBounds) {
+        requiredWindowIds.add(member.windowId);
+      }
+    }
+  }
+
+  if (value === undefined) {
+    return requiredWindowIds.size === 0 ? new Map() : null;
+  }
+
+  if (
+    !Array.isArray(value) ||
+    value.length > LAYOUT_PERSISTENCE_LIMITS.windows
+  ) {
+    return null;
+  }
+
+  const bounds = new Map<ReturnType<typeof windowId>, WindowHeightBounds>();
+  const suppliedWindowIds = new Set<string>();
+
+  for (const candidate of value) {
+    if (!isRecord(candidate)) {
+      return null;
+    }
+
+    const id = candidate["windowId"];
+    const decorationHeight = candidate["decorationHeight"];
+    const minimumClientHeight = candidate["minimumClientHeight"];
+    const maximumClientHeight = candidate["maximumClientHeight"];
+
+    if (
+      !isIdentifier(id) ||
+      !requiredWindowIds.has(id) ||
+      suppliedWindowIds.has(id) ||
+      !isNonNegativeBoundedNumber(decorationHeight) ||
+      !isNonNegativeBoundedNumber(minimumClientHeight) ||
+      !isValidMaximumClientHeight(maximumClientHeight) ||
+      (maximumClientHeight !== Number.POSITIVE_INFINITY &&
+        maximumClientHeight > 0 &&
+        maximumClientHeight < minimumClientHeight)
+    ) {
+      return null;
+    }
+
+    suppliedWindowIds.add(id);
+    bounds.set(
+      windowId(id),
+      Object.freeze({
+        decorationHeight,
+        maximumClientHeight,
+        minimumClientHeight,
+      }),
+    );
+  }
+
+  for (const id of requiredWindowIds) {
+    if (!suppliedWindowIds.has(id)) {
+      return null;
+    }
+  }
+
+  return bounds;
 }
 
 function readColumns(
@@ -322,6 +510,8 @@ function readColumns(
   }
 
   const columns: OverviewSpatialRowGeometryColumnInput[] = [];
+  const windowIds = new Set<string>();
+  let memberCount = 0;
 
   for (const candidate of value) {
     if (!isRecord(candidate)) {
@@ -329,15 +519,111 @@ function readColumns(
     }
 
     const width = readColumnWidth(candidate["width"]);
+    const members = readMembers(candidate["members"], windowIds);
+    const presentation = candidate["presentation"];
+    const selectedMemberIndex = candidate["selectedMemberIndex"];
 
-    if (width === null) {
+    if (
+      width === null ||
+      members === null ||
+      (presentation !== "stacked" && presentation !== "tabbed") ||
+      !isBoundedIndex(selectedMemberIndex, members.length)
+    ) {
       return null;
     }
 
-    columns.push(Object.freeze({ width }));
+    memberCount += members.length;
+
+    if (memberCount > LAYOUT_PERSISTENCE_LIMITS.windows) {
+      return null;
+    }
+
+    columns.push(
+      Object.freeze({ members, presentation, selectedMemberIndex, width }),
+    );
   }
 
   return Object.freeze(columns);
+}
+
+function readMembers(
+  value: unknown,
+  windowIds: Set<string>,
+): readonly OverviewSpatialRowGeometryMemberInput[] | null {
+  if (
+    !Array.isArray(value) ||
+    value.length === 0 ||
+    value.length > LAYOUT_PERSISTENCE_LIMITS.membersPerColumn
+  ) {
+    return null;
+  }
+
+  const members: OverviewSpatialRowGeometryMemberInput[] = [];
+  let nonAutomaticHeightCount = 0;
+
+  for (const candidate of value) {
+    if (!isRecord(candidate)) {
+      return null;
+    }
+
+    const id = candidate["windowId"];
+    const height = readWindowHeight(candidate["height"]);
+
+    if (!isIdentifier(id) || windowIds.has(id) || height === null) {
+      return null;
+    }
+
+    if (height !== undefined && height.kind !== "auto") {
+      nonAutomaticHeightCount += 1;
+
+      if (nonAutomaticHeightCount > 1) {
+        return null;
+      }
+    }
+
+    windowIds.add(id);
+    members.push(
+      Object.freeze({
+        ...(height === undefined ? {} : { height }),
+        windowId: id,
+      }),
+    );
+  }
+
+  return Object.freeze(members);
+}
+
+function readWindowHeight(value: unknown): WindowHeight | undefined | null {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  switch (value["kind"]) {
+    case "auto":
+      return isPositiveBoundedNumber(value["weight"])
+        ? Object.freeze({ kind: "auto", weight: value["weight"] })
+        : null;
+    case "fixed":
+      return isPositiveBoundedNumber(value["clientHeight"])
+        ? Object.freeze({
+            clientHeight: value["clientHeight"],
+            kind: "fixed",
+          })
+        : null;
+    case "preset":
+      return isBoundedIndex(
+        value["index"],
+        LAYOUT_PERSISTENCE_LIMITS.presetIndex + 1,
+      )
+        ? Object.freeze({ index: value["index"], kind: "preset" })
+        : null;
+    default:
+      return null;
+  }
 }
 
 function readColumnWidth(value: unknown): ColumnWidth | null {
@@ -366,15 +652,31 @@ function createSolverContext(
   const solverColumns: LayoutColumnSnapshot[] = columns.map(
     (column, columnIndex) => {
       const id = solverColumnId(columnIndex);
-      const memberId = windowId(`overview-window-${String(columnIndex)}`);
+      const windowIds = column.members.map((member) =>
+        windowId(member.windowId),
+      );
+      const hasExplicitWindowHeight = column.members.some(
+        (member) => member.height !== undefined,
+      );
+      const windowHeights = hasExplicitWindowHeight
+        ? column.members.map((member) => member.height ?? DEFAULT_WINDOW_HEIGHT)
+        : undefined;
+      const selectedWindowId = windowIds[column.selectedMemberIndex];
 
-      return {
+      if (selectedWindowId === undefined) {
+        throw new RangeError("selected window index is invalid");
+      }
+
+      return Object.freeze({
         id,
-        presentation: "stacked",
-        selectedWindowId: memberId,
+        presentation: column.presentation,
+        selectedWindowId,
         width: column.width,
-        windowIds: [memberId],
-      };
+        ...(windowHeights === undefined
+          ? {}
+          : { windowHeights: Object.freeze(windowHeights) }),
+        windowIds: Object.freeze(windowIds),
+      });
     },
   );
 
@@ -387,6 +689,17 @@ function createSolverContext(
     outputId: OVERVIEW_OUTPUT_ID,
     viewportOffset,
   };
+}
+
+function rectIsBounded(rect: Rect): boolean {
+  return (
+    isBoundedNumber(rect.x) &&
+    isBoundedNumber(rect.y) &&
+    isPositiveBoundedNumber(rect.width) &&
+    isPositiveBoundedNumber(rect.height) &&
+    isBoundedNumber(rect.x + rect.width) &&
+    isBoundedNumber(rect.y + rect.height)
+  );
 }
 
 function solverColumnId(index: number): ReturnType<typeof columnId> {
@@ -429,6 +742,38 @@ function isActiveColumnIndex(
   );
 }
 
+function isBoundedIndex(
+  value: unknown,
+  exclusiveMaximum: number,
+): value is number {
+  return (
+    typeof value === "number" &&
+    Number.isSafeInteger(value) &&
+    value >= 0 &&
+    value < exclusiveMaximum
+  );
+}
+
+function isIdentifier(value: unknown): value is string {
+  if (
+    typeof value !== "string" ||
+    value.length === 0 ||
+    value.length > LAYOUT_PERSISTENCE_LIMITS.identifierCharacters
+  ) {
+    return false;
+  }
+
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index);
+
+    if (code <= 31 || code === 127) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
 function rectContains(outer: Rect, inner: Rect): boolean {
   const outerRight = outer.x + outer.width;
   const outerBottom = outer.y + outer.height;
@@ -465,6 +810,12 @@ function isNonNegativeBoundedNumber(value: unknown): value is number {
 
 function isPositiveBoundedNumber(value: unknown): value is number {
   return isBoundedNumber(value) && value > 0;
+}
+
+function isValidMaximumClientHeight(value: unknown): value is number {
+  return (
+    value === Number.POSITIVE_INFINITY || isNonNegativeBoundedNumber(value)
+  );
 }
 
 function normalizeZero(value: number): number {

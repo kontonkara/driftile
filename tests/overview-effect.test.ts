@@ -123,9 +123,9 @@ describe("overview effect package", () => {
     expect(backdropColorEntry).toContain('type="Color"');
     expect(backdropColorEntry).toContain("<default>#e60b0f17</default>");
     expect(showWindowLabelsEntry).toContain('type="Bool"');
-    expect(showWindowLabelsEntry).toContain("<default>true</default>");
+    expect(showWindowLabelsEntry).toContain("<default>false</default>");
     expect(showApplicationIdentityEntry).toContain('type="Bool"');
-    expect(showApplicationIdentityEntry).toContain("<default>true</default>");
+    expect(showApplicationIdentityEntry).toContain("<default>false</default>");
     expect(configurationUi).toContain('name="kcfg_TouchpadGesture"');
     expect(configurationUi).toContain('name="kcfg_TouchpadGestureFingerCount"');
     expect(configurationUi).toContain('name="kcfg_ScreenEdge"');
@@ -175,9 +175,7 @@ describe("overview effect package", () => {
     expect(closeAction).toContain("onActivated: controller.close()");
     expect(openAction).not.toMatch(/\bsequence\s*:/u);
     expect(closeAction).not.toMatch(/\bsequence\s*:/u);
-    expect(open).toMatch(
-      /if \(active \|\| loading\) \{\s*return;\s*\}\s*activate\(\);/u,
-    );
+    expect(open).toMatch(/function open\(\) \{\s*activate\(\);\s*\}/u);
     expect(close).toMatch(
       /if \(!active && !loading\) \{\s*return;\s*\}\s*deactivate\(\);/u,
     );
@@ -433,8 +431,9 @@ describe("overview effect package", () => {
     expect(backdropColor).toContain('const fallback = "#e60b0f17"');
     expect(backdropColor).toContain("configuration.BackdropColor");
     expect(backdropColor).toContain("validColorChannel(value.a)");
+    expect(scene).toContain('color: "transparent"');
     expect(scene).toMatch(
-      /color: sceneEffect && sceneEffect\.backdropColor !== undefined\s*\? sceneEffect\.backdropColor\s*: "#e60b0f17"/u,
+      /id: spatialBackdrop[\s\S]*color: root\.sceneEffect && root\.sceneEffect\.backdropColor !== undefined\s*\? root\.sceneEffect\.backdropColor\s*: "#e60b0f17"[\s\S]*opacity: root\.spatialPresentationProgress/u,
     );
     expect(main).toContain(
       "readonly property bool showWindowLabels: showWindowLabelsFromConfig()",
@@ -452,14 +451,14 @@ describe("overview effect package", () => {
       );
       expect(configReader).toContain(`configuration.${property}`);
       expect(configReader).toContain(
-        'return typeof value === "boolean" ? value : true;',
+        'return typeof value === "boolean" ? value : false;',
       );
     }
   });
 
   it("keeps a fixed scene-effect proxy over the cache-busted controller", () => {
     expect(createHash("sha256").update(main, "utf8").digest("hex")).toBe(
-      "519b1f54dde8dca88174a708ecdd6f4b3c5b8e105f8ca3c047f7e5a189064132",
+      "0e12e73f76c0c1deedf9e436c9f785b38681f1e9b41b757eac5575adfd8c9a72",
     );
     expect(main).toContain("KWin.SceneEffect {");
     expect(main).toContain("Date.now().toString(36)");
@@ -475,6 +474,8 @@ describe("overview effect package", () => {
     expect(main).toContain(
       "readonly property var overviewModel: controller ? controller.overviewModel : null",
     );
+    expect(main).toContain("readonly property real presentationProgress:");
+    expect(main).toContain("readonly property string presentationPhase:");
     expect(main).toContain("visible: controller ? controller.active : false");
     expect(main).toContain(
       "delegate: controller ? controller.overviewDelegate : null",
@@ -483,6 +484,26 @@ describe("overview effect package", () => {
       expect(main).toContain(`function ${method}()`);
       expect(main).toContain(`controller.${method}();`);
     }
+    expect(main).toContain("function deactivateImmediately()");
+    expect(main).toContain("controller.deactivateImmediately();");
+
+    expect(controller).toContain("property real presentationProgress: 0");
+    expect(controller).toContain('property string presentationPhase: "closed"');
+    expect(controller).toMatch(
+      /readonly property NumberAnimation presentationAnimation:[\s\S]*target: controller[\s\S]*property: "presentationProgress"[\s\S]*onFinished: controller\.completePresentationTransition/u,
+    );
+    expect(controller).toMatch(
+      /function deactivate\(\)[\s\S]*startPresentationTransition\("closing", 0, activeSessionId\)/u,
+    );
+    expect(controller).toMatch(
+      /function activate\(\)[\s\S]*presentationPhase === "closing"[\s\S]*startPresentationTransition\("opening", 1, activeSessionId\)/u,
+    );
+    expect(controller).toMatch(
+      /presentationAnimation\.duration = Math\.max\(1, Math\.round\(220 \* distance\)\)/u,
+    );
+    expect(controller).toMatch(
+      /completePresentationTransition[\s\S]*token !== pendingPresentationTransitionToken[\s\S]*sessionId !== activeSessionId/u,
+    );
 
     expect(controller).toContain("QtObject {");
     expect(controller).not.toContain("KWin.SceneEffect {");
@@ -562,7 +583,7 @@ describe("overview effect package", () => {
     expect(activate).toContain("pendingActivationAttemptId = attemptId");
     expect(activate).toContain("layoutStateReader.sample(attemptId)");
     expect(activate).toMatch(
-      /if \(active \|\| loading \|\| plasmaOverviewIsActive\(\)\) \{\s*return;\s*\}/u,
+      /if \(active\) \{[\s\S]*presentationPhase === "closing"[\s\S]*return;[\s\S]*if \(loading \|\| plasmaOverviewIsActive\(\)\) \{\s*return;/u,
     );
     expect(deactivate).toMatch(
       /pendingActivationAttemptId = 0;[\s\S]*layoutStateReader\.cancel\(\)/u,
@@ -587,7 +608,7 @@ describe("overview effect package", () => {
     expect(reject).toContain("activation rejected reason=${reason}");
 
     const guard = reject.indexOf("if (!loading || active");
-    const reset = reject.indexOf("deactivate();");
+    const reset = reject.indexOf("deactivateImmediately();");
     const warning = reject.indexOf("console.warn(");
     const argumentsWrite = reject.indexOf("rejectionOsdCall.arguments =");
     const call = reject.indexOf("rejectionOsdCall.call();");
@@ -629,7 +650,8 @@ describe("overview effect package", () => {
     expect(desktopCard).toContain("KWin.WindowThumbnail");
     expect(desktopCard.match(/KWin\.WindowModel\s*\{/gu)).toHaveLength(1);
     expect(desktopCard.match(/KWin\.WindowFilterModel\s*\{/gu)).toHaveLength(1);
-    expect(desktopCard).toContain("minimizedWindows: true");
+    expect(desktopCard).toContain("minimizedWindows: false");
+    expect(qmlSources.join("\n")).not.toContain("KWin.DesktopBackground");
     const kwinWrites =
       qmlSources
         .join("\n")
@@ -689,16 +711,11 @@ describe("overview effect package", () => {
     );
     const thumbnail = desktopCard.slice(
       desktopCard.indexOf("id: thumbnailShell"),
-      desktopCard.indexOf("id: tabShell"),
-    );
-    const tab = desktopCard.slice(
-      desktopCard.indexOf("id: tabShell"),
       desktopCard.indexOf("id: minimizedPlaceholderShell"),
     );
 
     expect(numberGutter).toContain("acceptedButtons: Qt.LeftButton");
     expect(thumbnail).toContain("acceptedButtons: Qt.LeftButton");
-    expect(tab).toContain("acceptedButtons: Qt.LeftButton");
     expect(windowPresentation).toContain("width: viewport.width");
     expect(windowPresentation).toContain("height: viewport.height");
     expect(thumbnail).toContain("acceptedButtons: Qt.LeftButton");
@@ -714,33 +731,6 @@ describe("overview effect package", () => {
       "card.windowTapped(model.window, windowPresentation.windowId, card.desktop,",
     );
     expect(thumbnail).toContain("card.desktopId, card.screen)");
-    expect(tab).toContain("acceptedButtons: Qt.LeftButton");
-    expect(tab).toContain(
-      "acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad",
-    );
-    expect(tab).toContain(
-      "enabled: tabShell.visible && tabShell.activationEligible && card.desktop && card.screen",
-    );
-    expect(tab).toContain("? windowPresentation.minimizedActivationEligible");
-    expect(tab).toContain(": !windowPresentation.tiledPresentation.selected");
-    expect(tab).toContain(
-      "readonly property bool keyboardTarget: activationEligible && windowPresentation.matchesSearch",
-    );
-    expect(tab).toContain("visible: frame !== null && model.window");
-    expect(tab).toContain(
-      "opacity: windowPresentation.minimizedWindow ? 0.6 : 1",
-    );
-    expect(tab).toContain(
-      'color: windowPresentation.minimizedWindow ? "#8a96a8" : "#f3f7ff"',
-    );
-    expect(tab).toContain(
-      "text: windowPresentation.windowLabel ? windowPresentation.windowLabel.primary",
-    );
-    expect(tab).toContain("elide: Text.ElideRight");
-    expect(tab).toContain(
-      "card.windowTapped(model.window, windowPresentation.windowId, card.desktop,",
-    );
-    expect(tab).toContain("card.desktopId, card.screen)");
     expect(scene).toMatch(
       /onWindowTapped:\s*\(candidate,\s*expectedWindowId,\s*expectedDesktop,\s*expectedDesktopId,\s*expectedScreen\)\s*=>\s*root\.focusWindow\(candidate,\s*expectedWindowId,\s*expectedDesktop,\s*expectedDesktopId,\s*expectedScreen\)/u,
     );
@@ -904,7 +894,7 @@ describe("overview effect package", () => {
   it("snapshots effect-window action fields outside live handler bindings", () => {
     const presentation = desktopCard.slice(
       desktopCard.indexOf("id: windowPresentation"),
-      desktopCard.indexOf("id: activeColumnBadge"),
+      desktopCard.indexOf("id: windowDropArea"),
     );
     const snapshot = desktopCard.slice(
       desktopCard.indexOf("function snapshotWindowActions("),
@@ -958,9 +948,10 @@ describe("overview effect package", () => {
       "enabled: thumbnailShell.visible && windowPresentation.dragEligible",
     );
     expect(presentation).toContain(
-      "enabled: tabShell.visible && windowPresentation.closeEligible",
+      "enabled: thumbnailShell.visible && windowPresentation.closeEligible",
     );
-    expect(presentation).toContain("wId: model.window.internalId");
+    expect(presentation).toContain("wId: windowPresentation.windowId");
+    expect(presentation).not.toContain("wId: model.window.internalId");
     expect(presentation).not.toContain("card.windowCanDrag(");
     expect(presentation).not.toContain("card.windowCanRequestClose(");
 
@@ -1033,12 +1024,12 @@ describe("overview effect package", () => {
     expect(desktopCard).toMatch(
       /signal windowDropped\(var candidate, string expectedWindowId, var expectedSourceDesktop,\s*string expectedSourceDesktopId, var expectedTargetDesktop,\s*string expectedTargetDesktopId, var expectedScreen\)/u,
     );
-    expect(desktopCard.match(/\bDragHandler\s*\{/gu)).toHaveLength(3);
+    expect(desktopCard.match(/\bDragHandler\s*\{/gu)).toHaveLength(2);
     expect(desktopCard.match(/\bDropArea\s*\{/gu)).toHaveLength(1);
-    expect(desktopCard.match(/\.Drag\.active = true;/gu)).toHaveLength(2);
-    expect(desktopCard.match(/\.Drag\.active = false;/gu)).toHaveLength(6);
+    expect(desktopCard.match(/\.Drag\.active = true;/gu)).toHaveLength(1);
+    expect(desktopCard.match(/\.Drag\.active = false;/gu)).toHaveLength(3);
     expect(delegate).toMatch(
-      /onWindowDropped:\s*\(candidate, expectedWindowId, expectedSourceDesktop, expectedSourceDesktopId,\s*expectedTargetDesktop, expectedTargetDesktopId, expectedScreen\)\s*=>\s*root\.moveWindowToDesktop\(candidate, expectedWindowId, expectedSourceDesktop,\s*expectedSourceDesktopId, expectedTargetDesktop,\s*expectedTargetDesktopId, expectedScreen\)/u,
+      /onWindowDropped:\s*\(\s*candidate,\s*expectedWindowId,\s*expectedSourceDesktop,\s*expectedSourceDesktopId,\s*expectedTargetDesktop,\s*expectedTargetDesktopId,\s*expectedScreen\s*\)\s*=>\s*root\.moveWindowToDesktop\(\s*candidate,\s*expectedWindowId,\s*expectedSourceDesktop,\s*expectedSourceDesktopId,\s*expectedTargetDesktop,\s*expectedTargetDesktopId,\s*expectedScreen\s*\)/u,
     );
 
     expect(transaction).toContain("const effect = sceneEffect;");
@@ -1150,7 +1141,7 @@ describe("overview effect package", () => {
   it("moves one exact live window across outputs and compensates partial writes", () => {
     const sourceHandlers = desktopCard.slice(
       desktopCard.indexOf("id: thumbnailDragHandler"),
-      desktopCard.indexOf("id: activeColumnBadge"),
+      desktopCard.indexOf("id: windowDropArea"),
     );
     const transport = desktopCard.slice(
       desktopCard.indexOf("function requestCrossOutputWindowDrop("),
@@ -1179,13 +1170,13 @@ describe("overview effect package", () => {
 
     expect(
       sourceHandlers.match(/const action = .*\.Drag\.drop\(\);/gu),
-    ).toHaveLength(2);
-    expect(sourceHandlers.match(/action === Qt\.MoveAction/gu)).toHaveLength(2);
+    ).toHaveLength(1);
+    expect(sourceHandlers.match(/action === Qt\.MoveAction/gu)).toHaveLength(1);
     expect(
       sourceHandlers.match(
         /card\.requestCrossOutputWindowDrop\(source, point\)/gu,
       ),
-    ).toHaveLength(2);
+    ).toHaveLength(1);
     expect(transport).toContain("screen.mapToGlobal(point.scenePosition)");
     expect(transport).toContain(
       'typeof effect.checkItemDroppedOutOfScreen !== "function"',
@@ -1279,7 +1270,7 @@ describe("overview effect package", () => {
     expect(settlement).toContain(
       "KWin.Workspace.sendClientToScreen(state.candidate, state.sourceWorkspaceOutput)",
     );
-    expect(settlement).toContain("state.effect.deactivate();");
+    expect(settlement).toContain("state.effect.deactivateImmediately();");
     expect(sceneGuard).toContain(
       "state.liveSourceScreen === state.liveTargetScreen",
     );
@@ -1318,6 +1309,7 @@ describe("overview effect package", () => {
     );
     const spatialInputStart = scene.indexOf("id: spatialViewportInput");
     const desktopRepeaterStart = scene.indexOf("id: desktopRepeater");
+    const spatialCanvasStart = scene.indexOf("id: spatialCanvas");
     const spatialInput = scene.slice(
       spatialInputStart,
       scene.lastIndexOf("Repeater {", desktopRepeaterStart) +
@@ -1327,9 +1319,8 @@ describe("overview effect package", () => {
       desktopCard.indexOf("id: numberGutter"),
       desktopCard.indexOf("id: viewport"),
     );
-    const desktopLoaderStart = scene.indexOf(
-      "Loader {\n            id: desktopCardLoader",
-    );
+    const desktopLoaderId = scene.indexOf("id: desktopCardLoader");
+    const desktopLoaderStart = scene.lastIndexOf("Loader {", desktopLoaderId);
     const desktopLoader = scene.slice(
       desktopLoaderStart,
       scene.indexOf("sourceComponent: Component", desktopLoaderStart),
@@ -1362,6 +1353,10 @@ describe("overview effect package", () => {
       scene.indexOf("function refreshOverviewSpatialSession("),
       scene.indexOf("function resetSpatialViewport("),
     );
+    const desktopCardLoadPolicy = scene.slice(
+      scene.indexOf("function desktopCardShouldLoad("),
+      scene.indexOf("function desktopCardAt("),
+    );
 
     expect(scene).toMatch(
       /readonly property int currentWorkspaceIndex:[\s\S]*desktopIds\.indexOf\(String\(currentDesktop\.id\)\)/u,
@@ -1380,21 +1375,62 @@ describe("overview effect package", () => {
     );
     expect(spatialLayout).toContain("function legacySpatialLayout()");
     expect(spatialLayout).toContain(
-      "const horizontalError = Math.abs(plan.cardX * 2 + plan.cardWidth - width);",
+      "const horizontalError = Math.abs(plan.cardX) + Math.abs(plan.cardWidth - width);",
+    );
+    expect(spatialLayout).toMatch(
+      /function legacySpatialLayout[\s\S]*legacyCardHeight = count > 0 \? Math\.max\(1, height \* zoom\)[\s\S]*cardWidth: Math\.max\(1, width\),[\s\S]*cardX: 0,[\s\S]*initialContentY:/u,
     );
     expect(scene).toContain(
-      "readonly property real cardTop: overviewSpatialLayout.edgeMargin - spatialContentY",
+      "readonly property real cardTop: overviewSpatialLayout.edgeMargin - spatialVisualContentY",
     );
     expect(scene).toContain("property real spatialContentY: 0");
-    expect(desktopLoaderStart).toBeGreaterThan(0);
-    expect(desktopLoader).toContain("x: root.cardX");
-    expect(desktopLoader).toContain(
-      "y: root.cardTop + index * (root.cardHeight + root.cardGap)",
+    expect(scene).toContain("property real spatialVisualContentY: 0");
+    expect(scene).toContain(
+      "property bool spatialVisualContentYDeferred: false",
     );
-    expect(desktopLoader).toContain("width: root.cardWidth");
+    expect(scene).toMatch(
+      /readonly property real spatialPresentationProgress:[\s\S]*sceneEffect\.presentationProgress[\s\S]*Math\.max\(0, Math\.min\(1, sceneEffect\.presentationProgress\)\)/u,
+    );
+    expect(scene).toMatch(
+      /readonly property string spatialPresentationPhase:[\s\S]*sceneEffect\.presentationPhase[\s\S]*: "open"/u,
+    );
+    expect(scene).toContain("enabled: spatialPresentationInteractive");
+    expect(scene).toContain(
+      "property int spatialPresentationWorkspaceIndex: -1",
+    );
+    expect(scene).toMatch(
+      /Component\.onCompleted:[\s\S]*spatialPresentationWorkspaceIndex = currentWorkspaceIndex;[\s\S]*handleSpatialPresentationPhaseChanged\(\);/u,
+    );
+    expect(scene).toMatch(
+      /id: spatialBackdrop[\s\S]*opacity: root\.spatialPresentationProgress/u,
+    );
+    expect(scene).not.toContain("id: spatialOpenAnimation");
+    expect(scene).toMatch(
+      /id: spatialVerticalCameraAnimation[\s\S]*target: root[\s\S]*property: "spatialVisualContentY"[\s\S]*easing\.type: Easing\.OutCubic/u,
+    );
+    expect(scene).toMatch(
+      /function setSpatialContentY\(requestedContentY, animateVisual = false\)[\s\S]*const animateBoundedDistance = animateVisual === true[\s\S]*distance <= stride \* 4;[\s\S]*spatialVerticalCameraAnimation\.duration = Math\.max\(90, Math\.min\(180,/u,
+    );
+    expect(spatialCanvasStart).toBeGreaterThan(spatialInputStart);
+    expect(spatialCanvasStart).toBeLessThan(desktopRepeaterStart);
+    expect(scene).toMatch(
+      /id: spatialCanvas[\s\S]*presentationOffsetY:[\s\S]*root\.height \/ 2 - \(root\.cardTop \+ presentationRowCenter\)[\s\S]*x: 0[\s\S]*y: root\.cardTop \+ presentationOffsetY[\s\S]*width: root\.width[\s\S]*height: Math\.max\(0, root\.desktopIds\.length \* \(root\.cardHeight \+ root\.cardGap\) - root\.cardGap\)/u,
+    );
+    expect(scene).toMatch(
+      /id: spatialCanvas[\s\S]*presentationWorkspaceIndex:[\s\S]*fullScale: root\.cardHeight > 0[\s\S]*presentationScale: 1 \+ \(fullScale - 1\)[\s\S]*transform: Scale \{[\s\S]*origin\.x: spatialCanvas\.width \/ 2[\s\S]*origin\.y: spatialCanvas\.presentationWorkspaceIndex[\s\S]*xScale: spatialCanvas\.presentationScale[\s\S]*yScale: spatialCanvas\.presentationScale/u,
+    );
+    expect(desktopLoaderStart).toBeGreaterThan(0);
+    expect(desktopLoader).toContain("x: 0");
+    expect(desktopLoader).toContain(
+      "y: index * (root.cardHeight + root.cardGap)",
+    );
+    expect(desktopLoader).toContain("width: spatialCanvas.width");
     expect(desktopLoader).toContain("height: root.cardHeight");
     expect(desktopLoader).toContain(
       "active: root.desktopCardShouldLoad(index, modelData)",
+    );
+    expect(desktopCardLoadPolicy).toMatch(
+      /desktopIds\[index\] !== expectedDesktopId\) \{\s*return false;/u,
     );
     expect(desktopLoader).toMatch(
       /onActiveChanged: \{[\s\S]*root\.advanceOverviewDesktopCardEpoch\(\);[\s\S]*Qt\.callLater\(root\.repairKeyboardSelection\);[\s\S]*\}/u,
@@ -1423,13 +1459,17 @@ describe("overview effect package", () => {
       'typeof runtime.planOverviewSpatialVisibleRange !== "function"',
     );
     expect(spatialLayout).toMatch(
-      /runtime\.planOverviewSpatialVisibleRange\(\{[\s\S]*sceneHeight: height,[\s\S]*contentHeight: overviewSpatialLayout\.contentHeight,[\s\S]*contentY: spatialContentY,[\s\S]*workspaceCount: desktopIds\.length,[\s\S]*overscan: 1/u,
+      /const logicalRange = planSpatialVisibleRangeAt\(runtime, spatialContentY\);[\s\S]*const visualRange = planSpatialVisibleRangeAt\(runtime, spatialVisualContentY\);[\s\S]*firstIndex: Math\.min\(logicalRange\.firstIndex, visualRange\.firstIndex\),[\s\S]*lastIndex: Math\.max\(logicalRange\.lastIndex, visualRange\.lastIndex\)/u,
     );
-    expect(spatialLayout).toContain(
-      "return spatialVisibleRangeIsValid(plan) ? plan : fallback",
+    expect(spatialLayout).toMatch(
+      /function planSpatialVisibleRangeAt\(runtime, contentY\)[\s\S]*runtime\.planOverviewSpatialVisibleRange\(\{[\s\S]*sceneHeight: height,[\s\S]*contentHeight: overviewSpatialLayout\.contentHeight,[\s\S]*contentY,[\s\S]*workspaceCount: desktopIds\.length,[\s\S]*overscan: 1/u,
     );
     expect(spatialLayout).toContain("return fallback;");
     expect(spatialLayout).toContain("if (searchQuery.length > 0");
+    expect(spatialLayout).toContain('spatialPresentationPhase !== "open"');
+    expect(spatialLayout).toContain(
+      "index === spatialPresentationWorkspaceIndex",
+    );
     expect(spatialLayout).toContain(
       "desktopReorderSourceId === expectedDesktopId",
     );
@@ -1440,7 +1480,7 @@ describe("overview effect package", () => {
       /runtime\.planOverviewSpatialViewport\(\{[\s\S]*sceneHeight: height,[\s\S]*contentHeight: overviewSpatialLayout\.contentHeight,[\s\S]*contentY: requestedContentY/u,
     );
     expect(spatialLayout).toMatch(
-      /function resetSpatialViewport\(\)[\s\S]*planSpatialViewport\(overviewSpatialLayout\.initialContentY\)[\s\S]*spatialContentY = plan\.contentY/u,
+      /function resetSpatialViewport\(animateVisual = false\)[\s\S]*planSpatialViewport\(overviewSpatialLayout\.initialContentY\)[\s\S]*return setSpatialContentY\(plan\.contentY, animateVisual\);/u,
     );
     expect(scene).toContain(
       "onOverviewSpatialLayoutChanged: root.refreshOverviewSpatialSession(true)",
@@ -1448,8 +1488,14 @@ describe("overview effect package", () => {
     expect(scene).toContain(
       "onOverviewModelChanged: root.refreshOverviewSpatialSession(true)",
     );
-    expect(scene).toContain(
-      "onCurrentDesktopChanged: root.refreshOverviewSpatialSession(false)",
+    expect(scene).toMatch(
+      /onCurrentDesktopChanged: \{[\s\S]*spatialPresentationPhase === "closing"[\s\S]*sceneEffect\.deactivateImmediately\(\);[\s\S]*return;[\s\S]*root\.refreshOverviewSpatialSession\(false, spatialPresentationInteractive\);/u,
+    );
+    expect(scene).toMatch(
+      /onCurrentDesktopChanged: \{[\s\S]*spatialPresentationPhase === "opening" && currentWorkspaceIndex >= 0[\s\S]*spatialPresentationWorkspaceIndex = currentWorkspaceIndex;/u,
+    );
+    expect(scene).toMatch(
+      /function handleSpatialPresentationPhaseChanged\(\)[\s\S]*spatialPresentationPhase === "closing"[\s\S]*spatialPresentationWorkspaceIndex = currentWorkspaceIndex;[\s\S]*if \(!adoptSpatialVisualContentY\(\)\) \{\s*spatialVerticalCameraAnimation\.stop\(\);/u,
     );
     expect(scene).toMatch(
       /Component\.onCompleted:[\s\S]*resetOverviewSession\(\);[\s\S]*forceActiveFocus\(\);/u,
@@ -1461,7 +1507,7 @@ describe("overview effect package", () => {
       /function resetOverviewSession\(\)[\s\S]*keyboardSelectionId = "";[\s\S]*keyboardHelpVisible = false;[\s\S]*searchQuery = "";[\s\S]*spatialViewportSnapshot = null;[\s\S]*refreshOverviewSpatialSession\(false\);/u,
     );
     expect(spatialSessionRefresh).toMatch(
-      /function refreshOverviewSpatialSession\(preserveViewport\)[\s\S]*cancelKeyboardBoundaryNavigation\(\);/u,
+      /function refreshOverviewSpatialSession\(preserveViewport, animateViewport = false\)[\s\S]*cancelKeyboardBoundaryNavigation\(\);/u,
     );
     expect(spatialSessionRefresh).toMatch(
       /navigationTargetForId\(collectNavigationTargets\(\), keyboardSelectionId\)[\s\S]*selectedDesktopId = selectedTarget\.desktopId;/u,
@@ -1479,10 +1525,10 @@ describe("overview effect package", () => {
       /resetDesktopReorder\(\);[\s\S]*resetSpatialEdgePanTracking\(\);/u,
     );
     expect(spatialSessionRefresh).toMatch(
-      /sceneEffect && sceneEffect\.active === true[\s\S]*planSpatialViewportAnchor\(previousViewportSnapshot, nextViewportGeometry\)[\s\S]*spatialContentY = anchorPlan\.contentY;[\s\S]*resetSpatialViewport\(\);[\s\S]*captureSpatialViewportSnapshot\(\);[\s\S]*Qt\.callLater\(root\.repairKeyboardSelection\);[\s\S]*spatialContentY = 0;[\s\S]*spatialViewportSnapshot = null;/u,
+      /sceneEffect && sceneEffect\.active === true[\s\S]*planSpatialViewportAnchor\(previousViewportSnapshot, nextViewportGeometry\)[\s\S]*setSpatialContentY\(anchorPlan\.contentY, animateViewport\);[\s\S]*resetSpatialViewport\(animateViewport\);[\s\S]*captureSpatialViewportSnapshot\(\);[\s\S]*Qt\.callLater\(root\.repairKeyboardSelection\);[\s\S]*spatialVerticalCameraAnimation\.stop\(\);[\s\S]*spatialContentY = 0;[\s\S]*spatialVisualContentY = 0;[\s\S]*spatialViewportSnapshot = null;/u,
     );
     expect(spatialSessionRefresh).toMatch(
-      /desktopIds\.indexOf\(selectedDesktopId\)[\s\S]*planSpatialWorkspaceCenter\(selectedWorkspaceIndex\)[\s\S]*spatialContentY = selectionPlan\.contentY;/u,
+      /desktopIds\.indexOf\(selectedDesktopId\)[\s\S]*planSpatialWorkspaceCenter\(selectedWorkspaceIndex\)[\s\S]*setSpatialContentY\(selectionPlan\.contentY, animateViewport\);/u,
     );
     expect(spatialSessionRefresh).not.toMatch(
       /keyboardSelectionId = ""|keyboardHelpVisible = false|searchQuery = ""/u,
@@ -1677,7 +1723,7 @@ describe("overview effect package", () => {
     expect(reorder.match(/KWin\.Workspace\.moveDesktop\(/gu)).toHaveLength(1);
     expect(reorder).not.toContain("deactivate()");
     expect(staleClose).toMatch(
-      /resetOverviewSession\(\);\s*if \(sceneEffect\) \{\s*sceneEffect\.deactivate\(\);/u,
+      /resetOverviewSession\(\);\s*if \(sceneEffect && typeof sceneEffect\.deactivateImmediately === "function"\) \{\s*sceneEffect\.deactivateImmediately\(\);/u,
     );
 
     expect(scene.match(/\bTimer\s*\{/gu)).toHaveLength(1);
@@ -1760,51 +1806,6 @@ describe("overview effect package", () => {
     );
   });
 
-  it("shows one fail-closed active-column layout badge with constant-time lookup", () => {
-    const badge = desktopCard.slice(
-      desktopCard.indexOf("id: activeColumnBadge"),
-      desktopCard.indexOf("function collectNavigationTargets("),
-    );
-    const badgeFormatters = desktopCard.slice(
-      desktopCard.indexOf("function layoutBadgeLabel("),
-      desktopCard.indexOf("function heightsForMembers("),
-    );
-
-    expect(desktopCard.match(/id: activeColumnBadge\b/gu)).toHaveLength(1);
-    expect(desktopCard).toContain("id: columnRepeater");
-    expect(desktopCard).toContain(
-      "onItemAdded: card.columnDelegateRevision += 1",
-    );
-    expect(desktopCard).toContain(
-      "onItemRemoved: card.columnDelegateRevision += 1",
-    );
-    expect(badge).toContain("card.context.activeColumnIndex");
-    expect(badge).toContain("card.context.columns[activeColumnIndex]");
-    expect(badge).toContain("card.columnDelegateRevision");
-    expect(desktopCard).toContain("return repeater.itemAt(columnIndex)");
-    expect(badge).toContain("Math.max(0, activeColumnShell.x)");
-    expect(badge).toContain(
-      "Math.min(viewport.width, activeColumnShell.x + activeColumnShell.width)",
-    );
-    expect(badge).toContain("y: viewport.height - height - 4");
-    expect(badge).toContain("viewport.height >= 28");
-    expect(badge).toContain("visibleWidth >= labelWidth + 20");
-    expect(badgeFormatters).toContain('column.presentation !== "stacked"');
-    expect(badgeFormatters).toContain('column.presentation !== "tabbed"');
-    expect(badgeFormatters).toContain(
-      "`${column.presentation} · ${widthLabel}`",
-    );
-    expect(badgeFormatters).toContain('width.kind === "fixed"');
-    expect(badgeFormatters).toContain('width.kind !== "proportion"');
-    expect(badgeFormatters).toContain('"<1 px"');
-    expect(badgeFormatters).toContain("`${Math.round(width.value)} px`");
-    expect(badgeFormatters).toContain('return "<0.1%"');
-    expect(badgeFormatters).toContain("`${whole}.${fraction}%`");
-    expect(`${badge}\n${badgeFormatters}`).not.toMatch(
-      /columnFrame\(|\b(?:for|while)\s*\(|\.(?:map|reduce)\(|KWin\.|WindowModel|\b[A-Za-z][A-Za-z0-9]*Handler\s*\{|MouseArea|Behavior|Animation/u,
-    );
-  });
-
   it("projects exact minimized windows as fail-closed compact placeholders", () => {
     const presentation = desktopCard.slice(
       desktopCard.indexOf("id: windowPresentation"),
@@ -1812,7 +1813,7 @@ describe("overview effect package", () => {
     );
     const placeholder = desktopCard.slice(
       desktopCard.indexOf("id: minimizedPlaceholderShell"),
-      desktopCard.indexOf("id: activeColumnBadge"),
+      desktopCard.indexOf("id: windowDropArea"),
     );
     const planner = desktopCard.slice(
       desktopCard.indexOf("function planMinimizedPlaceholderFrame("),
@@ -1832,17 +1833,9 @@ describe("overview effect package", () => {
       "card.windowSnapshotCanActivateMinimizedWindow(windowPresentation)",
     );
     expect(presentation).toContain(
-      "readonly property bool hasMinimizedTabFrame: tiledPresentation !== null",
-    );
-    expect(presentation).toContain(
-      "tiledPresentation !== undefined && tiledPresentation.tabFrame !== null",
-    );
-    expect(presentation).toContain(
       "readonly property var minimizedPlaceholderFrame: minimizedActivationEligible",
     );
-    expect(presentation).toContain(
-      "card.planMinimizedPlaceholderFrame(frame, hasMinimizedTabFrame)",
-    );
+    expect(presentation).toContain("card.planMinimizedPlaceholderFrame(frame)");
     expect(presentation).toContain(
       "readonly property var minimizedPlaceholderTarget: minimizedPlaceholderShell",
     );
@@ -1851,7 +1844,7 @@ describe("overview effect package", () => {
     );
 
     expect(planner).toContain(
-      "hasMinimizedTabFrame === true || !frame || !viewport || viewport.width <= 0 || viewport.height <= 0",
+      "!frame || !viewport || viewport.width <= 0 || viewport.height <= 0",
     );
     expect(planner).toContain("OverviewRuntime.DriftileOverview");
     expect(planner).toContain(
@@ -1918,28 +1911,19 @@ describe("overview effect package", () => {
     );
     const thumbnail = desktopCard.slice(
       desktopCard.indexOf("id: thumbnailShell"),
-      desktopCard.indexOf("id: tabShell"),
-    );
-    const tab = desktopCard.slice(
-      desktopCard.indexOf("id: tabShell"),
       desktopCard.indexOf("id: minimizedPlaceholderShell"),
     );
     const placeholder = desktopCard.slice(
       desktopCard.indexOf("id: minimizedPlaceholderShell"),
-      desktopCard.indexOf("id: activeColumnBadge"),
+      desktopCard.indexOf("id: windowDropArea"),
     );
     const thumbnailFooterStart = thumbnail.indexOf("id: thumbnailLabelFooter");
     const thumbnailFooter = thumbnail.slice(
       thumbnailFooterStart,
       thumbnail.indexOf(
-        "border.width: thumbnailShell.keyboardSelected ? 3 : 0",
+        "border.width: thumbnailShell.keyboardSelected ? 2 : 0",
         thumbnailFooterStart,
       ),
-    );
-    const tabLabelStart = tab.indexOf("Text {");
-    const tabLabel = tab.slice(
-      tabLabelStart,
-      tab.indexOf("Rectangle {", tabLabelStart),
     );
     const placeholderLabelStart = placeholder.indexOf("Text {");
     const placeholderLabel = placeholder.slice(
@@ -1950,13 +1934,13 @@ describe("overview effect package", () => {
       desktopCard.indexOf("function planWindowLabel("),
       desktopCard.indexOf("function anyWindowDemandsAttention("),
     );
-    const labelUi = `${thumbnailFooter}\n${tabLabel}\n${placeholderLabel}`;
+    const labelUi = `${thumbnailFooter}\n${placeholderLabel}`;
 
     expect(overviewRuntimeIndex).toContain(
       'export { planOverviewWindowLabel } from "./window-label";',
     );
     expect(presentation).toMatch(
-      /readonly property var windowLabel: card\.planWindowLabel\(candidate, matchesSearch && model\.window[\s\S]*!minimizedWindow && selectedThumbnail[\s\S]*\|\| hasMinimizedTabFrame[\s\S]*\|\| \(minimizedPlaceholderFrame !== null/u,
+      /readonly property var windowLabel: card\.planWindowLabel\(candidate, matchesSearch && model\.window[\s\S]*!minimizedWindow && selectedThumbnail[\s\S]*\|\| \(minimizedPlaceholderFrame !== null/u,
     );
 
     expect(thumbnailFooter).toMatch(
@@ -1972,13 +1956,10 @@ describe("overview effect package", () => {
       /clip: true[\s\S]*text: windowPresentation\.windowLabel \? windowPresentation\.windowLabel\.primary[\s\S]*text: windowPresentation\.windowLabel && windowPresentation\.windowLabel\.secondary !== null/u,
     );
 
-    expect(tabLabel).toMatch(
-      /text: windowPresentation\.windowLabel \? windowPresentation\.windowLabel\.primary[\s\S]*\? String\(windowPresentation\.tiledPresentation\.memberIndex \+ 1\)/u,
-    );
     expect(placeholderLabel).toContain(
       '? `Minimized · ${windowPresentation.windowLabel.primary}` : "Minimized"',
     );
-    for (const label of [thumbnailFooter, tabLabel, placeholderLabel]) {
+    for (const label of [thumbnailFooter, placeholderLabel]) {
       expect(label).toContain("elide: Text.ElideRight");
       expect(label).toContain("textFormat: Text.PlainText");
     }
@@ -1986,19 +1967,17 @@ describe("overview effect package", () => {
     expect(thumbnailFooter).toContain(
       "anchors.bottomMargin: windowPresentation.attentionRequested ? 8 : 5",
     );
-    expect(tabLabel).toContain("anchors.rightMargin: tabCloseButton.visible");
-    expect(tabLabel).toContain(
-      ": (windowPresentation.attentionRequested ? 18 : 4)",
-    );
     expect(placeholderLabel).toContain(
       "anchors.rightMargin: minimizedPlaceholderCloseButton.visible",
     );
     expect(placeholderLabel).toContain(
       ": (windowPresentation.attentionRequested",
     );
+    expect(thumbnail).toMatch(
+      /anchors\.bottom: parent\.bottom\s*height: 3\s*visible: windowPresentation\.attentionRequested\s*color: "#e2556f"/u,
+    );
+    expect(thumbnail).not.toContain("id: thumbnailAttentionBadge");
     for (const [visual, attentionBadge, keyboardBorder] of [
-      [thumbnail, "thumbnailAttentionBadge", "thumbnailShell.keyboardSelected"],
-      [tab, "tabAttentionBadge", "tabShell.keyboardSelected"],
       [
         placeholder,
         "minimizedPlaceholderAttentionBadge",
@@ -2061,7 +2040,7 @@ describe("overview effect package", () => {
     );
   });
 
-  it("presents bounded desktop names without changing compact gutter input", () => {
+  it("presents bounded desktop names as spatial overlays", () => {
     const numberGutter = desktopCard.slice(
       desktopCard.indexOf("id: numberGutter"),
       desktopCard.indexOf("id: desktopNameGutter"),
@@ -2097,16 +2076,26 @@ describe("overview effect package", () => {
     expect(desktopCard).toMatch(
       /readonly property bool desktopNamePresented: showDesktopNames && desktopLabel !== null\s*&& width >= 560 && height >= 72/u,
     );
+    expect(desktopCard).toContain("readonly property real contentLeft: 0");
+    expect(desktopCard).toContain("readonly property real contentTop: 0");
     expect(desktopCard).toContain(
-      "readonly property real contentLeft: desktopNamePresented ? Math.max(112, Math.min(170, width * 0.14)) : 42",
+      "readonly property real contentWidth: Math.max(1, width)",
     );
-    expect(numberGutter).toContain("width: 42");
-    expect(numberGutter).toContain("width: numberGutter.width - 18");
-    expect(desktopNameGutter).toContain("x: 42");
+    expect(desktopCard).toContain(
+      "readonly property real contentHeight: Math.max(1, height)",
+    );
+    expect(numberGutter).toContain("width: 36");
+    expect(numberGutter).toContain("height: 36");
+    expect(numberGutter).toContain("z: 9500");
     expect(desktopNameGutter).toContain(
-      "width: Math.max(0, card.contentLeft - 42)",
+      "x: Math.max(numberGutter.x + numberGutter.width + 8,",
     );
-    expect(desktopNameGutter).toContain("visible: card.desktopNamePresented");
+    expect(desktopNameGutter).toContain(
+      "width: Math.max(0, Math.min(220, card.width - x - 8))",
+    );
+    expect(desktopNameGutter).toContain(
+      "visible: card.desktopNamePresented && width >= 48",
+    );
     expect(labelTextPosition).toBeGreaterThan(0);
     expect(labelText).toContain("anchors.fill: parent");
     expect(labelText).toContain("elide: Text.ElideRight");
@@ -2220,15 +2209,11 @@ describe("overview effect package", () => {
   it("loads bounded application icons only for eligible static window labels", () => {
     const thumbnail = desktopCard.slice(
       desktopCard.indexOf("id: thumbnailShell"),
-      desktopCard.indexOf("id: tabShell"),
-    );
-    const tab = desktopCard.slice(
-      desktopCard.indexOf("id: tabShell"),
       desktopCard.indexOf("id: minimizedPlaceholderShell"),
     );
     const placeholder = desktopCard.slice(
       desktopCard.indexOf("id: minimizedPlaceholderShell"),
-      desktopCard.indexOf("id: activeColumnBadge"),
+      desktopCard.indexOf("id: windowDropArea"),
     );
     const iconLoader = windowApplicationIcon.slice(
       windowApplicationIcon.indexOf("Loader {"),
@@ -2241,7 +2226,7 @@ describe("overview effect package", () => {
     expect(desktopCard).toContain(
       "required property bool showApplicationIcons",
     );
-    expect(desktopCard.match(/WindowApplicationIcon \{/gu)).toHaveLength(3);
+    expect(desktopCard.match(/WindowApplicationIcon \{/gu)).toHaveLength(2);
     expect(desktopCard).not.toContain("candidate.icon");
 
     expect(windowApplicationIcon).toContain(
@@ -2285,14 +2270,6 @@ describe("overview effect package", () => {
       ),
     ).toHaveLength(2);
 
-    expect(tab).toMatch(
-      /id: tabApplicationIcon[\s\S]*width: Math\.max\(10, Math\.min\(14, tabShell\.height - 6\)\)\s*height: width[\s\S]*candidate: windowPresentation\.candidate[\s\S]*presentationEligible: card\.showApplicationIcons && tabShell\.visible\s*&& tabShell\.width >= 84 && tabShell\.height >= 18/u,
-    );
-    expect(tab).toMatch(
-      /anchors\.leftMargin: tabApplicationIcon\.iconAvailable\s*\? tabApplicationIcon\.x \+ tabApplicationIcon\.width \+ 5 : 4/u,
-    );
-    expect(tab).toContain("anchors.rightMargin: tabCloseButton.visible");
-
     expect(placeholder).toMatch(
       /id: minimizedPlaceholderApplicationIcon[\s\S]*width: Math\.max\(10, Math\.min\(16, minimizedPlaceholderShell\.height - 8\)\)\s*height: width[\s\S]*candidate: windowPresentation\.candidate[\s\S]*presentationEligible: card\.showApplicationIcons && minimizedPlaceholderShell\.visible\s*&& minimizedPlaceholderShell\.width >= 120\s*&& minimizedPlaceholderShell\.height >= 20/u,
     );
@@ -2315,15 +2292,11 @@ describe("overview effect package", () => {
     );
     const thumbnail = desktopCard.slice(
       desktopCard.indexOf("id: thumbnailShell"),
-      desktopCard.indexOf("id: tabShell"),
-    );
-    const tab = desktopCard.slice(
-      desktopCard.indexOf("id: tabShell"),
       desktopCard.indexOf("id: minimizedPlaceholderShell"),
     );
     const placeholder = desktopCard.slice(
       desktopCard.indexOf("id: minimizedPlaceholderShell"),
-      desktopCard.indexOf("id: activeColumnBadge"),
+      desktopCard.indexOf("id: windowDropArea"),
     );
     const planner = desktopCard.slice(
       desktopCard.indexOf("function planWindowState("),
@@ -2385,7 +2358,6 @@ describe("overview effect package", () => {
     expect(badge).toContain("windowPresentation.minimizedWindow");
     expect(badge).toContain("windowPresentation.windowState.badge");
     expect(badge).toContain("textFormat: Text.PlainText");
-    expect(tab).not.toContain("thumbnailWindowStateBadge");
     expect(placeholder).not.toContain("thumbnailWindowStateBadge");
     expect(search).toContain(
       "function windowMatchesSearch(candidate, windowState)",
@@ -2426,15 +2398,11 @@ describe("overview effect package", () => {
     );
     const thumbnail = desktopCard.slice(
       desktopCard.indexOf("id: thumbnailShell"),
-      desktopCard.indexOf("id: tabShell"),
-    );
-    const tab = desktopCard.slice(
-      desktopCard.indexOf("id: tabShell"),
       desktopCard.indexOf("id: minimizedPlaceholderShell"),
     );
     const placeholder = desktopCard.slice(
       desktopCard.indexOf("id: minimizedPlaceholderShell"),
-      desktopCard.indexOf("id: activeColumnBadge"),
+      desktopCard.indexOf("id: windowDropArea"),
     );
     const attentionProjection = desktopCard.slice(
       desktopCard.indexOf("function anyWindowDemandsAttention("),
@@ -2517,7 +2485,9 @@ describe("overview effect package", () => {
     expect(boundaryNavigation).toContain(
       "const plan = planSpatialWorkspaceCenter(workspaceIndex)",
     );
-    expect(boundaryNavigation).toContain("setSpatialContentY(plan.contentY)");
+    expect(boundaryNavigation).toContain(
+      "setSpatialContentY(plan.contentY, true)",
+    );
     expect(boundaryNavigation).toContain(
       "Qt.callLater(root.completeKeyboardBoundaryNavigation, request)",
     );
@@ -2576,12 +2546,8 @@ describe("overview effect package", () => {
       "!presentation.matchesSearch || !windowCanNavigate(presentation)",
     );
     expect(cardTargets).toMatch(
-      /const visual = presentation\.minimizedWindow\s*\? presentation\.hasMinimizedTabFrame \? presentation\.tabTarget : presentation\.minimizedPlaceholderTarget/u,
+      /const visual = presentation\.minimizedWindow\s*\? presentation\.minimizedPlaceholderTarget : presentation\.thumbnailTarget/u,
     );
-    expect(cardTargets).toContain(
-      "&& !presentation.tiledPresentation.selected",
-    );
-    expect(cardTargets).toContain("presentation.tabTarget");
     expect(cardTargets).toContain("presentation.minimizedPlaceholderTarget");
     expect(cardTargets).toContain("presentation.thumbnailTarget");
     expect(cardTargets).toContain(
@@ -2620,25 +2586,6 @@ describe("overview effect package", () => {
       "windowPresentation.tiledPresentation.selected",
     );
     expect(thumbnail).toContain("!windowPresentation.minimizedWindow");
-    expect(tab).toContain(
-      "readonly property bool activationEligible: windowPresentation.tiledPresentation !== null",
-    );
-    expect(tab).toContain("windowPresentation.tiledPresentation !== undefined");
-    expect(tab).toContain("windowPresentation.minimizedWindow");
-    expect(tab).toContain("? windowPresentation.minimizedActivationEligible");
-    expect(tab).toContain(
-      "card.tabFrameForPresentation(windowPresentation.tiledPresentation)",
-    );
-    expect(tab).toContain(": !windowPresentation.tiledPresentation.selected");
-    expect(tab).toContain(
-      "readonly property bool keyboardTarget: activationEligible && windowPresentation.matchesSearch",
-    );
-    expect(tab).toContain(
-      "enabled: tabShell.visible && tabShell.activationEligible && card.desktop && card.screen",
-    );
-    expect(tab).toContain(
-      "visible: frame !== null && model.window && windowPresentation.matchesSearch",
-    );
     for (const condition of [
       "presentation.matchesSearch !== true",
       "presentation.minimizedWindow !== true",
@@ -2669,7 +2616,7 @@ describe("overview effect package", () => {
     expect(minimizedActivation).not.toMatch(
       /\b(?:Timer|Behavior|Animation|ShortcutHandler)\s*\{|org\.kde\.kwin\.private|\bsequence\s*:|(?:candidate|snapshot|presentation)\.[A-Za-z0-9_]+\s*=(?!=)/u,
     );
-    for (const visual of [thumbnail, tab, placeholder]) {
+    for (const visual of [thumbnail, placeholder]) {
       expect(visual).toContain(
         "card.keyboardSelectionId === card.navigationTargetId(windowPresentation.windowId)",
       );
@@ -2679,7 +2626,6 @@ describe("overview effect package", () => {
     expect(placeholder).toContain(
       "border.width: minimizedPlaceholderShell.keyboardSelected ? 3 : 0",
     );
-    expect(placeholder).toContain('border.color: "#ffd166"');
     const numberGutter = desktopCard.slice(
       desktopCard.indexOf("id: numberGutter"),
       desktopCard.indexOf("id: viewport"),
@@ -2727,8 +2673,6 @@ describe("overview effect package", () => {
       /function windowDemandsAttention\(candidate\) \{[\s\S]*try \{[\s\S]*catch \(error\) \{\s*return false;/u,
     );
     for (const visual of [
-      { badge: "thumbnailAttentionBadge", source: thumbnail },
-      { badge: "tabAttentionBadge", source: tab },
       { badge: "minimizedPlaceholderAttentionBadge", source: placeholder },
     ]) {
       expect(visual.source).toContain(`id: ${visual.badge}`);
@@ -2741,11 +2685,17 @@ describe("overview effect package", () => {
       );
     }
     expect(thumbnail).toContain(
-      'border.color: KWin.Workspace.activeWindow === model.window ? "#f4f8ff" : "#71839e"',
+      "border.width: KWin.Workspace.activeWindow === model.window ? 2 : 0",
     );
-    expect(tab).toContain("windowPresentation.tiledPresentation.selected");
+    expect(thumbnail).toContain('border.color: "#f4f8ff"');
+    expect(thumbnail).toContain(
+      "border.width: thumbnailShell.keyboardSelected ? 2 : 0",
+    );
+    expect(thumbnail).toContain('border.color: "#86aee8"');
+    expect(thumbnail).not.toContain("#71839e");
+    expect(thumbnail).not.toContain("id: thumbnailAttentionBadge");
     expect(
-      `${attentionProjection}\n${numberGutter}\n${thumbnail}\n${tab}\n${placeholder}`,
+      `${attentionProjection}\n${numberGutter}\n${thumbnail}\n${placeholder}`,
     ).not.toMatch(/\b(?:Timer|Behavior|Animation)\s*\{/u);
     expect(attentionProjection).not.toMatch(
       /windowTapped|windowCloseRequested|closeWindow|activeWindow\s*=|\.setValue\s*\(|Settings/u,
@@ -2821,6 +2771,10 @@ describe("overview effect package", () => {
       scene.indexOf("function spatialHorizontalViewportBounds("),
       scene.indexOf("function spatialHorizontalViewportOffsetAt("),
     );
+    const presentationViewportOffset = scene.slice(
+      scene.indexOf("function spatialPresentationViewportOffsetAt("),
+      scene.indexOf("function spatialHorizontalViewportOffsetForBounds("),
+    );
     const liveCamera = scene.slice(
       scene.indexOf("function resolveSpatialLiveCamera("),
       scene.indexOf("function resetSpatialViewport("),
@@ -2830,11 +2784,15 @@ describe("overview effect package", () => {
       scene.indexOf("function createSpatialLiveCameraAttachment("),
     );
     const liveCameraAttachment = scene.slice(
-      scene.indexOf("function spatialLiveCameraAttachmentIsExact("),
+      scene.indexOf("function spatialLiveCameraAttachmentContextIsExact("),
       scene.indexOf("function applySpatialLiveCamera("),
     );
     const liveCameraHotPath = scene.slice(
-      scene.indexOf("function spatialLiveCameraAttachmentIsExact("),
+      scene.indexOf("function applySpatialLiveCamera("),
+      scene.indexOf("function refreshSpatialLiveCameraReturnOffset("),
+    );
+    const liveCameraReturn = scene.slice(
+      scene.indexOf("function refreshSpatialLiveCameraReturnOffset("),
       scene.indexOf("function spatialLiveCameraPlanIsValid("),
     );
     const liveCameraRefresh = scene.slice(
@@ -2939,7 +2897,16 @@ describe("overview effect package", () => {
       "onKeyboardHelpVisibleChanged: root.resetOverviewWheelState()",
     );
     expect(scene).toMatch(
-      /onSpatialContentYChanged: \{\s*root\.resetOverviewWheelState\(\);\s*root\.captureSpatialViewportSnapshot\(\);\s*\}/u,
+      /onSpatialContentYChanged: \{[\s\S]*if \(!spatialVisualContentYDeferred\)[\s\S]*spatialVerticalCameraAnimation\.stop\(\);[\s\S]*spatialVisualContentY = spatialContentY;[\s\S]*root\.resetOverviewWheelState\(\);\s*root\.captureSpatialViewportSnapshot\(\);/u,
+    );
+    expect(scene).toMatch(
+      /function adoptSpatialVisualContentY\(\)[\s\S]*planSpatialViewport\(spatialVisualContentY\)[\s\S]*spatialVerticalCameraAnimation\.stop\(\);[\s\S]*spatialContentY = plan\.contentY;[\s\S]*spatialVisualContentY = plan\.contentY;/u,
+    );
+    expect(scene).toMatch(
+      /id: spatialViewportDragHandler[\s\S]*if \(!root\.adoptSpatialVisualContentY\(\)\)[\s\S]*panStartContentY = root\.spatialContentY;/u,
+    );
+    expect(wheelNavigation).toMatch(
+      /function handleSpatialViewportWheel[\s\S]*spatialVerticalCameraAnimation\.running && !adoptSpatialVisualContentY\(\)[\s\S]*planSpatialWheel\(angleDeltaY, pixelDeltaY\)/u,
     );
     expect(wheelNavigation).toMatch(
       /spatialViewportDragHandler\.active \|\| spatialHorizontalViewportDragHandler\.active[\s\S]*spatialWindowDragSource !== null[\s\S]*\|\| desktopReorderActive[\s\S]*resetOverviewWheelState\(\);[\s\S]*event\.accepted = true;[\s\S]*return true;/u,
@@ -3082,12 +3049,6 @@ describe("overview effect package", () => {
       /function spatialLiveTabbedWindowFrame[\s\S]*!liveGeometryEnabled \|\| !current[\s\S]*column\.presentation !== "tabbed"[\s\S]*tiled\.selected !== true[\s\S]*column\.selectedMemberIndex !== tiled\.memberIndex[\s\S]*context\.columns\[tiled\.columnIndex\] !== column[\s\S]*tiledPresentations\[windowId\] !== tiled[\s\S]*spatialLiveColumnPlan\(tiled\.columnIndex\)[\s\S]*plan\.selectedMemberIndex !== tiled\.memberIndex[\s\S]*spatialLiveWindowPlanIsExact\(frame, windowId, tiled\)/u,
     );
     expect(desktopCard).toMatch(
-      /function tabFrameForPresentation[\s\S]*spatialLiveColumnPlan\(tiled\.columnIndex\)[\s\S]*plan\.presentation !== "tabbed"[\s\S]*Array\.isArray\(plan\.tabFrames\)[\s\S]*plan\.tabFrames\.length !== column\.members\.length[\s\S]*const frame = plan\.tabFrames\[tiled\.memberIndex\][\s\S]*projectionGeometryScalarsAreValid\(frame\.x, frame\.y, frame\.width, frame\.height\)[\s\S]*\? frame : plannedFrame;/u,
-    );
-    expect(desktopCard).toMatch(
-      /function spatialLiveTabbedDisplayFrame[\s\S]*const tabStripHeight = boundedTabStripHeight\(\);[\s\S]*frame\.x \+ gap \/ 2[\s\S]*frame\.y \+ tabStripHeight \+ gap \/ 2[\s\S]*frame\.height - tabStripHeight - gap/u,
-    );
-    expect(desktopCard).toMatch(
       /function planSpatialLiveWindowFrame[\s\S]*!liveGeometryEnabled \|\| !current[\s\S]*const expectedPresentation = column\.presentation;[\s\S]*const expectedSelectedMemberIndex = column\.selectedMemberIndex;[\s\S]*const tabbed = expectedPresentation === "tabbed"[\s\S]*tiled\.selected !== true[\s\S]*expectedSelectedMemberIndex !== memberIndex[\s\S]*const deleted = window\.deleted;[\s\S]*const minimized = window\.minimized;[\s\S]*const output = window\.output;[\s\S]*const internalId = window\.internalId;[\s\S]*deleted !== false \|\| minimized !== false \|\| output !== expectedScreen[\s\S]*const liveGeometry = window\.frameGeometry;[\s\S]*const liveX = liveGeometry \? Number\(liveGeometry\.x\)[\s\S]*const outputX = outputGeometry \? Number\(outputGeometry\.x\)[\s\S]*const confirmedLiveGeometry = window\.frameGeometry;[\s\S]*column\.presentation !== expectedPresentation[\s\S]*column\.selectedMemberIndex !== expectedSelectedMemberIndex[\s\S]*tiledPresentations\[windowId\] !== tiled[\s\S]*tiled\.selected !== true[\s\S]*window\.deleted !== false[\s\S]*window\.minimized !== false[\s\S]*window\.output !== expectedScreen[\s\S]*projectionGeometryMatches\(confirmedLiveGeometry, liveX, liveY, liveWidth, liveHeight\)/u,
     );
     expect(desktopCard).toMatch(
@@ -3112,15 +3073,12 @@ describe("overview effect package", () => {
       /function spatialLiveColumnPlan\(columnIndex\)[\s\S]*columnIndex >= 0 && columnIndex < liveFrames\.length \? liveFrames\[columnIndex\] : null[\s\S]*function columnShellFrame\(columnIndex, livePlan\)[\s\S]*livePlan !== null \? livePlan : columnFrame\(columnIndex\)/u,
     );
     expect(liveColumnPlan).not.toContain("spatialLiveColumnPlanIsExact(");
-    expect(columnGuides).toMatch(
-      /columnMemberGuideFrame\(columnShell\.liveGeometryPlan, index, memberPresentation\)[\s\S]*y: memberFrame \? memberFrame\.y : 0[\s\S]*height: memberFrame \? memberFrame\.height : 0/u,
-    );
+    expect(columnGuides).not.toContain("columnMemberGuideFrame(");
+    expect(columnGuides).not.toMatch(/\bRectangle\s*\{/u);
     expect(columnGuides).not.toContain(
       "memberPresentation ? memberPresentation.thumbnailFrame : null",
     );
-    expect(liveColumnPlan).toMatch(
-      /function columnMemberGuideFrame\(livePlan, memberIndex, plannedPresentation\)[\s\S]*livePlan\.memberFrames\[memberIndex\][\s\S]*plannedPresentation\.thumbnailFrame/u,
-    );
+    expect(liveColumnPlan).not.toContain("function columnMemberGuideFrame(");
     expect(liveColumnFrames).toMatch(
       /!liveGeometryEnabled \|\| !current[\s\S]*context\.columns\.length > 512[\s\S]*windowRepeater\.count > 131072/u,
     );
@@ -3165,7 +3123,13 @@ describe("overview effect package", () => {
       /\bdesktopIds\.length\b|desktopIds\[index\]/u,
     );
     expect(scene).toMatch(
-      /function planSpatialHorizontalGeometry[\s\S]*runtime\.planOverviewSpatialRowGeometry\(\{[\s\S]*activeColumnIndex: context\.activeColumnIndex,[\s\S]*alwaysCenterSingleColumn: overviewAlwaysCenterSingleColumn,[\s\S]*devicePixelRatio,[\s\S]*gap: overviewGap,[\s\S]*viewportOffset: context\.viewportOffset,[\s\S]*workArea/u,
+      /function planSpatialHorizontalGeometry[\s\S]*!overviewModel \|\| outputId\.length === 0[\s\S]*const storedContext = contextFor\(expectedDesktopId\);[\s\S]*const context = storedContext !== null \? storedContext : \{[\s\S]*activeColumnIndex: null,[\s\S]*columns: \[\],[\s\S]*desktopId: expectedDesktopId,[\s\S]*outputId,[\s\S]*viewportOffset: 0[\s\S]*runtime\.planOverviewSpatialRowGeometry\(\{[\s\S]*activeColumnIndex: context\.activeColumnIndex,[\s\S]*alwaysCenterSingleColumn: overviewAlwaysCenterSingleColumn,[\s\S]*devicePixelRatio,[\s\S]*gap: overviewGap,[\s\S]*viewportOffset: context\.viewportOffset,[\s\S]*workArea/u,
+    );
+    expect(scene).toMatch(
+      /function spatialWindowHeightBounds\(context\)[\s\S]*const seenIds = Object\.create\(null\);[\s\S]*member\.height !== undefined[\s\S]*const memberBounds = member \? member\.heightBounds : null;[\s\S]*memberBounds\.maximumClientHeight !== Number\.POSITIVE_INFINITY[\s\S]*bounds\.push\(\{[\s\S]*windowId: id[\s\S]*return bounds;/u,
+    );
+    expect(scene).toMatch(
+      /function planSpatialHorizontalGeometry[\s\S]*const windowHeightBounds = spatialWindowHeightBounds\(context\);[\s\S]*windowHeightBounds === null[\s\S]*runtime\.planOverviewSpatialRowGeometry\(\{[\s\S]*windowHeightBounds,/u,
     );
     expect(scene).toContain(
       "KWin.Workspace.clientArea(KWin.Workspace.MaximizeArea, screen, desktop)",
@@ -3177,7 +3141,22 @@ describe("overview effect package", () => {
       /function spatialHorizontalViewportBounds[\s\S]{0,2500}resolvedWidth/u,
     );
     expect(scene).toMatch(
-      /previewViewportOffset: root\.spatialHorizontalViewportOffsetAt\([\s\S]*desktopCardLoader\.index, desktopCardLoader\.modelData,[\s\S]*root\.spatialHorizontalViewportRevision\)/u,
+      /previewViewportOffset: root\.spatialPresentationViewportOffsetAt\([\s\S]*desktopCardLoader\.index, desktopCardLoader\.modelData,[\s\S]*root\.spatialHorizontalViewportRevision\)/u,
+    );
+    expect(scene).toContain(
+      'property string spatialLiveCameraReturnDesktopId: ""',
+    );
+    expect(scene).toContain(
+      'property string spatialLiveCameraReturnOutputId: ""',
+    );
+    expect(scene).toContain(
+      "property real spatialLiveCameraReturnViewportOffset: Number.NaN",
+    );
+    expect(presentationViewportOffset).toMatch(
+      /function spatialPresentationViewportOffsetAt[\s\S]*spatialHorizontalViewportOffsetAt\(index, expectedDesktopId, expectedRevision\)[\s\S]*spatialPresentationPhase !== "opening" && spatialPresentationPhase !== "closing"[\s\S]*index !== currentWorkspaceIndex[\s\S]*expectedDesktopId !== spatialLiveCameraReturnDesktopId[\s\S]*outputId !== spatialLiveCameraReturnOutputId[\s\S]*returnOffset < bounds\.minimum \|\| returnOffset > bounds\.maximum[\s\S]*const progress = Math\.max\(0, Math\.min\(1, spatialPresentationProgress\)\);[\s\S]*return returnOffset \+ \(viewportOffset - returnOffset\) \* progress;/u,
+    );
+    expect(presentationViewportOffset).not.toMatch(
+      /spatialHorizontalViewportOffsets\[[^\]]+\]\s*=|setSpatialHorizontalViewportOffset|KWin\./u,
     );
     expect(scene).toMatch(
       /spatialRowGeometryPlan: root\.spatialHorizontalGeometryPlanAt\([\s\S]*desktopCardLoader\.index, desktopCardLoader\.modelData,[\s\S]*root\.spatialHorizontalViewportRevision\)/u,
@@ -3237,7 +3216,7 @@ describe("overview effect package", () => {
       "spatialHorizontalViewportOffsets.slice()",
     );
     expect(liveCamera).toMatch(
-      /spatialLiveCameraDetachedWindow === attachment\.window[\s\S]*return false;[\s\S]*if \(spatialLiveCameraDetachedWindow !== null\)[\s\S]*spatialLiveCameraDetachedWindow = null;/u,
+      /spatialLiveCameraDetachedWindow === attachment\.window[\s\S]*refreshSpatialLiveCameraReturnOffset\(attachment\)[\s\S]*return false;[\s\S]*spatialLiveGeometryDetachedDesktopId\.length > 0[\s\S]*spatialLiveGeometryDetachedOutputId\.length > 0[\s\S]*clearSpatialLiveCameraDetachment\(\);/u,
     );
     expect(liveCameraResolve).toMatch(
       /const candidate = KWin\.Workspace\.activeWindow;\s*const attachment = createSpatialLiveCameraAttachment\(candidate\);\s*if \(!attachment\) \{\s*updateSpatialLiveCameraProbe\(candidate\);\s*return false;/u,
@@ -3264,7 +3243,10 @@ describe("overview effect package", () => {
       /if \(!geometryPlan \|\| !bounds \|\| !columnFrame[\s\S]*devicePixelRatio <= 0\) \{\s*return null;\s*\}\s*if \(!spatialLiveCameraDimensionsAreExact\(geometryPlan\.dimensions, outputGeometry,[\s\S]*workArea, devicePixelRatio\)\) \{\s*scheduleSpatialLiveCameraRefresh\(\);\s*return null;/u,
     );
     expect(liveCameraAttachment).toMatch(
-      /spatialHorizontalGeometryPlans\[attachment\.workspaceIndex\] !== attachment\.geometryPlan[\s\S]*attachment\.geometryPlan\.columnFrames\[attachment\.columnIndex\] !== attachment\.columnFrame[\s\S]*dimensions\.viewportWidth !== attachment\.workAreaWidth[\s\S]*dimensions\.devicePixelRatio !== attachment\.devicePixelRatio/u,
+      /function spatialLiveCameraAttachmentContextIsExact[\s\S]*spatialHorizontalGeometryPlans\[attachment\.workspaceIndex\] !== attachment\.geometryPlan[\s\S]*attachment\.geometryPlan\.columnFrames\[attachment\.columnIndex\] !== attachment\.columnFrame[\s\S]*dimensions\.viewportWidth !== attachment\.workAreaWidth[\s\S]*dimensions\.devicePixelRatio !== attachment\.devicePixelRatio/u,
+    );
+    expect(liveCameraAttachment).toMatch(
+      /function spatialLiveCameraDetachedAttachmentIsExact[\s\S]*spatialLiveCameraAttachment === null[\s\S]*spatialLiveCameraDetachedWindow === attachment\.window[\s\S]*spatialLiveCameraReturnDesktopId === attachment\.desktopId[\s\S]*spatialLiveCameraReturnOutputId === attachment\.outputId[\s\S]*spatialLiveCameraAttachmentContextIsExact\(attachment\)/u,
     );
     expect(liveCamera).toMatch(
       /applySpatialLiveCameraViewportOffset\(attachment\.workspaceIndex, attachment\.desktopId,[\s\S]*attachment\.geometryPlan\)[\s\S]*spatialHorizontalGeometryPlans\[index\] !== expectedGeometryPlan/u,
@@ -3280,6 +3262,12 @@ describe("overview effect package", () => {
     ).toHaveLength(1);
     expect(liveCameraHotPath).not.toMatch(
       /contextFor|liveScreenFor|liveDesktopFor|spatialWorkArea|createSpatialLiveCameraAttachment|\.indexOf\(|\bfor\s*\(/u,
+    );
+    expect(liveCameraReturn).toMatch(
+      /function refreshSpatialLiveCameraReturnOffset[\s\S]*spatialLiveCameraDetachedAttachmentIsExact\(attachment\)[\s\S]*KWin\.Workspace\.clientArea\(KWin\.Workspace\.MaximizeArea,[\s\S]*attachment\.window\.frameGeometry[\s\S]*runtime\.planOverviewSpatialLiveCamera\(\{[\s\S]*camera: attachment\.camera,[\s\S]*columnFrame: attachment\.columnFrame,[\s\S]*spatialLiveCameraPlanIsValid\(plan, attachment\.bounds\)[\s\S]*spatialLiveCameraDetachedAttachmentIsExact\(attachment\)[\s\S]*spatialLiveCameraReturnViewportOffset = plan\.viewportOffset;/u,
+    );
+    expect(liveCameraReturn).not.toMatch(
+      /applySpatialLiveCameraViewportOffset|spatialHorizontalViewportOffsets\[[^\]]+\]\s*=/u,
     );
     expect(liveCamera).toMatch(
       /const applied = applySpatialLiveCameraViewportOffset[\s\S]*if \(applied\) \{\s*completeSpatialLiveCameraRefresh\(\);\s*\}\s*return applied;/u,
@@ -3301,7 +3289,7 @@ describe("overview effect package", () => {
       /spatialLiveCameraRefreshEpoch = spatialLiveCameraRefreshEpoch >= 2147483646\s*\? 0 : spatialLiveCameraRefreshEpoch \+ 1;/u,
     );
     expect(liveCamera).toMatch(
-      /function handleSpatialLiveCameraWindowRemoved\(removedWindow\)[\s\S]*removedWindow === spatialLiveCameraWindow[\s\S]*clearSpatialLiveCameraAttachment\(\);[\s\S]*removedWindow === spatialLiveCameraDetachedWindow[\s\S]*spatialLiveCameraDetachedWindow = null;[\s\S]*removedWindow === spatialLiveCameraProbeWindow[\s\S]*clearSpatialLiveCameraProbe\(\);/u,
+      /function handleSpatialLiveCameraWindowRemoved\(removedWindow\)[\s\S]*removedWindow === spatialLiveCameraWindow[\s\S]*clearSpatialLiveCameraAttachment\(\);[\s\S]*removedWindow === spatialLiveCameraDetachedWindow[\s\S]*clearSpatialLiveCameraDetachment\(\);[\s\S]*removedWindow === spatialLiveCameraProbeWindow[\s\S]*clearSpatialLiveCameraProbe\(\);/u,
     );
     expect(wheelNavigation).toMatch(
       /handleSpatialHorizontalViewportWheel[\s\S]*detachSpatialLiveCameraForManualOffset\(workspaceIndex, expectedDesktopId,[\s\S]*currentOffset, plan\.viewportOffset\)/u,
@@ -3310,7 +3298,7 @@ describe("overview effect package", () => {
       /function revealHorizontalNavigationTarget[\s\S]*detachSpatialLiveCameraForManualOffset\(workspaceIndex, expectedDesktopId, currentOffset, nextOffset\)/u,
     );
     expect(liveCamera).toMatch(
-      /function detachSpatialLiveCameraForManualOffset[\s\S]*manualSpatialLiveGeometryDetachIsExact\(index, expectedDesktopId, previousOffset,[\s\S]*spatialLiveGeometryDetachedDesktopId = expectedDesktopId;[\s\S]*spatialLiveGeometryDetachedOutputId = outputId;/u,
+      /function detachSpatialLiveCameraForManualOffset[\s\S]*manualSpatialLiveGeometryDetachIsExact\(index, expectedDesktopId, previousOffset,[\s\S]*spatialLiveCameraReturnDesktopId !== expectedDesktopId[\s\S]*spatialLiveCameraReturnOutputId !== outputId[\s\S]*spatialLiveCameraReturnViewportOffset = previousOffset;[\s\S]*spatialLiveGeometryDetachedDesktopId = expectedDesktopId;[\s\S]*spatialLiveGeometryDetachedOutputId = outputId;/u,
     );
     expect(liveCamera).toMatch(
       /function manualSpatialLiveGeometryDetachIsExact[\s\S]*index !== currentWorkspaceIndex[\s\S]*spatialHorizontalViewportOffsets\[index\] !== nextOffset[\s\S]*desktopContextIsExact/u,
@@ -3325,7 +3313,7 @@ describe("overview effect package", () => {
       /function resetSpatialLiveCameraSession\(\) \{\s*resetSpatialLiveCameraRefresh\(\);\s*clearSpatialLiveCameraAttachment\(\);\s*clearSpatialLiveCameraProbe\(\);/u,
     );
     expect(liveCamera).toMatch(
-      /function resetSpatialLiveCameraSession[\s\S]*spatialLiveGeometryDetachedDesktopId = "";[\s\S]*spatialLiveGeometryDetachedOutputId = "";/u,
+      /function clearSpatialLiveCameraDetachment[\s\S]*spatialLiveCameraDetachedWindow = null;[\s\S]*spatialLiveCameraReturnDesktopId = "";[\s\S]*spatialLiveCameraReturnOutputId = "";[\s\S]*spatialLiveCameraReturnViewportOffset = Number\.NaN;[\s\S]*spatialLiveGeometryDetachedDesktopId = "";[\s\S]*spatialLiveGeometryDetachedOutputId = "";[\s\S]*function resetSpatialLiveCameraSession[\s\S]*clearSpatialLiveCameraDetachment\(\);/u,
     );
     expect(liveCamera).not.toMatch(
       /KWin\.Workspace\.(?:stackingOrder|windows)\b|\b(?:Timer|Behavior|Animation)\s*\{|setInterval|org\.kde\.kwin\.private/u,
@@ -3426,7 +3414,7 @@ describe("overview effect package", () => {
       "projectOverviewSpatialLiveGeometry",
     );
     expect(scene).toMatch(
-      /function refreshOverviewSpatialSession\(preserveViewport\)[\s\S]*resetOverviewWheelState\(\);/u,
+      /function refreshOverviewSpatialSession\(preserveViewport, animateViewport = false\)[\s\S]*resetOverviewWheelState\(\);/u,
     );
     expect(scene).toMatch(
       /DragHandler \{[\s\S]*id: spatialViewportDragHandler[\s\S]*onActiveChanged: \{[\s\S]*if \(active\) \{\s*root\.resetOverviewWheelState\(\);/u,
@@ -3435,7 +3423,13 @@ describe("overview effect package", () => {
       /function beginWindowSpatialEdgePan\([\s\S]*resetOverviewWheelState\(\);\s*spatialWindowDragSource = source;/u,
     );
     expect(scene).toMatch(
+      /function beginWindowSpatialEdgePan\([\s\S]*if \(!adoptSpatialVisualContentY\(\)[\s\S]*resetOverviewWheelState\(\);\s*spatialWindowDragSource = source;/u,
+    );
+    expect(scene).toMatch(
       /function beginDesktopReorder\([\s\S]*resetOverviewWheelState\(\);\s*desktopReorderActive = true;/u,
+    );
+    expect(scene).toMatch(
+      /function beginDesktopReorder\([\s\S]*if \(!adoptSpatialVisualContentY\(\)\) \{\s*return;\s*\}[\s\S]*resetOverviewWheelState\(\);\s*desktopReorderActive = true;/u,
     );
     expect(wheelNavigation).toMatch(
       /function resetOverviewWheelState\(\) \{\s*resetOverviewHorizontalWheelState\(\);\s*resetOverviewVerticalWheelState\(\);\s*\}/u,
@@ -3650,9 +3644,7 @@ describe("overview effect package", () => {
       scene.indexOf("KeyboardHelpHint {"),
       scene.indexOf("id: keyboardHelpLoader"),
     );
-    expect(helpHint).toContain("root.width >= 480 && root.height >= 320");
-    expect(helpHint).toContain("root.searchQuery.length === 0");
-    expect(helpHint).toContain("!root.keyboardHelpVisible");
+    expect(helpHint).toContain("visible: false");
     expect(helpHint).toContain(
       "onOpenRequested: root.keyboardHelpVisible = true",
     );
@@ -3946,15 +3938,11 @@ describe("overview effect package", () => {
   it("routes guarded middle-click closes through the live window transaction", () => {
     const thumbnail = desktopCard.slice(
       desktopCard.indexOf("id: thumbnailShell"),
-      desktopCard.indexOf("id: tabShell"),
-    );
-    const tab = desktopCard.slice(
-      desktopCard.indexOf("id: tabShell"),
       desktopCard.indexOf("id: minimizedPlaceholderShell"),
     );
     const placeholder = desktopCard.slice(
       desktopCard.indexOf("id: minimizedPlaceholderShell"),
-      desktopCard.indexOf("id: activeColumnBadge"),
+      desktopCard.indexOf("id: windowDropArea"),
     );
     const eligibility = desktopCard.slice(
       desktopCard.indexOf("function windowSnapshotCanRequestClose("),
@@ -3970,7 +3958,6 @@ describe("overview effect package", () => {
     );
     for (const visual of [
       { source: thumbnail, id: "thumbnailShell" },
-      { source: tab, id: "tabShell" },
       { source: placeholder, id: "minimizedPlaceholderShell" },
     ]) {
       expect(visual.source).toContain(
@@ -4017,22 +4004,18 @@ describe("overview effect package", () => {
 
     expect(desktopDelegate).toContain("onWindowCloseRequested:");
     expect(desktopDelegate).toMatch(
-      /onWindowCloseRequested:[\s\S]*=> root\.closeWindow\(candidate, expectedWindowId,[\s\S]*expectedDesktop, expectedDesktopId,[\s\S]*expectedScreen\)/u,
+      /onWindowCloseRequested:\s*\(\s*candidate,\s*expectedWindowId,\s*expectedDesktop,\s*expectedDesktopId,\s*expectedScreen\s*\)\s*=>\s*root\.closeWindow\(\s*candidate,\s*expectedWindowId,\s*expectedDesktop,\s*expectedDesktopId,\s*expectedScreen\s*\)/u,
     );
   });
 
   it("offers exact close buttons without activating or dragging their windows", () => {
     const thumbnail = desktopCard.slice(
       desktopCard.indexOf("id: thumbnailShell"),
-      desktopCard.indexOf("id: tabShell"),
-    );
-    const tab = desktopCard.slice(
-      desktopCard.indexOf("id: tabShell"),
       desktopCard.indexOf("id: minimizedPlaceholderShell"),
     );
     const placeholder = desktopCard.slice(
       desktopCard.indexOf("id: minimizedPlaceholderShell"),
-      desktopCard.indexOf("id: activeColumnBadge"),
+      desktopCard.indexOf("id: windowDropArea"),
     );
 
     expect(desktopCard).toContain(
@@ -4056,14 +4039,6 @@ describe("overview effect package", () => {
         minimum: "width >= 52 && height >= 40",
         source: thumbnail,
         surface: "thumbnailShell",
-      },
-      {
-        buttonId: "tabCloseButton",
-        hoverId: "tabHoverHandler",
-        keyboardSelection: "tabShell.keyboardSelected",
-        minimum: "width >= 52 && height >= 18",
-        source: tab,
-        surface: "tabShell",
       },
       {
         buttonId: "minimizedPlaceholderCloseButton",
@@ -4117,11 +4092,9 @@ describe("overview effect package", () => {
       );
     }
 
-    expect(thumbnail).toContain(
-      "anchors.rightMargin: windowPresentation.attentionRequested ? 24 : 5",
-    );
-    expect(tab).toContain(
-      "anchors.rightMargin: windowPresentation.attentionRequested ? 18 : 3",
+    expect(thumbnail).toContain("anchors.rightMargin: 5");
+    expect(thumbnail).not.toContain(
+      "anchors.rightMargin: windowPresentation.attentionRequested",
     );
     expect(placeholder).toContain(
       "anchors.rightMargin: windowPresentation.attentionRequested ? 19 : 4",
@@ -4143,7 +4116,7 @@ describe("overview effect package", () => {
     expect(containmentGuard).toContain("return true;");
   });
 
-  it("selects only an exact live non-current desktop from its number gutter", () => {
+  it("selects only an exact live non-current desktop from its number overlay", () => {
     const numberGutter = desktopCard.slice(
       desktopCard.indexOf("id: numberGutter"),
       desktopCard.indexOf("id: viewport"),
@@ -4176,8 +4149,9 @@ describe("overview effect package", () => {
     expect(desktopCard).toContain(
       "signal desktopTapped(var candidate, string expectedDesktopId, var expectedScreen)",
     );
-    expect(numberGutter).toContain("width: 42");
-    expect(numberGutter).toContain("height: card.height");
+    expect(numberGutter).toContain("width: 36");
+    expect(numberGutter).toContain("height: 36");
+    expect(numberGutter).toContain("z: 9500");
     expect(numberGutter).toContain("acceptedButtons: Qt.LeftButton");
     expect(numberGutter).toContain(
       "acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad",
@@ -4356,7 +4330,7 @@ describe("overview effect package", () => {
       "visualContainsViewportPoint(presentation.thumbnailTarget, point)",
     );
     expect(windowHitTest).toContain(
-      "visualContainsViewportPoint(presentation.tabTarget, point)",
+      "visualContainsViewportPoint(presentation.minimizedPlaceholderTarget, point)",
     );
     expect(visualHitTest).toContain("!visual.visible");
     expect(visualHitTest).toContain(
@@ -4399,10 +4373,11 @@ describe("overview effect package", () => {
       "readonly property real logicalViewportOffset: finiteNumber(previewViewportOffset, 0)",
     );
     expect(presentations).toContain(
-      "const columnFrame = card.columnFrame(columnIndex)",
+      "const sourceFrame = sourceFrames[sourceFrameIndex]",
     );
-    expect(presentations).toContain("const columnX = columnFrame.x");
-    expect(presentations).toContain("const columnWidth = columnFrame.width");
+    expect(presentations).toContain(
+      "sourceFrame.columnIndex !== columnIndex || sourceFrame.memberIndex !== memberIndex",
+    );
     expect(desktopCard).toMatch(
       /x: viewportOriginX \+ \(geometry\.x - screenGeometry\.x\) \* projectionScale,\s*y: viewportOriginY \+ \(geometry\.y - screenGeometry\.y\) \* projectionScale/u,
     );
@@ -4427,31 +4402,37 @@ describe("overview effect package", () => {
       /function clippedNavigationRect[\s\S]*if \(includeOffscreen === true\) \{[\s\S]*width: rect\.width,[\s\S]*x: rect\.x,[\s\S]*return navigationRectIsValid\(rect\) \? rect : null;/u,
     );
     expect(presentations).toContain(
-      'const tabbed = column.presentation === "tabbed"',
+      'const selected = column.presentation !== "tabbed"',
     );
     expect(presentations).toContain(
-      "const selected = !tabbed || memberIndex === column.selectedMemberIndex",
+      "|| memberIndex === column.selectedMemberIndex",
     );
-    expect(presentations).toContain("thumbnailFrame: selected ? {");
-    expect(presentations).toContain("} : null");
-    expect(presentations).toContain("tabWidth * memberIndex");
-    expect(presentations).toContain("const stripBodyGap = gap");
+    expect(presentations).toContain("thumbnailFrame: selected ? frame : null");
     expect(presentations).toContain(
-      "const tabHeight = Math.max(1, tabStripHeight - stripBodyGap)",
-    );
-    expect(presentations).toContain(
-      "const thumbnailY = tabbed ? tabStripHeight + stripBodyGap / 2 : gap / 2",
-    );
-    expect(presentations).toContain(
-      "return Math.max(1, Math.min(28, contentHeight * 0.16))",
+      "plannedColumnFrame: spatialSourceColumnFrame(columnIndex)",
     );
     expect(desktopCard).toContain(
-      "const remaining = Math.max(0, contentHeight - fixedTotal * fixedScale)",
+      "readonly property bool selectedThumbnail: !tiledPresentation || tiledPresentation.selected",
     );
-    expect(desktopCard).toContain("remaining * weight / autoWeightTotal");
-    expect(desktopCard).toContain("return contentHeight / 3");
-    expect(desktopCard).toContain("return contentHeight / 2");
-    expect(desktopCard).toContain("return contentHeight * 2 / 3");
+    expect(desktopCard).toMatch(
+      /id: thumbnailShell[\s\S]*visible: windowPresentation\.selectedThumbnail && windowPresentation\.frame !== null[\s\S]*KWin\.WindowThumbnail \{[\s\S]*wId: windowPresentation\.windowId/u,
+    );
+    expect(desktopCard.match(/KWin\.WindowThumbnail \{/gu)).toHaveLength(1);
+    for (const syntheticTabUi of [
+      "id: tabShell",
+      "tabTarget",
+      "tabFrameForPresentation",
+      "spatialLiveTabbedDisplayFrame",
+      "boundedTabStripHeight",
+      "tabFrames",
+      "tabStripHeight",
+      "stripBodyGap",
+      "tabApplicationIcon",
+      "tabAttentionBadge",
+      "tabCloseButton",
+    ]) {
+      expect(desktopCard).not.toContain(syntheticTabUi);
+    }
   });
 
   it("loads the runtime through the fail-closed adapter boundary", () => {
@@ -4464,6 +4445,16 @@ describe("overview effect package", () => {
     expect(controller).toContain("currentActivityId,");
     expect(controller).toContain("KWin.Workspace.activities");
     expect(controller).toContain("KWin.Workspace.currentActivity");
+    expect(controller).toMatch(
+      /for \(const window of KWin\.Workspace\.stackingOrder\)[\s\S]*const bounds = liveWindowHeightBound\(window, windowId\);[\s\S]*windowHeightBounds\.push\(bounds\);/u,
+    );
+    expect(controller).toMatch(
+      /function liveWindowHeightBound\(window, windowId\)[\s\S]*window\.frameGeometry\.height[\s\S]*window\.clientGeometry\.height[\s\S]*window\.minSize\.height[\s\S]*window\.maxSize\.height[\s\S]*Number\.POSITIVE_INFINITY/u,
+    );
+    expect(controller).toMatch(
+      /rawMaximumClientHeight > 0 && rawMaximumClientHeight <= maximumMagnitude[\s\S]*\? rawMaximumClientHeight : Number\.POSITIVE_INFINITY/u,
+    );
+    expect(controller).not.toMatch(/maximumClientHeight > maximumMagnitude/u);
     expect(controller).toContain("result.ok !== true");
     expect(controller).toContain("overviewModel = null");
   });

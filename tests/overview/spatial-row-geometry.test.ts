@@ -10,10 +10,11 @@ const thirds = [
   { width: { kind: "proportion", value: 1 / 3 } },
   { width: { kind: "proportion", value: 1 / 3 } },
 ] as const;
+const thirdColumns = layoutColumns(thirds);
 
 describe("planOverviewSpatialRowGeometry", () => {
   it("uses the core strip geometry for thirds and outer gaps", () => {
-    const result = plan({ activeColumnIndex: 1, columns: thirds });
+    const result = plan({ activeColumnIndex: 1, columns: thirdColumns });
 
     expect(result).toMatchObject({
       camera: { base: 0, maximum: 0, minimum: 0 },
@@ -47,13 +48,42 @@ describe("planOverviewSpatialRowGeometry", () => {
         viewportInsetY: 0,
         viewportWidth: 1200,
       },
+      windowFrames: [
+        {
+          columnIndex: 0,
+          height: 876,
+          memberIndex: 0,
+          width: 384,
+          windowId: "window-0",
+          x: 12,
+          y: 12,
+        },
+        {
+          columnIndex: 1,
+          height: 876,
+          memberIndex: 0,
+          width: 384,
+          windowId: "window-1",
+          x: 408,
+          y: 12,
+        },
+        {
+          columnIndex: 2,
+          height: 876,
+          memberIndex: 0,
+          width: 384,
+          windowId: "window-2",
+          x: 804,
+          y: 12,
+        },
+      ],
     });
   });
 
   it("keeps an inset work area in output-local dimensions", () => {
     const result = plan({
       activeColumnIndex: 0,
-      columns: [{ width: { kind: "proportion", value: 0.5 } }],
+      columns: layoutColumns([{ width: { kind: "proportion", value: 0.5 } }]),
       gap: 20,
       outputGeometry: { height: 900, width: 1600, x: 100, y: 50 },
       workArea: { height: 820, width: 1500, x: 132, y: 94 },
@@ -71,7 +101,250 @@ describe("planOverviewSpatialRowGeometry", () => {
         viewportInsetY: 44,
         viewportWidth: 1500,
       },
+      windowFrames: [
+        {
+          columnIndex: 0,
+          height: 780,
+          memberIndex: 0,
+          width: 720,
+          windowId: "window-0",
+          x: 52,
+          y: 64,
+        },
+      ],
     });
+  });
+
+  it("projects exact stacked member frames into output-local coordinates", () => {
+    const result = plan({
+      activeColumnIndex: 0,
+      columns: layoutColumns([
+        {
+          members: [
+            {
+              height: { kind: "auto", weight: 1 },
+              windowId: "terminal-window",
+            },
+            {
+              height: { kind: "auto", weight: 2 },
+              windowId: "browser-window",
+            },
+          ],
+          width: { kind: "fixed", value: 400 },
+        },
+      ]),
+      outputGeometry: { height: 960, width: 1280, x: 100, y: 50 },
+      windowHeightBounds: [
+        windowHeightBounds("terminal-window"),
+        windowHeightBounds("browser-window"),
+      ],
+      workArea: { height: 900, width: 1200, x: 132, y: 74 },
+    });
+
+    expect(result?.columnFrames).toEqual([
+      {
+        columnId: "overview-column-0",
+        columnIndex: 0,
+        contentX: 12,
+        width: 400,
+      },
+    ]);
+    expect(result?.windowFrames).toEqual([
+      {
+        columnId: "overview-column-0",
+        columnIndex: 0,
+        height: 288,
+        memberIndex: 0,
+        width: 400,
+        windowId: "terminal-window",
+        x: 44,
+        y: 36,
+      },
+      {
+        columnId: "overview-column-0",
+        columnIndex: 0,
+        height: 576,
+        memberIndex: 1,
+        width: 400,
+        windowId: "browser-window",
+        x: 44,
+        y: 336,
+      },
+    ]);
+  });
+
+  it("adds decoration height to an exact fixed client-height policy", () => {
+    const result = plan({
+      activeColumnIndex: 0,
+      columns: layoutColumns([
+        {
+          members: [
+            {
+              height: { clientHeight: 300, kind: "fixed" },
+              windowId: "fixed-window",
+            },
+            { windowId: "automatic-window" },
+          ],
+          width: { kind: "fixed", value: 400 },
+        },
+      ]),
+      windowHeightBounds: [
+        windowHeightBounds("fixed-window", {
+          decorationHeight: 24,
+          maximumClientHeight: 600,
+          minimumClientHeight: 100,
+        }),
+        windowHeightBounds("automatic-window"),
+      ],
+    });
+
+    expect(
+      result?.windowFrames.map(({ height, windowId, y }) => ({
+        height,
+        windowId,
+        y,
+      })),
+    ).toEqual([
+      { height: 324, windowId: "fixed-window", y: 12 },
+      { height: 540, windowId: "automatic-window", y: 348 },
+    ]);
+  });
+
+  it("resolves custom percent and fixed preset state indexes", () => {
+    const columnsForPreset = (index: number) =>
+      layoutColumns([
+        {
+          members: [
+            {
+              height: { index, kind: "preset" },
+              windowId: "preset-window",
+            },
+            { windowId: "automatic-window" },
+          ],
+          width: { kind: "fixed", value: 400 },
+        },
+      ]);
+    const commonBounds = [
+      windowHeightBounds("preset-window", { decorationHeight: 20 }),
+      windowHeightBounds("automatic-window"),
+    ];
+    const percent = plan({
+      columns: columnsForPreset(150),
+      windowHeightBounds: commonBounds,
+    });
+    const fixed = plan({
+      columns: columnsForPreset(840),
+      windowHeightBounds: commonBounds,
+    });
+
+    expect(percent?.windowFrames.map((frame) => frame.height)).toEqual([
+      432, 432,
+    ]);
+    expect(fixed?.windowFrames.map((frame) => frame.height)).toEqual([
+      660, 204,
+    ]);
+  });
+
+  it("requires complete bounds for every member of an explicit-height column", () => {
+    const columns = layoutColumns([
+      {
+        members: [
+          {
+            height: { clientHeight: 300, kind: "fixed" },
+            windowId: "fixed-window",
+          },
+          { windowId: "automatic-window" },
+        ],
+        width: { kind: "fixed", value: 400 },
+      },
+    ]);
+
+    expect(plan({ columns })).toBeNull();
+    expect(
+      plan({
+        columns,
+        windowHeightBounds: [windowHeightBounds("fixed-window")],
+      }),
+    ).toBeNull();
+  });
+
+  it.each([
+    windowHeightBounds("window-0", { decorationHeight: -1 }),
+    windowHeightBounds("window-0", { minimumClientHeight: Number.NaN }),
+    windowHeightBounds("window-0", { maximumClientHeight: -1 }),
+    windowHeightBounds("window-0", {
+      maximumClientHeight: 99,
+      minimumClientHeight: 100,
+    }),
+    windowHeightBounds("window-0", {
+      decorationHeight: LAYOUT_PERSISTENCE_LIMITS.numericMagnitude + 1,
+    }),
+    windowHeightBounds("unknown-window"),
+  ])("fails closed for invalid window height bounds (%o)", (bounds) => {
+    expect(
+      plan({
+        columns: explicitHeightColumns(),
+        windowHeightBounds: [bounds],
+      }),
+    ).toBeNull();
+  });
+
+  it("bounds the QML-facing height-bounds collection", () => {
+    const oversized = Array.from(
+      { length: LAYOUT_PERSISTENCE_LIMITS.windows + 1 },
+      (_, index) => windowHeightBounds(`window-${String(index)}`),
+    );
+
+    expect(plan({ windowHeightBounds: oversized })).toBeNull();
+    expect(
+      plan({
+        columns: explicitHeightColumns(),
+        windowHeightBounds: [
+          windowHeightBounds("window-0"),
+          windowHeightBounds("window-0"),
+        ],
+      }),
+    ).toBeNull();
+    expect(
+      plan({ windowHeightBounds: [windowHeightBounds("window-0")] }),
+    ).toBeNull();
+  });
+
+  it("preserves tabbed identity on one exact shared frame", () => {
+    const result = plan({
+      activeColumnIndex: 0,
+      columns: layoutColumns([
+        {
+          members: [{ windowId: "first-tab" }, { windowId: "selected-tab" }],
+          presentation: "tabbed",
+          selectedMemberIndex: 1,
+          width: { kind: "proportion", value: 0.5 },
+        },
+      ]),
+    });
+
+    expect(result?.windowFrames).toEqual([
+      {
+        columnId: "overview-column-0",
+        columnIndex: 0,
+        height: 876,
+        memberIndex: 0,
+        width: 582,
+        windowId: "first-tab",
+        x: 12,
+        y: 12,
+      },
+      {
+        columnId: "overview-column-0",
+        columnIndex: 0,
+        height: 876,
+        memberIndex: 1,
+        width: 582,
+        windowId: "selected-tab",
+        x: 12,
+        y: 12,
+      },
+    ]);
   });
 
   it("preserves physical-pixel column edges with fractional DPR and gap", () => {
@@ -80,10 +353,10 @@ describe("planOverviewSpatialRowGeometry", () => {
     const devicePixelRatio = 1.25;
     const result = plan({
       activeColumnIndex: 1,
-      columns: [
+      columns: layoutColumns([
         { width: { kind: "fixed", value: 333.3 } },
         { width: { kind: "fixed", value: 333.3 } },
-      ],
+      ]),
       devicePixelRatio,
       gap: 13.2,
       outputGeometry,
@@ -112,11 +385,11 @@ describe("planOverviewSpatialRowGeometry", () => {
   it("separates the live camera from stable strip content coordinates", () => {
     const result = plan({
       activeColumnIndex: 1,
-      columns: [
+      columns: layoutColumns([
         { width: { kind: "proportion", value: 0.5 } },
         { width: { kind: "proportion", value: 0.5 } },
         { width: { kind: "proportion", value: 0.5 } },
-      ],
+      ]),
       viewportOffset: 250,
     });
 
@@ -154,7 +427,7 @@ describe("planOverviewSpatialRowGeometry", () => {
     const result = plan({
       activeColumnIndex: 0,
       alwaysCenterSingleColumn: true,
-      columns: [{ width: { kind: "fixed", value: 300 } }],
+      columns: layoutColumns([{ width: { kind: "fixed", value: 300 } }]),
     });
 
     expect(result?.camera).toEqual({
@@ -194,7 +467,7 @@ describe("planOverviewSpatialRowGeometry", () => {
     ({ maximum, minimum, viewportOffset }) => {
       const result = plan({
         activeColumnIndex: null,
-        columns: [{ width: { kind: "fixed", value: 300 } }],
+        columns: layoutColumns([{ width: { kind: "fixed", value: 300 } }]),
         viewportOffset,
       });
 
@@ -217,17 +490,17 @@ describe("planOverviewSpatialRowGeometry", () => {
   it("keeps full-width neighboring columns reachable within camera bounds", () => {
     const successor = plan({
       activeColumnIndex: 0,
-      columns: [
+      columns: layoutColumns([
         { width: { kind: "proportion", value: 1 / 3 } },
         { width: { kind: "proportion", value: 1 } },
-      ],
+      ]),
     });
     const afterFullWidth = plan({
       activeColumnIndex: 0,
-      columns: [
+      columns: layoutColumns([
         { width: { kind: "proportion", value: 1 } },
         { width: { kind: "proportion", value: 1 / 3 } },
-      ],
+      ]),
     });
 
     const successorFrame = successor?.columnFrames[1];
@@ -250,7 +523,7 @@ describe("planOverviewSpatialRowGeometry", () => {
     const width = { kind: "fixed" as const, value: 400 };
     const input = baseInput({
       activeColumnIndex: 0,
-      columns: [{ width }],
+      columns: layoutColumns([{ width }]),
     });
     const result = planOverviewSpatialRowGeometry(input);
 
@@ -262,16 +535,42 @@ describe("planOverviewSpatialRowGeometry", () => {
     expect(Object.isFrozen(result?.columnFrames)).toBe(true);
     expect(Object.isFrozen(result?.columnFrames[0])).toBe(true);
     expect(Object.isFrozen(result?.dimensions)).toBe(true);
+    expect(Object.isFrozen(result?.windowFrames)).toBe(true);
+    expect(Object.isFrozen(result?.windowFrames[0])).toBe(true);
   });
 
   it.each([
     null,
     [],
     {},
-    baseInput({ activeColumnIndex: 3, columns: thirds }),
+    baseInput({ activeColumnIndex: 3, columns: thirdColumns }),
     baseInput({ alwaysCenterSingleColumn: "true" }),
-    baseInput({ columns: [{ width: { kind: "unknown", value: 1 } }] }),
-    baseInput({ columns: [{ width: { kind: "fixed", value: 0 } }] }),
+    baseInput({ columns: [{ width: { kind: "fixed", value: 100 } }] }),
+    baseInput({
+      columns: layoutColumns([{ width: { kind: "unknown", value: 1 } }]),
+    }),
+    baseInput({
+      columns: layoutColumns([{ width: { kind: "fixed", value: 0 } }]),
+    }),
+    baseInput({
+      columns: layoutColumns([
+        {
+          members: [{ windowId: "duplicate" }, { windowId: "duplicate" }],
+          width: { kind: "fixed", value: 100 },
+        },
+      ]),
+    }),
+    baseInput({
+      columns: layoutColumns([
+        {
+          members: [
+            { height: { clientHeight: 100, kind: "fixed" }, windowId: "a" },
+            { height: { index: 0, kind: "preset" }, windowId: "b" },
+          ],
+          width: { kind: "fixed", value: 100 },
+        },
+      ]),
+    }),
     baseInput({ devicePixelRatio: 0 }),
     baseInput({ gap: -1 }),
     baseInput({ viewportOffset: Number.NaN }),
@@ -281,9 +580,11 @@ describe("planOverviewSpatialRowGeometry", () => {
     }),
     baseInput({
       activeColumnIndex: 0,
-      columns: Array.from(
-        { length: LAYOUT_PERSISTENCE_LIMITS.columnsPerContext + 1 },
-        () => ({ width: { kind: "fixed", value: 10 } }),
+      columns: layoutColumns(
+        Array.from(
+          { length: LAYOUT_PERSISTENCE_LIMITS.columnsPerContext + 1 },
+          () => ({ width: { kind: "fixed", value: 10 } }),
+        ),
       ),
     }),
   ])("fails closed for malformed or oversized input (%o)", (input) => {
@@ -418,12 +719,48 @@ function baseInput(overrides: Record<string, unknown> = {}) {
   return {
     activeColumnIndex: 0,
     alwaysCenterSingleColumn: false,
-    columns: [{ width: { kind: "fixed", value: 400 } }],
+    columns: layoutColumns([{ width: { kind: "fixed", value: 400 } }]),
     devicePixelRatio: 1,
     gap: 12,
     outputGeometry: { height: 900, width: 1200, x: 0, y: 0 },
     viewportOffset: 0,
     workArea: { height: 900, width: 1200, x: 0, y: 0 },
+    ...overrides,
+  };
+}
+
+function layoutColumns(columns: readonly Record<string, unknown>[]) {
+  return columns.map((column, columnIndex) => ({
+    members: [{ windowId: `window-${String(columnIndex)}` }],
+    presentation: "stacked",
+    selectedMemberIndex: 0,
+    ...column,
+  }));
+}
+
+function explicitHeightColumns() {
+  return layoutColumns([
+    {
+      members: [
+        {
+          height: { kind: "auto", weight: 1 },
+          windowId: "window-0",
+        },
+      ],
+      width: { kind: "fixed", value: 400 },
+    },
+  ]);
+}
+
+function windowHeightBounds(
+  windowId: string,
+  overrides: Record<string, unknown> = {},
+) {
+  return {
+    decorationHeight: 0,
+    maximumClientHeight: Number.POSITIVE_INFINITY,
+    minimumClientHeight: 1,
+    windowId,
     ...overrides,
   };
 }

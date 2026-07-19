@@ -3,7 +3,7 @@ import { LAYOUT_PERSISTENCE_LIMITS } from "../../src/core/layout-persistence";
 import { planOverviewSpatialLayout } from "../../src/overview/runtime";
 
 describe("planOverviewSpatialLayout", () => {
-  it("plans one centered workspace row across most of the scene", () => {
+  it("plans one centered workspace row across the full scene", () => {
     const plan = planOverviewSpatialLayout({
       currentWorkspaceIndex: 0,
       sceneHeight: 900,
@@ -14,18 +14,18 @@ describe("planOverviewSpatialLayout", () => {
 
     expect(plan).toMatchObject({
       cardHeight: 450,
-      cardWidth: 1537,
+      cardWidth: 1600,
+      cardX: 0,
       contentHeight: 900,
       edgeMargin: 225,
-      gap: 48,
+      gap: 45,
       initialContentY: 0,
     });
-    expect(plan?.cardX).toBeCloseTo(31.5);
     expect(Object.isFrozen(plan)).toBe(true);
   });
 
   it("centers each current workspace within the bounded scroll range", () => {
-    const expectedStride = 270 + 32.4;
+    const expectedStride = 270 + 27;
     const expectedContentHeight = 900 + 3 * expectedStride;
 
     for (
@@ -41,19 +41,24 @@ describe("planOverviewSpatialLayout", () => {
         zoom: 0.3,
       });
 
-      expect(plan?.cardWidth).toBe(1537);
+      expect(plan?.cardWidth).toBe(1600);
       expect(plan?.cardHeight).toBe(270);
-      expect(plan?.cardX).toBeCloseTo(31.5);
+      expect(plan?.cardX).toBe(0);
       expect(plan?.edgeMargin).toBe(315);
-      expect(plan?.gap).toBeCloseTo(32.4);
+      expect(plan?.gap).toBe(27);
       expect(plan?.contentHeight).toBeCloseTo(expectedContentHeight);
       expect(plan?.initialContentY).toBeCloseTo(
         currentWorkspaceIndex * expectedStride,
       );
+      expect(
+        (plan?.edgeMargin ?? Number.NaN) +
+          currentWorkspaceIndex * expectedStride -
+          (plan?.initialContentY ?? Number.NaN),
+      ).toBe(plan?.edgeMargin);
     }
   });
 
-  it("bounds horizontal margins on small and large scenes", () => {
+  it("spans small and large scenes without horizontal insets", () => {
     const small = planOverviewSpatialLayout({
       currentWorkspaceIndex: 0,
       sceneHeight: 900,
@@ -69,10 +74,10 @@ describe("planOverviewSpatialLayout", () => {
       zoom: 0.75,
     });
 
-    expect(small?.cardX).toBe(16);
-    expect(small?.cardWidth).toBe(48);
-    expect(large?.cardX).toBe(64);
-    expect(large?.cardWidth).toBe(3712);
+    expect(small?.cardX).toBe(0);
+    expect(small?.cardWidth).toBe(80);
+    expect(large?.cardX).toBe(0);
+    expect(large?.cardWidth).toBe(3840);
     expect(Object.isFrozen(small)).toBe(true);
     expect(Object.isFrozen(large)).toBe(true);
   });
