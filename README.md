@@ -10,8 +10,10 @@ to KDE Plasma while KWin remains the compositor and window manager.
 
 - Scrollable columns with stacked or tabbed windows.
 - Retained layouts per output, virtual desktop, and activity.
-- Keyboard, pointer, and optional global wheel control for focus, movement,
-  resizing, drag-and-drop, and transfers between outputs and desktops.
+- Keyboard and pointer control for focus, movement, resizing, drag-and-drop,
+  and transfers between outputs and desktops.
+- Optional global wheel control for desktop navigation and column focus or
+  movement.
 - Full-width columns, floating windows, native fullscreen and maximize, and
   stable minimized-window slots.
 - Configurable gaps, sizing presets, application rules, borders, shortcuts,
