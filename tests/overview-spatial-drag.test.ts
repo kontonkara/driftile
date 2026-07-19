@@ -279,6 +279,20 @@ describe("spatial overview window drag lifecycle", () => {
     );
   });
 
+  it("keeps exact layout targets exclusive to current tiled sources", () => {
+    expect(hoverLifecycle).toContain(
+      "function windowDropSourceTiledPresentationIsExact(source)",
+    );
+    expect(hoverLifecycle).toContain("tiledPresentations[windowId] === tiled");
+    expect(hoverLifecycle).toContain("tiled.selected === true");
+    expect(hoverLifecycle).toContain("frame.floating === false");
+    expect(
+      `${hoverLifecycle}\n${dropValidation}`.match(
+        /windowDropSourceTiledPresentationIsExact\(source\)/gu,
+      ),
+    ).toHaveLength(3);
+  });
+
   it("fails closed and releases stale hover ownership", () => {
     expect(dropArea).toContain(
       "enabled: card.enabled && card.searchQuery.trim().length === 0",

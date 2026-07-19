@@ -1948,12 +1948,28 @@ Item {
         return source && source.sourceDesktop !== desktop && source.sourceDesktopId !== desktopId;
     }
 
+    function windowDropSourceTiledPresentationIsExact(source) {
+        try {
+            const windowId = source ? source.windowId : "";
+            const tiled = source ? source.tiledPresentation : null;
+            const frame = source ? source.frame : null;
+            return typeof windowId === "string" && windowId.length > 0 && tiled
+                    && tiledPresentations[windowId] === tiled && tiled.selected === true
+                    && Number.isInteger(tiled.columnIndex) && tiled.columnIndex >= 0
+                    && Number.isInteger(tiled.memberIndex) && tiled.memberIndex >= 0
+                    && frame && frame.floating === false;
+        } catch (error) {
+            return false;
+        }
+    }
+
     function windowDropIsValid(source, keys) {
         try {
             return keys && typeof keys.indexOf === "function" && keys.indexOf("driftile-window") >= 0
                     && windowCanDrag(source) && source.dragEligible === true
                     && source.spatialDragLifecycleActive === true && windowDropTargetIsExact()
-                    && source.sourceScreen === screen && windowDropSourceWorkspaceRelationIsExact(source);
+                    && source.sourceScreen === screen && windowDropSourceTiledPresentationIsExact(source)
+                    && windowDropSourceWorkspaceRelationIsExact(source);
         } catch (error) {
             return false;
         }
@@ -1965,7 +1981,8 @@ Item {
                     && windowCanDrag(source)
                     && source.dragEligible === true && source.spatialDragLifecycleActive === true
                     && source.minimizedWindow !== true && windowDropTargetIsExact()
-                    && source.sourceScreen === screen && windowDropSourceWorkspaceRelationIsExact(source);
+                    && source.sourceScreen === screen && windowDropSourceTiledPresentationIsExact(source)
+                    && windowDropSourceWorkspaceRelationIsExact(source);
         } catch (error) {
             return false;
         }
