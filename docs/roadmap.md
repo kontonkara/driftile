@@ -1,12 +1,13 @@
 # Roadmap
 
-Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.83.0 are
+Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.84.0 are
 released. The delivered milestones and release criteria below are a historical
 record. Later direction is not a committed release schedule.
 
-Stable 1.83.0 extends pointer continuity across the optional Overview: a
-right-button drag pans the row under the pointer, a bounded workspace dwell
-keeps a window drag active, and virtual-desktop changes refresh in place.
+Stable 1.84.0 adds exact spatial window placement to the optional Overview.
+Dragged tiled windows can enter a stack half, a column boundary, or an empty
+row, including another desktop on the same output. Input starts with the first
+visible frame, and authoritative layout publications refresh the active scene.
 Overview remains under active development. Settings, shortcuts, and logical
 persistence v4 remain compatible.
 
@@ -2763,7 +2764,7 @@ Release criteria (met):
 - Desktop-topology refresh remains session-only and does not change layout
   ownership, settings, shortcuts, schema, or persistence.
 
-### 1.84.0 (in development)
+### 1.84.0 (released)
 
 - Accept keyboard and pointer input from the first visible opening frame and
   relinquish it as soon as closing begins.
@@ -2774,7 +2775,7 @@ Release criteria (met):
 - Keep the Overview open after a successful placement and restore the prior
   desktop, focus, and layout activation when a command is rejected.
 
-Release criteria (pending):
+Release criteria (met):
 
 - Spatial targets and the effect-to-script command channel are bounded,
   replay-safe across effect reloads, and fail closed on stale identities.
