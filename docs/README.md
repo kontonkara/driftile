@@ -1,27 +1,31 @@
 # Documentation
 
-Start with the installation path for your system, then open only the guide you
-need.
+Start with the installation path for your system, then open the guide for the
+task at hand.
 
-## Quick start
+## Install
 
 - [Compatible distributions](installation.md#install-a-release): install a
   release KPackage.
 - [NixOS](installation.md#nixos): import the system flake module.
 - [Home Manager](installation.md#home-manager): import the per-user flake
   module.
-- [Configuration](configuration.md): configure layouts, application rules,
-  appearance, and declarative options.
-- [Shortcuts](shortcuts.md): assign actions or use a custom shortcut profile.
 
-## Guides
+## Use and configure
 
 - [Using Driftile](interaction-model.md): window, column, and workspace
   behavior.
-- [Spatial Overview](overview.md): optional Overview installation and controls.
+- [Configuration](configuration.md): configure layouts, application rules,
+  appearance, and declarative options.
+- [Shortcuts](shortcuts.md): assign actions or use a custom shortcut profile.
+- [Spatial Overview](overview.md): install and use the optional Overview
+  preview.
+
+## Compatibility and upgrades
+
 - [Compatibility](compatibility.md): supported Plasma sessions, backends, and
   platform limits.
-- [Migration](migration.md): changes that can affect an upgrade.
+- [Migration](migration.md): release-specific upgrade and rollback notes.
 
 ## Get help
 

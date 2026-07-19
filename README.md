@@ -6,22 +6,18 @@
 Driftile is a KWin extension that adds scrollable tiling and dynamic workspaces
 to KDE Plasma while KWin remains the compositor and window manager.
 
-## Features
+## What it adds
 
 - Scrollable columns with stacked or tabbed windows.
 - Retained layouts per output, virtual desktop, and activity.
-- Keyboard and pointer control for focus, movement, resizing, drag-and-drop,
-  and transfers between outputs and desktops.
-- Optional native wheel control for column focus, column movement, and desktop
-  navigation without replacing KWin.
+- Keyboard, pointer, and optional global wheel control for focus, movement,
+  resizing, drag-and-drop, and transfers between outputs and desktops.
 - Full-width columns, floating windows, native fullscreen and maximize, and
   stable minimized-window slots.
-- An optional spatial Overview with continuous workspace rows, projected
-  window geometry, two-axis navigation, guarded drag-and-drop, and workspace
-  creation between rows.
-- Configurable gaps, sizing presets, application rules, borders, overview,
-  transitions, shortcuts, and layout restoration. An optional native KDE
-  shortcut editor is available separately.
+- Configurable gaps, sizing presets, application rules, borders, shortcuts,
+  transitions, and layout restoration.
+- An optional spatial Overview preview with workspace rows, two-axis
+  navigation, window search, and guarded drag-and-drop.
 
 ## Installation
 
@@ -32,19 +28,9 @@ for your system:
 - **NixOS:** [import the NixOS flake module](docs/installation.md#nixos).
 - **Home Manager:** [import the per-user flake module](docs/installation.md#home-manager).
 
-For a standard installation, download the `.kwinscript` archive and
-`SHA256SUMS` from the
-[latest release](https://github.com/kontonkara/driftile/releases/latest), then
-run as your desktop user:
-
-```bash
-sha256sum --check --ignore-missing SHA256SUMS
-kpackagetool6 --type=KWin/Script --install ./driftile-*.kwinscript
-```
-
-Enable **Driftile** in **System Settings > Window Management > KWin Scripts**.
-The [installation guide](docs/installation.md) also covers upgrades, removal,
-shortcuts, and the optional Overview, transition, and wheel effects.
+The [installation guide](docs/installation.md) includes verification, upgrade,
+removal, shortcut, and optional companion instructions. After installation,
+enable **Driftile** in **System Settings > Window Management > KWin Scripts**.
 
 ## Configuration
 
@@ -57,7 +43,7 @@ Nix users can declare the same settings through `programs.driftile.settings`.
 See [Configuration](docs/configuration.md), [Shortcuts](docs/shortcuts.md), and
 [Using Driftile](docs/interaction-model.md).
 
-## Compatibility
+## Compatibility and status
 
 - Wayland is the primary target; native Wayland and XWayland windows share one
   layout model.
@@ -65,17 +51,18 @@ See [Configuration](docs/configuration.md), [Shortcuts](docs/shortcuts.md), and
 - Touchpad navigation is available only on native Wayland.
 - Release archives are standard, distribution-neutral KWin KPackages.
 
-See [Compatibility](docs/compatibility.md) for current platform and hardware
+Driftile is under active development, and the optional spatial Overview is
+still evolving. Use the
+[latest stable release](https://github.com/kontonkara/driftile/releases/latest)
+for normal installation; `main` can contain unreleased behavior. See
+[Compatibility](docs/compatibility.md) for current platform and hardware
 limits.
 
-## Project status
+## Documentation
 
-Driftile is under active development. Use the
-[latest stable release](https://github.com/kontonkara/driftile/releases/latest)
-for normal installation; `main` can contain unreleased behavior. Start with the
-[documentation](docs/README.md) or [troubleshooting](docs/troubleshooting.md), then
-[open an issue](https://github.com/kontonkara/driftile/issues/new/choose) if the
-problem remains.
+- [Start here](docs/README.md)
+- [Troubleshooting](docs/troubleshooting.md)
+- [Report a problem](https://github.com/kontonkara/driftile/issues/new/choose)
 
 ## License
 

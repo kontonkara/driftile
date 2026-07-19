@@ -23,26 +23,13 @@ extension.
 The separately installed **Driftile Overview** effect uses a four-finger up
 swipe to open and a down swipe to close by default. Configure or disable the
 gesture from the effect's settings. Finger counts range from `3` to `5`. A
-pointer screen edge can also open the effect and is disabled by default. The
-same page controls the backdrop color and opacity. Swipe progress drives the
-presentation directly; completion settles at the requested endpoint and
-cancellation returns to the previous endpoint. The captured activity, desktop
-selections, and output topology must remain unchanged, otherwise the Overview
-closes without reusing the stale session.
+pointer screen edge can also open the effect and is disabled by default.
 
-While open, the Overview refreshes in place after windows are added or removed
-and retries an unstable sample once. It preserves search, help, and a valid
-keyboard selection while clearing stale drag, wheel, and boundary input.
-Precise vertical wheel input pans the workspace stack and settles on the nearest
-workspace when the gesture ends. Discrete vertical steps select workspaces;
-rapid steps accumulate before one deferred selection. Horizontal wheel input
-pans the current spatial row, and a manual horizontal offset detaches live
-geometry only for that output and workspace until another eligible active
-window takes over or the Overview session resets.
-
-Window thumbnails support spatial drag-and-drop with a mouse or touchpad. On a
-touchscreen, hold a thumbnail before dragging it; the close affordance never
-starts a window drag.
+The same page controls backdrop color, zoom, window labels, application
+identity and icons, close buttons, state badges, desktop names, and output
+names. See [Spatial Overview](overview.md) for interaction details. Use a
+different finger count from Driftile's desktop navigation and Plasma's built-in
+Overview, or disable the overlapping gesture, so each direction has one owner.
 
 Home Manager leaves these KConfig values unmanaged by default. It can manage
 them independently of package installation:
@@ -64,36 +51,12 @@ programs.driftile.overview.touchpadGesture = {
 };
 ```
 
-`screenEdge` accepts `none` or one of the eight named edges and corners.
-`backdropColor` uses strict `#AARRGGBB` form. Set either option to `null` to
-leave its existing KConfig value untouched; use `none` to manage and disable
-screen-edge activation. `zoom` accepts `0.2` through `0.75`, defaults to `0.5`
-in the effect, and updates the spatial Overview live without changing its
-relative layout. Set it to `null` to leave the existing KConfig value
-untouched. `showWindowLabels` controls the ordinary large
-thumbnail footer, while `showApplicationIdentity` controls the application
-line or fallback. `showWindowCloseButtons` controls the hover and
-keyboard-selection close affordance for eligible Overview window previews.
-`showWindowStateBadges` controls static state badges on sufficiently large
-selected ordinary thumbnails; state search is unaffected. `showDesktopNames`
-controls normalized names beside the number marker on sufficiently large
-workspace rows; smaller rows stay compact, and
-desktop-name search remains available when the label is hidden.
-`showApplicationIcons` controls lazily loaded icons on sufficiently large
-ordinary label footers. A missing icon keeps the existing text presentation;
-disabling icons prevents the Loader payload from being instantiated, so it
-neither creates a Kirigami icon nor reads the public KWin icon.
-`showOutputNames` controls the bounded output label on large
-multi-output scenes; search by output name remains available while the label is
-hidden. All seven boolean settings update live and default to disabled in the
-effect. Malformed values fall back to disabled, while their nullable Home
-Manager options leave existing KConfig values untouched when set to `null`.
-The zoom and presentation options do not expand the NixOS option surface; a
-system-installed effect uses the same per-user KConfig values.
-
-Use a different count from vertical desktop navigation and Plasma's built-in
-Overview, or disable the overlapping gesture, so each global direction has one
-owner.
+`screenEdge` accepts `none` or one of the eight named edges and corners;
+`backdropColor` uses strict `#AARRGGBB`; and `zoom` accepts `0.2` through `0.75`
+with an effect default of `0.5`. The seven `show*` options default to `false`.
+Every nullable Home Manager option leaves the existing per-user KConfig value
+unmanaged when set to `null`. Use `screenEdge = "none"` to manage and disable
+screen-edge activation explicitly.
 
 ## Optional transitions
 
@@ -106,52 +69,20 @@ of `0` disables animation.
 `EasingCurve` controls how movement and size interpolation progress. It accepts
 `linear`, `out-quad`, `out-cubic`, `out-quart`, `out-quint`, or `out-expo` and
 defaults to `out-cubic`. `ResizeAnimationThreshold` accepts `0`–`64` logical
-pixels and defaults to `10`. A resize whose maximum width or height delta is at
-or below that threshold snaps to its final size without size interpolation;
-window movement may still animate. When a larger size interpolation is already
-active, a later sub-threshold settling correction retargets that interpolation
-instead of cancelling it.
+pixels and defaults to `10`. Movement and size animation can be disabled
+independently.
 
 The effect animates automatic position and size changes without writing window
-geometry. Manual move or resize and fullscreen remain ineligible. Geometry
-changes received while another fullscreen or workspace transition owns
-presentation are coalesced per window and replayed once when that ownership
-ends. After a workspace effect releases presentation, the then-active window
-becomes the handoff anchor. Repeated activation of that anchor cannot consume
-the lease; the first different active window in the current context becomes
-the target. The target lease survives a transient null active window or anchor
-deletion and settles only when that exact target is active and either visible
-or already animating. Other temporarily hidden windows keep the first captured
-frame until a public visibility, desktop, activity, or later geometry signal
-makes replay safe.
-Deletion, configuration reload, or true ineligibility discards the pending
-change. Replay uses no timer or private API and writes neither geometry nor
-persistence. Net-zero deferred movement is discarded, completed animation
-state is retired, and workspace-effect handoff visits only windows with an
-active animation.
-
-The Plasma shell launcher, switcher-hidden windows, OSDs, outlines, lock-screen
-and internal windows, popups, transient dialogs, frameless shell overlays, and
-other non-movable windows are outside the effect. Consecutive geometry updates
-retarget the active position and size transitions in place with the configured
-Plasma-scaled duration. KWin preserves the interpolated value, so rapid commands
-continue from the visible position instead of restarting on a shorter interval.
-Targets that have not changed are not submitted again. Position animation uses
-one bounded pair: a non-negative absolute base and a signed translation. Rapid
-commands and outputs with negative global coordinates therefore neither restart
-nor accumulate transitions. If an attribute ID is already ending, it is
-detached from the tracked property while its pending end remains counted, then
-the replacement starts independently. The late end notification cannot clear
-that replacement or leave a stale transform. Movement and size animation can
-be disabled independently.
+geometry. Manual move or resize, fullscreen windows, Plasma shell surfaces,
+popups, transient dialogs, and other non-movable windows remain outside the
+effect.
 
 `WindowClassExclusions`, `WindowCaptionExclusions`, and
 `WindowRoleExclusions` each accept at most 128 exact, case-sensitive KWin
 values, one per line and at most 255 UTF-8 bytes each. Use KWin's debug console
 to copy the complete `windowClass`, caption, or `windowRole`; partial matching
-is not performed. Caption matching follows the current caption when an
-application changes it. Blank lines are ignored. A duplicate, malformed, or
-oversized document disables the effect until valid values are loaded.
+is not performed. Blank lines are ignored. Invalid exclusion settings disable
+the effect until corrected.
 
 Home Manager can own these values independently of package installation. Each
 nullable option leaves its existing KConfig value untouched when set to `null`:
