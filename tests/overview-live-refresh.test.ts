@@ -92,6 +92,9 @@ describe("overview live model refresh", () => {
     expect(dispatch).toContain(
       'controller.rejectLayoutState(attemptId, "unstable-state")',
     );
+    expect(dispatch).toContain(
+      "onPublicationDetected: controller.requestLiveModelRefresh()",
+    );
     expect(accept.match(/liveModelRefreshIsExact\(/gu)).toHaveLength(2);
     expect(accept).toContain(
       "runtime.loadOverviewModel(document, liveSnapshot())",
@@ -113,6 +116,31 @@ describe("overview live model refresh", () => {
     expect(deactivate).toContain("activeSessionId = 0;");
     expect(`${accept}\n${reject}\n${exact}`).not.toMatch(
       /rejectionOsdCall|console\.|\bTimer\s*\{|repeat:\s*true|org\.kde\.kwin\.private|\.setValue\s*\(/u,
+    );
+  });
+
+  it("observes persisted layout publications without polling", () => {
+    expect(reader).toContain("import Qt.labs.folderlistmodel");
+    expect(reader).toContain("import QtQml.Models");
+    expect(reader).toContain("signal publicationDetected()");
+    expect(reader).toMatch(
+      /readonly property FolderListModel stateFiles:[\s\S]*folder: root\.stateDirectory[\s\S]*nameFilters: \["driftile-layout-state\.ini"\][\s\S]*showDirs: false[\s\S]*showFiles: true/u,
+    );
+    expect(reader).toMatch(
+      /readonly property Instantiator stateFileObserver:[\s\S]*model: root\.stateFiles[\s\S]*required property date fileModified[\s\S]*required property double fileSize/u,
+    );
+    expect(reader).toMatch(
+      /Component\.onCompleted:[\s\S]*armed = true;[\s\S]*root\.publicationDetected\(\);/u,
+    );
+    expect(reader).toMatch(
+      /onFileModifiedChanged:[\s\S]*if \(armed\)[\s\S]*root\.publicationDetected\(\);/u,
+    );
+    expect(reader).toMatch(
+      /onFileSizeChanged:[\s\S]*if \(armed\)[\s\S]*root\.publicationDetected\(\);/u,
+    );
+    expect(reader.match(/\bTimer\s*\{/gu)).toHaveLength(1);
+    expect(reader).not.toMatch(
+      /repeat:\s*true|setInterval|setTimeout|WeakSet|WeakMap|_q_directory|setValue/u,
     );
   });
 

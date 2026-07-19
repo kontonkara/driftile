@@ -67,6 +67,7 @@ QtObject {
     readonly property LayoutStateReader layoutStateReader: LayoutStateReader {
         onReady: (attemptId, document) => controller.acceptLayoutState(attemptId, document)
         onRejected: attemptId => controller.rejectLayoutState(attemptId, "unstable-state")
+        onPublicationDetected: controller.requestLiveModelRefresh()
     }
 
     readonly property KWin.ShortcutHandler toggleShortcut: KWin.ShortcutHandler {
