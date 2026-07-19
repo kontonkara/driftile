@@ -1049,16 +1049,22 @@ describe("overview effect package", () => {
     expect(desktopCard.match(/\.Drag\.active = true;/gu)).toHaveLength(1);
     expect(desktopCard.match(/\.Drag\.active = false;/gu)).toHaveLength(3);
     expect(delegate).toMatch(
-      /onWindowDropped:\s*\(\s*candidate,\s*expectedWindowId,\s*expectedSourceDesktop,\s*expectedSourceDesktopId,\s*expectedTargetDesktop,\s*expectedTargetDesktopId,\s*expectedScreen,\s*exactTarget\s*\)\s*=>\s*root\.submitWindowSpatialDrop\(\s*candidate,\s*expectedWindowId,\s*expectedSourceDesktop,\s*expectedSourceDesktopId,\s*expectedTargetDesktop,\s*expectedTargetDesktopId,\s*expectedScreen,\s*exactTarget\s*\)/u,
+      /onWindowDropped:\s*\(\s*candidate,\s*expectedWindowId,\s*expectedSourceDesktop,\s*expectedSourceDesktopId,\s*expectedTargetDesktop,\s*expectedTargetDesktopId,\s*expectedScreen,\s*exactTarget\s*\)\s*=>\s*root\.submitWindowSpatialDrop\(\s*candidate,\s*expectedWindowId,\s*expectedSourceDesktop,\s*expectedSourceDesktopId,\s*expectedTargetDesktop,\s*expectedTargetDesktopId,\s*expectedScreen,\s*expectedScreen,\s*exactTarget\s*\)/u,
     );
 
     expect(transaction).toContain("const effect = sceneEffect;");
     expect(transaction).toContain("const model = overviewModel;");
     expect(transaction).toContain(
-      "const liveScreen = liveScreenFor(expectedScreen);",
+      "const liveSourceScreen = liveScreenFor(expectedSourceScreen);",
     );
     expect(transaction).toContain(
-      "const expectedOutput = projectedOutput(model, liveScreen);",
+      "const liveTargetScreen = liveScreenFor(expectedTargetScreen);",
+    );
+    expect(transaction).toContain(
+      "const sourceOutput = projectedOutput(model, liveSourceScreen);",
+    );
+    expect(transaction).toContain(
+      "const targetOutput = projectedOutput(model, liveTargetScreen);",
     );
     expect(transaction).toContain(
       "liveDesktopFor(expectedSourceDesktop, expectedSourceDesktopId)",
@@ -1067,7 +1073,7 @@ describe("overview effect package", () => {
       "liveDesktopFor(expectedTargetDesktop, expectedTargetDesktopId)",
     );
     expect(transaction).toContain(
-      "const target = canonicalSpatialDropTarget(exactTarget, expectedActivityId, expectedOutputId,",
+      "const target = canonicalSpatialDropTarget(exactTarget, expectedActivityId, targetOutputId,",
     );
     expect(transaction).toContain(
       "expectedTargetDesktopId, expectedWindowId);",
@@ -1079,12 +1085,12 @@ describe("overview effect package", () => {
     for (const field of [
       "activityId: expectedActivityId",
       "desktopId: expectedSourceDesktopId",
-      "outputId: expectedOutputId",
+      "outputId: sourceOutputId",
       "windowId: expectedWindowId",
     ]) {
       expect(transaction).toContain(field);
     }
-    expect(transaction).toContain("}, target);");
+    expect(transaction).toContain("}, target) === true;");
     expect(transaction.match(/windowSpatialDropSceneIsExact\(/gu)).toHaveLength(
       1,
     );
@@ -1211,7 +1217,7 @@ describe("overview effect package", () => {
     expect(
       sourceHandlers.match(/const action = .*\.Drag\.drop\(\);/gu),
     ).toHaveLength(1);
-    expect(sourceHandlers.match(/action === Qt\.MoveAction/gu)).toHaveLength(1);
+    expect(sourceHandlers.match(/action !== Qt\.MoveAction/gu)).toHaveLength(1);
     expect(
       sourceHandlers.match(
         /card\.requestCrossOutputWindowDrop\(source, point\)/gu,
@@ -1229,7 +1235,7 @@ describe("overview effect package", () => {
       /function onItemDroppedOutOfScreen\(globalPosition, source, screen\)\s*\{\s*root\.handleCrossOutputWindowDrop\(globalPosition, source, screen\);\s*\}/u,
     );
     expect(targetResolution).toContain(
-      "const targetCard = crossOutputDropTargetAt(globalPosition, expectedTargetScreen);",
+      "const targetHit = crossOutputDropTargetAt(globalPosition, expectedTargetScreen);",
     );
     expect(targetResolution).toContain(
       "liveTargetScreen.mapFromGlobal(globalPosition)",
@@ -1241,7 +1247,14 @@ describe("overview effect package", () => {
       "candidate.mapFromItem(root, localPosition.x, localPosition.y)",
     );
     expect(targetResolution).toMatch(
-      /if \(targetCard\) \{\s*return null;\s*\}/u,
+      /if \(targetHit\) \{\s*return null;\s*\}/u,
+    );
+    expect(targetResolution).toContain("localPosition: Object.freeze({");
+    expect(targetResolution).toContain(
+      "targetCard.planCrossOutputWindowDropTarget(source, targetHit.localPosition)",
+    );
+    expect(targetResolution).toMatch(
+      /if \(exactTarget\) \{[\s\S]*?submitWindowSpatialDrop\([\s\S]*?source\.sourceScreen, targetCard\.screen, exactTarget\);\s*return;\s*\}[\s\S]*?moveWindowAcrossOutputs\(/u,
     );
     expect(targetResolution).toContain(
       "moveWindowAcrossOutputs(source.candidate, source.windowId, source.sourceDesktop,",

@@ -97,7 +97,7 @@ describe("spatial overview window drag lifecycle", () => {
     expect(drag.match(/card\.moveWindowSpatialDrag\(/gu)).toHaveLength(1);
     expect(drag.match(/card\.finishWindowSpatialDrag\(/gu)).toHaveLength(3);
     expect(drag).toMatch(
-      /const action = [A-Za-z]+Shell\.Drag\.drop\(\);[\s\S]*?[A-Za-z]+Shell\.Drag\.active = false;[\s\S]*?card\.finishWindowSpatialDrag\(source\);[\s\S]*?if \(action === Qt\.MoveAction\) \{\s*return;/u,
+      /const action = [A-Za-z]+Shell\.Drag\.drop\(\);[\s\S]*?[A-Za-z]+Shell\.Drag\.active = false;[\s\S]*?if \(action !== Qt\.MoveAction\) \{\s*card\.requestCrossOutputWindowDrop\(source, point\);\s*\}[\s\S]*?card\.finishWindowSpatialDrag\(source\);/u,
     );
     expect(drag).toMatch(
       /else \{\s*[A-Za-z]+Shell\.Drag\.cancel\(\);\s*[A-Za-z]+Shell\.Drag\.active = false;\s*card\.finishWindowSpatialDrag\(windowPresentation\);/u,
@@ -291,6 +291,34 @@ describe("spatial overview window drag lifecycle", () => {
         /windowDropSourceTiledPresentationIsExact\(source\)/gu,
       ),
     ).toHaveLength(3);
+  });
+
+  it("resolves one exact destination target while the source lifecycle is live", () => {
+    expect(presentation).toContain("readonly property var sourceCard: card");
+    expect(lifecycle).toContain(
+      "function crossOutputWindowDropSourceIsExact(source)",
+    );
+    expect(lifecycle).toContain("source.sourceCard === card");
+    expect(lifecycle).toContain("source.sourceScreen === screen");
+    expect(lifecycle).toContain("source.spatialDragLifecycleActive === true");
+    expect(lifecycle).toContain("windowDropTargetIsExact()");
+    expect(lifecycle).toContain(
+      "windowDropSourceTiledPresentationIsExact(source)",
+    );
+    expect(lifecycle).toContain(
+      "function planCrossOutputWindowDropTarget(source, localPosition)",
+    );
+    expect(lifecycle).toContain("sourceCard.outputId === outputId");
+    expect(lifecycle).toContain("source.sourceScreen === screen");
+    expect(lifecycle).toContain(
+      "sourceCard.crossOutputWindowDropSourceIsExact(source)",
+    );
+    expect(lifecycle).toContain(
+      "hitWindowDropPlannerSnapshot(snapshot, localPosition)",
+    );
+    expect(lifecycle).toContain(
+      "windowDropPlannerTargetIsExact(target, snapshot) ? target : null",
+    );
   });
 
   it("fails closed and releases stale hover ownership", () => {

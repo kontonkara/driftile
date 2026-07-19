@@ -375,6 +375,7 @@ Item {
                 readonly property var sourceDesktop: card.desktop
                 readonly property string sourceDesktopId: card.desktopId
                 readonly property var sourceScreen: card.screen
+                readonly property var sourceCard: card
                 readonly property var thumbnailTarget: thumbnailShell
                 readonly property var minimizedPlaceholderTarget: minimizedPlaceholderShell
                 property bool spatialDragLifecycleActive: false
@@ -730,11 +731,10 @@ Item {
                                     const source = windowPresentation;
                                     const action = thumbnailShell.Drag.drop();
                                     thumbnailShell.Drag.active = false;
-                                    card.finishWindowSpatialDrag(source);
-                                    if (action === Qt.MoveAction) {
-                                        return;
+                                    if (action !== Qt.MoveAction) {
+                                        card.requestCrossOutputWindowDrop(source, point);
                                     }
-                                    card.requestCrossOutputWindowDrop(source, point);
+                                    card.finishWindowSpatialDrag(source);
                                 } else {
                                     thumbnailShell.Drag.cancel();
                                     thumbnailShell.Drag.active = false;
@@ -1381,6 +1381,39 @@ Item {
                     && source.sourceScreen === screen;
         } catch (error) {
             return false;
+        }
+    }
+
+    function crossOutputWindowDropSourceIsExact(source) {
+        try {
+            return source && source.sourceCard === card && source.sourceScreen === screen
+                    && source.sourceDesktop === desktop && source.sourceDesktopId === desktopId
+                    && source.dragEligible === true && source.spatialDragLifecycleActive === true
+                    && spatialDragSourceIsOwned(source) && windowCanDrag(source)
+                    && windowDropTargetIsExact() && windowDropSourceTiledPresentationIsExact(source);
+        } catch (error) {
+            return false;
+        }
+    }
+
+    function planCrossOutputWindowDropTarget(source, localPosition) {
+        try {
+            const sourceCard = source ? source.sourceCard : null;
+            if (!sourceCard || sourceCard === card || typeof sourceCard.outputId !== "string"
+                    || sourceCard.outputId.length === 0 || sourceCard.outputId === outputId
+                    || typeof sourceCard.crossOutputWindowDropSourceIsExact !== "function"
+                    || source.sourceScreen === screen
+                    || !sourceCard.crossOutputWindowDropSourceIsExact(source)
+                    || !windowDropTargetIsExact() || !windowDropSourceWorkspaceRelationIsExact(source)
+                    || !spatialDragScenePointIsFinite(localPosition)) {
+                return null;
+            }
+
+            const snapshot = buildWindowDropPlannerSnapshot();
+            const target = hitWindowDropPlannerSnapshot(snapshot, localPosition);
+            return windowDropPlannerTargetIsExact(target, snapshot) ? target : null;
+        } catch (error) {
+            return null;
         }
     }
 

@@ -863,7 +863,8 @@ Rectangle {
                                                                           expectedSourceDesktopId,
                                                                           expectedTargetDesktop,
                                                                           expectedTargetDesktopId,
-                                                                          expectedScreen, exactTarget)
+                                                                          expectedScreen, expectedScreen,
+                                                                          exactTarget)
                         onWindowSpatialDragStarted: (source, sceneX, sceneY) =>
                                                         root.beginWindowSpatialEdgePan(
                                                             source, desktopCardLoader.modelData, sceneX, sceneY)
@@ -5797,8 +5798,17 @@ Rectangle {
     }
 
     function handleCrossOutputWindowDrop(globalPosition, source, expectedTargetScreen) {
-        const targetCard = crossOutputDropTargetAt(globalPosition, expectedTargetScreen);
-        if (!targetCard || !source) {
+        const targetHit = crossOutputDropTargetAt(globalPosition, expectedTargetScreen);
+        if (!targetHit || !source) {
+            return;
+        }
+
+        const targetCard = targetHit.card;
+        const exactTarget = targetCard.planCrossOutputWindowDropTarget(source, targetHit.localPosition);
+        if (exactTarget) {
+            submitWindowSpatialDrop(source.candidate, source.windowId, source.sourceDesktop,
+                                    source.sourceDesktopId, targetCard.desktop, targetCard.desktopId,
+                                    source.sourceScreen, targetCard.screen, exactTarget);
             return;
         }
 
@@ -5826,7 +5836,7 @@ Rectangle {
             return null;
         }
 
-        let targetCard = null;
+        let targetHit = null;
         for (let index = 0; index < desktopRepeater.count; index += 1) {
             const candidate = desktopCardAt(index);
             if (!candidate || !candidate.visible || candidate.screen !== liveTargetScreen
@@ -5845,13 +5855,19 @@ Rectangle {
                     || cardPosition.y >= candidate.height) {
                 continue;
             }
-            if (targetCard) {
+            if (targetHit) {
                 return null;
             }
-            targetCard = candidate;
+            targetHit = Object.freeze({
+                card: candidate,
+                localPosition: Object.freeze({
+                    x: Number(cardPosition.x),
+                    y: Number(cardPosition.y)
+                })
+            });
         }
 
-        return targetCard;
+        return targetHit;
     }
 
     function moveWindowAcrossOutputs(candidate, expectedWindowId, expectedSourceDesktop,
@@ -6096,34 +6112,40 @@ Rectangle {
 
     function submitWindowSpatialDrop(candidate, expectedWindowId, expectedSourceDesktop,
                                      expectedSourceDesktopId, expectedTargetDesktop,
-                                     expectedTargetDesktopId, expectedScreen, exactTarget) {
+                                     expectedTargetDesktopId, expectedSourceScreen,
+                                     expectedTargetScreen, exactTarget) {
         const effect = sceneEffect;
         const model = overviewModel;
-        const liveScreen = liveScreenFor(expectedScreen);
-        const expectedOutput = projectedOutput(model, liveScreen);
-        const expectedOutputId = expectedOutput ? String(expectedOutput.outputId) : "";
+        const liveSourceScreen = liveScreenFor(expectedSourceScreen);
+        const liveTargetScreen = liveScreenFor(expectedTargetScreen);
+        const sourceOutput = projectedOutput(model, liveSourceScreen);
+        const targetOutput = projectedOutput(model, liveTargetScreen);
+        const sourceOutputId = sourceOutput ? String(sourceOutput.outputId) : "";
+        const targetOutputId = targetOutput ? String(targetOutput.outputId) : "";
         const liveSourceDesktop = liveDesktopFor(expectedSourceDesktop, expectedSourceDesktopId);
         const liveTargetDesktop = liveDesktopFor(expectedTargetDesktop, expectedTargetDesktopId);
         const currentActivity = KWin.Workspace.currentActivity;
         const expectedActivityId = currentActivity === undefined || currentActivity === null ? ""
                                                                                               : String(currentActivity);
-        const target = canonicalSpatialDropTarget(exactTarget, expectedActivityId, expectedOutputId,
+        const target = canonicalSpatialDropTarget(exactTarget, expectedActivityId, targetOutputId,
                                                   expectedTargetDesktopId, expectedWindowId);
-        if (!windowSpatialDropSceneIsExact(effect, model, liveScreen, expectedOutput, expectedOutputId,
-                                           liveSourceDesktop, expectedSourceDesktopId, liveTargetDesktop,
-                                           expectedTargetDesktopId) || !target
-                || !windowDesktopDropCandidateIsExact(candidate, expectedWindowId, liveScreen, liveSourceDesktop,
+        if (!windowSpatialDropSceneIsExact(effect, model, liveSourceScreen, sourceOutput, sourceOutputId,
+                                           liveTargetScreen, targetOutput, targetOutputId, liveSourceDesktop,
+                                           expectedSourceDesktopId, liveTargetDesktop, expectedTargetDesktopId)
+                || !target
+                || !windowDesktopDropCandidateIsExact(candidate, expectedWindowId, liveSourceScreen,
+                                                       liveSourceDesktop,
                                                        expectedSourceDesktopId, expectedActivityId)
                 || typeof effect.submitSpatialDropCommand !== "function") {
-            return;
+            return false;
         }
 
-        effect.submitSpatialDropCommand({
-                                            activityId: expectedActivityId,
-                                            desktopId: expectedSourceDesktopId,
-                                            outputId: expectedOutputId,
-                                            windowId: expectedWindowId
-                                        }, target);
+        return effect.submitSpatialDropCommand({
+                                                   activityId: expectedActivityId,
+                                                   desktopId: expectedSourceDesktopId,
+                                                   outputId: sourceOutputId,
+                                                   windowId: expectedWindowId
+                                               }, target) === true;
     }
 
     function canonicalSpatialDropTarget(exactTarget, expectedActivityId, expectedOutputId,
@@ -6198,13 +6220,29 @@ Rectangle {
         return matches === 1;
     }
 
-    function windowSpatialDropSceneIsExact(effect, model, liveScreen, expectedOutput, expectedOutputId,
-                                           liveSourceDesktop, expectedSourceDesktopId, liveTargetDesktop,
-                                           expectedTargetDesktopId) {
-        return desktopContextIsExact(effect, model, liveScreen, expectedOutput, expectedOutputId,
-                                     liveSourceDesktop, expectedSourceDesktopId)
-                && desktopContextIsExact(effect, model, liveScreen, expectedOutput, expectedOutputId,
-                                         liveTargetDesktop, expectedTargetDesktopId);
+    function windowSpatialDropSceneIsExact(effect, model, liveSourceScreen, sourceOutput, sourceOutputId,
+                                           liveTargetScreen, targetOutput, targetOutputId, liveSourceDesktop,
+                                           expectedSourceDesktopId, liveTargetDesktop, expectedTargetDesktopId) {
+        if (!desktopContextIsExact(effect, model, liveTargetScreen, targetOutput, targetOutputId,
+                                   liveTargetDesktop, expectedTargetDesktopId)
+                || !liveSourceScreen || liveScreenFor(liveSourceScreen) !== liveSourceScreen
+                || !sourceOutput || sourceOutputId.length === 0
+                || String(sourceOutput.outputId) !== sourceOutputId
+                || projectedOutput(model, liveSourceScreen) !== sourceOutput
+                || !liveSourceDesktop || expectedSourceDesktopId.length === 0
+                || String(liveSourceDesktop.id) !== expectedSourceDesktopId
+                || liveDesktopFor(liveSourceDesktop, expectedSourceDesktopId) !== liveSourceDesktop) {
+            return false;
+        }
+
+        const sameOutput = liveSourceScreen === liveTargetScreen;
+        if (sameOutput !== (sourceOutput === targetOutput)
+                || sameOutput !== (sourceOutputId === targetOutputId)) {
+            return false;
+        }
+        return !sameOutput || desktopContextIsExact(effect, model, liveSourceScreen, sourceOutput,
+                                                     sourceOutputId, liveSourceDesktop,
+                                                     expectedSourceDesktopId);
     }
 
     function windowDesktopDropCandidateIsExact(candidate, expectedWindowId, liveScreen, expectedDesktop,
