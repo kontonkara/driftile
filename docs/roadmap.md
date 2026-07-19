@@ -1,12 +1,14 @@
 # Roadmap
 
-Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.82.0 are
+Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.83.0 are
 released. The delivered milestones and release criteria below are a historical
 record. Later direction is not a committed release schedule.
 
-Stable 1.82.0 presents the optional Overview as one continuous, full-width
-spatial plane with exact projected geometry, reversible motion, and two-axis
-navigation. Settings, shortcuts, and logical persistence v4 remain compatible.
+Stable 1.83.0 extends pointer continuity across the optional Overview: a
+right-button drag pans the row under the pointer, a bounded workspace dwell
+keeps a window drag active, and virtual-desktop changes refresh in place.
+Overview remains under active development. Settings, shortcuts, and logical
+persistence v4 remain compatible.
 
 ## Current direction
 
@@ -2741,7 +2743,7 @@ Release criteria (met):
   The physical workspace-reorder checkpoint targets the compact row marker in
   the full-width plane.
 
-### Current development (unreleased)
+### 1.83.0 (released)
 
 - Pan the row under the pointer horizontally with a right-button drag, including
   when the drag starts over a window thumbnail.
@@ -2753,3 +2755,10 @@ Release criteria (met):
 
 This is an incremental pointer-continuity batch. The spatial Overview remains
 under active development.
+
+Release criteria (met):
+
+- Right-button row panning and dwell activation preserve exact input ownership;
+  stale sessions, geometry, models, sources, and targets fail closed.
+- Desktop-topology refresh remains session-only and does not change layout
+  ownership, settings, shortcuts, schema, or persistence.

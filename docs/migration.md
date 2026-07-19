@@ -1,7 +1,33 @@
 # Migration
 
-The latest stable release is 1.82.0. Use the steps below when changing release
+The latest stable release is 1.83.0. Use the steps below when changing release
 generations, and never combine files from different releases.
+
+## Upgrade from 1.82.0 to 1.83.0
+
+1. Release a helper-owned shortcut profile with the installed helper.
+2. Disable Driftile and both optional effects in System Settings.
+3. Install matching 1.83.0 artifacts, or pin the Nix input to `v1.83.0` and
+   rebuild.
+4. Re-enable Driftile and only the optional effects you use, then reclaim the
+   helper profile if needed.
+
+No shortcut, setting, schema, layout, or persistence migration is required.
+The optional Overview adds right-button row panning, keeps a window drag active
+while a bounded dwell selects another workspace, and refreshes in place when
+virtual desktops are added, removed, or reordered. The normal layout remains
+authoritative, and stale pointer or workspace identities fail closed.
+
+Overview remains optional and under active development.
+
+## Roll back from 1.83.0 to 1.82.0
+
+Release a helper-owned profile, disable Driftile and both optional effects,
+then restore matching verified 1.82.0 artifacts or pin the Nix input to
+`v1.82.0` and rebuild. Logical persistence v4 remains compatible; no option
+deletion or schema migration is required. The older Overview closes when the
+virtual-desktop topology changes and does not provide dwell-based drag
+continuation between workspace rows.
 
 ## Upgrade from 1.81.0 to 1.82.0
 
