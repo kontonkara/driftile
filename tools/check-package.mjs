@@ -27,6 +27,7 @@ const expectedPackageEntries = [
 const expectedRuntimeEntries = [
   "code/main.js",
   "ui/LayoutStateStore.qml",
+  "ui/OverviewSpatialDropReceiver.qml",
   "ui/TouchpadNavigation.qml",
   "ui/TouchpadWorkspaceNavigation.qml",
   "ui/main.qml",
@@ -46,6 +47,7 @@ const expectedOverviewRuntimeEntries = [
   "ui/LayoutStateReader.qml",
   "ui/OutputIdentityBadge.qml",
   "ui/OverviewScene.qml",
+  "ui/OverviewSpatialDropWriter.qml",
   "ui/OverviewTouchpadGesture.qml",
   "ui/SearchMatchBadge.qml",
   "ui/WindowApplicationIcon.qml",
