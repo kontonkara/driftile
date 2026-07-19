@@ -2732,5 +2732,7 @@ Release criteria (met):
   effect.
 - Pan a row horizontally while its window drag remains inside the bounded left
   or right edge zone, including loaded inactive workspace rows.
+- Pan any loaded row horizontally by dragging its empty backdrop, without
+  changing the vertical workspace camera or authoritative layout state.
 - Keep the optional companion an incremental bridge rather than a second
   authoritative layout or compositor.

@@ -59,8 +59,9 @@ initial horizontal camera from the normal layout solver. It exposes neighboring
 columns on either side without changing saved layout state. The current desktop
 opens in the center. Keyboard selection reveals an off-screen workspace and
 column, while dragging the empty backdrop with a mouse, touchpad, or touchscreen
-pans the stack within its finite vertical bounds. Rows outside a small visible
-range are not instantiated.
+pans the stack within its finite vertical bounds. Dragging empty space inside a
+workspace row pans that row horizontally within its own finite bounds. Rows
+outside a small visible range are not instantiated.
 
 While the effect is open, the current desktop row projects guarded public live
 frames for complete stacked columns and the selected member of a tabbed
