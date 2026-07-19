@@ -5232,7 +5232,7 @@ let
           return 1
         fi
 
-        if ! request_physical_shortcut overview-escape \
+        if ! request_physical_shortcut overview-reorder-escape \
           || ! wait_for_effect_active_state "$overview_plugin_id" false \
           || ! kwin_process_is_unchanged "$kwin_live_camera_process_id"; then
           overview_checkpoint_failure \

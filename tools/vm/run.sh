@@ -218,6 +218,7 @@ monitor_guest() {
     [overview-enter-initial]=false
     [overview-enter-target]=false
     [overview-escape]=false
+    [overview-reorder-escape]=false
     [overview-open]=false
     [overview-search-close]=false
     [overview-search-edit]=false
@@ -278,6 +279,7 @@ monitor_guest() {
       overview-up \
       overview-enter-target \
       overview-escape \
+      overview-reorder-escape \
       equal \
       shift-minus \
       shift-equal \
@@ -1377,7 +1379,7 @@ send_physical_shortcut() {
     overview-up)
       input='{"execute":"input-send-event","arguments":{"events":[{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"up"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"up"}}}]}}'
       ;;
-    overview-escape)
+    overview-escape|overview-reorder-escape)
       input='{"execute":"input-send-event","arguments":{"events":[{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"esc"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"esc"}}}]}}'
       ;;
     desktop-1)
