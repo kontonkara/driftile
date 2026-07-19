@@ -1,23 +1,22 @@
 # Roadmap
 
-Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.81.0 are
+Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.82.0 are
 released. The delivered milestones and release criteria below are a historical
 record. Later direction is not a committed release schedule.
 
-Stable 1.81.0 hardens current-row live Overview geometry, defers vertical wheel
-selection through exact context checks, and preserves picture-in-picture
-floating ownership while its public role is temporarily unavailable. Settings,
-shortcuts, and logical persistence v4 remain compatible.
+Stable 1.82.0 presents the optional Overview as one continuous, full-width
+spatial plane with exact projected geometry, reversible motion, and two-axis
+navigation. Settings, shortcuts, and logical persistence v4 remain compatible.
 
 ## Current direction
 
-The optional Overview remains an intermediate projection over captured layout
-state. Its initial rows share the normal solver's gaps, work area, pixel grid,
-and camera placement. The current row can follow the active eligible tiled
-window's live geometry, but inactive rows and the overall effect still do not
-share a continuous camera or live geometry with the normal scrollable
-workspace. Continuous spatial behavior remains the primary direction within
-public KWin APIs.
+The optional Overview is a continuous spatial projection over the normal
+layout. Full-width workspace rows share the authoritative solver's work area,
+pixel grid, gaps, column frames, and camera placement. Guarded live geometry
+can replace a complete current-row column, while floating windows retain their
+output-local frames. The projection remains session-only: the normal layout
+stays authoritative, and Overview input does not claim layout ownership or
+persist its camera.
 
 ## Foundation (delivered)
 
@@ -2719,20 +2718,25 @@ Release criteria (met):
 - Suppress outgoing desktop motion while the workspace transition owns visual
   presentation.
 
-### 1.82.0 (in development)
+### 1.82.0 (released)
 
-- Align current-row column shells and stacked member guides with one complete
-  guarded live-frame snapshot.
-- Project a selected tabbed member, its tabs, guides, and column shell from one
-  atomic live display plan, with captured geometry as the column-wide fallback.
-- Defer and coalesce discrete horizontal wheel selection without retaining QML
-  objects or mutating the camera during input dispatch.
-- Resolve the first equal diagonal wheel event deterministically, preserve one
-  gesture axis owner, and consume cross-axis input without leaking it below the
-  effect.
-- Pan a row horizontally while its window drag remains inside the bounded left
-  or right edge zone, including loaded inactive workspace rows.
-- Pan any loaded row horizontally by dragging its empty backdrop, without
-  changing the vertical workspace camera or authoritative layout state.
-- Keep the optional companion an incremental bridge rather than a second
-  authoritative layout or compositor.
+- Present desktops as continuous full-width rows instead of independent cards.
+- Project exact solved tiled frames, every stacked member, the selected tabbed
+  member, and output-local floating geometry. Guarded live geometry replaces a
+  current-row column only when the complete snapshot is valid.
+- Reverse the same camera and zoom path when closing, including interrupted
+  opening and a manually detached current-row camera.
+- Navigate the plane in two axes with pointer drags, wheel input, keyboard
+  selection, and bounded edge movement during window or workspace drags.
+- Start with compact chrome disabled and keep empty or floating-only rows as
+  safe, bounded planning contexts.
+- Avoid repeated KWin background items, unsafe weak-collection query caches,
+  unbounded retained objects, and writes to authoritative layout state.
+
+Release criteria (met):
+
+- The normal layout remains authoritative; Overview state and cameras are
+  session-only and fail closed when geometry or live identities become stale.
+- Packaged Wayland, multi-output Wayland, X11, Nix, and hidden VM checks pass.
+  The physical workspace-reorder checkpoint targets the compact row marker in
+  the full-width plane.
