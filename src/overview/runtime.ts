@@ -92,6 +92,11 @@ export type {
   OverviewSpatialHorizontalWheelInput,
   OverviewSpatialHorizontalWheelPlan,
 } from "./spatial-horizontal-wheel";
+export { planOverviewSpatialHorizontalDrag } from "./spatial-horizontal-drag";
+export type {
+  OverviewSpatialHorizontalDragInput,
+  OverviewSpatialHorizontalDragPlan,
+} from "./spatial-horizontal-drag";
 export { planOverviewSpatialHorizontalEdgePan } from "./spatial-horizontal-edge-pan";
 export type {
   OverviewSpatialHorizontalEdgePanDirection,

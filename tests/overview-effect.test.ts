@@ -1472,6 +1472,9 @@ describe("overview effect package", () => {
     expect(spatialSessionRefresh).toMatch(
       /resetOverviewWheelState\(\);[\s\S]*spatialViewportInput\.panLayout = null;[\s\S]*spatialViewportInput\.panStartContentY = 0;/u,
     );
+    expect(spatialSessionRefresh).toContain(
+      "clearSpatialHorizontalViewportDrag();",
+    );
     expect(spatialSessionRefresh).toMatch(
       /resetDesktopReorder\(\);[\s\S]*resetSpatialEdgePanTracking\(\);/u,
     );
@@ -1520,7 +1523,7 @@ describe("overview effect package", () => {
     expect(spatialInput).toContain(
       "return root.spatialViewportBackdropContains(point)",
     );
-    expect(spatialInput.match(/\bDragHandler\s*\{/gu)).toHaveLength(1);
+    expect(spatialInput.match(/\bDragHandler\s*\{/gu)).toHaveLength(2);
     expect(spatialInput).toContain("target: null");
     expect(spatialInput).toContain("acceptedButtons: Qt.LeftButton");
     expect(spatialInput).toContain(
@@ -1531,6 +1534,19 @@ describe("overview effect package", () => {
     );
     expect(spatialInput).toContain("xAxis.enabled: false");
     expect(spatialInput).toContain("yAxis.enabled: true");
+    expect(spatialInput).toContain("id: spatialHorizontalViewportInput");
+    expect(spatialInput).toContain("id: spatialHorizontalViewportDragHandler");
+    expect(spatialInput).toContain("xAxis.enabled: true");
+    expect(spatialInput).toContain("yAxis.enabled: false");
+    expect(spatialInput).toContain(
+      "return root.spatialHorizontalViewportBackdropContains(point)",
+    );
+    expect(spatialInput).toContain(
+      "root.beginSpatialHorizontalViewportDrag(centroid.pressPosition)",
+    );
+    expect(spatialInput).toContain(
+      "root.updateSpatialHorizontalViewportDrag(activeTranslation.x)",
+    );
     expect(spatialInput).toContain(
       "root.setSpatialContentY(spatialViewportInput.panStartContentY - activeTranslation.y)",
     );
@@ -1547,6 +1563,27 @@ describe("overview effect package", () => {
     expect(spatialLayout).toContain("point.x >= cardX + cardWidth");
     expect(spatialLayout).toContain(
       "return relativeY - workspaceIndex * stride >= cardHeight",
+    );
+    expect(spatialLayout).toMatch(
+      /function spatialHorizontalViewportBackdropContains[\s\S]*spatialWorkspaceIndexAtPoint\(point\)[\s\S]*card\.mapFromItem\(root, point\.x, point\.y\)[\s\S]*card\.viewportPointHitsWindow\(\{ x: viewportX, y: viewportY \}\)/u,
+    );
+    expect(spatialLayout).toMatch(
+      /function beginSpatialHorizontalViewportDrag[\s\S]*spatialWheelPresentationIsExact\(\)[\s\S]*resetOverviewWheelState\(\);[\s\S]*panOutputId = outputId;[\s\S]*panStartViewportOffset = viewportOffset[\s\S]*panWorkspaceIndex = workspaceIndex/u,
+    );
+    expect(spatialLayout).toMatch(
+      /function spatialHorizontalViewportDragContext[\s\S]*spatialWheelPresentationIsExact\(\)[\s\S]*outputId !== expectedOutputId[\s\S]*expectedOutputId,/u,
+    );
+    expect(spatialLayout).toMatch(
+      /runtime\.planOverviewSpatialHorizontalDrag\(\{[\s\S]*maximumViewportOffset: context\.bounds\.maximum,[\s\S]*minimumViewportOffset: context\.bounds\.minimum,[\s\S]*projectionScale: context\.projectionScale,[\s\S]*startViewportOffset: context\.startViewportOffset,[\s\S]*translationX/u,
+    );
+    expect(spatialLayout).toMatch(
+      /setSpatialHorizontalViewportOffsetForBounds\(context\.workspaceIndex,[\s\S]*plan\.viewportOffset, context\.bounds\)[\s\S]*context\.workspaceIndex === currentWorkspaceIndex[\s\S]*detachSpatialLiveCameraForManualOffset[\s\S]*panGeometryEpoch = spatialHorizontalViewportRevision;[\s\S]*panLastViewportOffset = plan\.viewportOffset;/u,
+    );
+    expect(spatialLayout).toMatch(
+      /const rollbackSucceeded = rollbackBounds[\s\S]*context\.lastViewportOffset, rollbackBounds\)[\s\S]*clearSpatialHorizontalViewportDrag\(\);[\s\S]*if \(!rollbackSucceeded && !refreshSpatialHorizontalViewports\(false\)\) \{\s*refreshOverviewSpatialSession\(true\);/u,
+    );
+    expect(spatialLayout).toMatch(
+      /function spatialHorizontalViewportDragPlanIsValid[\s\S]*const expectedViewportOffset = Math\.min\(context\.bounds\.maximum,[\s\S]*context\.startViewportOffset[\s\S]*- translationX \/ context\.projectionScale[\s\S]*Object\.is\(expectedViewportOffset, -0\)[\s\S]*plan\.viewportOffset === normalizedExpectedViewportOffset;/u,
     );
     expect(spatialLayout).toContain(
       "spatialViewportOverlayContainsPoint(keyboardHelpHint, point)",
@@ -2905,7 +2942,7 @@ describe("overview effect package", () => {
       /onSpatialContentYChanged: \{\s*root\.resetOverviewWheelState\(\);\s*root\.captureSpatialViewportSnapshot\(\);\s*\}/u,
     );
     expect(wheelNavigation).toMatch(
-      /spatialViewportDragHandler\.active \|\| spatialWindowDragSource !== null[\s\S]*\|\| desktopReorderActive[\s\S]*resetOverviewWheelState\(\);[\s\S]*event\.accepted = true;[\s\S]*return true;/u,
+      /spatialViewportDragHandler\.active \|\| spatialHorizontalViewportDragHandler\.active[\s\S]*spatialWindowDragSource !== null[\s\S]*\|\| desktopReorderActive[\s\S]*resetOverviewWheelState\(\);[\s\S]*event\.accepted = true;[\s\S]*return true;/u,
     );
     expect(
       wheelNavigation.indexOf("if (spatialViewportDragHandler.active"),
