@@ -55,6 +55,14 @@ const wheelRouting = scene.slice(
   scene.indexOf("function routeOverviewWheel("),
   scene.indexOf("function releaseOverviewWheelAxisIfIdle("),
 );
+const numberGutter = desktopCard.slice(
+  desktopCard.indexOf("id: numberGutter"),
+  desktopCard.indexOf("id: desktopNameGutter"),
+);
+const keyboardActivation = scene.slice(
+  scene.indexOf("function activateKeyboardSelection("),
+  scene.indexOf("function closeKeyboardSelection("),
+);
 
 describe("spatial overview navigation geometry", () => {
   it("preserves default clipping while the spatial scene opts into offscreen targets", () => {
@@ -105,6 +113,28 @@ describe("spatial overview navigation geometry", () => {
     expect(cardClip).not.toContain("viewport.mapToItem(sceneItem");
     expect(cardClip.indexOf("card.mapToItem(sceneItem")).toBeLessThan(
       cardClip.indexOf("if (includeOffscreen !== true)"),
+    );
+  });
+
+  it("keeps the current desktop as an actionable keyboard target", () => {
+    expect(numberGutter).toMatch(
+      /readonly property bool keyboardSelected: card\.searchQuery\.trim\(\)\.length === 0\s*&& card\.keyboardSelectionId === card\.desktopNavigationTargetId\(\)/u,
+    );
+    expect(numberGutter).not.toContain("!card.current");
+    expect(numberGutter).toMatch(
+      /visible: numberGutter\.keyboardSelected[\s\S]*border\.width: 3[\s\S]*border\.color: "#ffd166"/u,
+    );
+
+    expect(collection).toContain("if (searchQuery.trim().length === 0)");
+    expect(collection).not.toContain("if (!current &&");
+    expect(collection).toMatch(
+      /targets\.push\(\{\s*candidate: desktop,\s*desktop,\s*desktopId,\s*id: desktopNavigationTargetId\(\),\s*kind: "desktop",\s*rect: gutterRect,\s*screen\s*\}\);/u,
+    );
+    expect(keyboardActivation).toMatch(
+      /if \(target\.kind === "desktop"\) \{\s*selectDesktop\(target\.candidate, target\.desktopId, target\.screen\);/u,
+    );
+    expect(`${numberGutter}\n${collection}\n${keyboardActivation}`).not.toMatch(
+      /org\.kde\.kwin\.private|\bTimer\s*\{|setInterval|setTimeout|\.setValue\s*\(|KWin\.(?:SceneView|Workspace)\.[A-Za-z0-9_]+\s*=(?!=)/u,
     );
   });
 

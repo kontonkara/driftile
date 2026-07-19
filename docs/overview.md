@@ -32,7 +32,10 @@ off-screen card does not create one. KWin's Desktop selection excludes panels,
 docks, and notifications. If the desktop shell restarts while Overview is open,
 visible rows discard the stale surface immediately, expose the solid fallback,
 and reconnect when the replacement Desktop window appears. Ordinary wallpaper
-damage remains live without polling.
+damage remains live without polling. Compact neutral backplates keep the
+workspace number and optional name readable on arbitrary wallpapers, while a
+subtle output-area outline identifies the current row without changing its
+geometry.
 
 Every row uses the normal layout solver for its usable work area, pixel grid,
 gaps, horizontal camera, columns, and member frames. Captured rows preserve
@@ -85,8 +88,9 @@ one global direction has one owner.
 
 On opening, keyboard selection prefers the active actionable window, then the
 first actionable window on the current desktop, then the first target in visual
-order. Arrow keys move spatially without wrapping. `Tab` and `Shift+Tab`
-cycle visible targets; `Home` and `End` select the first or last target.
+order. Every workspace marker, including the current one, is an actionable
+target. Arrow keys move spatially without wrapping. `Tab` and `Shift+Tab` cycle
+visible targets; `Home` and `End` select the first or last target.
 
 `Enter`, `Return`, or `Space` activates the selected live window or
 workspace through guarded public KWin APIs. `Delete` requests closure of a
@@ -98,15 +102,19 @@ Unselected tabbed members and minimized windows do not receive synthetic
 targets. Off-screen targets in an instantiated row remain navigable and are
 revealed when selected.
 
-A left click activates a visible window or selects a non-current workspace.
-Dragging a visible window can transfer it to another desktop or output after
-the source and destination are revalidated. Holding the dragged window over
-another workspace activates that workspace after a bounded dwell while keeping
-the drag active. On the same output, releasing over a window half inserts into
-that stack, releasing at a column boundary keeps a separate column, and an
-empty row accepts a new column. The same exact targets work across outputs for
-tiled windows; floating and non-exact sources retain Plasma's native output
-transfer. The active target is previewed before release. A rejected exact
+A short mouse, touchpad, or touchscreen tap on an empty row surface or its
+number marker selects an exact non-current workspace. The same action on the
+current workspace closes Overview without a desktop write. Moving beyond the
+tap threshold yields to the existing pan or drag owner, and workspace-surface
+taps stay disabled while search is active. A left click still activates a
+visible window. Dragging a visible window can transfer it to another desktop or
+output after the source and destination are revalidated. Holding the dragged
+window over another workspace activates that workspace after a bounded dwell
+while keeping the drag active. On the same output, releasing over a window half
+inserts into that stack, releasing at a column boundary keeps a separate column,
+and an empty row accepts a new column. The same exact targets work across
+outputs for tiled windows; floating and non-exact sources retain Plasma's
+native output transfer. The active target is previewed before release. A rejected exact
 placement restores the prior output, desktop, focus, and layout state. Dragging
 the compact workspace number marker reorders eligible desktops. The protected
 final empty desktop is never reordered or crossed.

@@ -5707,22 +5707,36 @@ Rectangle {
     }
 
     function selectDesktop(candidate, expectedDesktopId, expectedScreen) {
-        const effect = sceneEffect;
-        const model = overviewModel;
-        const liveScreen = liveScreenFor(expectedScreen);
-        const expectedOutput = projectedOutput(model, liveScreen);
-        const expectedOutputId = expectedOutput ? String(expectedOutput.outputId) : "";
-        const liveDesktop = liveDesktopFor(candidate, expectedDesktopId);
-        if (!desktopContextIsExact(effect, model, liveScreen, expectedOutput, expectedOutputId, liveDesktop,
-                                   expectedDesktopId)) {
-            return;
-        }
+        try {
+            const effect = sceneEffect;
+            const model = overviewModel;
+            const liveScreen = liveScreenFor(expectedScreen);
+            const expectedOutput = projectedOutput(model, liveScreen);
+            const expectedOutputId = expectedOutput ? String(expectedOutput.outputId) : "";
+            const liveDesktop = liveDesktopFor(candidate, expectedDesktopId);
+            if (!desktopContextIsExact(effect, model, liveScreen, expectedOutput, expectedOutputId, liveDesktop,
+                                       expectedDesktopId)) {
+                return false;
+            }
 
-        if (!requestDesktopSelection(effect, model, liveScreen, expectedOutput, expectedOutputId, liveDesktop,
-                                     expectedDesktopId)) {
-            return;
+            const activeDesktop = currentDesktop;
+            if (!activeDesktop || activeDesktop.id === undefined || activeDesktop.id === null) {
+                return false;
+            }
+            if (activeDesktop === liveDesktop && String(activeDesktop.id) === expectedDesktopId) {
+                effect.deactivate();
+                return true;
+            }
+
+            if (!requestDesktopSelection(effect, model, liveScreen, expectedOutput, expectedOutputId, liveDesktop,
+                                         expectedDesktopId)) {
+                return false;
+            }
+            effect.deactivate();
+            return true;
+        } catch (error) {
+            return false;
         }
-        effect.deactivate();
     }
 
     function focusWindow(candidate, expectedWindowId, expectedDesktop, expectedDesktopId, expectedScreen) {

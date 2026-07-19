@@ -115,7 +115,7 @@ Item {
     Item {
         id: numberGutter
 
-        readonly property bool keyboardSelected: !card.current && card.searchQuery.trim().length === 0
+        readonly property bool keyboardSelected: card.searchQuery.trim().length === 0
             && card.keyboardSelectionId === card.desktopNavigationTargetId()
         readonly property bool attentionRequested: card.anyWindowDemandsAttention(card.attentionRevision)
 
@@ -129,6 +129,16 @@ Item {
         opacity: card.presentationProgress
         z: 9500
 
+        Rectangle {
+            id: numberGutterBackplate
+
+            anchors.fill: parent
+            color: "#dc111824"
+            border.width: 1
+            border.color: "#805f718a"
+            radius: 4
+        }
+
         Text {
             anchors.fill: parent
             anchors.margins: 4
@@ -139,6 +149,7 @@ Item {
             horizontalAlignment: Text.AlignHCenter
             verticalAlignment: Text.AlignVCenter
             elide: Text.ElideRight
+            z: 1
         }
 
         Rectangle {
@@ -154,7 +165,7 @@ Item {
             border.width: 1
             border.color: "#fff1f4"
             radius: width / 2
-            z: 1
+            z: 2
         }
 
         Loader {
@@ -164,7 +175,7 @@ Item {
             width: item ? item.implicitWidth : 0
             height: item ? item.implicitHeight : 0
             active: card.searchQuery.trim().length > 0 && card.searchResultCount > 0
-            z: 1
+            z: 2
 
             sourceComponent: Component {
                 SearchMatchBadge {
@@ -181,13 +192,16 @@ Item {
             border.width: 3
             border.color: "#ffd166"
             radius: 4
-            z: 2
+            z: 3
         }
 
         TapHandler {
+            id: numberGutterTapHandler
+
             acceptedButtons: Qt.LeftButton
-            acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
-            enabled: !card.current && card.desktop && card.screen
+            acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad | PointerDevice.TouchScreen
+            gesturePolicy: TapHandler.DragThreshold
+            enabled: card.desktop && card.screen && card.searchQuery.trim().length === 0
             onTapped: card.desktopTapped(card.desktop, card.desktopId, card.screen)
         }
 
@@ -235,10 +249,20 @@ Item {
         opacity: card.presentationProgress
         z: 9500
 
+        Rectangle {
+            id: desktopNameGutterBackplate
+
+            anchors.fill: parent
+            color: "#dc111824"
+            border.width: 1
+            border.color: "#805f718a"
+            radius: 4
+        }
+
         Text {
             anchors.fill: parent
-            anchors.leftMargin: 2
-            anchors.rightMargin: 4
+            anchors.leftMargin: 7
+            anchors.rightMargin: 7
             text: card.desktopLabel ? card.desktopLabel.label : ""
             color: card.current ? "#e8eef9" : "#9eabbe"
             font.bold: card.current
@@ -247,6 +271,7 @@ Item {
             verticalAlignment: Text.AlignVCenter
             elide: Text.ElideRight
             textFormat: Text.PlainText
+            z: 1
         }
     }
 
@@ -303,11 +328,15 @@ Item {
             }
 
             Rectangle {
+                id: projectedOutputSurfaceBorder
+
                 anchors.fill: parent
                 color: "transparent"
-                border.width: windowDropArea.validTarget || card.desktopReorderSource ? 2 : 0
+                border.width: windowDropArea.validTarget || card.desktopReorderSource ? 2
+                                                                                     : card.current ? 1 : 0
                 border.color: windowDropArea.validTarget ? "#86aee8"
-                                                         : "#668baad6"
+                                                         : card.desktopReorderSource ? "#668baad6"
+                                                                                     : "#66758b"
                 radius: 2
                 z: 2
             }
@@ -341,10 +370,12 @@ Item {
             z: 1
 
             TapHandler {
+                id: emptyContentTapHandler
+
                 acceptedButtons: Qt.LeftButton
-                acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
-                enabled: !card.current && card.desktop && card.screen
-                         && card.searchQuery.trim().length === 0
+                acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad | PointerDevice.TouchScreen
+                gesturePolicy: TapHandler.DragThreshold
+                enabled: card.desktop && card.screen && card.searchQuery.trim().length === 0
                 onTapped: point => {
                     if (!card.viewportPointHitsWindow(point.position)) {
                         card.desktopTapped(card.desktop, card.desktopId, card.screen);
@@ -1314,7 +1345,7 @@ Item {
             return targets;
         }
 
-        if (!current && searchQuery.trim().length === 0) {
+        if (searchQuery.trim().length === 0) {
             const gutterRect = clippedCardNavigationRect(numberGutter, sceneItem, includeOffscreen);
             if (gutterRect) {
                 targets.push({

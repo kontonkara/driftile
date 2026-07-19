@@ -889,7 +889,14 @@ describe("overview effect package", () => {
     expect(projectedSurface).toContain('color: "#171e2a"');
     expect(projectedSurface).toContain("z: -100");
     expect(surfaceTint).toContain("z: 1");
+    expect(surfaceBorder).toContain("id: projectedOutputSurfaceBorder");
     expect(surfaceBorder).toContain("border.width:");
+    expect(surfaceBorder).toMatch(
+      /border\.width: windowDropArea\.validTarget \|\| card\.desktopReorderSource \? 2\s*: card\.current \? 1 : 0/u,
+    );
+    expect(surfaceBorder).toMatch(
+      /border\.color: windowDropArea\.validTarget \? "#86aee8"\s*: card\.desktopReorderSource \? "#668baad6"\s*: "#66758b"/u,
+    );
     expect(surfaceBorder).toContain("z: 2");
     expect(projectedSurface.indexOf('color: "#171e2a"')).toBeLessThan(
       projectedSurface.indexOf("id: desktopSurfaceLoader"),
@@ -938,6 +945,79 @@ describe("overview effect package", () => {
     expect(cardLoadPolicy).toContain('spatialPresentationPhase !== "open"');
     expect(cardLoadPolicy).toContain("desktopReorderActive");
     expect(cardLoadPolicy).toContain("spatialWindowDragSource !== null");
+  });
+
+  it("keeps neutral workspace chrome and the current cue below windows and input", () => {
+    const numberGutter = desktopCard.slice(
+      desktopCard.indexOf("id: numberGutter"),
+      desktopCard.indexOf("id: desktopNameGutter"),
+    );
+    const desktopNameGutter = desktopCard.slice(
+      desktopCard.indexOf("id: desktopNameGutter"),
+      desktopCard.indexOf("id: viewport"),
+    );
+    const numberBackplate = numberGutter.slice(
+      numberGutter.indexOf("id: numberGutterBackplate"),
+      numberGutter.indexOf("Text {"),
+    );
+    const nameBackplate = desktopNameGutter.slice(
+      desktopNameGutter.indexOf("id: desktopNameGutterBackplate"),
+      desktopNameGutter.indexOf("Text {"),
+    );
+    const projectedSurface = desktopCard.slice(
+      desktopCard.indexOf("id: projectedOutputSurface"),
+      desktopCard.indexOf("id: columnRepeater"),
+    );
+    const projectedBorder = projectedSurface.slice(
+      projectedSurface.indexOf("id: projectedOutputSurfaceBorder"),
+    );
+    const emptyInput = desktopCard.slice(
+      desktopCard.indexOf("id: emptyContentInput"),
+      desktopCard.indexOf("id: windowRepeater"),
+    );
+    const windows = desktopCard.slice(
+      desktopCard.indexOf("id: windowPresentation"),
+      desktopCard.indexOf("id: thumbnailShell"),
+    );
+
+    for (const backplate of [numberBackplate, nameBackplate]) {
+      expect(backplate).toContain("anchors.fill: parent");
+      expect(backplate).toContain('color: "#dc111824"');
+      expect(backplate).toContain("border.width: 1");
+      expect(backplate).toContain('border.color: "#805f718a"');
+      expect(backplate).toContain("radius: 4");
+      expect(backplate).not.toMatch(
+        /card\.current|keyboardSelected|searchQuery|windowDropArea|desktopReorderSource|\b(?:TapHandler|DragHandler|Timer)\s*\{/u,
+      );
+    }
+    expect(numberGutter.indexOf("id: numberGutterBackplate")).toBeLessThan(
+      numberGutter.indexOf("Text {"),
+    );
+    expect(
+      desktopNameGutter.indexOf("id: desktopNameGutterBackplate"),
+    ).toBeLessThan(desktopNameGutter.indexOf("Text {"));
+
+    expect(projectedSurface).toContain('color: "#171e2a"');
+    expect(projectedSurface).toContain("z: -100");
+    expect(projectedSurface.indexOf('color: "#171e2a"')).toBeLessThan(
+      projectedSurface.indexOf("id: desktopSurfaceLoader"),
+    );
+    expect(projectedBorder).toMatch(
+      /border\.width: windowDropArea\.validTarget \|\| card\.desktopReorderSource \? 2\s*: card\.current \? 1 : 0/u,
+    );
+    expect(projectedBorder).toMatch(
+      /border\.color: windowDropArea\.validTarget \? "#86aee8"\s*: card\.desktopReorderSource \? "#668baad6"\s*: "#66758b"/u,
+    );
+    expect(projectedBorder).toContain("z: 2");
+    expect(emptyInput).toContain("z: 1");
+    expect(windows).toContain(
+      "z: frame && frame.floating ? 1000 + index : 100 + index",
+    );
+    expect(
+      `${numberBackplate}\n${nameBackplate}\n${projectedBorder}`,
+    ).not.toMatch(
+      /org\.kde\.kwin\.private|\bTimer\s*\{|setInterval|setTimeout|\.setValue\s*\(|KWin\.(?:SceneView|Workspace)\.[A-Za-z0-9_]+\s*=(?!=)/u,
+    );
   });
 
   it("activates current and non-current thumbnails through one guarded path", () => {
@@ -3916,7 +3996,7 @@ describe("overview effect package", () => {
     );
   });
 
-  it("navigates to non-current desktop gutters including an empty tail", () => {
+  it("navigates to every desktop gutter including the current row and empty tail", () => {
     const cardTargets = desktopCard.slice(
       desktopCard.indexOf("function collectNavigationTargets("),
       desktopCard.indexOf("function windowCanDrag("),
@@ -3933,9 +4013,8 @@ describe("overview effect package", () => {
     expect(desktopCard).toContain(
       "onCurrentChanged: card.navigationTargetsChanged()",
     );
-    expect(cardTargets).toContain(
-      "if (!current && searchQuery.trim().length === 0)",
-    );
+    expect(cardTargets).toContain("if (searchQuery.trim().length === 0)");
+    expect(cardTargets).not.toContain("if (!current &&");
     expect(cardTargets).toContain(
       "clippedCardNavigationRect(numberGutter, sceneItem, includeOffscreen)",
     );
@@ -4590,7 +4669,7 @@ describe("overview effect package", () => {
     expect(containmentGuard).toContain("return true;");
   });
 
-  it("selects only an exact live non-current desktop from its number overlay", () => {
+  it("activates exact current and non-current desktops from the workspace surface", () => {
     const numberGutter = desktopCard.slice(
       desktopCard.indexOf("id: numberGutter"),
       desktopCard.indexOf("id: viewport"),
@@ -4630,13 +4709,16 @@ describe("overview effect package", () => {
     expect(numberGutter).toContain("width: 36");
     expect(numberGutter).toContain("height: 36");
     expect(numberGutter).toContain("z: 9500");
+    expect(numberGutter).toContain("id: numberGutterTapHandler");
     expect(numberGutter).toContain("acceptedButtons: Qt.LeftButton");
     expect(numberGutter).toContain(
-      "acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad",
+      "acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad | PointerDevice.TouchScreen",
     );
-    expect(numberGutter).toContain(
-      "enabled: !card.current && card.desktop && card.screen",
+    expect(numberGutter).toMatch(
+      /enabled: card\.desktop && card\.screen\s*&& card\.searchQuery\.trim\(\)\.length === 0/u,
     );
+    expect(numberGutter).toContain("gesturePolicy: TapHandler.DragThreshold");
+    expect(numberGutter).not.toContain("enabled: !card.current");
     expect(numberGutter).toContain(
       "card.desktopTapped(card.desktop, card.desktopId, card.screen)",
     );
@@ -4656,6 +4738,7 @@ describe("overview effect package", () => {
       "const liveDesktop = liveDesktopFor(candidate, expectedDesktopId);",
     );
     expect(selector).toContain("desktopContextIsExact(");
+    expect(selector).toContain("const activeDesktop = currentDesktop;");
     expect(selector).toContain("requestDesktopSelection(");
     expect(scene.match(/requestDesktopSelection\(/gu)).toHaveLength(5);
     expect(
@@ -4723,8 +4806,28 @@ describe("overview effect package", () => {
     expect(desktopRequest).toContain(
       "return selectedDesktop === liveDesktop && String(selectedDesktop.id) === expectedDesktopId;",
     );
-    expect(selector.match(/effect\.deactivate\(\)/gu)).toHaveLength(1);
+    expect(selector).toMatch(
+      /if \(activeDesktop === liveDesktop && String\(activeDesktop\.id\) === expectedDesktopId\) \{\s*effect\.deactivate\(\);\s*return true;/u,
+    );
+    expect(selector.match(/effect\.deactivate\(\)/gu)).toHaveLength(2);
     expect(desktopRequest).not.toContain("deactivate()");
+
+    const currentDesktopBranchStart = selector.indexOf(
+      "if (activeDesktop === liveDesktop",
+    );
+    const nonCurrentRequest = selector.indexOf("if (!requestDesktopSelection(");
+    const currentDesktopBranch = selector.slice(
+      currentDesktopBranchStart,
+      nonCurrentRequest,
+    );
+    expect(currentDesktopBranchStart).toBeGreaterThan(
+      selector.indexOf("desktopContextIsExact("),
+    );
+    expect(nonCurrentRequest).toBeGreaterThan(currentDesktopBranchStart);
+    expect(currentDesktopBranch).toContain("effect.deactivate();");
+    expect(currentDesktopBranch).not.toMatch(
+      /requestDesktopSelection|KWin\.(?:SceneView|Workspace)\.[A-Za-z0-9_]+\s*=(?!=)|\.setValue\s*\(/u,
+    );
 
     const preWriteGuard = desktopRequest.indexOf("desktopContextIsExact(");
     const sceneWrite = desktopRequest.indexOf(
@@ -4739,7 +4842,7 @@ describe("overview effect package", () => {
     const confirmation = desktopRequest.indexOf(
       "return selectedDesktop === liveDesktop",
     );
-    const deactivate = selector.indexOf("effect.deactivate()");
+    const deactivate = selector.lastIndexOf("effect.deactivate()");
     expect(preWriteGuard).toBeGreaterThan(0);
     expect(sceneWrite).toBeGreaterThan(0);
     expect(sceneWrite).toBeGreaterThan(preWriteGuard);
@@ -4747,7 +4850,7 @@ describe("overview effect package", () => {
     expect(postWriteRead).toBeGreaterThan(fallbackWrite);
     expect(confirmation).toBeGreaterThan(postWriteRead);
     expect(selector).toMatch(
-      /if \(!requestDesktopSelection\([\s\S]*?\)\) \{\s*return;\s*\}\s*effect\.deactivate\(\);/u,
+      /if \(!requestDesktopSelection\([\s\S]*?\)\) \{\s*return false;\s*\}\s*effect\.deactivate\(\);\s*return true;/u,
     );
     expect(deactivate).toBeGreaterThan(
       selector.indexOf("requestDesktopSelection("),
@@ -4761,7 +4864,7 @@ describe("overview effect package", () => {
     );
   });
 
-  it("selects a non-current desktop from empty card content", () => {
+  it("activates current and non-current desktops from empty card content", () => {
     const viewportStart = desktopCard.indexOf("id: viewport");
     const backgroundStart = desktopCard.indexOf("id: emptyContentInput");
     const windowRepeaterStart = desktopCard.indexOf("id: windowRepeater");
@@ -4784,17 +4887,20 @@ describe("overview effect package", () => {
     expect(background).toContain("anchors.fill: parent");
     expect(background).toContain("z: 1");
     expect(background.match(/\bTapHandler\s*\{/gu)).toHaveLength(1);
+    expect(background).toContain("id: emptyContentTapHandler");
     expect(windowPresentation).toContain(
       "z: frame && frame.floating ? 1000 + index : 100 + index",
     );
 
     expect(background).toContain("acceptedButtons: Qt.LeftButton");
     expect(background).toContain(
-      "acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad",
+      "acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad | PointerDevice.TouchScreen",
     );
     expect(background).toMatch(
-      /enabled: !card\.current && card\.desktop && card\.screen\s*&& card\.searchQuery\.trim\(\)\.length === 0/u,
+      /enabled: card\.desktop && card\.screen\s*&& card\.searchQuery\.trim\(\)\.length === 0/u,
     );
+    expect(background).toContain("gesturePolicy: TapHandler.DragThreshold");
+    expect(background).not.toContain("enabled: !card.current");
     expect(background).toContain(
       "if (!card.viewportPointHitsWindow(point.position))",
     );

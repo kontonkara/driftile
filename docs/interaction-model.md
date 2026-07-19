@@ -175,7 +175,9 @@ state may retain an off-screen card without creating its Desktop surface.
 Panels, docks, and notifications are excluded from Desktop surface selection.
 A desktop-shell restart clears any stale visible surface to the fallback and
 reacquires the replacement Desktop window without polling or activating an
-off-screen surface. Normal wallpaper damage continues to update live.
+off-screen surface. Normal wallpaper damage continues to update live. Neutral
+workspace-label backplates remain readable over the wallpaper, and a subtle
+output-area outline identifies the current row without changing its geometry.
 
 Vertical input moves between workspace rows, while horizontal input pans or
 selects within a row. Precise wheel or touchpad input drives the camera
@@ -183,10 +185,16 @@ directly; discrete input selects workspaces or columns. Empty-space dragging
 pans the plane, and a right-button drag pans the row under the pointer.
 
 Keyboard selection starts from the active actionable window when possible.
-Arrow keys move spatially, `Tab` cycles visible targets, and `Enter`, `Return`,
-or `Space` activates the selection. Typing filters windows by title,
-application, desktop, output, or state. `F1` opens the compact keyboard and
-search reference.
+Every workspace marker, including the current one, is also actionable. Arrow
+keys move spatially, `Tab` cycles visible targets, and `Enter`, `Return`, or
+`Space` activates the selection. Activating the current marker closes Overview
+without a desktop write. Typing filters windows by title, application, desktop,
+output, or state. `F1` opens the compact keyboard and search reference.
+
+A short mouse, touchpad, or touchscreen tap on empty row space or its workspace
+marker selects an exact non-current workspace and closes Overview on the
+current one. Movement beyond the tap threshold remains a pan or drag, and
+workspace-surface taps are disabled during search.
 
 A visible window can be dragged to another workspace or output, into an exact
 stack position, or into a separate-column gutter. Dropping an eligible tiled
