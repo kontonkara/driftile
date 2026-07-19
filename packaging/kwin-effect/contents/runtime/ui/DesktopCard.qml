@@ -729,11 +729,13 @@ Item {
                             } else if (transition === PointerDevice.UngrabExclusive) {
                                 if (point.state === EventPoint.Released) {
                                     const source = windowPresentation;
+                                    const globalPosition = card.crossOutputWindowDropGlobalPosition(
+                                        point.scenePosition);
                                     const action = thumbnailShell.Drag.drop();
-                                    thumbnailShell.Drag.active = false;
                                     if (action !== Qt.MoveAction) {
-                                        card.requestCrossOutputWindowDrop(source, point);
+                                        card.requestCrossOutputWindowDrop(source, globalPosition);
                                     }
+                                    thumbnailShell.Drag.active = false;
                                     card.finishWindowSpatialDrag(source);
                                 } else {
                                     thumbnailShell.Drag.cancel();
@@ -1301,24 +1303,28 @@ Item {
         }
     }
 
-    function requestCrossOutputWindowDrop(source, point) {
-        if (!source || !point || !screen || !Number.isFinite(point.scenePosition.x)
-                || !Number.isFinite(point.scenePosition.y)) {
+    function crossOutputWindowDropGlobalPosition(scenePosition) {
+        if (!scenePosition || !screen || !Number.isFinite(scenePosition.x)
+                || !Number.isFinite(scenePosition.y)) {
+            return null;
+        }
+        try {
+            const globalPosition = screen.mapToGlobal(scenePosition);
+            return globalPosition && Number.isFinite(globalPosition.x) && Number.isFinite(globalPosition.y)
+                ? globalPosition : null;
+        } catch (error) {
+            return null;
+        }
+    }
+
+    function requestCrossOutputWindowDrop(source, globalPosition) {
+        if (!source || !globalPosition || !Number.isFinite(globalPosition.x)
+                || !Number.isFinite(globalPosition.y)) {
             return;
         }
 
         const effect = KWin.SceneView.effect;
         if (!effect || typeof effect.checkItemDroppedOutOfScreen !== "function") {
-            return;
-        }
-
-        let globalPosition;
-        try {
-            globalPosition = screen.mapToGlobal(point.scenePosition);
-        } catch (error) {
-            return;
-        }
-        if (!globalPosition || !Number.isFinite(globalPosition.x) || !Number.isFinite(globalPosition.y)) {
             return;
         }
 

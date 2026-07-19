@@ -97,7 +97,7 @@ describe("spatial overview window drag lifecycle", () => {
     expect(drag.match(/card\.moveWindowSpatialDrag\(/gu)).toHaveLength(1);
     expect(drag.match(/card\.finishWindowSpatialDrag\(/gu)).toHaveLength(3);
     expect(drag).toMatch(
-      /const action = [A-Za-z]+Shell\.Drag\.drop\(\);[\s\S]*?[A-Za-z]+Shell\.Drag\.active = false;[\s\S]*?if \(action !== Qt\.MoveAction\) \{\s*card\.requestCrossOutputWindowDrop\(source, point\);\s*\}[\s\S]*?card\.finishWindowSpatialDrag\(source\);/u,
+      /const globalPosition = card\.crossOutputWindowDropGlobalPosition\(\s*point\.scenePosition\);[\s\S]*?const action = [A-Za-z]+Shell\.Drag\.drop\(\);[\s\S]*?if \(action !== Qt\.MoveAction\) \{\s*card\.requestCrossOutputWindowDrop\(source, globalPosition\);\s*\}[\s\S]*?[A-Za-z]+Shell\.Drag\.active = false;[\s\S]*?card\.finishWindowSpatialDrag\(source\);/u,
     );
     expect(drag).toMatch(
       /else \{\s*[A-Za-z]+Shell\.Drag\.cancel\(\);\s*[A-Za-z]+Shell\.Drag\.active = false;\s*card\.finishWindowSpatialDrag\(windowPresentation\);/u,

@@ -1190,7 +1190,7 @@ describe("overview effect package", () => {
       desktopCard.indexOf("id: windowDropArea"),
     );
     const transport = desktopCard.slice(
-      desktopCard.indexOf("function requestCrossOutputWindowDrop("),
+      desktopCard.indexOf("function crossOutputWindowDropGlobalPosition("),
       desktopCard.indexOf("function windowDropIsValid("),
     );
     const effectConnections = scene.slice(
@@ -1220,10 +1220,16 @@ describe("overview effect package", () => {
     expect(sourceHandlers.match(/action !== Qt\.MoveAction/gu)).toHaveLength(1);
     expect(
       sourceHandlers.match(
-        /card\.requestCrossOutputWindowDrop\(source, point\)/gu,
+        /card\.requestCrossOutputWindowDrop\(source, globalPosition\)/gu,
       ),
     ).toHaveLength(1);
-    expect(transport).toContain("screen.mapToGlobal(point.scenePosition)");
+    expect(transport).toContain("screen.mapToGlobal(scenePosition)");
+    expect(
+      sourceHandlers.indexOf("crossOutputWindowDropGlobalPosition("),
+    ).toBeLessThan(sourceHandlers.indexOf(".Drag.drop()"));
+    expect(
+      sourceHandlers.indexOf("requestCrossOutputWindowDrop("),
+    ).toBeLessThan(sourceHandlers.indexOf(".Drag.active = false"));
     expect(transport).toContain(
       'typeof effect.checkItemDroppedOutOfScreen !== "function"',
     );
