@@ -43078,6 +43078,505 @@ describe("RuntimeController", () => {
     },
   );
 
+  it("settles an exact cross-output drop after an asynchronous output signal", () => {
+    const setup = createExternalPointerDropRuntimeFixture();
+    const publicationCount = setup.published.length;
+
+    setup.fixture.setOutputTransferBehavior((_window, _output, commit) => {
+      setup.scheduler.schedule(commit);
+    });
+
+    expect(
+      setup.controller.executeSpatialDrop(
+        externalSpatialDropCommand(setup, {
+          kind: "stack-insertion",
+          position: "after",
+          targetWindowId: "target",
+        }),
+      ),
+    ).toBe(true);
+    expect(setup.dragged.window.output).toBe(setup.sourceOutput);
+    expect(
+      testLayoutColumns(
+        setup.controller,
+        setup.sourceOutput,
+        setup.sourceDesktop,
+      ),
+    ).toEqual([{ id: "column:dragged", windowIds: ["dragged"] }]);
+    expect(
+      testLayoutColumns(
+        setup.controller,
+        setup.targetOutput,
+        setup.targetDesktop,
+      ),
+    ).toEqual([{ id: "column:target", windowIds: ["target"] }]);
+    expect(setup.published).toHaveLength(publicationCount);
+    expect(setup.scheduler.pendingCount).toBe(2);
+
+    setup.scheduler.flush();
+
+    expect(setup.dragged.window.output).toBe(setup.targetOutput);
+    expect(
+      testLayoutColumns(
+        setup.controller,
+        setup.sourceOutput,
+        setup.sourceDesktop,
+      ),
+    ).toEqual([]);
+    expect(
+      testLayoutColumns(
+        setup.controller,
+        setup.targetOutput,
+        setup.targetDesktop,
+      ),
+    ).toEqual([{ id: "column:target", windowIds: ["target", "dragged"] }]);
+    expect(
+      (
+        setup.controller as unknown as {
+          readonly pendingSpatialOutputTransfer: unknown;
+          readonly windowTransferOperation: unknown;
+        }
+      ).pendingSpatialOutputTransfer,
+    ).toBeNull();
+    expect(
+      (
+        setup.controller as unknown as {
+          readonly windowTransferOperation: unknown;
+        }
+      ).windowTransferOperation,
+    ).toBeNull();
+    expect(setup.published).toHaveLength(publicationCount + 1);
+    expect(setup.scheduler.pendingCount).toBe(1);
+    setup.scheduler.flush();
+    expect(setup.scheduler.pendingCount).toBe(0);
+    expect(setup.published).toHaveLength(publicationCount + 1);
+
+    const withoutSignal = createExternalPointerDropRuntimeFixture();
+    const withoutSignalPublicationCount = withoutSignal.published.length;
+    withoutSignal.fixture.setOutputTransferBehavior((window, output) => {
+      withoutSignal.scheduler.schedule(() => {
+        Object.defineProperty(window, "output", {
+          configurable: true,
+          enumerable: true,
+          value: output,
+        });
+      });
+    });
+
+    expect(
+      withoutSignal.controller.executeSpatialDrop(
+        externalSpatialDropCommand(withoutSignal, {
+          kind: "stack-insertion",
+          position: "after",
+          targetWindowId: "target",
+        }),
+      ),
+    ).toBe(true);
+    expect(withoutSignal.scheduler.pendingCount).toBe(2);
+    withoutSignal.scheduler.flush();
+    expect(withoutSignal.dragged.window.output).toBe(
+      withoutSignal.targetOutput,
+    );
+    expect(withoutSignal.published).toHaveLength(withoutSignalPublicationCount);
+    withoutSignal.scheduler.flush();
+    expect(
+      (
+        withoutSignal.controller as unknown as {
+          readonly pendingSpatialOutputTransfer: unknown;
+        }
+      ).pendingSpatialOutputTransfer,
+    ).toBeNull();
+    expect(
+      testLayoutColumns(
+        withoutSignal.controller,
+        withoutSignal.targetOutput,
+        withoutSignal.targetDesktop,
+      ),
+    ).toEqual([{ id: "column:target", windowIds: ["target", "dragged"] }]);
+    expect(withoutSignal.published).toHaveLength(
+      withoutSignalPublicationCount + 1,
+    );
+
+    const timedOut = createExternalPointerDropRuntimeFixture();
+    const timedOutPublicationCount = timedOut.published.length;
+    timedOut.fixture.setOutputTransferBehavior(() => undefined);
+
+    expect(
+      timedOut.controller.executeSpatialDrop(
+        externalSpatialDropCommand(timedOut, {
+          kind: "stack-insertion",
+          position: "after",
+          targetWindowId: "target",
+        }),
+      ),
+    ).toBe(true);
+
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      timedOut.scheduler.flush();
+    }
+
+    expect(
+      (
+        timedOut.controller as unknown as {
+          readonly pendingSpatialOutputTransfer: {
+            readonly phase: string;
+          } | null;
+        }
+      ).pendingSpatialOutputTransfer?.phase,
+    ).toBe("compensating");
+
+    flushManualScheduler(timedOut.scheduler);
+
+    expect(timedOut.dragged.window.output).toBe(timedOut.sourceOutput);
+    expect(
+      testLayoutColumns(
+        timedOut.controller,
+        timedOut.sourceOutput,
+        timedOut.sourceDesktop,
+      ),
+    ).toEqual([{ id: "column:dragged", windowIds: ["dragged"] }]);
+    expect(
+      testLayoutColumns(
+        timedOut.controller,
+        timedOut.targetOutput,
+        timedOut.targetDesktop,
+      ),
+    ).toEqual([{ id: "column:target", windowIds: ["target"] }]);
+    expect(
+      (
+        timedOut.controller as unknown as {
+          readonly pendingSpatialOutputTransfer: unknown;
+          readonly windowTransferOperation: unknown;
+        }
+      ).pendingSpatialOutputTransfer,
+    ).toBeNull();
+    expect(
+      (
+        timedOut.controller as unknown as {
+          readonly windowTransferOperation: unknown;
+        }
+      ).windowTransferOperation,
+    ).toBeNull();
+    expect(timedOut.published).toHaveLength(timedOutPublicationCount);
+
+    const invokeCaptured = (
+      callback: (() => void) | null,
+      failure: string,
+    ): void => {
+      if (!callback) {
+        throw new Error(failure);
+      }
+      callback();
+    };
+    const delayedFrame = createExternalPointerDropRuntimeFixture();
+    const delayedFramePublicationCount = delayedFrame.published.length;
+    const delayedFrameBefore = { ...delayedFrame.dragged.window.frameGeometry };
+    let delayedFrameCommit: (() => void) | null = null;
+    delayedFrame.dragged.setWriteBehavior((_frame, commit) => {
+      delayedFrameCommit = commit;
+    });
+
+    expect(
+      delayedFrame.controller.executeSpatialDrop(
+        externalSpatialDropCommand(delayedFrame, {
+          kind: "stack-insertion",
+          position: "after",
+          targetWindowId: "target",
+        }),
+      ),
+    ).toBe(true);
+    flushManualScheduler(delayedFrame.scheduler);
+    expect(delayedFrame.published).toHaveLength(delayedFramePublicationCount);
+    expect(
+      (
+        delayedFrame.controller as unknown as {
+          readonly toggleGeometryTransitions: ReadonlyMap<WindowId, unknown>;
+        }
+      ).toggleGeometryTransitions.has(windowId("dragged")),
+    ).toBe(true);
+
+    invokeCaptured(
+      delayedFrameCommit,
+      "delayed output-transfer geometry callback was not captured",
+    );
+    delayedFrame.dragged.frameGeometryChanged.emit(delayedFrameBefore);
+    expect(
+      (
+        delayedFrame.controller as unknown as {
+          readonly toggleGeometryTransitions: ReadonlyMap<WindowId, unknown>;
+        }
+      ).toggleGeometryTransitions.has(windowId("dragged")),
+    ).toBe(true);
+    flushManualScheduler(delayedFrame.scheduler);
+    expect(delayedFrame.published).toHaveLength(
+      delayedFramePublicationCount + 1,
+    );
+    expect(
+      (
+        delayedFrame.controller as unknown as {
+          readonly toggleGeometryTransitions: ReadonlyMap<WindowId, unknown>;
+        }
+      ).toggleGeometryTransitions.has(windowId("dragged")),
+    ).toBe(false);
+
+    const lateForward = createExternalPointerDropRuntimeFixture();
+    const lateForwardPublicationCount = lateForward.published.length;
+    let forwardCommit: (() => void) | null = null;
+    let reverseCommit: (() => void) | null = null;
+    lateForward.fixture.setOutputTransferBehavior((_window, output, commit) => {
+      if (output === lateForward.targetOutput) {
+        forwardCommit = commit;
+      } else {
+        reverseCommit = commit;
+      }
+    });
+    expect(
+      lateForward.controller.executeSpatialDrop(
+        externalSpatialDropCommand(lateForward, {
+          kind: "stack-insertion",
+          position: "after",
+          targetWindowId: "target",
+        }),
+      ),
+    ).toBe(true);
+
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      lateForward.scheduler.flush();
+    }
+
+    invokeCaptured(
+      forwardCommit,
+      "late forward output callback was not captured",
+    );
+    expect(lateForward.dragged.window.output).toBe(lateForward.targetOutput);
+    expect(
+      (
+        lateForward.controller as unknown as {
+          readonly pendingSpatialOutputTransfer: unknown;
+        }
+      ).pendingSpatialOutputTransfer,
+    ).not.toBeNull();
+    invokeCaptured(reverseCommit, "late reverse callback was not captured");
+    expect(lateForward.dragged.window.output).toBe(lateForward.sourceOutput);
+    expect(
+      (
+        lateForward.controller as unknown as {
+          readonly pendingSpatialOutputTransfer: unknown;
+        }
+      ).pendingSpatialOutputTransfer,
+    ).toBeNull();
+    expect(lateForward.published).toHaveLength(lateForwardPublicationCount);
+
+    const rejectedBeforeTarget = createExternalPointerDropRuntimeFixture();
+    const rejectedBeforeTargetPublicationCount =
+      rejectedBeforeTarget.published.length;
+    let rejectedForwardCommit: (() => void) | null = null;
+    rejectedBeforeTarget.fixture.setOutputTransferBehavior(
+      (_window, output, commit) => {
+        if (output === rejectedBeforeTarget.targetOutput) {
+          rejectedForwardCommit = commit;
+          throw new Error("forward output request rejected before settlement");
+        }
+
+        commit();
+      },
+    );
+    expect(
+      rejectedBeforeTarget.controller.executeSpatialDrop(
+        externalSpatialDropCommand(rejectedBeforeTarget, {
+          kind: "stack-insertion",
+          position: "after",
+          targetWindowId: "target",
+        }),
+      ),
+    ).toBe(false);
+    expect(rejectedBeforeTarget.dragged.window.output).toBe(
+      rejectedBeforeTarget.sourceOutput,
+    );
+    expect(rejectedBeforeTarget.fixture.outputTransferCount).toBe(2);
+    expect(
+      (
+        rejectedBeforeTarget.controller as unknown as {
+          readonly pendingSpatialOutputTransfer: unknown;
+        }
+      ).pendingSpatialOutputTransfer,
+    ).not.toBeNull();
+
+    invokeCaptured(
+      rejectedForwardCommit,
+      "rejected forward output callback was not captured",
+    );
+    expect(rejectedBeforeTarget.dragged.window.output).toBe(
+      rejectedBeforeTarget.sourceOutput,
+    );
+    expect(rejectedBeforeTarget.fixture.outputTransferCount).toBe(3);
+    expect(
+      (
+        rejectedBeforeTarget.controller as unknown as {
+          readonly pendingSpatialOutputTransfer: unknown;
+        }
+      ).pendingSpatialOutputTransfer,
+    ).toBeNull();
+    expect(rejectedBeforeTarget.published).toHaveLength(
+      rejectedBeforeTargetPublicationCount,
+    );
+
+    const boundedCompensation = createExternalPointerDropRuntimeFixture();
+    boundedCompensation.fixture.setOutputTransferBehavior(() => undefined);
+    expect(
+      boundedCompensation.controller.executeSpatialDrop(
+        externalSpatialDropCommand(boundedCompensation, {
+          kind: "stack-insertion",
+          position: "after",
+          targetWindowId: "target",
+        }),
+      ),
+    ).toBe(true);
+
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      boundedCompensation.scheduler.flush();
+    }
+
+    const boundedCompensationState =
+      boundedCompensation.controller as unknown as {
+        readonly pendingSpatialOutputTransfer: {
+          readonly completedProbes: number;
+          readonly phase: string;
+        } | null;
+      };
+    for (
+      let attempt = 0;
+      (boundedCompensationState.pendingSpatialOutputTransfer?.completedProbes ??
+        5) < 5 && attempt < 20;
+      attempt += 1
+    ) {
+      boundedCompensation.scheduler.flush();
+    }
+    expect(boundedCompensationState.pendingSpatialOutputTransfer).toMatchObject(
+      {
+        completedProbes: 5,
+        phase: "compensating",
+      },
+    );
+
+    Object.defineProperty(boundedCompensation.dragged.window, "output", {
+      configurable: true,
+      enumerable: true,
+      value: boundedCompensation.targetOutput,
+    });
+    boundedCompensation.scheduler.flush();
+    expect(
+      boundedCompensationState.pendingSpatialOutputTransfer?.completedProbes,
+    ).toBe(6);
+
+    for (let signal = 0; signal < 4; signal += 1) {
+      boundedCompensation.dragged.outputChanged.emit(
+        boundedCompensation.sourceOutput,
+      );
+    }
+    expect(
+      boundedCompensationState.pendingSpatialOutputTransfer?.completedProbes,
+    ).toBe(6);
+
+    for (let attempt = 6; attempt < 20; attempt += 1) {
+      boundedCompensation.scheduler.flush();
+    }
+    expect(boundedCompensationState.pendingSpatialOutputTransfer).toBeNull();
+
+    const expectTransferLifecycleCleared = (
+      controller: RuntimeController,
+    ): void => {
+      expect(controller as unknown).toMatchObject({
+        overviewSpatialDropActivation: null,
+        pendingSpatialOutputTransfer: null,
+        windowTransferOperation: null,
+      });
+    };
+    const removedDuringTransfer = createExternalPointerDropRuntimeFixture();
+    removedDuringTransfer.fixture.setOutputTransferBehavior(() => undefined);
+    expect(
+      removedDuringTransfer.controller.executeSpatialDrop(
+        externalSpatialDropCommand(removedDuringTransfer, {
+          kind: "stack-insertion",
+          position: "after",
+          targetWindowId: "target",
+        }),
+      ),
+    ).toBe(true);
+    removedDuringTransfer.fixture.windowRemoved.emit(
+      removedDuringTransfer.dragged.window,
+    );
+    expect(removedDuringTransfer.fixture.outputTransferCount).toBe(1);
+    expectTransferLifecycleCleared(removedDuringTransfer.controller);
+
+    const topologyAbort = createExternalPointerDropRuntimeFixture();
+    topologyAbort.fixture.setOutputTransferBehavior(() => undefined);
+    expect(
+      topologyAbort.controller.executeSpatialDrop(
+        externalSpatialDropCommand(topologyAbort, {
+          kind: "stack-insertion",
+          position: "after",
+          targetWindowId: "target",
+        }),
+      ),
+    ).toBe(true);
+    topologyAbort.fixture.setScreens([
+      { ...topologyAbort.sourceOutput },
+      topologyAbort.targetOutput,
+    ]);
+    topologyAbort.fixture.screensChanged.emit();
+    expect(topologyAbort.fixture.outputTransferCount).toBe(1);
+    expectTransferLifecycleCleared(topologyAbort.controller);
+
+    const asyncReverse = createExternalPointerDropRuntimeFixture();
+    const asyncReversePublicationCount = asyncReverse.published.length;
+    let asyncForwardCommit: (() => void) | null = null;
+    let asyncReverseCommit: (() => void) | null = null;
+    asyncReverse.fixture.setOutputTransferBehavior(
+      (_window, output, commit) => {
+        if (output === asyncReverse.targetOutput) {
+          asyncForwardCommit = commit;
+        } else {
+          asyncReverseCommit = commit;
+        }
+      },
+    );
+    expect(
+      asyncReverse.controller.executeSpatialDrop(
+        externalSpatialDropCommand(asyncReverse, {
+          kind: "stack-insertion",
+          position: "after",
+          targetWindowId: "target",
+        }),
+      ),
+    ).toBe(true);
+    const asyncReverseState = asyncReverse.controller as unknown as {
+      readonly pendingSpatialOutputTransfer: unknown;
+      readonly windowTransferOperation: {
+        memberStateInvalidated?: boolean;
+      } | null;
+    };
+    if (!asyncReverseState.windowTransferOperation) {
+      throw new Error("async rollback fixture did not retain its operation");
+    }
+    asyncReverseState.windowTransferOperation.memberStateInvalidated = true;
+    invokeCaptured(
+      asyncForwardCommit,
+      "async forward callback was not captured",
+    );
+    expect(asyncReverse.dragged.window.output).toBe(asyncReverse.targetOutput);
+    expect(asyncReverseState.pendingSpatialOutputTransfer).not.toBeNull();
+    expect(asyncReverse.published).toHaveLength(asyncReversePublicationCount);
+
+    invokeCaptured(
+      asyncReverseCommit,
+      "async reverse callback was not captured",
+    );
+    expect(asyncReverse.dragged.window.output).toBe(asyncReverse.sourceOutput);
+    expect(asyncReverseState.pendingSpatialOutputTransfer).toBeNull();
+    expect(asyncReverse.published).toHaveLength(asyncReversePublicationCount);
+  });
+
   it("preserves the target full-width restore when merging an exact stack", () => {
     const setup = createExternalPointerDropRuntimeFixture();
     const sourceKey = [

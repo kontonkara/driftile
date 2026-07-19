@@ -574,11 +574,13 @@ describe("WindowObserver", () => {
     const moveResizedChanged = source.moveResizedChanged as Signal<[]>;
     const noBorderChanged = source.noBorderChanged as Signal<[]>;
     const changed: string[] = [];
+    const frameChanges: string[] = [];
     const policyChanged: string[] = [];
     const stateChanged: string[] = [];
     const observer = new WindowObserver(createWorkspace([source]), {
       changed: (windowId) => changed.push(windowId),
       decorationPolicyChanged: (windowId) => policyChanged.push(windowId),
+      frameGeometryChanged: (windowId) => frameChanges.push(windowId),
       stateChanged: (windowId) => stateChanged.push(windowId),
     });
 
@@ -619,6 +621,7 @@ describe("WindowObserver", () => {
     finished.emit();
 
     expect(changed).toEqual(["window-1", "window-1"]);
+    expect(frameChanges).toEqual(["window-1", "window-1", "window-1"]);
     expect(policyChanged).toEqual(["window-1"]);
     expect(stateChanged).toEqual(Array.from({ length: 5 }, () => "window-1"));
 

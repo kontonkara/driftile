@@ -276,6 +276,7 @@ const MAX_FULLSCREEN_REQUEST_PROBES = 20;
 const MAX_LAYOUT_HYDRATION_PROBES = 1_000;
 const MAX_PENDING_DESKTOP_FOCUS_INTENTS = 4;
 const MAX_STACK_EDIT_FOCUS_PROBES = 20;
+const MAX_SPATIAL_OUTPUT_TRANSFER_PROBES = 20;
 const MAX_TOPOLOGY_SAMPLE_ATTEMPTS = 20;
 const MAX_TRANSIENT_RESUME_PROBES = 20;
 const MINIMUM_COLUMN_WIDTH = 64;
@@ -586,6 +587,53 @@ type ColumnTransferPreview = NonNullable<
 type ContextTransferPreview =
   | { readonly kind: "column"; readonly value: ColumnTransferPreview }
   | { readonly kind: "window"; readonly value: WindowTransferPreview };
+
+type OutputTransferResult = "applied" | "pending" | "rejected";
+
+interface OverviewSpatialDropActivation {
+  settled: boolean;
+  readonly settle: (applied: boolean) => void;
+}
+
+interface OutputTransferTransaction {
+  readonly mechanismFrames: Map<WindowId, Rect>;
+  readonly originalActiveWindow: KWinWindow | null;
+  readonly sourceFrames: ReadonlyMap<WindowId, Rect>;
+  readonly sourceWasDirty: boolean;
+  readonly targetWasDirty: boolean;
+  readonly topologyRevision: number;
+}
+
+interface OutputTransferCompletion {
+  readonly command: OutputTransferCommand;
+  readonly operation: WindowTransferOperation;
+  readonly preview: ContextTransferPreview;
+  readonly sourceBefore: LayoutContextSnapshot;
+  readonly targetBefore: LayoutContextSnapshot;
+  readonly wholeColumn: boolean;
+}
+
+interface PendingSpatialOutputTransfer {
+  assignmentRequestInProgress: boolean;
+  completedProbes: number;
+  readonly completion: OutputTransferCompletion;
+  continuing: boolean;
+  failure: string | null;
+  forwardRequestIssued: boolean;
+  readonly handleOutputChanged: (oldOutput?: KWinOutput | null) => void;
+  readonly activation: OverviewSpatialDropActivation;
+  outputSignalConnected: boolean;
+  phase: "compensating" | "forward";
+  probePending: boolean;
+  reverseRequestedAfterTarget: boolean;
+  runtimeStopping: boolean;
+  readonly sourceLayout: ReturnType<typeof solveStripGeometry>;
+  sourceStableSamples: number;
+  settled: boolean;
+  targetObserved: boolean;
+  readonly targetLayout: ReturnType<typeof solveStripGeometry>;
+  readonly transaction: OutputTransferTransaction;
+}
 
 interface ToggleGeometryTransition {
   readonly contextKey: string;
@@ -1233,6 +1281,8 @@ export class RuntimeController {
   private pendingDesktopFocus: PendingDesktopFocus | null = null;
   private stackEditOperation: object | null = null;
   private windowTransferOperation: WindowTransferOperation | null = null;
+  private pendingSpatialOutputTransfer: PendingSpatialOutputTransfer | null =
+    null;
   private stackedNativeStateOperation: StackedNativeStateOperation | null =
     null;
   private readonly pendingExternalFullscreenExtractions = new Map<
@@ -1330,7 +1380,8 @@ export class RuntimeController {
     PendingManualFloatingSizeChange
   >();
   private readonly observer: WindowObserver;
-  private overviewSpatialDropActivation: object | null = null;
+  private overviewSpatialDropActivation: OverviewSpatialDropActivation | null =
+    null;
   private readonly onLayoutStateChanged:
     ((canonicalState: string) => void) | undefined;
   private readonly pendingAdmissionContexts = new Set<string>();
@@ -1589,6 +1640,7 @@ export class RuntimeController {
       added: this.handleWindowAdded,
       changed: this.handleWindowChanged,
       decorationPolicyChanged: this.handleWindowDecorationPolicyChanged,
+      frameGeometryChanged: this.handleWindowFrameGeometryChanged,
       fullScreenChanged: this.handleFullScreenChanged,
       interactiveMoveFinished: this.handleInteractiveMoveFinished,
       interactiveMoveStarted: this.handleInteractiveMoveStarted,
@@ -3330,7 +3382,136 @@ export class RuntimeController {
       return false;
     }
 
-    const activation = {};
+    const activation: OverviewSpatialDropActivation = {
+      settled: false,
+      settle: (settledApplied) => {
+        if (activation.settled) {
+          return;
+        }
+
+        activation.settled = true;
+
+        if (settledApplied) {
+          if (
+            targetOutput.name !== output.name &&
+            originalDesktop.id !== sourceDesktop.id
+          ) {
+            this.recordDesktopSelection(originalDesktop, sourceDesktop, output);
+          }
+          if (
+            targetOutput.name !== output.name &&
+            originalTargetDesktop.id !== targetDesktop.id
+          ) {
+            this.recordDesktopSelection(
+              originalTargetDesktop,
+              targetDesktop,
+              targetOutput,
+            );
+          }
+          if (
+            targetOutput.name === output.name &&
+            command.target.desktopId === command.source.desktopId &&
+            originalDesktop.id !== sourceDesktop.id
+          ) {
+            this.recordDesktopSelection(originalDesktop, sourceDesktop, output);
+          }
+        } else {
+          try {
+            this.layout.activateWindow(previousSourceWindowId);
+          } catch {
+            // Desktop and focus restoration remain independent of layout recovery.
+          }
+
+          let sourceOutputPresent: boolean;
+          let targetOutputPresent: boolean;
+          try {
+            sourceOutputPresent = this.workspace.screens.includes(output);
+            targetOutputPresent =
+              targetOutput === output
+                ? sourceOutputPresent
+                : this.workspace.screens.includes(targetOutput);
+          } catch {
+            sourceOutputPresent = false;
+            targetOutputPresent = false;
+          }
+
+          let targetDesktopRestored =
+            targetOutput.name === output.name && sourceOutputPresent;
+          if (targetOutput.name !== output.name) {
+            try {
+              if (
+                targetOutputPresent &&
+                originalTargetDesktop.id !== targetDesktop.id &&
+                currentDesktopForOutput(this.workspace, targetOutput)?.id ===
+                  targetDesktop.id
+              ) {
+                this.switchDesktop(originalTargetDesktop, targetOutput);
+              }
+            } catch {
+              // Continue restoring the source output independently.
+            }
+
+            try {
+              targetDesktopRestored =
+                targetOutputPresent &&
+                currentDesktopForOutput(this.workspace, targetOutput)?.id ===
+                  originalTargetDesktop.id;
+            } catch {
+              targetDesktopRestored = false;
+            }
+          }
+
+          try {
+            if (
+              sourceOutputPresent &&
+              originalDesktop.id !== sourceDesktop.id &&
+              currentDesktopForOutput(this.workspace, output)?.id ===
+                sourceDesktop.id
+            ) {
+              this.switchDesktop(originalDesktop, output);
+            }
+          } catch {
+            // Focus restoration below remains fail-closed.
+          }
+
+          let sourceDesktopRestored: boolean;
+          try {
+            sourceDesktopRestored =
+              sourceOutputPresent &&
+              currentDesktopForOutput(this.workspace, output)?.id ===
+                originalDesktop.id;
+          } catch {
+            sourceDesktopRestored = false;
+          }
+
+          if (sourceDesktopRestored && targetDesktopRestored) {
+            try {
+              if (originalActiveWindow === null) {
+                this.workspace.activeWindow = null;
+              } else if (
+                !originalActiveWindow.deleted &&
+                this.observer.source(
+                  windowId(String(originalActiveWindow.internalId)),
+                ) === originalActiveWindow
+              ) {
+                this.workspace.activeWindow = originalActiveWindow;
+              }
+            } catch {
+              // KWin may reject best-effort focus restoration after state changes.
+            }
+          }
+        }
+
+        if (this.overviewSpatialDropActivation === activation) {
+          this.overviewSpatialDropActivation = null;
+        }
+        try {
+          this.handleWindowActivated(this.workspace.activeWindow);
+        } catch {
+          // The command result remains authoritative after post-transaction bookkeeping.
+        }
+      },
+    };
     let applied = false;
     this.overviewSpatialDropActivation = activation;
 
@@ -3383,114 +3564,11 @@ export class RuntimeController {
       }
 
       applied = this.executeActiveSpatialDrop(command);
-
-      if (
-        applied &&
-        targetOutput.name !== output.name &&
-        originalDesktop.id !== sourceDesktop.id
-      ) {
-        this.recordDesktopSelection(originalDesktop, sourceDesktop, output);
-      }
-      if (
-        applied &&
-        targetOutput.name !== output.name &&
-        originalTargetDesktop.id !== targetDesktop.id
-      ) {
-        this.recordDesktopSelection(
-          originalTargetDesktop,
-          targetDesktop,
-          targetOutput,
-        );
-      }
-      if (
-        applied &&
-        targetOutput.name === output.name &&
-        command.target.desktopId === command.source.desktopId &&
-        originalDesktop.id !== sourceDesktop.id
-      ) {
-        this.recordDesktopSelection(originalDesktop, sourceDesktop, output);
-      }
     } catch {
       applied = false;
     } finally {
-      if (!applied) {
-        try {
-          this.layout.activateWindow(previousSourceWindowId);
-        } catch {
-          // Desktop and focus restoration remain independent of layout recovery.
-        }
-
-        let targetDesktopRestored = targetOutput.name === output.name;
-        if (targetOutput.name !== output.name) {
-          try {
-            if (
-              originalTargetDesktop.id !== targetDesktop.id &&
-              currentDesktopForOutput(this.workspace, targetOutput)?.id ===
-                targetDesktop.id
-            ) {
-              this.switchDesktop(originalTargetDesktop, targetOutput);
-            }
-          } catch {
-            // Continue restoring the source output independently.
-          }
-
-          try {
-            targetDesktopRestored =
-              this.workspace.screens.includes(targetOutput) &&
-              currentDesktopForOutput(this.workspace, targetOutput)?.id ===
-                originalTargetDesktop.id;
-          } catch {
-            targetDesktopRestored = false;
-          }
-        }
-
-        try {
-          if (
-            originalDesktop.id !== sourceDesktop.id &&
-            currentDesktopForOutput(this.workspace, output)?.id ===
-              sourceDesktop.id
-          ) {
-            this.switchDesktop(originalDesktop, output);
-          }
-        } catch {
-          // Focus restoration below remains fail-closed.
-        }
-
-        let sourceDesktopRestored: boolean;
-        try {
-          sourceDesktopRestored =
-            this.workspace.screens.includes(output) &&
-            currentDesktopForOutput(this.workspace, output)?.id ===
-              originalDesktop.id;
-        } catch {
-          sourceDesktopRestored = false;
-        }
-
-        if (sourceDesktopRestored && targetDesktopRestored) {
-          try {
-            if (originalActiveWindow === null) {
-              this.workspace.activeWindow = null;
-            } else if (
-              !originalActiveWindow.deleted &&
-              this.observer.source(
-                windowId(String(originalActiveWindow.internalId)),
-              ) === originalActiveWindow
-            ) {
-              this.workspace.activeWindow = originalActiveWindow;
-            }
-          } catch {
-            // KWin may reject best-effort focus restoration after state changes.
-          }
-        }
-      }
-
-      if (this.overviewSpatialDropActivation === activation) {
-        this.overviewSpatialDropActivation = null;
-      }
-      try {
-        this.handleWindowActivated(this.workspace.activeWindow);
-      } catch {
-        // The command result remains authoritative after post-transaction bookkeeping.
+      if (this.pendingSpatialOutputTransfer?.activation !== activation) {
+        activation.settle(applied);
       }
     }
 
@@ -3537,7 +3615,7 @@ export class RuntimeController {
     if (target.outputId !== source.outputId) {
       const applied = this.moveActiveWindowToOutput(target);
 
-      if (applied) {
+      if (applied && this.pendingSpatialOutputTransfer === null) {
         this.requestLayoutStatePublication();
       }
 
@@ -4967,6 +5045,11 @@ export class RuntimeController {
     this.stackEditOperation = null;
     this.clearPendingManualFloatingSizeChanges();
 
+    if (this.pendingSpatialOutputTransfer) {
+      this.pendingSpatialOutputTransfer.runtimeStopping = true;
+    }
+    this.cancelPendingSpatialOutputTransfer("runtime stopped");
+
     try {
       if (!hydrationWasPending) {
         try {
@@ -5014,7 +5097,9 @@ export class RuntimeController {
       this.pointerResizeIntent = null;
       this.pointerResizeSettlement = null;
       this.stackEditOperation = null;
-      this.windowTransferOperation = null;
+      if (this.pendingSpatialOutputTransfer === null) {
+        this.windowTransferOperation = null;
+      }
       this.stackedNativeStateOperation = null;
       this.pendingExternalFullscreenExtractions.clear();
       this.fullscreenRequestProbes.clear();
@@ -8155,6 +8240,15 @@ export class RuntimeController {
 
       if (retainedGuardChanged || movingContextActivityInvalidated) {
         this.windowTransferOperation.memberStateInvalidated = true;
+
+        if (
+          this.pendingSpatialOutputTransfer?.completion.operation ===
+          this.windowTransferOperation
+        ) {
+          this.cancelPendingSpatialOutputTransfer(
+            "window context changed during output transfer",
+          );
+        }
       }
 
       if (
@@ -8191,6 +8285,45 @@ export class RuntimeController {
     this.clearCapacityParkBackoffForWindow(changedId);
     this.pendingWindowSyncs.add(changedId);
     this.scheduleWork();
+  };
+
+  private readonly handleWindowFrameGeometryChanged = (id: string): void => {
+    const changedId = windowId(id);
+    const transition = this.toggleGeometryTransitions.get(changedId);
+    const source = this.observer.source(changedId);
+
+    if (!this.started || !transition || !source) {
+      return;
+    }
+
+    const runGeneration = this.runGeneration;
+    let schedulerReturned = false;
+
+    try {
+      this.schedule(() => {
+        if (
+          !schedulerReturned ||
+          !this.started ||
+          this.runGeneration !== runGeneration ||
+          this.windowTransferOperation !== null ||
+          this.toggleGeometryTransitions.get(changedId) !== transition ||
+          this.observer.source(changedId) !== source ||
+          !this.toggleGeometrySettled(changedId) ||
+          this.toggleTransitionPending(transition.contextKey)
+        ) {
+          return;
+        }
+
+        this.requestLayoutStatePublication();
+
+        if (!this.workScheduled && !this.flushLayoutStatePublication()) {
+          this.scheduleWork();
+        }
+      });
+      schedulerReturned = true;
+    } catch {
+      // Existing bounded settlement work remains the fail-closed fallback.
+    }
   };
 
   private readonly handleWindowDecorationPolicyChanged = (id: string): void => {
@@ -8266,6 +8399,15 @@ export class RuntimeController {
 
       if (guardedContextTransferMember) {
         this.windowTransferOperation.memberStateInvalidated = true;
+
+        if (
+          this.pendingSpatialOutputTransfer?.completion.operation ===
+          this.windowTransferOperation
+        ) {
+          this.cancelPendingSpatialOutputTransfer(
+            "window state changed during output transfer",
+          );
+        }
       }
 
       if (
@@ -8459,6 +8601,15 @@ export class RuntimeController {
   private readonly handleWindowRemoved = (id: string): void => {
     this.clearDesktopFocusTransition();
     const managedId = windowId(id);
+
+    if (
+      this.pendingSpatialOutputTransfer?.completion.operation.movingIds.has(
+        managedId,
+      )
+    ) {
+      this.abortPendingSpatialOutputTransfer("window was removed");
+    }
+
     this.windowFocusHistory.delete(managedId);
     this.windowRemovalFocusHistory.delete(managedId);
     const endedInteractiveResize =
@@ -17811,68 +17962,734 @@ export class RuntimeController {
       ]),
       targetContextKey,
     };
+    const completion: OutputTransferCompletion = {
+      command,
+      operation,
+      preview,
+      sourceBefore,
+      targetBefore,
+      wholeColumn,
+    };
+    const transaction = this.createOutputTransferTransaction(command);
+    const activation = spatialTarget
+      ? this.overviewSpatialDropActivation
+      : null;
+
+    if (spatialTarget && !activation) {
+      this.discardContextTransferPreview(preview);
+      return false;
+    }
+
     this.windowTransferOperation = operation;
+    const pending = activation
+      ? this.createPendingSpatialOutputTransfer(
+          activation,
+          completion,
+          sourceLayout,
+          targetLayout,
+          transaction,
+        )
+      : null;
+    let result: OutputTransferResult = "rejected";
+    let applicationFailure: string | null = null;
 
     try {
-      const transferred = this.applyOutputTransfer(
+      if (pending) {
+        pending.continuing = true;
+      }
+      result = this.applyOutputTransfer(
         command,
         preview,
         sourceLayout,
         targetLayout,
         operation,
+        transaction,
+        pending,
       );
-
-      if (transferred) {
-        this.reconcileTransferredColumnFullWidthRestore(
-          active.activeId,
-          active.contextKey,
-          targetContextKey,
-          sourceBefore,
-          targetBefore,
-          preview.value.sourceLayout,
-          preview.value.targetLayout,
-          wholeColumn,
-        );
+    } catch (error) {
+      if (!pending) {
+        throw error;
       }
 
-      return transferred;
+      applicationFailure = `output transfer rollback failed: ${String(error)}`;
     } finally {
-      this.discardContextTransferPreview(preview);
-      this.queueChangedTransferMembers(command);
+      if (pending) {
+        pending.continuing = false;
+      }
+      if (applicationFailure && pending) {
+        this.forcePendingSpatialOutputRecovery(pending, applicationFailure);
+      } else if (result === "pending" && pending) {
+        this.schedulePendingSpatialOutputTransferProbe(pending);
+      } else if (result === "rejected" && pending?.forwardRequestIssued) {
+        this.beginPendingSpatialOutputCompensation(
+          pending,
+          "output transfer transaction was rejected",
+          true,
+        );
+      } else if (result !== "pending") {
+        if (pending) {
+          this.releasePendingSpatialOutputSignal(pending);
+          if (this.pendingSpatialOutputTransfer === pending) {
+            this.pendingSpatialOutputTransfer = null;
+          }
+        }
+        this.finishOutputTransferOperation(completion, result === "applied");
+      }
+    }
 
-      if (this.windowTransferOperation === operation) {
-        this.windowTransferOperation = null;
+    return result !== "rejected";
+  }
+
+  private createOutputTransferTransaction(
+    command: OutputTransferCommand,
+  ): OutputTransferTransaction {
+    return {
+      mechanismFrames: new Map<WindowId, Rect>(),
+      originalActiveWindow: this.workspace.activeWindow,
+      sourceFrames: new Map(
+        command.members.map((member) => [
+          member.id,
+          { ...member.window.frameGeometry },
+        ]),
+      ),
+      sourceWasDirty: this.dirtyContexts.has(command.contextKey),
+      targetWasDirty: this.dirtyContexts.has(command.targetContextKey),
+      topologyRevision: this.topologyRevision,
+    };
+  }
+
+  private createPendingSpatialOutputTransfer(
+    activation: OverviewSpatialDropActivation,
+    completion: OutputTransferCompletion,
+    sourceLayout: ReturnType<typeof solveStripGeometry>,
+    targetLayout: ReturnType<typeof solveStripGeometry>,
+    transaction: OutputTransferTransaction,
+  ): PendingSpatialOutputTransfer {
+    const pending: PendingSpatialOutputTransfer = {
+      activation,
+      assignmentRequestInProgress: true,
+      completedProbes: 0,
+      completion,
+      continuing: false,
+      failure: null,
+      forwardRequestIssued: false,
+      handleOutputChanged: () => {
+        this.handlePendingSpatialOutputChanged(pending);
+      },
+      outputSignalConnected: false,
+      phase: "forward",
+      probePending: false,
+      reverseRequestedAfterTarget: false,
+      runtimeStopping: false,
+      settled: false,
+      sourceLayout,
+      sourceStableSamples: 0,
+      targetObserved: false,
+      targetLayout,
+      transaction,
+    };
+    this.pendingSpatialOutputTransfer = pending;
+
+    const outputChanged = completion.command.activeWindow.outputChanged;
+    if (outputChanged) {
+      try {
+        outputChanged.connect(pending.handleOutputChanged);
+        pending.outputSignalConnected = true;
+      } catch {
+        pending.outputSignalConnected = false;
+      }
+    }
+
+    return pending;
+  }
+
+  private handlePendingSpatialOutputChanged(
+    pending: PendingSpatialOutputTransfer,
+  ): void {
+    if (this.pendingSpatialOutputTransfer !== pending || pending.settled) {
+      return;
+    }
+
+    if (pending.assignmentRequestInProgress || pending.continuing) {
+      return;
+    }
+
+    const { command } = pending.completion;
+    const outputName = command.activeWindow.output?.name;
+
+    if (pending.phase === "forward") {
+      if (outputName === command.targetOutput.name) {
+        pending.targetObserved = true;
+        this.continuePendingSpatialOutputTransfer(pending);
       }
 
-      for (const key of [active.contextKey, targetContextKey]) {
-        const context = this.contexts.get(key);
+      return;
+    }
 
-        if (context) {
-          this.refreshContextAutomaticFloatingOwnership(context);
+    if (outputName === command.sourceOutput.name) {
+      pending.sourceStableSamples += 1;
+
+      if (pending.targetObserved && pending.reverseRequestedAfterTarget) {
+        this.finishPendingSpatialOutputTransfer(pending, false);
+      }
+
+      return;
+    }
+
+    pending.sourceStableSamples = 0;
+    pending.targetObserved = true;
+    pending.reverseRequestedAfterTarget = false;
+    this.requestPendingSpatialOutputReverse(pending);
+  }
+
+  private continuePendingSpatialOutputTransfer(
+    pending: PendingSpatialOutputTransfer,
+  ): void {
+    if (
+      this.pendingSpatialOutputTransfer !== pending ||
+      pending.settled ||
+      pending.assignmentRequestInProgress ||
+      pending.continuing
+    ) {
+      return;
+    }
+
+    const { command, operation, preview } = pending.completion;
+
+    pending.continuing = true;
+    let result: OutputTransferResult = "rejected";
+    let applicationFailure: string | null = null;
+
+    try {
+      result = this.applyOutputTransfer(
+        command,
+        preview,
+        pending.sourceLayout,
+        pending.targetLayout,
+        operation,
+        pending.transaction,
+        null,
+        true,
+      );
+    } catch (error) {
+      applicationFailure = `output transfer rollback failed: ${String(error)}`;
+    } finally {
+      pending.continuing = false;
+    }
+
+    if (applicationFailure) {
+      this.forcePendingSpatialOutputRecovery(pending, applicationFailure);
+    } else if (result === "applied") {
+      this.finishPendingSpatialOutputTransfer(pending, true);
+    } else {
+      this.beginPendingSpatialOutputCompensation(
+        pending,
+        pending.failure ?? "output transfer transaction was rejected",
+        true,
+      );
+    }
+  }
+
+  private schedulePendingSpatialOutputTransferProbe(
+    pending: PendingSpatialOutputTransfer,
+  ): void {
+    if (
+      this.pendingSpatialOutputTransfer !== pending ||
+      pending.settled ||
+      pending.probePending
+    ) {
+      return;
+    }
+
+    pending.probePending = true;
+
+    try {
+      this.scheduleResume(() => {
+        if (this.pendingSpatialOutputTransfer !== pending || pending.settled) {
+          return;
+        }
+
+        pending.probePending = false;
+        pending.completedProbes += 1;
+        const { command } = pending.completion;
+        const outputName = command.activeWindow.output?.name;
+
+        if (pending.phase === "forward") {
+          if (outputName === command.targetOutput.name) {
+            pending.targetObserved = true;
+            this.continuePendingSpatialOutputTransfer(pending);
+            return;
+          }
+
+          if (pending.completedProbes >= MAX_SPATIAL_OUTPUT_TRANSFER_PROBES) {
+            this.beginPendingSpatialOutputCompensation(
+              pending,
+              "window output assignment timed out",
+              false,
+            );
+            return;
+          }
+
+          this.schedulePendingSpatialOutputTransferProbe(pending);
+          return;
+        }
+
+        if (outputName === command.sourceOutput.name) {
+          pending.sourceStableSamples += 1;
+
+          if (
+            pending.targetObserved &&
+            pending.reverseRequestedAfterTarget &&
+            pending.sourceStableSamples >= 2
+          ) {
+            this.finishPendingSpatialOutputTransfer(pending, false);
+            return;
+          }
+        } else {
+          pending.sourceStableSamples = 0;
+
+          if (!pending.targetObserved) {
+            pending.targetObserved = true;
+            pending.reverseRequestedAfterTarget = false;
+          }
+
+          if (!pending.reverseRequestedAfterTarget) {
+            this.requestPendingSpatialOutputReverse(pending);
+            return;
+          }
+        }
+
+        if (pending.completedProbes >= MAX_SPATIAL_OUTPUT_TRANSFER_PROBES) {
+          this.forcePendingSpatialOutputRecovery(
+            pending,
+            pending.failure ?? "output transfer compensation timed out",
+          );
+          return;
+        }
+
+        this.schedulePendingSpatialOutputTransferProbe(pending);
+      });
+    } catch (error) {
+      pending.probePending = false;
+      const failure = `output transfer probe scheduling failed: ${String(error)}`;
+
+      if (pending.phase === "forward") {
+        this.beginPendingSpatialOutputCompensation(pending, failure, false);
+      } else {
+        this.forcePendingSpatialOutputRecovery(pending, failure);
+      }
+    }
+  }
+
+  private forcePendingSpatialOutputRecovery(
+    pending: PendingSpatialOutputTransfer,
+    failure: string,
+  ): void {
+    if (
+      this.pendingSpatialOutputTransfer !== pending ||
+      pending.settled ||
+      pending.continuing
+    ) {
+      return;
+    }
+
+    const { command } = pending.completion;
+    pending.failure = failure;
+    const canRequestSource =
+      this.pendingSpatialOutputSourceRequestIsSafe(pending);
+
+    if (canRequestSource) {
+      pending.continuing = true;
+
+      try {
+        this.workspace.sendClientToScreen?.(
+          command.activeWindow,
+          command.sourceOutput,
+        );
+      } catch (error) {
+        pending.failure = `${failure}: ${String(error)}`;
+      } finally {
+        pending.continuing = false;
+        try {
+          pending.transaction.mechanismFrames.set(command.activeId, {
+            ...command.activeWindow.frameGeometry,
+          });
+        } catch {
+          // A destroyed window cannot contribute a recovery frame.
         }
       }
+    }
 
-      this.refreshAutomaticFloatingAdmissionQueue();
+    if (
+      !pending.runtimeStopping &&
+      (!canRequestSource ||
+        command.activeWindow.output?.name !== command.sourceOutput.name)
+    ) {
+      this.markPendingSpatialOutputTransferForReconciliation(pending);
+    }
 
-      if (operation.desktopChangeSuppressed) {
-        this.markVisibleDesktopContextsDirty();
+    console.warn(
+      `[driftile] output transfer compensation exhausted window=${String(command.activeId)} error=${pending.failure}`,
+    );
+    this.finishPendingSpatialOutputTransfer(pending, false);
+  }
+
+  private requestPendingSpatialOutputReverse(
+    pending: PendingSpatialOutputTransfer,
+  ): void {
+    if (
+      this.pendingSpatialOutputTransfer !== pending ||
+      pending.settled ||
+      pending.continuing
+    ) {
+      return;
+    }
+
+    if (!this.pendingSpatialOutputSourceRequestIsSafe(pending)) {
+      this.forcePendingSpatialOutputRecovery(
+        pending,
+        pending.failure ?? "output transfer source is no longer available",
+      );
+      return;
+    }
+
+    const { command } = pending.completion;
+    pending.phase = "compensating";
+    pending.reverseRequestedAfterTarget = pending.targetObserved;
+    pending.continuing = true;
+
+    try {
+      this.workspace.sendClientToScreen?.(
+        command.activeWindow,
+        command.sourceOutput,
+      );
+    } catch (error) {
+      pending.failure = `${pending.failure ?? "output transfer rollback failed"}: ${String(error)}`;
+    } finally {
+      pending.continuing = false;
+      pending.transaction.mechanismFrames.set(command.activeId, {
+        ...command.activeWindow.frameGeometry,
+      });
+    }
+
+    if (
+      pending.targetObserved &&
+      pending.reverseRequestedAfterTarget &&
+      command.activeWindow.output?.name === command.sourceOutput.name
+    ) {
+      this.finishPendingSpatialOutputTransfer(pending, false);
+      return;
+    }
+
+    this.schedulePendingSpatialOutputTransferProbe(pending);
+  }
+
+  private pendingSpatialOutputSourceRequestIsSafe(
+    pending: PendingSpatialOutputTransfer,
+  ): boolean {
+    const { command } = pending.completion;
+
+    try {
+      return (
+        typeof this.workspace.sendClientToScreen === "function" &&
+        !command.activeWindow.deleted &&
+        this.observer.source(command.activeId) === command.activeWindow &&
+        this.workspace.screens.includes(command.sourceOutput)
+      );
+    } catch {
+      return false;
+    }
+  }
+
+  private markPendingSpatialOutputTransferForReconciliation(
+    pending: PendingSpatialOutputTransfer,
+  ): void {
+    if (pending.runtimeStopping) {
+      return;
+    }
+
+    const { command, operation } = pending.completion;
+
+    for (const member of command.members) {
+      try {
+        if (
+          !member.window.deleted &&
+          this.observer.source(member.id) === member.window
+        ) {
+          this.pendingWindowSyncs.add(member.id);
+        }
+      } catch {
+        // Removed members are reconciled by the removal lifecycle.
+      }
+    }
+
+    for (const key of [
+      operation.sourceContextKey,
+      operation.targetContextKey,
+    ]) {
+      const context = this.contexts.get(key);
+      if (context) {
+        try {
+          this.markContextDirty(context);
+        } catch {
+          this.dirtyContexts.add(key);
+        }
+      }
+    }
+
+    try {
+      this.scheduleWork();
+    } catch (error) {
+      console.warn(
+        `[driftile] output transfer reconciliation could not be scheduled error=${String(error)}`,
+      );
+    }
+  }
+
+  private beginPendingSpatialOutputCompensation(
+    pending: PendingSpatialOutputTransfer,
+    failure: string,
+    rollbackPerformed: boolean,
+  ): void {
+    if (this.pendingSpatialOutputTransfer !== pending || pending.settled) {
+      return;
+    }
+
+    pending.failure = failure;
+
+    if (pending.phase === "compensating") {
+      return;
+    }
+
+    const { command, operation } = pending.completion;
+    const transaction = pending.transaction;
+    pending.phase = "compensating";
+    pending.completedProbes = 0;
+    pending.sourceStableSamples = 0;
+    pending.targetObserved ||=
+      command.activeWindow.output?.name !== command.sourceOutput.name;
+
+    if (!rollbackPerformed) {
+      pending.continuing = true;
+      let compensationWrites = 0;
+      let rollbackFailure: string | null = null;
+
+      try {
+        compensationWrites = this.rollbackOutputTransfer(
+          command,
+          [],
+          [],
+          transaction.sourceFrames,
+          new Map<WindowId, RestoreBaseline>(),
+          transaction.mechanismFrames,
+          transaction.originalActiveWindow,
+          operation,
+          transaction.topologyRevision,
+          transaction.sourceWasDirty,
+          transaction.targetWasDirty,
+        );
+      } catch (error) {
+        rollbackFailure = `output transfer rollback failed: ${String(error)}`;
+      } finally {
+        pending.continuing = false;
       }
 
-      this.handleWindowActivated(this.workspace.activeWindow);
+      if (rollbackFailure) {
+        this.forcePendingSpatialOutputRecovery(pending, rollbackFailure);
+        return;
+      }
 
+      this.lastWrites = compensationWrites;
+      console.warn(
+        `[driftile] output transfer rolled back window=${String(command.activeId)} error=${failure}`,
+      );
+    }
+
+    pending.targetObserved ||=
+      command.activeWindow.output?.name !== command.sourceOutput.name;
+    pending.reverseRequestedAfterTarget =
+      rollbackPerformed && pending.targetObserved;
+
+    if (rollbackPerformed) {
       if (
-        [...this.dirtyContexts].some((key) => {
-          const context = this.contexts.get(key);
-          return Boolean(context && this.isContextVisible(context));
-        }) ||
-        this.pendingAdmissionContexts.size > 0 ||
-        this.pendingWindowSyncs.size > 0 ||
-        this.pendingDefaultColumnWidth !== null ||
-        this.pendingGap !== null ||
-        this.desktopLifecycle.pendingWork
+        pending.targetObserved &&
+        command.activeWindow.output?.name === command.sourceOutput.name
       ) {
-        this.scheduleWork();
+        this.finishPendingSpatialOutputTransfer(pending, false);
+      } else if (
+        command.activeWindow.output?.name === command.sourceOutput.name
+      ) {
+        this.requestPendingSpatialOutputReverse(pending);
+      } else {
+        this.schedulePendingSpatialOutputTransferProbe(pending);
       }
+      return;
+    }
+
+    this.requestPendingSpatialOutputReverse(pending);
+  }
+
+  private releasePendingSpatialOutputSignal(
+    pending: PendingSpatialOutputTransfer,
+  ): void {
+    if (!pending.outputSignalConnected) {
+      return;
+    }
+
+    pending.outputSignalConnected = false;
+    try {
+      pending.completion.command.activeWindow.outputChanged?.disconnect(
+        pending.handleOutputChanged,
+      );
+    } catch {
+      // KWin may destroy a signal owner before transaction cleanup.
+    }
+  }
+
+  private finishPendingSpatialOutputTransfer(
+    pending: PendingSpatialOutputTransfer,
+    applied: boolean,
+  ): void {
+    if (this.pendingSpatialOutputTransfer !== pending || pending.settled) {
+      return;
+    }
+
+    pending.settled = true;
+    pending.probePending = false;
+    this.releasePendingSpatialOutputSignal(pending);
+    this.pendingSpatialOutputTransfer = null;
+    let cleanupFailure: string | null = null;
+
+    try {
+      if (pending.runtimeStopping) {
+        return;
+      }
+
+      try {
+        this.finishOutputTransferOperation(pending.completion, applied);
+      } catch (error) {
+        cleanupFailure = `output transfer completion failed: ${String(error)}`;
+      }
+
+      try {
+        pending.activation.settle(applied && cleanupFailure === null);
+      } catch (error) {
+        cleanupFailure = `${cleanupFailure ?? "output transfer activation cleanup failed"}: ${String(error)}`;
+      }
+
+      if (applied && cleanupFailure === null) {
+        try {
+          this.requestLayoutStatePublication();
+          this.flushLayoutStatePublication();
+        } catch (error) {
+          cleanupFailure = `output transfer publication failed: ${String(error)}`;
+        }
+      }
+    } finally {
+      try {
+        this.discardContextTransferPreview(pending.completion.preview);
+      } catch (error) {
+        cleanupFailure = `${cleanupFailure ?? "output transfer preview cleanup failed"}: ${String(error)}`;
+      }
+
+      if (this.windowTransferOperation === pending.completion.operation) {
+        this.windowTransferOperation = null;
+      }
+      pending.activation.settled = true;
+      if (this.overviewSpatialDropActivation === pending.activation) {
+        this.overviewSpatialDropActivation = null;
+      }
+
+      if (cleanupFailure) {
+        pending.failure = cleanupFailure;
+        this.markPendingSpatialOutputTransferForReconciliation(pending);
+        console.warn(`[driftile] ${cleanupFailure}`);
+      }
+    }
+  }
+
+  private abortPendingSpatialOutputTransfer(failure: string): void {
+    const pending = this.pendingSpatialOutputTransfer;
+
+    if (!pending || pending.settled) {
+      return;
+    }
+
+    pending.failure = failure;
+    this.markPendingSpatialOutputTransferForReconciliation(pending);
+    this.finishPendingSpatialOutputTransfer(pending, false);
+  }
+
+  private cancelPendingSpatialOutputTransfer(failure: string): void {
+    const pending = this.pendingSpatialOutputTransfer;
+
+    if (!pending || pending.settled) {
+      return;
+    }
+
+    if (pending.continuing) {
+      pending.completion.operation.memberStateInvalidated = true;
+      pending.failure = failure;
+      return;
+    }
+
+    this.beginPendingSpatialOutputCompensation(pending, failure, false);
+  }
+
+  private finishOutputTransferOperation(
+    completion: OutputTransferCompletion,
+    transferred: boolean,
+  ): void {
+    const { command, operation, preview } = completion;
+
+    if (transferred) {
+      this.reconcileTransferredColumnFullWidthRestore(
+        command.activeId,
+        command.contextKey,
+        command.targetContextKey,
+        completion.sourceBefore,
+        completion.targetBefore,
+        preview.value.sourceLayout,
+        preview.value.targetLayout,
+        completion.wholeColumn,
+      );
+    }
+
+    this.discardContextTransferPreview(preview);
+    this.queueChangedTransferMembers(command);
+
+    if (this.windowTransferOperation === operation) {
+      this.windowTransferOperation = null;
+    }
+
+    for (const key of [command.contextKey, command.targetContextKey]) {
+      const context = this.contexts.get(key);
+
+      if (context) {
+        this.refreshContextAutomaticFloatingOwnership(context);
+      }
+    }
+
+    this.refreshAutomaticFloatingAdmissionQueue();
+
+    if (operation.desktopChangeSuppressed) {
+      this.markVisibleDesktopContextsDirty();
+    }
+
+    this.handleWindowActivated(this.workspace.activeWindow);
+
+    if (
+      [...this.dirtyContexts].some((key) => {
+        const context = this.contexts.get(key);
+        return Boolean(context && this.isContextVisible(context));
+      }) ||
+      this.pendingAdmissionContexts.size > 0 ||
+      this.pendingWindowSyncs.size > 0 ||
+      this.pendingDefaultColumnWidth !== null ||
+      this.pendingGap !== null ||
+      this.desktopLifecycle.pendingWork
+    ) {
+      this.scheduleWork();
     }
   }
 
@@ -17882,23 +18699,23 @@ export class RuntimeController {
     sourceLayout: ReturnType<typeof solveStripGeometry>,
     targetLayout: ReturnType<typeof solveStripGeometry>,
     operation: WindowTransferOperation,
-  ): boolean {
-    const topologyRevision = this.topologyRevision;
-    const sourceFrames = new Map(
-      command.members.map((member) => [
-        member.id,
-        { ...member.window.frameGeometry },
-      ]),
-    );
-    const originalActiveWindow = this.workspace.activeWindow;
-    const sourceWasDirty = this.dirtyContexts.has(command.contextKey);
-    const targetWasDirty = this.dirtyContexts.has(command.targetContextKey);
+    transaction: OutputTransferTransaction,
+    pending: PendingSpatialOutputTransfer | null = null,
+    mechanismAssigned = false,
+  ): OutputTransferResult {
+    const {
+      mechanismFrames,
+      originalActiveWindow,
+      sourceFrames,
+      sourceWasDirty,
+      targetWasDirty,
+      topologyRevision,
+    } = transaction;
     const trackedWindowIds = new Set<WindowId>();
     const attemptedChanges: TransferGeometryChange[] = [];
     const appliedChanges: TransferGeometryChange[] = [];
     const rollbackTargets: TransferGeometryChange[] = [];
     const destinationBaselines = new Map<WindowId, RestoreBaseline>();
-    const mechanismFrames = new Map<WindowId, Rect>();
     let forwardWrites = 0;
     let failure: string;
 
@@ -17926,7 +18743,10 @@ export class RuntimeController {
           member.id === command.activeId &&
           command.sourceDesktop.id !== command.targetDesktop.id;
 
-        if (command.sourceDesktop.id !== command.targetDesktop.id) {
+        if (
+          !mechanismAssigned &&
+          command.sourceDesktop.id !== command.targetDesktop.id
+        ) {
           try {
             member.window.desktops = preserveActiveVisibility
               ? [command.sourceDesktop, command.targetDesktop]
@@ -17951,13 +18771,55 @@ export class RuntimeController {
           }
         }
 
-        try {
-          this.workspace.sendClientToScreen?.(
-            member.window,
-            command.targetOutput,
-          );
-        } finally {
-          mechanismFrames.set(member.id, { ...member.window.frameGeometry });
+        if (!mechanismAssigned) {
+          if (pending) {
+            pending.assignmentRequestInProgress = true;
+            pending.forwardRequestIssued = true;
+          }
+
+          try {
+            this.workspace.sendClientToScreen?.(
+              member.window,
+              command.targetOutput,
+            );
+          } finally {
+            if (pending) {
+              pending.assignmentRequestInProgress = false;
+              pending.targetObserved ||=
+                member.window.output?.name === command.targetOutput.name;
+            }
+            mechanismFrames.set(member.id, {
+              ...member.window.frameGeometry,
+            });
+          }
+
+          if (
+            member.window.output?.name !== command.targetOutput.name &&
+            pending &&
+            (preserveActiveVisibility
+              ? windowIsOnDesktopPair(
+                  member.window,
+                  command.sourceDesktop,
+                  command.targetDesktop,
+                )
+              : windowIsOnDesktop(member.window, command.targetDesktop)) &&
+            this.transferOperationIdentityIsCurrent(
+              command,
+              operation,
+              topologyRevision,
+            ) &&
+            this.transferMemberStatesAreCurrent(command, operation) &&
+            this.transferLayoutsOwnershipIsCurrent(sourceLayout, targetLayout)
+          ) {
+            return "pending";
+          }
+
+          if (
+            pending &&
+            member.window.output?.name === command.targetOutput.name
+          ) {
+            pending.targetObserved = true;
+          }
         }
 
         if (
@@ -18185,13 +19047,17 @@ export class RuntimeController {
         }
       }
 
-      return true;
+      return "applied";
     } catch (error) {
       failure = String(error);
     }
 
     for (const id of trackedWindowIds) {
       this.toggleGeometryTransitions.delete(id);
+    }
+
+    if (pending?.settled) {
+      return "rejected";
     }
 
     const compensationWrites = this.rollbackOutputTransfer(
@@ -18212,7 +19078,7 @@ export class RuntimeController {
     console.warn(
       `[driftile] output transfer rolled back window=${String(command.activeId)} error=${failure}`,
     );
-    return false;
+    return "rejected";
   }
 
   private transferChangedFramesAreOwned(
@@ -26882,6 +27748,8 @@ export class RuntimeController {
     if (!this.started) {
       return;
     }
+
+    this.cancelPendingSpatialOutputTransfer("output topology changed");
 
     this.clearDesktopFocusTransition();
     this.clearPointerMoveIntent();

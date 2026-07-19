@@ -29,6 +29,7 @@ export interface WindowObserverEvents {
   ) => void;
   readonly decorationPolicyChanged?: (windowId: string) => void;
   readonly fullScreenChanged?: (windowId: string, fullScreen: boolean) => void;
+  readonly frameGeometryChanged?: (windowId: string) => void;
   readonly interactiveMoveFinished?: (windowId: string) => void;
   readonly interactiveMoveStarted?: (windowId: string) => void;
   readonly interactiveResizeFinished?: (
@@ -228,6 +229,8 @@ export class WindowObserver {
       if (geometrySizeChanged(oldGeometry, window, "frameGeometry")) {
         refreshConstraint();
       }
+
+      this.events.frameGeometryChanged?.(id);
     };
     const refreshInteractiveState = (): void => {
       refreshConstraint();
