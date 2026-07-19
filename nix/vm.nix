@@ -6,6 +6,7 @@
 
 let
   pluginId = "io.github.kontonkara.driftile";
+  wheelControlPluginId = "driftile_wheel_control";
   activityMembershipProbe = ../tools/vm/activity-membership-probe.js;
   twoHeadGpu = builtins.toJSON {
     driver = "virtio-gpu-pci";
@@ -114,6 +115,7 @@ let
       overview_shortcut_text="Driftile: Toggle overview"
       overview_default_keys='[[268435535,0,0,0]]'
       plasma_overview_effect_id="overview"
+      wheel_control_effect_id="${wheelControlPluginId}"
       layout_state_file="''${XDG_CONFIG_HOME:-$HOME/.config}/driftile-layout-state.ini"
 
       window_match_id() {
@@ -857,6 +859,49 @@ let
           elif [[ -n "$candidate" ]]; then
             stable_candidate=$candidate
             stable_samples=1
+          else
+            stable_candidate=""
+            stable_samples=0
+          fi
+
+          if ((stable_samples >= 2)); then
+            printf -v "$result_variable" '%s' "$stable_candidate"
+            return 0
+          fi
+
+          sleep 0.1
+        done
+
+        return 1
+      }
+
+      wait_for_single_inserted_desktop_between() {
+        local result_variable=$1
+        local left_desktop_id=$2
+        local right_desktop_id=$3
+        local attempt
+        local candidate=""
+        local count
+        local sequence
+        local stable_candidate=""
+        local stable_samples=0
+
+        for ((attempt = 0; attempt < 100; attempt += 1)); do
+          count=$(virtual_desktop_count 2>/dev/null || true)
+          candidate=$(virtual_desktop_id 1 2>/dev/null || true)
+          sequence=$(virtual_desktop_sequence 2>/dev/null || true)
+
+          if [[ "$count" == 3 \
+            && -n "$candidate" \
+            && "$candidate" != "$left_desktop_id" \
+            && "$candidate" != "$right_desktop_id" \
+            && "$sequence" == "$left_desktop_id $candidate $right_desktop_id" ]]; then
+            if [[ "$candidate" == "$stable_candidate" ]]; then
+              stable_samples=$((stable_samples + 1))
+            else
+              stable_candidate=$candidate
+              stable_samples=1
+            fi
           else
             stable_candidate=""
             stable_samples=0
@@ -4891,6 +4936,9 @@ let
         local spatial_drop_target_frame
         local spatial_drop_target_width
         local trailing_desktop_id=""
+        local workspace_gap_before_count
+        local workspace_gap_before_sequence
+        local workspace_gap_created_desktop_id=""
         local xterm_title=$5
 
         if ! effect_is_available "$overview_plugin_id" \
@@ -5445,25 +5493,30 @@ let
           "physical overview search input changed a query and closed without restarting KWin"
 
         spatial_drop_source_frame=$(
-          capture_stable_window_frame_contains "$firefox_title" 2>/dev/null \
+          capture_stable_window_frame_contains "$xterm_title" 2>/dev/null \
             || true
         )
         spatial_drop_target_frame=$(
-          capture_stable_window_frame_contains "$xterm_title" 2>/dev/null \
+          capture_stable_window_frame_contains "$firefox_title" 2>/dev/null \
             || true
         )
         spatial_drop_target_width=$(window_frame_width "$xterm_title" 2>/dev/null || true)
         output_frame=$(single_enabled_output_frame 2>/dev/null || true)
+        workspace_gap_before_count=$(virtual_desktop_count 2>/dev/null || true)
+        workspace_gap_before_sequence=$(virtual_desktop_sequence 2>/dev/null || true)
         if ! frame_is_valid "$spatial_drop_source_frame" \
           || ! frame_is_valid "$spatial_drop_target_frame" \
           || ! frame_is_valid "$output_frame" \
           || [[ ! "$spatial_drop_target_width" =~ ^[1-9][0-9]*$ ]] \
+          || [[ "$workspace_gap_before_count" != 2 ]] \
+          || [[ "$workspace_gap_before_sequence" \
+            != "$primary_desktop_id $secondary_desktop_id" ]] \
           || ! wait_for_pointer_stack_order \
             "$firefox_title" \
             "$xterm_title" \
             "$spatial_drop_target_width"; then
           overview_checkpoint_failure \
-            "the exact overview window-drop fixture did not preserve its initial stack"
+            "the workspace-gap baseline did not preserve two exact desktops and a real tiled stack"
           return 1
         fi
 
@@ -5471,60 +5524,83 @@ let
           || ! wait_for_effect_active_state "$overview_plugin_id" true \
           || ! kwin_spatial_drop_process_id=$(kwin_process_id); then
           overview_checkpoint_failure \
-            "the overview could not reopen for the exact spatial window drop"
+            "the overview could not reopen for the workspace-gap drop"
           return 1
         fi
         sleep 0.3
 
-        if ! request_physical_overview_window_drop \
+        if ! request_physical_overview_workspace_gap_drop \
             "$spatial_drop_source_frame" \
-            "$spatial_drop_target_frame" \
             "$output_frame" \
-          || ! wait_for_pointer_stack_order \
+          || ! wait_for_single_inserted_desktop_between \
+            workspace_gap_created_desktop_id \
+            "$primary_desktop_id" \
+            "$secondary_desktop_id" \
+          || ! wait_for_window_desktop \
             "$xterm_title" \
-            "$firefox_title" \
-            "$spatial_drop_target_width" \
+            "$workspace_gap_created_desktop_id" \
+          || ! wait_for_window_desktop "$firefox_title" "$primary_desktop_id" \
           || [[ "$(effect_active_state "$overview_plugin_id" 2>/dev/null || true)" != true ]] \
           || ! kwin_process_is_unchanged "$kwin_spatial_drop_process_id" \
           || ! overview_component_errors_after "$journal_cursor"; then
           overview_checkpoint_failure \
-            "the physical overview window drop did not produce the exact reversed stack without restarting KWin"
-          return 1
-        fi
-
-        spatial_drop_checkpoint=$(capture_overview_checkpoint "$@") || {
-          overview_checkpoint_failure \
-            "the exact spatial window-drop checkpoint did not stabilize"
-          return 1
-        }
-        if [[ "$spatial_drop_checkpoint" == "$firefox_checkpoint" ]]; then
-          overview_checkpoint_failure \
-            "the exact spatial window drop did not change the persisted layout checkpoint"
+            "the physical workspace-gap drop did not insert one exact desktop, move xterm, and keep Overview and KWin alive"
           return 1
         fi
 
         if ! request_physical_shortcut overview-window-drop-escape \
           || ! wait_for_effect_active_state "$overview_plugin_id" false \
           || ! kwin_process_is_unchanged "$kwin_spatial_drop_process_id" \
-          || ! wait_for_active "$firefox_title"; then
+          || ! wait_for_active "$xterm_title"; then
           overview_checkpoint_failure \
-            "physical Escape did not close the spatial window-drop checkpoint without restarting KWin"
-          return 1
-        fi
-        after_checkpoint=$(capture_overview_checkpoint "$@") || {
-          overview_checkpoint_failure \
-            "the spatial window-drop checkpoint did not stabilize after closing"
-          return 1
-        }
-        if [[ "$after_checkpoint" != "$spatial_drop_checkpoint" ]] \
-          || ! overview_component_errors_after "$journal_cursor"; then
-          overview_checkpoint_failure \
-            "closing the exact spatial window-drop checkpoint changed its resulting layout"
+            "physical Escape did not close the workspace-gap checkpoint without restarting KWin"
           return 1
         fi
 
+        if ! invoke_shortcut "driftile_move_window_to_previous_desktop" \
+          || ! wait_for_current_desktop "$primary_desktop_id" \
+          || ! wait_for_window_desktop "$xterm_title" "$primary_desktop_id" \
+          || ! wait_for_window_desktop "$firefox_title" "$primary_desktop_id" \
+          || ! wait_for_desktop_sequence \
+            "$primary_desktop_id" \
+            "$secondary_desktop_id" \
+          || ! wait_for_active "$xterm_title"; then
+          overview_checkpoint_failure \
+            "workspace-gap cleanup did not return xterm and remove the created desktop"
+          return 1
+        fi
+
+        after_checkpoint=$(capture_overview_checkpoint "$@") || {
+          overview_checkpoint_failure \
+            "the workspace-gap checkpoint did not stabilize after cleanup"
+          return 1
+        }
+        if [[ "$after_checkpoint" != "$firefox_checkpoint" ]]; then
+          if ! invoke_shortcut "driftile_move_window_left" \
+            || ! wait_for_pointer_stack_order \
+              "$firefox_title" \
+              "$xterm_title" \
+              "$spatial_drop_target_width"; then
+            overview_checkpoint_failure \
+              "workspace-gap cleanup did not restore the exact source stack"
+            return 1
+          fi
+          after_checkpoint=$(capture_overview_checkpoint "$@") || {
+            overview_checkpoint_failure \
+              "the restored workspace-gap source stack did not stabilize"
+            return 1
+          }
+        fi
+        if [[ "$after_checkpoint" != "$firefox_checkpoint" ]] \
+          || ! overview_component_errors_after "$journal_cursor"; then
+          overview_checkpoint_failure \
+            "workspace-gap cleanup did not restore the exact desktops, window, and layout"
+          return 1
+        fi
+        spatial_drop_checkpoint=$after_checkpoint
+
         record_focus_state \
-          "a physical overview window drop reversed an exact stack without restarting KWin"
+          "a physical Overview gap drop created one workspace, moved a real window, and cleaned up exactly"
 
         if ! unload_overview_effect \
           || ! wait_for_shortcut_registration_state "$overview_shortcut" true; then
@@ -7410,6 +7486,138 @@ let
           "minimized-peer expel cleanup reconstructed the exact fixture"
       }
 
+      verify_physical_wheel_control() {
+        local baseline_first=""
+        local baseline_second=""
+        local baseline_third=""
+        local cleanup_verified=true
+        local handshake_verified=true
+        local process_id=""
+
+        clear_physical_wheel_control_handshake || return 1
+        if ! effect_is_available "$wheel_control_effect_id" \
+          || ! wait_for_effect_loaded_state "$wheel_control_effect_id" true; then
+          record_focus_state \
+            "the native wheel control effect was unavailable or unloaded"
+          return 1
+        fi
+
+        if ! set_current_desktop "$primary_desktop_id" \
+          || ! activate_window "$title_b" \
+          || ! wait_for_active "$title_b" \
+          || ! capture_stable_frames; then
+          record_focus_state \
+            "the physical wheel control fixture did not reach its baseline"
+          return 1
+        fi
+        baseline_first=$stable_first_frame
+        baseline_second=$stable_second_frame
+        baseline_third=$stable_third_frame
+        process_id=$(kwin_process_id 2>/dev/null || true)
+
+        if [[ ! "$process_id" =~ ^[1-9][0-9]*$ ]] \
+          || ! : > /tmp/shared/driftile-wheel-control-ready; then
+          clear_physical_wheel_control_handshake || true
+          record_focus_state \
+            "the physical wheel control handshake could not start"
+          return 1
+        fi
+
+        if wait_for_physical_wheel_control_file \
+            /tmp/shared/driftile-wheel-control-desktop-next-sent \
+          && wait_for_current_desktop "$secondary_desktop_id" \
+          && kwin_process_is_unchanged "$process_id"; then
+          acknowledge_physical_wheel_control_phase desktop-next \
+            || handshake_verified=false
+        else
+          handshake_verified=false
+        fi
+
+        if [[ "$handshake_verified" == true ]] \
+          && wait_for_physical_wheel_control_file \
+            /tmp/shared/driftile-wheel-control-desktop-previous-sent \
+          && wait_for_current_desktop "$primary_desktop_id" \
+          && activate_window "$title_b" \
+          && wait_for_active "$title_b" \
+          && wait_for_frames \
+            "$baseline_first" \
+            "$baseline_second" \
+            "$baseline_third" \
+          && kwin_process_is_unchanged "$process_id"; then
+          acknowledge_physical_wheel_control_phase desktop-previous \
+            || handshake_verified=false
+        else
+          handshake_verified=false
+        fi
+
+        if [[ "$handshake_verified" == true ]] \
+          && wait_for_physical_wheel_control_file \
+            /tmp/shared/driftile-wheel-control-focus-right-sent \
+          && wait_for_active "$title_c" \
+          && wait_for_frames \
+            "$baseline_first" \
+            "$baseline_second" \
+            "$baseline_third" \
+          && kwin_process_is_unchanged "$process_id"; then
+          acknowledge_physical_wheel_control_phase focus-right \
+            || handshake_verified=false
+        else
+          handshake_verified=false
+        fi
+
+        if [[ "$handshake_verified" == true ]] \
+          && wait_for_physical_wheel_control_file \
+            /tmp/shared/driftile-wheel-control-focus-left-sent \
+          && wait_for_active "$title_b" \
+          && wait_for_frames \
+            "$baseline_first" \
+            "$baseline_second" \
+            "$baseline_third" \
+          && kwin_process_is_unchanged "$process_id"; then
+          acknowledge_physical_wheel_control_phase focus-left \
+            || handshake_verified=false
+        else
+          handshake_verified=false
+        fi
+
+        if [[ "$handshake_verified" != true ]] \
+          || ! wait_for_physical_wheel_control_file \
+            /tmp/shared/driftile-wheel-control-sent; then
+          handshake_verified=false
+        fi
+
+        clear_physical_wheel_control_handshake || cleanup_verified=false
+        if ! set_current_desktop "$primary_desktop_id" \
+          || ! activate_window "$title_c" \
+          || ! wait_for_active "$title_c" \
+          || ! wait_for_frames \
+            "$baseline_first" \
+            "$baseline_second" \
+            "$baseline_third" \
+          || ! kwin_process_is_unchanged "$process_id"; then
+          cleanup_verified=false
+        fi
+
+        if [[ "$handshake_verified" == true \
+          && "$cleanup_verified" == true ]]; then
+          record_focus_state \
+            "physical wheel controls switched desktops and focused adjacent columns without restarting KWin"
+          return 0
+        fi
+
+        record_focus_state "physical wheel control verification failed"
+        {
+          printf 'wheel handshake verified: %s\n' "$handshake_verified"
+          printf 'wheel cleanup verified: %s\n' "$cleanup_verified"
+          printf 'wheel effect loaded: %s\n' \
+            "$(effect_loaded_state "$wheel_control_effect_id" 2>/dev/null || true)"
+          printf 'wheel checkpoint KWin PID: %s\n' "$process_id"
+          printf 'current KWin PID: %s\n' \
+            "$(kwin_process_id 2>/dev/null || true)"
+        } >> /tmp/shared/driftile-focus-diagnostics
+        return 1
+      }
+
       verify_focus() {
         local baseline_first_height
         local baseline_first_width
@@ -7532,6 +7740,11 @@ let
         done
 
         record_focus_state "windows ready"
+
+        if ! verify_physical_wheel_control; then
+          record_focus_state "physical wheel controls failed"
+          return 1
+        fi
 
         activate_window "$title_c" \
           && wait_for_active "$title_c" \
@@ -9042,6 +9255,36 @@ let
         return 1
       }
 
+      clear_physical_wheel_control_handshake() {
+        rm -f \
+          /tmp/shared/driftile-wheel-control-ready \
+          /tmp/shared/driftile-wheel-control-sent \
+          /tmp/shared/driftile-wheel-control-desktop-next-sent \
+          /tmp/shared/driftile-wheel-control-desktop-next-verified \
+          /tmp/shared/driftile-wheel-control-desktop-previous-sent \
+          /tmp/shared/driftile-wheel-control-desktop-previous-verified \
+          /tmp/shared/driftile-wheel-control-focus-right-sent \
+          /tmp/shared/driftile-wheel-control-focus-right-verified \
+          /tmp/shared/driftile-wheel-control-focus-left-sent \
+          /tmp/shared/driftile-wheel-control-focus-left-verified
+      }
+
+      wait_for_physical_wheel_control_file() {
+        local attempt
+        local path=$1
+
+        for ((attempt = 0; attempt < 100; attempt += 1)); do
+          [[ -f "$path" ]] && return 0
+          sleep 0.1
+        done
+
+        return 1
+      }
+
+      acknowledge_physical_wheel_control_phase() {
+        : > "/tmp/shared/driftile-wheel-control-$1-verified"
+      }
+
       request_physical_overview_horizontal_wheel() {
         local attempt
         local output_frame=$1
@@ -9223,20 +9466,18 @@ let
         return 1
       }
 
-      request_physical_overview_window_drop() {
+      request_physical_overview_workspace_gap_drop() {
         local attempt
         local card_height_milli
         local destination_x
-        local destination_x_milli
         local destination_y
-        local destination_y_milli
         local edge_margin_milli
-        local output_frame=$3
+        local gap_milli
+        local output_frame=$2
         local output_height
         local output_width
         local output_x
         local output_y
-        local projected_width_milli
         local ready_file=/tmp/shared/driftile-overview-window-drop-ready
         local sent_file=/tmp/shared/driftile-overview-window-drop-sent
         local source_frame=$1
@@ -9246,17 +9487,11 @@ let
         local source_x_milli
         local source_y
         local source_y_milli
-        local target_frame=$2
-        local target_height
-        local target_width
-        local target_x
-        local target_y
         local temporary_file="$ready_file.tmp"
         local viewport_origin_x_milli
         local zoom_milli=500
 
         frame_is_valid "$source_frame" || return 1
-        frame_is_valid "$target_frame" || return 1
         frame_is_valid "$output_frame" || return 1
         IFS=, read -r \
           source_x \
@@ -9264,12 +9499,6 @@ let
           source_width \
           source_height \
           <<< "$source_frame"
-        IFS=, read -r \
-          target_x \
-          target_y \
-          target_width \
-          target_height \
-          <<< "$target_frame"
         IFS=, read -r \
           output_x \
           output_y \
@@ -9279,24 +9508,21 @@ let
 
         card_height_milli=$((output_height * zoom_milli))
         edge_margin_milli=$(((output_height * 1000 - card_height_milli) / 2))
-        projected_width_milli=$((output_width * zoom_milli))
-        viewport_origin_x_milli=$(((output_width * 1000 - projected_width_milli) / 2))
+        gap_milli=$((card_height_milli / 10))
+        ((gap_milli <= 48000)) || gap_milli=48000
+        viewport_origin_x_milli=$(((output_width * 1000 \
+          - output_width * zoom_milli) / 2))
         source_x_milli=$((output_x * 1000 + viewport_origin_x_milli \
           + (source_x - output_x) * zoom_milli \
           + source_width * zoom_milli / 2))
         source_y_milli=$((output_y * 1000 + edge_margin_milli \
           + (source_y - output_y) * zoom_milli \
           + source_height * zoom_milli / 2))
-        destination_x_milli=$((output_x * 1000 + viewport_origin_x_milli \
-          + (target_x - output_x) * zoom_milli \
-          + target_width * zoom_milli / 2))
-        destination_y_milli=$((output_y * 1000 + edge_margin_milli \
-          + (target_y - output_y) * zoom_milli \
-          + target_height * zoom_milli * 3 / 4))
         source_x=$(((source_x_milli + 500) / 1000))
         source_y=$(((source_y_milli + 500) / 1000))
-        destination_x=$(((destination_x_milli + 500) / 1000))
-        destination_y=$(((destination_y_milli + 500) / 1000))
+        destination_x=$source_x
+        destination_y=$((output_y \
+          + (edge_margin_milli + card_height_milli + gap_milli / 2 + 500) / 1000))
 
         ((source_x >= output_x \
           && source_x < output_x + output_width \
@@ -9306,7 +9532,7 @@ let
           && destination_x < output_x + output_width \
           && destination_y >= output_y \
           && destination_y < output_y + output_height \
-          && (source_x != destination_x || source_y != destination_y))) \
+          && source_y != destination_y)) \
           || return 1
 
         rm -f "$ready_file" "$sent_file" "$temporary_file"
@@ -14695,6 +14921,7 @@ let
 
     [Plugins]
     ${pluginId}Enabled=true
+    ${wheelControlPluginId}Enabled=true
 
     [Script-${pluginId}]
     ApplicationBorderlessExclusions=
@@ -14750,6 +14977,7 @@ in
   programs.driftile.enable = true;
   programs.driftile.overview.enable = true;
   programs.driftile.shortcutEditor.enable = true;
+  programs.driftile.wheelControl.enable = true;
   system.stateVersion = "26.05";
   system.switch.enable = false;
 

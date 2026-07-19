@@ -175,6 +175,9 @@ monitor_guest() {
   local overview_window_drop_ready_file="$temporary_directory/xchg/driftile-overview-window-drop-ready"
   local overview_window_drop_sent=false
   local overview_window_drop_sent_file="$temporary_directory/xchg/driftile-overview-window-drop-sent"
+  local wheel_control_ready_file="$temporary_directory/xchg/driftile-wheel-control-ready"
+  local wheel_control_sent=false
+  local wheel_control_sent_file="$temporary_directory/xchg/driftile-wheel-control-sent"
   local -A keys_sent=(
     [bracket-right]=false
     [close-window]=false
@@ -336,6 +339,19 @@ monitor_guest() {
       fi
     done
 
+    if [[ "$wheel_control_sent" == false \
+      && -f "$wheel_control_ready_file" ]]; then
+      if ! send_physical_wheel_control "$wheel_control_ready_file"; then
+        printf 'Could not send the physical wheel control checkpoint.\n' >&2
+        finish_full_vm_monitor || true
+        return 1
+      fi
+
+      printf 'The VM received the physical wheel control checkpoint.\n'
+      : > "$wheel_control_sent_file"
+      wheel_control_sent=true
+    fi
+
     for pointer_drag_name in cross-column same-stack; do
       pointer_ready_file="$temporary_directory/xchg/driftile-pointer-drag-$pointer_drag_name-ready"
       pointer_sent_file="$temporary_directory/xchg/driftile-pointer-drag-$pointer_drag_name-sent"
@@ -476,9 +492,9 @@ monitor_guest() {
       fi
 
       if [[ "$(<"$focus_file")" == true ]]; then
-        printf 'The VM verified physical shortcut and pointer routing, physical Meta+Q close-window handling, desktop switching and reordering, same-output cross-desktop pointer adoption, minimized-slot navigation, column reordering, horizontal extraction, consume and expel past minimized peers, native fullscreen and maximize, stacked fullscreen and maximize extraction past minimized peers, borderless ownership, numbered dynamic desktops, whole-column desktop transfer past a minimized member, floating desktop transfers, output transfers, floating-layer navigation, focus, stack editing, pointer reinsertion and horizontal pointer-resize adoption, live touchpad-navigation settings, physical overview keyboard and horizontal-wheel navigation, advanced column view, column and window sizing, scrolling, mixed Konsole, Firefox, KDE Calculator, XWayland xterm, and fixed-size XWayland fixtures, plus repeated real-application lifecycles.\n'
+        printf 'The VM verified physical shortcut and pointer routing, global wheel controls, physical Meta+Q close-window handling, desktop switching and reordering, same-output cross-desktop pointer adoption, minimized-slot navigation, column reordering, horizontal extraction, consume and expel past minimized peers, native fullscreen and maximize, stacked fullscreen and maximize extraction past minimized peers, borderless ownership, numbered dynamic desktops, whole-column desktop transfer past a minimized member, floating desktop transfers, output transfers, floating-layer navigation, focus, stack editing, pointer reinsertion and horizontal pointer-resize adoption, live touchpad-navigation settings, physical overview keyboard and horizontal-wheel navigation, advanced column view, column and window sizing, scrolling, mixed Konsole, Firefox, KDE Calculator, XWayland xterm, and fixed-size XWayland fixtures, plus repeated real-application lifecycles.\n'
       else
-        printf 'The VM failed to verify physical shortcut or pointer routing, physical Meta+Q close-window handling, desktop switching or reordering, same-output cross-desktop pointer adoption, minimized-slot navigation, column reordering, horizontal extraction, consume or expel past minimized peers, native fullscreen or maximize, stacked fullscreen or maximize extraction past minimized peers, borderless ownership, numbered dynamic desktops, whole-column desktop transfer past a minimized member, floating desktop transfers, output transfers, floating-layer navigation, focus, stack editing, pointer reinsertion or horizontal pointer-resize adoption, live touchpad-navigation settings, physical overview keyboard or horizontal-wheel navigation, advanced column view, column or window sizing, scrolling, mixed primary application fixtures, or the repeated real-application lifecycle pool.\n' >&2
+        printf 'The VM failed to verify physical shortcut or pointer routing, global wheel controls, physical Meta+Q close-window handling, desktop switching or reordering, same-output cross-desktop pointer adoption, minimized-slot navigation, column reordering, horizontal extraction, consume or expel past minimized peers, native fullscreen or maximize, stacked fullscreen or maximize extraction past minimized peers, borderless ownership, numbered dynamic desktops, whole-column desktop transfer past a minimized member, floating desktop transfers, output transfers, floating-layer navigation, focus, stack editing, pointer reinsertion or horizontal pointer-resize adoption, live touchpad-navigation settings, physical overview keyboard or horizontal-wheel navigation, advanced column view, column or window sizing, scrolling, mixed primary application fixtures, or the repeated real-application lifecycle pool.\n' >&2
         failed=true
 
         if [[ -f "$diagnostics_file" ]]; then
@@ -729,6 +745,65 @@ send_absolute_pointer_position() {
   ((x >= 0 && x <= 32767 && y >= 0 && y <= 32767)) || return 1
   input="{\"execute\":\"input-send-event\",\"arguments\":{\"events\":[{\"type\":\"abs\",\"data\":{\"axis\":\"x\",\"value\":$x}},{\"type\":\"abs\",\"data\":{\"axis\":\"y\",\"value\":$y}}]}}"
   send_qmp_commands "$capabilities" "$input"
+}
+
+wait_for_guest_exchange_file() {
+  local attempt
+  local path=$1
+
+  for ((attempt = 0; attempt < 100; attempt += 1)); do
+    [[ -f "$path" ]] && return 0
+    sleep 0.1
+  done
+
+  return 1
+}
+
+send_physical_wheel_control_phase() {
+  local capabilities='{"execute":"qmp_capabilities"}'
+  local input
+
+  case "$1" in
+    desktop-next)
+      input='{"execute":"input-send-event","arguments":{"events":[{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"meta_l"}}},{"type":"btn","data":{"down":true,"button":"wheel-down"}},{"type":"btn","data":{"down":false,"button":"wheel-down"}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"meta_l"}}}]}}'
+      ;;
+    desktop-previous)
+      input='{"execute":"input-send-event","arguments":{"events":[{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"meta_l"}}},{"type":"btn","data":{"down":true,"button":"wheel-up"}},{"type":"btn","data":{"down":false,"button":"wheel-up"}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"meta_l"}}}]}}'
+      ;;
+    focus-right)
+      input='{"execute":"input-send-event","arguments":{"events":[{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"meta_l"}}},{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"shift"}}},{"type":"btn","data":{"down":true,"button":"wheel-down"}},{"type":"btn","data":{"down":false,"button":"wheel-down"}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"shift"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"meta_l"}}}]}}'
+      ;;
+    focus-left)
+      input='{"execute":"input-send-event","arguments":{"events":[{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"meta_l"}}},{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"shift"}}},{"type":"btn","data":{"down":true,"button":"wheel-up"}},{"type":"btn","data":{"down":false,"button":"wheel-up"}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"shift"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"meta_l"}}}]}}'
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+
+  send_qmp_commands "$capabilities" "$input"
+}
+
+send_physical_wheel_control() {
+  local exchange_directory
+  local marker_prefix
+  local phase
+  local ready_file=$1
+
+  [[ -f "$ready_file" ]] || return 1
+  exchange_directory=$(dirname -- "$ready_file") || return 1
+  marker_prefix="$exchange_directory/driftile-wheel-control"
+
+  for phase in \
+    desktop-next \
+    desktop-previous \
+    focus-right \
+    focus-left; do
+    send_physical_wheel_control_phase "$phase" || return 1
+    : > "$marker_prefix-$phase-sent"
+    wait_for_guest_exchange_file "$marker_prefix-$phase-verified" || return 1
+    sleep 0.2
+  done
 }
 
 send_physical_overview_horizontal_wheel() {
