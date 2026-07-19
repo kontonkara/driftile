@@ -1,7 +1,32 @@
 # Migration
 
-The latest stable release is 1.84.0. Use the steps below when changing release
+The latest stable release is 1.85.0. Use the steps below when changing release
 generations, and never combine files from different releases.
+
+## Upgrade from 1.84.0 to 1.85.0
+
+1. Release a helper-owned shortcut profile with the installed helper.
+2. Disable Driftile and both optional effects in System Settings.
+3. Install matching 1.85.0 artifacts, or pin the Nix input to `v1.85.0` and
+   rebuild.
+4. Re-enable Driftile and only the optional effects you use, then reclaim the
+   helper profile if needed.
+
+No shortcut, setting, schema, layout, or persistence migration is required.
+The optional Overview adds exact cross-output placement with rollback and
+delayed native-frame settlement. Its configured touchpad gesture now controls
+presentation progress, and touchscreen window dragging starts after a long
+press.
+
+Overview remains optional and under active development.
+
+## Roll back from 1.85.0 to 1.84.0
+
+Release a helper-owned profile, disable Driftile and both optional effects,
+then restore matching verified 1.84.0 artifacts or pin the Nix input to
+`v1.84.0` and rebuild. Logical persistence v4 remains compatible; no option
+deletion or schema migration is required. The older Overview does not provide
+exact cross-output placement or progress-driven touchpad presentation.
 
 ## Upgrade from 1.83.0 to 1.84.0
 

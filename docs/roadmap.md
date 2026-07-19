@@ -1,13 +1,13 @@
 # Roadmap
 
-Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.84.0 are
+Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.85.0 are
 released. The delivered milestones and release criteria below are a historical
 record. Later direction is not a committed release schedule.
 
-Stable 1.84.0 adds exact spatial window placement to the optional Overview.
-Dragged tiled windows can enter a stack half, a column boundary, or an empty
-row, including another desktop on the same output. Input starts with the first
-visible frame, and authoritative layout publications refresh the active scene.
+Stable 1.85.0 extends exact spatial placement across outputs and waits for
+KWin's final output and frame before publishing the layout. Touchpad swipes now
+drive Overview presentation continuously, and touchscreen window movement
+starts after a long press.
 Overview remains under active development. Settings, shortcuts, and logical
 persistence v4 remain compatible.
 
@@ -2782,7 +2782,7 @@ Release criteria (met):
 - One grouped local gate and the existing hidden VM Overview checkpoint pass;
   no private KWin API, schema change, or polling is introduced.
 
-### 1.85.0 (in development)
+### 1.85.0 (released)
 
 - Preview exact window-drop targets for stack insertion, column boundaries, and
   empty workspace rows.
@@ -2797,7 +2797,7 @@ Release criteria (met):
 - Start touchscreen window movement only after a long press on an eligible
   thumbnail.
 
-Release criteria:
+Release criteria (met):
 
 - Exact cross-output placement is verified with native Wayland and XWayland
   applications in the existing two-output hidden VM scenario.
