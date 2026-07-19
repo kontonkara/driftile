@@ -1,25 +1,27 @@
 # Documentation
 
-Start with installation, then open only the guide relevant to what you want to
-do.
+Start with the installation path for your system, then open only the guide you
+need.
 
-## Install and configure
+## Quick start
 
-- [Installation](installation.md): standard distribution, NixOS, and Home
-  Manager setup, upgrades, and removal.
-- [Configuration](configuration.md): settings, application rules, and
-  declarative Home Manager options.
-- [Shortcuts](shortcuts.md): default actions, the optional native editor, and
-  custom shortcut profiles.
+- [Compatible distributions](installation.md#install-a-release): install a
+  release KPackage.
+- [NixOS](installation.md#nixos): import the system flake module.
+- [Home Manager](installation.md#home-manager): import the per-user flake
+  module.
+- [Configuration](configuration.md): configure layouts, application rules,
+  appearance, and declarative options.
+- [Shortcuts](shortcuts.md): assign actions or use a custom shortcut profile.
 
-## Use Driftile
+## Guides
 
-- [Interaction model](interaction-model.md): window, column, and workspace
+- [Using Driftile](interaction-model.md): window, column, and workspace
   behavior.
-- [Overview companion](overview.md): optional layout overview installation and
-  controls.
+- [Spatial Overview](overview.md): optional Overview installation and controls.
 - [Compatibility](compatibility.md): supported Plasma sessions, backends, and
-  known platform limits.
+  platform limits.
+- [Migration](migration.md): changes that can affect an upgrade.
 
 ## Get help
 

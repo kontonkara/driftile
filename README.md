@@ -4,34 +4,30 @@
 [![Latest release](https://img.shields.io/github/v/release/kontonkara/driftile?display_name=tag)](https://github.com/kontonkara/driftile/releases/latest)
 
 Driftile is a KWin extension that adds scrollable tiling and dynamic workspaces
-to KDE Plasma. It changes layout and interaction policy while KWin remains the
-compositor and window manager.
+to KDE Plasma while KWin remains the compositor and window manager.
 
 ## Features
 
 - Scrollable columns with stacked or tabbed windows.
 - Retained layouts per output, virtual desktop, and activity.
 - Keyboard and pointer control for focus, movement, resizing, drag-and-drop,
-  and transfers between outputs or desktops.
+  and transfers between outputs and desktops.
 - Full-width columns, floating windows, native fullscreen and maximize, and
   stable minimized-window slots.
-- An optional spatial Overview with continuous workspace rows, exact projected
-  column geometry, reversible zoom, two-axis navigation, and guarded
-  drag-and-drop.
+- An optional spatial Overview with continuous workspace rows, projected
+  window geometry, two-axis navigation, and guarded drag-and-drop.
 - Configurable gaps, sizing presets, application rules, borders, overview,
   transitions, shortcuts, and layout restoration. An optional native KDE
   shortcut editor is available separately.
 
 ## Installation
 
-Driftile requires KDE Plasma with KWin 6.7 or newer. Choose the installation
-path for your system:
+Driftile requires KDE Plasma with KWin 6.7 or newer. Use the installation path
+for your system:
 
-| Installation scope                             | Instructions                                                           |
-| ---------------------------------------------- | ---------------------------------------------------------------------- |
-| Standard KPackage on a compatible distribution | [Install the release KPackage](docs/installation.md#install-a-release) |
-| NixOS system module                            | [Import the NixOS flake module](docs/installation.md#nixos)            |
-| Home Manager user module                       | [Import the per-user flake module](docs/installation.md#home-manager)  |
+- **Any compatible distribution:** [install the release KPackage](docs/installation.md#install-a-release).
+- **NixOS:** [import the NixOS flake module](docs/installation.md#nixos).
+- **Home Manager:** [import the per-user flake module](docs/installation.md#home-manager).
 
 For a standard installation, download the `.kwinscript` archive and
 `SHA256SUMS` from the
@@ -45,8 +41,7 @@ kpackagetool6 --type=KWin/Script --install ./driftile-*.kwinscript
 
 Enable **Driftile** in **System Settings > Window Management > KWin Scripts**.
 The [installation guide](docs/installation.md) also covers upgrades, removal,
-the optional overview, transition effect, native shortcut editor, and shortcut
-setup.
+shortcuts, and the optional Overview and transition effects.
 
 ## Configuration
 
@@ -57,7 +52,7 @@ use the optional [native shortcut editor](docs/installation.md#optional-native-s
 
 Nix users can declare the same settings through `programs.driftile.settings`.
 See [Configuration](docs/configuration.md), [Shortcuts](docs/shortcuts.md), and
-the [interaction guide](docs/interaction-model.md).
+[Using Driftile](docs/interaction-model.md).
 
 ## Compatibility
 
@@ -65,9 +60,7 @@ the [interaction guide](docs/interaction-model.md).
   layout model.
 - Native X11 is supported on one output; multi-output native X11 is unverified.
 - Touchpad navigation is available only on native Wayland.
-- With multiple activities, Driftile manages windows assigned to exactly one
-  activity. Windows shared across activities remain under KWin ownership.
-- Release archives are standard KWin KPackages and are distribution-neutral.
+- Release archives are standard, distribution-neutral KWin KPackages.
 
 See [Compatibility](docs/compatibility.md) for current platform and hardware
 limits.
@@ -77,8 +70,7 @@ limits.
 Driftile is under active development. Use the
 [latest stable release](https://github.com/kontonkara/driftile/releases/latest)
 for normal installation; `main` can contain unreleased behavior. Start with the
-[documentation index](docs/README.md) or the
-[troubleshooting guide](docs/troubleshooting.md), then
+[documentation](docs/README.md) or [troubleshooting](docs/troubleshooting.md), then
 [open an issue](https://github.com/kontonkara/driftile/issues/new/choose) if the
 problem remains.
 
