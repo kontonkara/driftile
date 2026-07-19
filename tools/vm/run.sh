@@ -172,6 +172,9 @@ monitor_guest() {
   local overview_horizontal_wheel_ready_file="$temporary_directory/xchg/driftile-overview-horizontal-wheel-ready"
   local overview_horizontal_wheel_sent=false
   local overview_horizontal_wheel_sent_file="$temporary_directory/xchg/driftile-overview-horizontal-wheel-sent"
+  local overview_window_drop_ready_file="$temporary_directory/xchg/driftile-overview-window-drop-ready"
+  local overview_window_drop_sent=false
+  local overview_window_drop_sent_file="$temporary_directory/xchg/driftile-overview-window-drop-sent"
   local -A keys_sent=(
     [bracket-right]=false
     [close-window]=false
@@ -219,6 +222,7 @@ monitor_guest() {
     [overview-enter-target]=false
     [overview-escape]=false
     [overview-reorder-escape]=false
+    [overview-window-drop-escape]=false
     [overview-open]=false
     [overview-search-close]=false
     [overview-search-edit]=false
@@ -280,6 +284,7 @@ monitor_guest() {
       overview-enter-target \
       overview-escape \
       overview-reorder-escape \
+      overview-window-drop-escape \
       equal \
       shift-minus \
       shift-equal \
@@ -362,6 +367,19 @@ monitor_guest() {
       printf 'The VM received the physical overview desktop drag.\n'
       : > "$overview_desktop_drag_sent_file"
       overview_desktop_drag_sent=true
+    fi
+
+    if [[ "$overview_window_drop_sent" == false \
+      && -f "$overview_window_drop_ready_file" ]]; then
+      if ! send_plain_pointer_drag "$overview_window_drop_ready_file"; then
+        printf 'Could not send the physical overview window drop.\n' >&2
+        finish_full_vm_monitor || true
+        return 1
+      fi
+
+      printf 'The VM received the physical overview window drop.\n'
+      : > "$overview_window_drop_sent_file"
+      overview_window_drop_sent=true
     fi
 
     if [[ "$overview_horizontal_wheel_sent" == false \
@@ -1379,7 +1397,7 @@ send_physical_shortcut() {
     overview-up)
       input='{"execute":"input-send-event","arguments":{"events":[{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"up"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"up"}}}]}}'
       ;;
-    overview-escape|overview-reorder-escape)
+    overview-escape|overview-reorder-escape|overview-window-drop-escape)
       input='{"execute":"input-send-event","arguments":{"events":[{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"esc"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"esc"}}}]}}'
       ;;
     desktop-1)

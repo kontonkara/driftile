@@ -4875,6 +4875,7 @@ let
         local kwin_horizontal_wheel_process_id
         local kwin_live_camera_process_id
         local kwin_search_process_id
+        local kwin_spatial_drop_process_id
         local live_camera_initial_width
         local live_refresh_base_title="Driftile VM Overview Live Refresh"
         local live_refresh_pid=""
@@ -4885,6 +4886,10 @@ let
         local plasma_loaded
         local reordered_checkpoint
         local reordered_sequence
+        local spatial_drop_checkpoint
+        local spatial_drop_source_frame
+        local spatial_drop_target_frame
+        local spatial_drop_target_width
         local trailing_desktop_id=""
         local xterm_title=$5
 
@@ -5439,6 +5444,88 @@ let
         record_focus_state \
           "physical overview search input changed a query and closed without restarting KWin"
 
+        spatial_drop_source_frame=$(
+          capture_stable_window_frame_contains "$firefox_title" 2>/dev/null \
+            || true
+        )
+        spatial_drop_target_frame=$(
+          capture_stable_window_frame_contains "$xterm_title" 2>/dev/null \
+            || true
+        )
+        spatial_drop_target_width=$(window_frame_width "$xterm_title" 2>/dev/null || true)
+        output_frame=$(single_enabled_output_frame 2>/dev/null || true)
+        if ! frame_is_valid "$spatial_drop_source_frame" \
+          || ! frame_is_valid "$spatial_drop_target_frame" \
+          || ! frame_is_valid "$output_frame" \
+          || [[ ! "$spatial_drop_target_width" =~ ^[1-9][0-9]*$ ]] \
+          || ! wait_for_pointer_stack_order \
+            "$firefox_title" \
+            "$xterm_title" \
+            "$spatial_drop_target_width"; then
+          overview_checkpoint_failure \
+            "the exact overview window-drop fixture did not preserve its initial stack"
+          return 1
+        fi
+
+        if ! invoke_shortcut "$overview_shortcut" \
+          || ! wait_for_effect_active_state "$overview_plugin_id" true \
+          || ! kwin_spatial_drop_process_id=$(kwin_process_id); then
+          overview_checkpoint_failure \
+            "the overview could not reopen for the exact spatial window drop"
+          return 1
+        fi
+        sleep 0.3
+
+        if ! request_physical_overview_window_drop \
+            "$spatial_drop_source_frame" \
+            "$spatial_drop_target_frame" \
+            "$output_frame" \
+          || ! wait_for_pointer_stack_order \
+            "$xterm_title" \
+            "$firefox_title" \
+            "$spatial_drop_target_width" \
+          || [[ "$(effect_active_state "$overview_plugin_id" 2>/dev/null || true)" != true ]] \
+          || ! kwin_process_is_unchanged "$kwin_spatial_drop_process_id" \
+          || ! overview_component_errors_after "$journal_cursor"; then
+          overview_checkpoint_failure \
+            "the physical overview window drop did not produce the exact reversed stack without restarting KWin"
+          return 1
+        fi
+
+        spatial_drop_checkpoint=$(capture_overview_checkpoint "$@") || {
+          overview_checkpoint_failure \
+            "the exact spatial window-drop checkpoint did not stabilize"
+          return 1
+        }
+        if [[ "$spatial_drop_checkpoint" == "$firefox_checkpoint" ]]; then
+          overview_checkpoint_failure \
+            "the exact spatial window drop did not change the persisted layout checkpoint"
+          return 1
+        fi
+
+        if ! request_physical_shortcut overview-window-drop-escape \
+          || ! wait_for_effect_active_state "$overview_plugin_id" false \
+          || ! kwin_process_is_unchanged "$kwin_spatial_drop_process_id" \
+          || ! wait_for_active "$firefox_title"; then
+          overview_checkpoint_failure \
+            "physical Escape did not close the spatial window-drop checkpoint without restarting KWin"
+          return 1
+        fi
+        after_checkpoint=$(capture_overview_checkpoint "$@") || {
+          overview_checkpoint_failure \
+            "the spatial window-drop checkpoint did not stabilize after closing"
+          return 1
+        }
+        if [[ "$after_checkpoint" != "$spatial_drop_checkpoint" ]] \
+          || ! overview_component_errors_after "$journal_cursor"; then
+          overview_checkpoint_failure \
+            "closing the exact spatial window-drop checkpoint changed its resulting layout"
+          return 1
+        fi
+
+        record_focus_state \
+          "a physical overview window drop reversed an exact stack without restarting KWin"
+
         if ! unload_overview_effect \
           || ! wait_for_shortcut_registration_state "$overview_shortcut" true; then
           overview_checkpoint_failure \
@@ -5472,7 +5559,7 @@ let
         }
         if [[ "$(effect_loaded_state "$overview_plugin_id")" != false ]] \
           || [[ "$(effect_active_state "$overview_plugin_id")" != false ]] \
-          || [[ "$after_checkpoint" != "$firefox_checkpoint" ]] \
+          || [[ "$after_checkpoint" != "$spatial_drop_checkpoint" ]] \
           || [[ "$(effect_loaded_state "$plasma_overview_effect_id")" != "$plasma_loaded" ]] \
           || [[ "$(effect_active_state "$plasma_overview_effect_id")" != "$plasma_active" ]] \
           || [[ "$(busctl --user call \
@@ -9113,6 +9200,113 @@ let
           && source_y < output_y + output_height \
           && destination_y >= output_y \
           && destination_y < source_y)) \
+          || return 1
+
+        rm -f "$ready_file" "$sent_file" "$temporary_file"
+        printf '%s %s %s %s %s %s %s %s\n' \
+          "$source_x" \
+          "$source_y" \
+          "$destination_x" \
+          "$destination_y" \
+          "$output_x" \
+          "$output_y" \
+          "$output_width" \
+          "$output_height" \
+          > "$temporary_file"
+        mv "$temporary_file" "$ready_file"
+
+        for ((attempt = 0; attempt < 100; attempt += 1)); do
+          [[ -f "$sent_file" ]] && return 0
+          sleep 0.1
+        done
+
+        return 1
+      }
+
+      request_physical_overview_window_drop() {
+        local attempt
+        local card_height_milli
+        local destination_x
+        local destination_x_milli
+        local destination_y
+        local destination_y_milli
+        local edge_margin_milli
+        local output_frame=$3
+        local output_height
+        local output_width
+        local output_x
+        local output_y
+        local projected_width_milli
+        local ready_file=/tmp/shared/driftile-overview-window-drop-ready
+        local sent_file=/tmp/shared/driftile-overview-window-drop-sent
+        local source_frame=$1
+        local source_height
+        local source_width
+        local source_x
+        local source_x_milli
+        local source_y
+        local source_y_milli
+        local target_frame=$2
+        local target_height
+        local target_width
+        local target_x
+        local target_y
+        local temporary_file="$ready_file.tmp"
+        local viewport_origin_x_milli
+        local zoom_milli=500
+
+        frame_is_valid "$source_frame" || return 1
+        frame_is_valid "$target_frame" || return 1
+        frame_is_valid "$output_frame" || return 1
+        IFS=, read -r \
+          source_x \
+          source_y \
+          source_width \
+          source_height \
+          <<< "$source_frame"
+        IFS=, read -r \
+          target_x \
+          target_y \
+          target_width \
+          target_height \
+          <<< "$target_frame"
+        IFS=, read -r \
+          output_x \
+          output_y \
+          output_width \
+          output_height \
+          <<< "$output_frame"
+
+        card_height_milli=$((output_height * zoom_milli))
+        edge_margin_milli=$(((output_height * 1000 - card_height_milli) / 2))
+        projected_width_milli=$((output_width * zoom_milli))
+        viewport_origin_x_milli=$(((output_width * 1000 - projected_width_milli) / 2))
+        source_x_milli=$((output_x * 1000 + viewport_origin_x_milli \
+          + (source_x - output_x) * zoom_milli \
+          + source_width * zoom_milli / 2))
+        source_y_milli=$((output_y * 1000 + edge_margin_milli \
+          + (source_y - output_y) * zoom_milli \
+          + source_height * zoom_milli / 2))
+        destination_x_milli=$((output_x * 1000 + viewport_origin_x_milli \
+          + (target_x - output_x) * zoom_milli \
+          + target_width * zoom_milli / 2))
+        destination_y_milli=$((output_y * 1000 + edge_margin_milli \
+          + (target_y - output_y) * zoom_milli \
+          + target_height * zoom_milli * 3 / 4))
+        source_x=$(((source_x_milli + 500) / 1000))
+        source_y=$(((source_y_milli + 500) / 1000))
+        destination_x=$(((destination_x_milli + 500) / 1000))
+        destination_y=$(((destination_y_milli + 500) / 1000))
+
+        ((source_x >= output_x \
+          && source_x < output_x + output_width \
+          && source_y >= output_y \
+          && source_y < output_y + output_height \
+          && destination_x >= output_x \
+          && destination_x < output_x + output_width \
+          && destination_y >= output_y \
+          && destination_y < output_y + output_height \
+          && (source_x != destination_x || source_y != destination_y))) \
           || return 1
 
         rm -f "$ready_file" "$sent_file" "$temporary_file"
