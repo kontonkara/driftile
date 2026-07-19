@@ -73,6 +73,7 @@ Rectangle {
     readonly property real cardX: overviewSpatialLayout.cardX
     readonly property real cardTop: overviewSpatialLayout.edgeMargin - spatialVisualContentY
     property bool desktopReorderAvailable: false
+    property int desktopTopologyRefreshRequestId: 0
     property bool emptyDesktopAboveFirst: false
     property bool keyboardHelpVisible: false
     property string keyboardSelectionId: ""
@@ -138,6 +139,17 @@ Rectangle {
     property var spatialWindowDragSource: null
     property string spatialWindowDragSourceDesktopId: ""
     property int spatialWindowDragSourceWorkspaceIndex: -1
+    readonly property int spatialWindowDragHoverThresholdMilliseconds: 600
+    property string spatialWindowDragHoverCurrentDesktopId: ""
+    property int spatialWindowDragHoverGeometryEpoch: -1
+    property int spatialWindowDragHoverModelEpoch: -1
+    property var spatialWindowDragHoverSource: null
+    property string spatialWindowDragHoverSourceDesktopId: ""
+    property var spatialWindowDragHoverTargetDesktop: null
+    property string spatialWindowDragHoverTargetDesktopId: ""
+    property var spatialWindowDragHoverTargetScreen: null
+    property int spatialWindowDragHoverTargetWorkspaceIndex: -1
+    property int spatialWindowDragHoverSessionId: 0
     property real spatialEdgePanSceneX: Number.NaN
     property real spatialEdgePanSceneY: Number.NaN
     property real spatialEdgePanPointerX: Number.NaN
@@ -175,8 +187,12 @@ Rectangle {
         keyboardSelectionViewportTarget = null;
         root.synchronizeKeyboardSelectionViewport(target);
     }
-    onKeyboardHelpVisibleChanged: root.resetOverviewWheelState()
-    onCurrentDesktopChanged: {
+    onKeyboardHelpVisibleChanged: {
+        root.resetOverviewWheelState();
+        root.resetWindowWorkspaceHover();
+    }
+    onCurrentDesktopChanged: root.handleCurrentDesktopChanged()
+    function handleCurrentDesktopChanged() {
         if (spatialPresentationPhase === "closing") {
             if (sceneEffect && typeof sceneEffect.deactivateImmediately === "function") {
                 sceneEffect.deactivateImmediately();
@@ -186,6 +202,18 @@ Rectangle {
         if (spatialPresentationPhase === "opening" && currentWorkspaceIndex >= 0
                 && currentWorkspaceIndex < desktopIds.length) {
             spatialPresentationWorkspaceIndex = currentWorkspaceIndex;
+        }
+        if (spatialPresentationInteractive && spatialWindowDragSource !== null
+                && windowSpatialDragSourceIsExact(spatialWindowDragSource,
+                                                  spatialWindowDragSourceDesktopId)) {
+            resetWindowWorkspaceHover();
+            const plan = planSpatialWorkspaceCenter(currentWorkspaceIndex);
+            if (plan) {
+                setSpatialContentY(plan.contentY, true);
+            }
+            resolveSpatialLiveCamera();
+            Qt.callLater(root.repairKeyboardSelection);
+            return;
         }
         root.refreshOverviewSpatialSession(false, spatialPresentationInteractive);
     }
@@ -203,6 +231,7 @@ Rectangle {
     }
     onSearchQueryChanged: {
         resetOverviewWheelState();
+        resetWindowWorkspaceHover();
         cancelKeyboardBoundaryNavigation();
         Qt.callLater(root.repairKeyboardSelection);
     }
@@ -323,7 +352,7 @@ Rectangle {
         ignoreUnknownSignals: true
 
         function onDesktopsChanged() {
-            root.closeStaleOverview();
+            root.scheduleDesktopTopologyRefresh();
         }
 
         function onCurrentActivityChanged() {
@@ -522,6 +551,15 @@ Rectangle {
         onTriggered: root.advanceSpatialEdgePan(interval)
     }
 
+    Timer {
+        id: spatialWindowDragHoverTimer
+
+        interval: root.spatialWindowDragHoverThresholdMilliseconds
+        repeat: false
+        triggeredOnStart: false
+        onTriggered: root.completeWindowWorkspaceHover()
+    }
+
     NumberAnimation {
         id: spatialVerticalCameraAnimation
 
@@ -581,6 +619,7 @@ Rectangle {
         anchors.fill: parent
         enabled: root.sceneEffect && root.sceneEffect.active === true
                  && !root.keyboardHelpVisible && !root.desktopReorderActive
+                 && !spatialHorizontalRowDragHandler.active
                  && root.overviewSpatialLayout.contentHeight > root.height
         containmentMask: QtObject {
             function contains(point: point) : bool {
@@ -635,6 +674,7 @@ Rectangle {
         anchors.fill: parent
         enabled: root.sceneEffect && root.sceneEffect.active === true
                  && !root.keyboardHelpVisible && !root.desktopReorderActive
+                 && !spatialHorizontalRowDragHandler.active
         containmentMask: QtObject {
             function contains(point: point) : bool {
                 return root.spatialHorizontalViewportBackdropContains(point);
@@ -733,7 +773,7 @@ Rectangle {
 
                 sourceComponent: Component {
                     DesktopCard {
-                        enabled: !root.keyboardHelpVisible
+                        enabled: !root.keyboardHelpVisible && !root.spatialHorizontalRowDragHandler.active
                         context: root.contextFor(desktopCardLoader.modelData)
                         current: root.currentDesktop !== null
                             && String(root.currentDesktop.id) === desktopCardLoader.modelData
@@ -757,6 +797,8 @@ Rectangle {
                         spatialRowGeometryPlan: root.spatialHorizontalGeometryPlanAt(
                                                     desktopCardLoader.index, desktopCardLoader.modelData,
                                                     root.spatialHorizontalViewportRevision)
+                        windowWorkspaceHoverTarget: root.spatialWindowDragHoverTargetDesktopId
+                            === desktopCardLoader.modelData
                         searchQuery: root.searchQuery
                         searchQueryPlan: root.searchQueryPlan
                         searchResultCount: root.searchResultCountForDesktop(desktopCardLoader.modelData)
@@ -806,7 +848,70 @@ Rectangle {
                                                           source, desktopCardLoader.modelData, sceneX, sceneY)
                         onWindowSpatialDragFinished: source => root.finishWindowSpatialEdgePan(
                                                          source, desktopCardLoader.modelData)
+                        onWindowWorkspaceHoverEntered: (source, expectedTargetDesktop,
+                                                         expectedTargetDesktopId, expectedTargetScreen,
+                                                         sceneX, sceneY) =>
+                                                            root.beginWindowWorkspaceHover(
+                                                                source, expectedTargetDesktop,
+                                                                expectedTargetDesktopId,
+                                                                expectedTargetScreen, sceneX, sceneY)
+                        onWindowWorkspaceHoverMoved: (source, expectedTargetDesktop,
+                                                       expectedTargetDesktopId, expectedTargetScreen,
+                                                       sceneX, sceneY) =>
+                                                          root.moveWindowWorkspaceHover(
+                                                              source, expectedTargetDesktop,
+                                                              expectedTargetDesktopId,
+                                                              expectedTargetScreen, sceneX, sceneY)
+                        onWindowWorkspaceHoverLeft: (source, expectedTargetDesktop,
+                                                      expectedTargetDesktopId, expectedTargetScreen) =>
+                                                         root.leaveWindowWorkspaceHover(
+                                                             source, expectedTargetDesktop,
+                                                             expectedTargetDesktopId,
+                                                             expectedTargetScreen)
                     }
+                }
+            }
+        }
+    }
+
+    Item {
+        id: spatialHorizontalRowInput
+
+        anchors.fill: parent
+        enabled: root.spatialPresentationInteractive && root.sceneEffect
+                 && root.sceneEffect.active === true && !root.keyboardHelpVisible
+                 && !root.desktopReorderActive && root.spatialWindowDragSource === null
+                 && !spatialViewportDragHandler.active
+                 && !spatialHorizontalViewportDragHandler.active
+        z: 9000
+        containmentMask: QtObject {
+            function contains(point: point) : bool {
+                return root.spatialHorizontalViewportRowContains(point);
+            }
+        }
+
+        DragHandler {
+            id: spatialHorizontalRowDragHandler
+
+            target: null
+            acceptedButtons: Qt.RightButton
+            acceptedDevices: PointerDevice.Mouse
+            acceptedModifiers: Qt.NoModifier
+            grabPermissions: PointerHandler.TakeOverForbidden
+            xAxis.enabled: true
+            yAxis.enabled: false
+
+            onActiveChanged: {
+                if (active) {
+                    root.beginSpatialHorizontalViewportDrag(centroid.pressPosition, true);
+                    root.updateSpatialHorizontalViewportDrag(activeTranslation.x);
+                } else {
+                    root.clearSpatialHorizontalViewportDrag();
+                }
+            }
+            onActiveTranslationChanged: {
+                if (active) {
+                    root.updateSpatialHorizontalViewportDrag(activeTranslation.x);
                 }
             }
         }
@@ -1262,6 +1367,7 @@ Rectangle {
     function beginWindowSpatialEdgePan(source, expectedDesktopId, sceneX, sceneY) {
         const workspaceIndex = desktopIds.indexOf(expectedDesktopId);
         if (desktopReorderActive || spatialWindowDragSource !== null
+                || spatialHorizontalRowDragHandler.active
                 || workspaceIndex < 0 || workspaceIndex >= desktopIds.length
                 || !windowSpatialDragSourceIsExact(source, expectedDesktopId)) {
             return;
@@ -1295,6 +1401,217 @@ Rectangle {
                 && expectedDesktopId === spatialWindowDragSourceDesktopId) {
             resetSpatialEdgePanTracking();
         }
+    }
+
+    function beginWindowWorkspaceHover(source, expectedTargetDesktop, expectedTargetDesktopId,
+                                       expectedTargetScreen, sceneX, sceneY) {
+        resetWindowWorkspaceHover();
+        if (!Number.isFinite(sceneX) || !Number.isFinite(sceneY)
+                || source !== spatialWindowDragSource
+                || !windowSpatialDragSourceIsExact(source, spatialWindowDragSourceDesktopId)) {
+            return false;
+        }
+
+        const effect = sceneEffect;
+        const sessionId = effect && Number.isInteger(effect.activeSessionId)
+            ? effect.activeSessionId : 0;
+        const currentDesktopId = currentDesktop && currentDesktop.id !== undefined
+            && currentDesktop.id !== null ? String(currentDesktop.id) : "";
+        const targetWorkspaceIndex = desktopIds.indexOf(expectedTargetDesktopId);
+        if (sessionId <= 0 || targetWorkspaceIndex < 0
+                || targetWorkspaceIndex >= desktopIds.length
+                || desktopIds[targetWorkspaceIndex] !== expectedTargetDesktopId
+                || !windowWorkspaceHoverTargetIsExact(source, expectedTargetDesktop,
+                                                       expectedTargetDesktopId,
+                                                       expectedTargetScreen,
+                                                       targetWorkspaceIndex)) {
+            return false;
+        }
+
+        const plan = planWindowWorkspaceHover(0, sessionId, overviewDesktopCardEpoch,
+                                              spatialHorizontalViewportRevision,
+                                              currentDesktopId, source.sourceDesktopId,
+                                              expectedTargetDesktopId, targetWorkspaceIndex);
+        if (!plan || plan.intent !== "pending") {
+            return false;
+        }
+
+        spatialWindowDragHoverCurrentDesktopId = currentDesktopId;
+        spatialWindowDragHoverGeometryEpoch = spatialHorizontalViewportRevision;
+        spatialWindowDragHoverModelEpoch = overviewDesktopCardEpoch;
+        spatialWindowDragHoverSource = source;
+        spatialWindowDragHoverSourceDesktopId = source.sourceDesktopId;
+        spatialWindowDragHoverTargetDesktop = expectedTargetDesktop;
+        spatialWindowDragHoverTargetDesktopId = expectedTargetDesktopId;
+        spatialWindowDragHoverTargetScreen = expectedTargetScreen;
+        spatialWindowDragHoverTargetWorkspaceIndex = targetWorkspaceIndex;
+        spatialWindowDragHoverSessionId = sessionId;
+        spatialWindowDragHoverTimer.restart();
+        return true;
+    }
+
+    function moveWindowWorkspaceHover(source, expectedTargetDesktop, expectedTargetDesktopId,
+                                      expectedTargetScreen, sceneX, sceneY) {
+        if (!Number.isFinite(sceneX) || !Number.isFinite(sceneY)) {
+            resetWindowWorkspaceHover();
+            return false;
+        }
+        if (!windowWorkspaceHoverOwnershipMatches(source, expectedTargetDesktop,
+                                                   expectedTargetDesktopId,
+                                                   expectedTargetScreen)) {
+            return beginWindowWorkspaceHover(source, expectedTargetDesktop,
+                                             expectedTargetDesktopId, expectedTargetScreen,
+                                             sceneX, sceneY);
+        }
+        return true;
+    }
+
+    function leaveWindowWorkspaceHover(source, expectedTargetDesktop, expectedTargetDesktopId,
+                                       expectedTargetScreen) {
+        if (!windowWorkspaceHoverOwnershipMatches(source, expectedTargetDesktop,
+                                                   expectedTargetDesktopId,
+                                                   expectedTargetScreen)) {
+            return false;
+        }
+        resetWindowWorkspaceHover();
+        return true;
+    }
+
+    function completeWindowWorkspaceHover() {
+        if (!windowWorkspaceHoverContextIsExact()) {
+            resetWindowWorkspaceHover();
+            return false;
+        }
+
+        const plan = planWindowWorkspaceHover(spatialWindowDragHoverThresholdMilliseconds,
+                                              spatialWindowDragHoverSessionId,
+                                              spatialWindowDragHoverModelEpoch,
+                                              spatialWindowDragHoverGeometryEpoch,
+                                              spatialWindowDragHoverCurrentDesktopId,
+                                              spatialWindowDragHoverSourceDesktopId,
+                                              spatialWindowDragHoverTargetDesktopId,
+                                              spatialWindowDragHoverTargetWorkspaceIndex);
+        if (!plan || plan.intent !== "activate") {
+            resetWindowWorkspaceHover();
+            return false;
+        }
+
+        const effect = sceneEffect;
+        const model = overviewModel;
+        const liveScreen = liveScreenFor(spatialWindowDragHoverTargetScreen);
+        const expectedOutput = projectedOutput(model, liveScreen);
+        const expectedOutputId = expectedOutput ? String(expectedOutput.outputId) : "";
+        const liveDesktop = liveDesktopFor(spatialWindowDragHoverTargetDesktop,
+                                           spatialWindowDragHoverTargetDesktopId);
+        const expectedDesktopId = spatialWindowDragHoverTargetDesktopId;
+        resetWindowWorkspaceHover();
+        return requestDesktopSelection(effect, model, liveScreen, expectedOutput, expectedOutputId,
+                                       liveDesktop, expectedDesktopId);
+    }
+
+    function planWindowWorkspaceHover(elapsedMilliseconds, sessionId, modelEpoch, geometryEpoch,
+                                      expectedCurrentDesktopId, sourceDesktopId, targetDesktopId,
+                                      targetWorkspaceIndex) {
+        const runtime = OverviewRuntime.DriftileOverview;
+        if (!runtime || typeof runtime.planOverviewSpatialDragHover !== "function") {
+            return null;
+        }
+
+        let plan = null;
+        try {
+            plan = runtime.planOverviewSpatialDragHover({
+                activationThresholdMilliseconds: spatialWindowDragHoverThresholdMilliseconds,
+                activeGeometryEpoch: spatialHorizontalViewportRevision,
+                activeModelEpoch: overviewDesktopCardEpoch,
+                activeSessionId: sceneEffect ? sceneEffect.activeSessionId : 0,
+                currentDesktopId: currentDesktop && currentDesktop.id !== undefined
+                    && currentDesktop.id !== null ? String(currentDesktop.id) : "",
+                elapsedMilliseconds,
+                geometryEpoch,
+                modelEpoch,
+                rowCount: desktopIds.length,
+                sessionId,
+                sourceDesktopId,
+                targetDesktopId,
+                targetRowIndex: targetWorkspaceIndex
+            });
+        } catch (error) {
+            return null;
+        }
+
+        return plan && !Array.isArray(plan)
+            && (plan.intent === "pending" || plan.intent === "activate")
+            && plan.targetDesktopId === targetDesktopId
+            && plan.targetRowIndex === targetWorkspaceIndex
+            && expectedCurrentDesktopId === (currentDesktop && currentDesktop.id !== undefined
+                && currentDesktop.id !== null ? String(currentDesktop.id) : "")
+            ? plan : null;
+    }
+
+    function windowWorkspaceHoverContextIsExact() {
+        try {
+            const source = spatialWindowDragHoverSource;
+            const targetDesktop = spatialWindowDragHoverTargetDesktop;
+            const targetDesktopId = spatialWindowDragHoverTargetDesktopId;
+            const targetScreen = spatialWindowDragHoverTargetScreen;
+            const targetWorkspaceIndex = spatialWindowDragHoverTargetWorkspaceIndex;
+            const card = desktopCardAt(targetWorkspaceIndex);
+            return spatialWindowDragHoverSessionId > 0
+                && sceneEffect && sceneEffect.active === true
+                && sceneEffect.activeSessionId === spatialWindowDragHoverSessionId
+                && sceneEffect.overviewModel === overviewModel
+                && overviewDesktopCardEpoch === spatialWindowDragHoverModelEpoch
+                && spatialHorizontalViewportRevision === spatialWindowDragHoverGeometryEpoch
+                && windowWorkspaceHoverOwnershipMatches(source, targetDesktop,
+                                                         targetDesktopId, targetScreen)
+                && windowWorkspaceHoverTargetIsExact(source, targetDesktop, targetDesktopId,
+                                                      targetScreen, targetWorkspaceIndex)
+                && card && card.windowDropHoverOwned === true
+                && card.windowDropHoverSource === source;
+        } catch (error) {
+            return false;
+        }
+    }
+
+    function windowWorkspaceHoverOwnershipMatches(source, expectedTargetDesktop,
+                                                   expectedTargetDesktopId, expectedTargetScreen) {
+        return spatialWindowDragHoverSource !== null && source === spatialWindowDragHoverSource
+            && expectedTargetDesktop === spatialWindowDragHoverTargetDesktop
+            && expectedTargetDesktopId === spatialWindowDragHoverTargetDesktopId
+            && expectedTargetScreen === spatialWindowDragHoverTargetScreen;
+    }
+
+    function windowWorkspaceHoverTargetIsExact(source, expectedTargetDesktop,
+                                                expectedTargetDesktopId, expectedTargetScreen,
+                                                targetWorkspaceIndex) {
+        try {
+            return source && source.sourceDesktopId !== expectedTargetDesktopId
+                && expectedTargetDesktop && expectedTargetDesktop.id !== undefined
+                && expectedTargetDesktop.id !== null
+                && String(expectedTargetDesktop.id) === expectedTargetDesktopId
+                && expectedTargetScreen === targetScreen
+                && liveScreenFor(expectedTargetScreen) === expectedTargetScreen
+                && Number.isInteger(targetWorkspaceIndex) && targetWorkspaceIndex >= 0
+                && targetWorkspaceIndex < desktopIds.length
+                && desktopIds[targetWorkspaceIndex] === expectedTargetDesktopId
+                && desktopForId(expectedTargetDesktopId) === expectedTargetDesktop;
+        } catch (error) {
+            return false;
+        }
+    }
+
+    function resetWindowWorkspaceHover() {
+        spatialWindowDragHoverTimer.stop();
+        spatialWindowDragHoverCurrentDesktopId = "";
+        spatialWindowDragHoverGeometryEpoch = -1;
+        spatialWindowDragHoverModelEpoch = -1;
+        spatialWindowDragHoverSource = null;
+        spatialWindowDragHoverSourceDesktopId = "";
+        spatialWindowDragHoverTargetDesktop = null;
+        spatialWindowDragHoverTargetDesktopId = "";
+        spatialWindowDragHoverTargetScreen = null;
+        spatialWindowDragHoverTargetWorkspaceIndex = -1;
+        spatialWindowDragHoverSessionId = 0;
     }
 
     function windowSpatialDragSourceIsExact(source, expectedDesktopId) {
@@ -1360,6 +1677,7 @@ Rectangle {
     }
 
     function resetSpatialEdgePanTracking() {
+        resetWindowWorkspaceHover();
         spatialWindowDragSource = null;
         spatialWindowDragSourceDesktopId = "";
         spatialWindowDragSourceWorkspaceIndex = -1;
@@ -1395,6 +1713,7 @@ Rectangle {
     }
 
     function resetOverviewSession() {
+        invalidateDesktopTopologyRefresh();
         resetSpatialLiveCameraSession();
         keyboardSelectionViewportTarget = null;
         keyboardSelectionId = "";
@@ -1405,6 +1724,43 @@ Rectangle {
         spatialHorizontalViewportOffsets = [];
         spatialViewportSnapshot = null;
         refreshOverviewSpatialSession(false);
+    }
+
+    function scheduleDesktopTopologyRefresh() {
+        const effect = sceneEffect;
+        const expectedModel = overviewModel;
+        const expectedSessionId = effect && Number.isInteger(effect.activeSessionId)
+            ? effect.activeSessionId : 0;
+        if (!effect || effect.active !== true || spatialPresentationPhase === "closing"
+                || !expectedModel || expectedSessionId <= 0) {
+            return false;
+        }
+
+        invalidateDesktopTopologyRefresh();
+        const requestId = desktopTopologyRefreshRequestId;
+        resetWindowWorkspaceHover();
+        Qt.callLater(function() {
+            root.completeDesktopTopologyRefresh(requestId, expectedSessionId, expectedModel);
+        });
+        return true;
+    }
+
+    function completeDesktopTopologyRefresh(requestId, expectedSessionId, expectedModel) {
+        const effect = sceneEffect;
+        if (requestId !== desktopTopologyRefreshRequestId || !effect || effect.active !== true
+                || spatialPresentationPhase === "closing"
+                || effect.activeSessionId !== expectedSessionId || overviewModel !== expectedModel
+                || effect.overviewModel !== expectedModel) {
+            return false;
+        }
+
+        refreshOverviewSpatialSession(true);
+        return true;
+    }
+
+    function invalidateDesktopTopologyRefresh() {
+        desktopTopologyRefreshRequestId = desktopTopologyRefreshRequestId >= 2147483646
+            ? 0 : desktopTopologyRefreshRequestId + 1;
     }
 
     function refreshOverviewSpatialSession(preserveViewport, animateViewport = false) {
@@ -2986,10 +3342,41 @@ Rectangle {
         }
     }
 
-    function beginSpatialHorizontalViewportDrag(point) {
+    function spatialHorizontalViewportRowContains(point) {
+        if (!point || !Number.isFinite(point.x) || !Number.isFinite(point.y)
+                || point.x < 0 || point.y < 0 || point.x >= width || point.y >= height
+                || !spatialPresentationInteractive || keyboardHelpVisible || desktopReorderActive
+                || spatialWindowDragSource !== null || spatialViewportDragHandler.active
+                || spatialHorizontalViewportDragHandler.active
+                || spatialViewportOverlayContainsPoint(keyboardHelpHint, point)
+                || spatialViewportOverlayContainsPoint(searchOverlay, point)
+                || spatialViewportOverlayContainsPoint(outputIdentityLoader, point)) {
+            return false;
+        }
+
+        const workspaceIndex = spatialWorkspaceIndexAtPoint(point);
+        if (workspaceIndex < 0 || workspaceIndex >= desktopIds.length) {
+            return false;
+        }
+        const expectedDesktopId = desktopIds[workspaceIndex];
+        const card = desktopCardAt(workspaceIndex);
+        const bounds = spatialHorizontalViewportBounds(workspaceIndex, expectedDesktopId);
+        const viewportOffset = spatialHorizontalViewportOffsetForBounds(workspaceIndex,
+                                                                        expectedDesktopId, bounds);
+        return typeof expectedDesktopId === "string" && expectedDesktopId.length > 0
+            && card && card.desktopId === expectedDesktopId
+            && Number.isFinite(card.projectionScale) && card.projectionScale > 0
+            && bounds && Number.isFinite(bounds.minimum) && Number.isFinite(bounds.maximum)
+            && bounds.minimum < bounds.maximum && Number.isFinite(viewportOffset)
+            && viewportOffset >= bounds.minimum && viewportOffset <= bounds.maximum;
+    }
+
+    function beginSpatialHorizontalViewportDrag(point, includeWindows = false) {
         clearSpatialHorizontalViewportDrag();
-        if (!spatialWheelPresentationIsExact()
-                || !spatialHorizontalViewportBackdropContains(point)) {
+        const pointAccepted = includeWindows === true
+            ? spatialHorizontalViewportRowContains(point)
+            : includeWindows === false && spatialHorizontalViewportBackdropContains(point);
+        if (!spatialPresentationInteractive || !spatialWheelPresentationIsExact() || !pointAccepted) {
             return false;
         }
 
@@ -3600,6 +3987,7 @@ Rectangle {
                     || searchQuery.length > 0 || keyboardHelpVisible || desktopReorderActive
                     || spatialWindowDragSource !== null || spatialViewportDragHandler.active
                     || spatialHorizontalViewportDragHandler.active
+                    || spatialHorizontalRowDragHandler.active
                     || desktopRepeater.count !== desktopIds.length
                     || !spatialLayoutIsValid(overviewSpatialLayout)
                     || !Number.isInteger(request.workspaceIndex)
@@ -3791,6 +4179,7 @@ Rectangle {
                 return false;
             }
             if (spatialViewportDragHandler.active || spatialHorizontalViewportDragHandler.active
+                    || spatialHorizontalRowDragHandler.active
                     || spatialWindowDragSource !== null
                     || desktopReorderActive) {
                 resetOverviewWheelState();
@@ -3842,6 +4231,7 @@ Rectangle {
                 cancelOverviewHorizontalWheelSelectionRequest();
             }
             if (spatialViewportDragHandler.active || spatialHorizontalViewportDragHandler.active
+                    || spatialHorizontalRowDragHandler.active
                     || spatialWindowDragSource !== null
                     || desktopReorderActive) {
                 resetOverviewWheelState();
@@ -4231,6 +4621,7 @@ Rectangle {
                     || keyboardSelectionId !== expectedSourceTargetId || searchQuery.length > 0
                     || keyboardHelpVisible || spatialViewportDragHandler.active
                     || spatialHorizontalViewportDragHandler.active
+                    || spatialHorizontalRowDragHandler.active
                     || spatialWindowDragSource !== null || desktopReorderActive
                     || !spatialWheelPresentationIsExact()) {
                 return false;

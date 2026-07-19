@@ -59,8 +59,10 @@ pending movement in the old direction.
 
 Dragging empty space pans the workspace plane vertically. Dragging empty space
 inside a row pans that row horizontally within its finite bounds. Window and
-desktop drags can continue navigation through the matching edge zones. No pan,
-wheel, gesture, or reveal operation changes persisted layout state.
+desktop drags can continue navigation through the matching edge zones. A
+right-button drag pans the row under the pointer horizontally, including when
+the drag starts over a window thumbnail. No pan, wheel, gesture, or reveal
+operation changes persisted layout state.
 
 The optional touchpad activation gesture uses KWin's native Wayland API. It is a
 safe no-op on native X11. Four fingers are used by default when the gesture is
@@ -86,9 +88,14 @@ revealed when selected.
 
 A left click activates a visible window or selects a non-current workspace.
 Dragging a visible window can transfer it to another desktop or output after
-the source and destination are revalidated. Dragging the compact workspace
-number marker reorders eligible desktops. The protected final empty desktop is
-never reordered or crossed.
+the source and destination are revalidated. Holding the dragged window over
+another workspace activates that workspace after a bounded dwell while keeping
+the drag active. Dragging the compact workspace number marker reorders eligible
+desktops. The protected final empty desktop is never reordered or crossed.
+
+Adding, removing, or reordering virtual desktops refreshes an active Overview
+in place. Activity and output topology changes still close a stale scene
+instead of applying input to uncertain targets.
 
 ## Search
 

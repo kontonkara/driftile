@@ -5193,9 +5193,10 @@ let
         if ! request_physical_overview_desktop_drag \
             "$output_frame" \
             "$desktop_count" \
-          || ! wait_for_effect_active_state "$overview_plugin_id" false; then
+          || ! wait_for_effect_active_state "$overview_plugin_id" true \
+          || ! kwin_process_is_unchanged "$kwin_live_camera_process_id"; then
           overview_checkpoint_failure \
-            "the plain physical gutter drag did not close the overview after reordering"
+            "the plain physical gutter drag did not keep the reordered overview active without restarting KWin"
           return 1
         fi
 
@@ -5223,9 +5224,19 @@ let
           || ! wait_for_window_desktop "$xterm_title" "$primary_desktop_id" \
           || [[ "$expected_reordered_checkpoint" == "$fixture_checkpoint" ]] \
           || [[ "$reordered_checkpoint" != "$expected_reordered_checkpoint" ]] \
+          || [[ "$(effect_active_state "$overview_plugin_id" 2>/dev/null || true)" != true ]] \
+          || ! kwin_process_is_unchanged "$kwin_live_camera_process_id" \
           || ! overview_component_errors_after "$journal_cursor"; then
           overview_checkpoint_failure \
-            "the desktop reorder changed IDs, the protected tail, focus, applications, or layout state"
+            "the live desktop reorder changed IDs, the protected tail, focus, applications, layout state, or the KWin process"
+          return 1
+        fi
+
+        if ! request_physical_shortcut overview-escape \
+          || ! wait_for_effect_active_state "$overview_plugin_id" false \
+          || ! kwin_process_is_unchanged "$kwin_live_camera_process_id"; then
+          overview_checkpoint_failure \
+            "physical Escape did not close the live reordered overview without restarting KWin"
           return 1
         fi
 
@@ -5264,9 +5275,10 @@ let
         fi
 
         if ! invoke_shortcut "$overview_shortcut" \
-          || ! wait_for_effect_active_state "$overview_plugin_id" true; then
+          || ! wait_for_effect_active_state "$overview_plugin_id" true \
+          || ! kwin_process_is_unchanged "$kwin_live_camera_process_id"; then
           overview_checkpoint_failure \
-            "the overview could not reopen after the desktop reorder checkpoint"
+            "the overview could not reopen after the live desktop reorder checkpoint without restarting KWin"
           return 1
         fi
         sleep 0.3

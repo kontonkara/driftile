@@ -2740,3 +2740,16 @@ Release criteria (met):
 - Packaged Wayland, multi-output Wayland, X11, Nix, and hidden VM checks pass.
   The physical workspace-reorder checkpoint targets the compact row marker in
   the full-width plane.
+
+### Current development (unreleased)
+
+- Pan the row under the pointer horizontally with a right-button drag, including
+  when the drag starts over a window thumbnail.
+- Keep a window drag active while a bounded dwell over another workspace
+  activates that workspace for a continued transfer.
+- Refresh an active Overview in place when virtual desktops are added, removed,
+  or reordered, while retaining fail-closed handling for broader context
+  changes.
+
+This is an incremental pointer-continuity batch. The spatial Overview remains
+under active development.

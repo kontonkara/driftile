@@ -118,6 +118,10 @@ QtObject {
         function onWindowRemoved() {
             controller.requestLiveModelRefresh();
         }
+
+        function onDesktopsChanged() {
+            controller.requestLiveModelRefresh();
+        }
     }
 
     function toggle() {

@@ -28,6 +28,7 @@ Item {
     required property real previewViewportOffset
     required property var spatialRowGeometryPlan
     property string keyboardSelectionId: ""
+    property bool windowWorkspaceHoverTarget: false
 
     signal desktopTapped(var candidate, string expectedDesktopId, var expectedScreen)
     signal desktopReorderCanceled(string expectedDesktopId)
@@ -44,6 +45,14 @@ Item {
     signal windowSpatialDragStarted(var source, real sceneX, real sceneY)
     signal windowSpatialDragMoved(var source, real sceneX, real sceneY)
     signal windowSpatialDragFinished(var source)
+    signal windowWorkspaceHoverEntered(var source, var expectedTargetDesktop,
+                                       string expectedTargetDesktopId, var expectedTargetScreen,
+                                       real sceneX, real sceneY)
+    signal windowWorkspaceHoverMoved(var source, var expectedTargetDesktop,
+                                     string expectedTargetDesktopId, var expectedTargetScreen,
+                                     real sceneX, real sceneY)
+    signal windowWorkspaceHoverLeft(var source, var expectedTargetDesktop,
+                                    string expectedTargetDesktopId, var expectedTargetScreen)
     signal windowTapped(var candidate, string expectedWindowId, var expectedDesktop, string expectedDesktopId,
                         var expectedScreen)
 
@@ -81,6 +90,12 @@ Item {
     readonly property var floatingWindowIds: buildFloatingWindowIds()
     property int spatialLiveGeometryRevision: 0
     property int attentionRevision: 0
+    property bool windowDropHoverOwned: false
+    property var windowDropHoverSource: null
+    property string windowDropHoverSourceWindowId: ""
+    property var windowDropHoverDesktop: null
+    property string windowDropHoverDesktopId: ""
+    property var windowDropHoverScreen: null
 
     opacity: searchDeemphasized ? 0.42 : 1
 
@@ -892,27 +907,102 @@ Item {
         readonly property bool validTarget: containsDrag && card.windowDropSourceIsEligible(drag.source, drag.keys)
 
         anchors.fill: parent
+        enabled: card.enabled && card.searchQuery.trim().length === 0
         keys: ["driftile-window"]
         z: 10000
 
         onEntered: drag => drag.accepted = card.windowDropIsValid(drag.source, drag.keys)
+            ? card.claimWindowDropHover(drag.source, drag)
+            : card.rejectWindowDropHover()
         onPositionChanged: drag => drag.accepted = card.windowDropIsValid(drag.source, drag.keys)
+            ? card.moveWindowDropHover(drag.source, drag)
+            : card.rejectWindowDropHover()
+        onExited: card.clearWindowDropHover()
+        onContainsDragChanged: {
+            if (!containsDrag) {
+                card.clearWindowDropHover();
+            }
+        }
         onDropped: drop => {
             const source = drop.source;
             if (!card.windowDropIsValid(source, drop.keys)) {
+                card.clearWindowDropHover();
                 drop.accepted = false;
                 return;
             }
 
             drop.action = Qt.MoveAction;
             drop.accepted = true;
+            card.clearWindowDropHover();
             card.windowDropped(source.candidate, source.windowId, source.sourceDesktop, source.sourceDesktopId,
                                card.desktop, card.desktopId, card.screen);
         }
+
+        Connections {
+            target: card.windowDropHoverSource
+            ignoreUnknownSignals: true
+
+            function onCandidateChanged() {
+                card.clearInvalidWindowDropHover();
+            }
+
+            function onDestroyed() {
+                card.clearWindowDropHover();
+            }
+
+            function onDragEligibleChanged() {
+                card.clearInvalidWindowDropHover();
+            }
+
+            function onMinimizedWindowChanged() {
+                card.clearInvalidWindowDropHover();
+            }
+
+            function onSourceDesktopChanged() {
+                card.clearInvalidWindowDropHover();
+            }
+
+            function onSourceDesktopIdChanged() {
+                card.clearInvalidWindowDropHover();
+            }
+
+            function onSourceScreenChanged() {
+                card.clearInvalidWindowDropHover();
+            }
+
+            function onSpatialDragLifecycleActiveChanged() {
+                card.clearInvalidWindowDropHover();
+            }
+        }
+    }
+
+    Rectangle {
+        anchors.fill: parent
+        visible: card.windowWorkspaceHoverTarget
+        color: "transparent"
+        border.width: 2
+        border.color: "#86aee8"
+        opacity: card.presentationProgress
+        z: 9999
     }
 
     onCurrentChanged: card.navigationTargetsChanged()
-    onSearchQueryChanged: card.navigationTargetsChanged()
+    onDesktopChanged: card.clearWindowDropHover()
+    onDesktopIdChanged: card.clearWindowDropHover()
+    onEnabledChanged: {
+        if (!enabled) {
+            card.clearWindowDropHover();
+        }
+    }
+    onScreenChanged: card.clearWindowDropHover()
+    onSearchQueryChanged: {
+        card.navigationTargetsChanged();
+        if (searchQuery.trim().length > 0) {
+            card.clearWindowDropHover();
+        }
+    }
+
+    Component.onDestruction: card.clearWindowDropHover()
 
     function collectNavigationTargets(sceneItem, includeOffscreen = false) {
         const targets = [];
@@ -1232,11 +1322,143 @@ Item {
         return scenePosition && Number.isFinite(scenePosition.x) && Number.isFinite(scenePosition.y);
     }
 
+    function claimWindowDropHover(source, drag) {
+        const scenePosition = windowDropScenePosition(drag);
+        if (!scenePosition) {
+            clearWindowDropHover();
+            return false;
+        }
+
+        if (windowDropHoverOwned) {
+            if (windowDropHoverOwnershipMatches(source)) {
+                return moveWindowDropHoverToScenePosition(source, scenePosition);
+            }
+            clearWindowDropHover();
+        }
+
+        try {
+            windowDropHoverSource = source;
+            windowDropHoverSourceWindowId = source.windowId;
+            windowDropHoverDesktop = desktop;
+            windowDropHoverDesktopId = desktopId;
+            windowDropHoverScreen = screen;
+            windowDropHoverOwned = true;
+            windowWorkspaceHoverEntered(source, desktop, desktopId, screen,
+                                        scenePosition.x, scenePosition.y);
+            return true;
+        } catch (error) {
+            clearWindowDropHover();
+            return false;
+        }
+    }
+
+    function moveWindowDropHover(source, drag) {
+        const scenePosition = windowDropScenePosition(drag);
+        if (!scenePosition) {
+            clearWindowDropHover();
+            return false;
+        }
+        return moveWindowDropHoverToScenePosition(source, scenePosition);
+    }
+
+    function moveWindowDropHoverToScenePosition(source, scenePosition) {
+        if (!windowDropHoverOwnershipMatches(source) || !spatialDragScenePointIsFinite(scenePosition)) {
+            clearWindowDropHover();
+            return false;
+        }
+
+        windowWorkspaceHoverMoved(source, windowDropHoverDesktop, windowDropHoverDesktopId,
+                                  windowDropHoverScreen, scenePosition.x, scenePosition.y);
+        return true;
+    }
+
+    function rejectWindowDropHover() {
+        clearWindowDropHover();
+        return false;
+    }
+
+    function clearInvalidWindowDropHover() {
+        if (windowDropHoverOwned && !windowDropHoverOwnershipIsValid()) {
+            clearWindowDropHover();
+        }
+    }
+
+    function clearWindowDropHover() {
+        if (!windowDropHoverOwned) {
+            resetWindowDropHoverOwnership();
+            return;
+        }
+
+        const source = windowDropHoverSource;
+        const targetDesktop = windowDropHoverDesktop;
+        const targetDesktopId = windowDropHoverDesktopId;
+        const targetScreen = windowDropHoverScreen;
+        resetWindowDropHoverOwnership();
+        windowWorkspaceHoverLeft(source, targetDesktop, targetDesktopId, targetScreen);
+    }
+
+    function resetWindowDropHoverOwnership() {
+        windowDropHoverOwned = false;
+        windowDropHoverSource = null;
+        windowDropHoverSourceWindowId = "";
+        windowDropHoverDesktop = null;
+        windowDropHoverDesktopId = "";
+        windowDropHoverScreen = null;
+    }
+
+    function windowDropHoverOwnershipIsValid() {
+        return windowDropHoverOwnershipMatches(windowDropHoverSource)
+                && windowDropIsValid(windowDropHoverSource, ["driftile-window"]);
+    }
+
+    function windowDropHoverOwnershipMatches(source) {
+        try {
+            const candidate = source ? source.candidate : null;
+            return windowDropHoverOwned && source && source === windowDropHoverSource && candidate
+                    && typeof source.windowId === "string" && source.windowId.length > 0
+                    && source.windowId === windowDropHoverSourceWindowId
+                    && candidate.internalId !== undefined && candidate.internalId !== null
+                    && String(candidate.internalId) === windowDropHoverSourceWindowId
+                    && source.spatialDragLifecycleActive === true && source.dragEligible === true
+                    && source.minimizedWindow !== true && source.sourceDesktop !== desktop
+                    && source.sourceDesktopId !== desktopId && source.sourceScreen === screen
+                    && windowDropHoverDesktop === desktop && windowDropHoverDesktopId === desktopId
+                    && windowDropHoverScreen === screen && windowDropTargetIsExact();
+        } catch (error) {
+            return false;
+        }
+    }
+
+    function windowDropScenePosition(drag) {
+        if (!drag || !Number.isFinite(drag.x) || !Number.isFinite(drag.y)) {
+            return null;
+        }
+
+        try {
+            const scenePosition = windowDropArea.mapToItem(null, drag.x, drag.y);
+            return spatialDragScenePointIsFinite(scenePosition) ? scenePosition : null;
+        } catch (error) {
+            return null;
+        }
+    }
+
+    function windowDropTargetIsExact() {
+        try {
+            return enabled && typeof searchQuery === "string" && searchQuery.trim().length === 0
+                    && desktop && screen && desktop.id !== undefined && desktop.id !== null
+                    && typeof desktopId === "string" && desktopId.length > 0
+                    && String(desktop.id) === desktopId;
+        } catch (error) {
+            return false;
+        }
+    }
+
     function windowDropIsValid(source, keys) {
         try {
             return keys && typeof keys.indexOf === "function" && keys.indexOf("driftile-window") >= 0
-                    && windowCanDrag(source) && desktop && screen && desktop.id !== undefined && desktop.id !== null
-                    && String(desktop.id) === desktopId && source.sourceScreen === screen
+                    && windowCanDrag(source) && source.dragEligible === true
+                    && source.spatialDragLifecycleActive === true && windowDropTargetIsExact()
+                    && source.sourceScreen === screen && source.sourceDesktop !== desktop
                     && source.sourceDesktopId !== desktopId;
         } catch (error) {
             return false;
@@ -1246,8 +1468,10 @@ Item {
     function windowDropSourceIsEligible(source, keys) {
         try {
             return keys && typeof keys.indexOf === "function" && keys.indexOf("driftile-window") >= 0 && source
-                    && source.dragEligible === true && desktop && screen && desktopId.length > 0
-                    && source.sourceScreen === screen && source.sourceDesktopId !== desktopId;
+                    && source.dragEligible === true && source.spatialDragLifecycleActive === true
+                    && source.minimizedWindow !== true && windowDropTargetIsExact()
+                    && source.sourceScreen === screen && source.sourceDesktop !== desktop
+                    && source.sourceDesktopId !== desktopId;
         } catch (error) {
             return false;
         }

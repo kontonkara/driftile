@@ -23,6 +23,22 @@ const cardClip = desktopCard.slice(
   desktopCard.indexOf("function clippedCardNavigationRect("),
   desktopCard.indexOf("function intersectRects("),
 );
+const horizontalBackdropInput = scene.slice(
+  scene.indexOf("Item {\n        id: spatialHorizontalViewportInput"),
+  scene.indexOf("Item {\n        id: spatialCanvas"),
+);
+const horizontalRowInput = scene.slice(
+  scene.indexOf("Item {\n        id: spatialHorizontalRowInput"),
+  scene.indexOf("KeyboardHelpHint {"),
+);
+const horizontalRowHitTest = scene.slice(
+  scene.indexOf("function spatialHorizontalViewportRowContains("),
+  scene.indexOf("function beginSpatialHorizontalViewportDrag("),
+);
+const horizontalDragLifecycle = scene.slice(
+  scene.indexOf("function beginSpatialHorizontalViewportDrag("),
+  scene.indexOf("function spatialViewportOverlayContainsPoint("),
+);
 
 describe("spatial overview navigation geometry", () => {
   it("preserves default clipping while the spatial scene opts into offscreen targets", () => {
@@ -96,6 +112,64 @@ describe("spatial overview navigation geometry", () => {
       `${collection}\n${windowClip}\n${cardClip}\n${validation}`,
     ).not.toMatch(
       /KWin\.Workspace\.(?:stackingOrder|windows)|\.setValue\s*\(|\b(?:MouseArea|Timer|WheelHandler|TapHandler|DragHandler)\s*\{/u,
+    );
+  });
+
+  it("pans a spatial row with the right mouse button without widening left-button grabs", () => {
+    expect(horizontalBackdropInput).toContain("acceptedButtons: Qt.LeftButton");
+    expect(horizontalBackdropInput).toContain(
+      "root.beginSpatialHorizontalViewportDrag(centroid.pressPosition);",
+    );
+    expect(horizontalRowInput).toContain("acceptedButtons: Qt.RightButton");
+    expect(horizontalRowInput).toContain(
+      "acceptedDevices: PointerDevice.Mouse",
+    );
+    expect(horizontalRowInput).not.toContain("PointerDevice.TouchPad");
+    expect(horizontalRowInput).not.toContain("PointerDevice.TouchScreen");
+    expect(horizontalRowInput).toContain("xAxis.enabled: true");
+    expect(horizontalRowInput).toContain("yAxis.enabled: false");
+    expect(horizontalRowInput).toContain(
+      "root.beginSpatialHorizontalViewportDrag(centroid.pressPosition, true);",
+    );
+    expect(horizontalRowInput).toContain(
+      "root.updateSpatialHorizontalViewportDrag(activeTranslation.x);",
+    );
+    expect(horizontalRowInput).toContain(
+      "root.clearSpatialHorizontalViewportDrag();",
+    );
+  });
+
+  it("admits thumbnails only for bounded interactive row drags", () => {
+    expect(horizontalRowHitTest).toContain("!spatialPresentationInteractive");
+    expect(horizontalRowHitTest).toContain("keyboardHelpVisible");
+    expect(horizontalRowHitTest).toContain("desktopReorderActive");
+    expect(horizontalRowHitTest).toContain("spatialWindowDragSource !== null");
+    expect(horizontalRowHitTest).toContain("spatialViewportDragHandler.active");
+    expect(horizontalRowHitTest).toContain(
+      "spatialHorizontalViewportDragHandler.active",
+    );
+    expect(horizontalRowHitTest).toContain(
+      "spatialWorkspaceIndexAtPoint(point)",
+    );
+    expect(horizontalRowHitTest).toContain("desktopCardAt(workspaceIndex)");
+    expect(horizontalRowHitTest).toContain(
+      "spatialHorizontalViewportBounds(workspaceIndex, expectedDesktopId)",
+    );
+    expect(horizontalRowHitTest).toContain("bounds.minimum < bounds.maximum");
+    expect(horizontalRowHitTest).not.toContain("viewportPointHitsWindow");
+
+    expect(horizontalDragLifecycle).toContain(
+      "includeWindows === true\n            ? spatialHorizontalViewportRowContains(point)",
+    );
+    expect(horizontalDragLifecycle).toContain(
+      "includeWindows === false && spatialHorizontalViewportBackdropContains(point)",
+    );
+    expect(horizontalDragLifecycle).toContain("resetOverviewWheelState();");
+    expect(horizontalDragLifecycle).toContain(
+      "planOverviewSpatialHorizontalDrag",
+    );
+    expect(horizontalDragLifecycle).toContain(
+      "detachSpatialLiveCameraForManualOffset",
     );
   });
 });

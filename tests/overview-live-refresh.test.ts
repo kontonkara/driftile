@@ -16,7 +16,7 @@ const scene = readFileSync(
 );
 
 describe("overview live model refresh", () => {
-  it("coalesces window lifecycle events without hiding the active model", () => {
+  it("coalesces workspace lifecycle events without hiding the active model", () => {
     const lifecycle = controller.slice(
       controller.indexOf("id: workspaceWindowLifecycleConnection"),
       controller.indexOf("function toggle("),
@@ -32,6 +32,9 @@ describe("overview live model refresh", () => {
     );
     expect(lifecycle).toMatch(
       /function onWindowRemoved\(\) \{\s*controller\.requestLiveModelRefresh\(\);/u,
+    );
+    expect(lifecycle).toMatch(
+      /function onDesktopsChanged\(\) \{\s*controller\.requestLiveModelRefresh\(\);/u,
     );
     expect(request).toMatch(
       /if \(!active \|\| loading \|\| activeSessionId <= 0 \|\| !overviewModel\) \{\s*return;/u,
@@ -113,7 +116,7 @@ describe("overview live model refresh", () => {
     );
   });
 
-  it("keeps topology changes fail closed while window churn refreshes in place", () => {
+  it("keeps context changes fail closed while workspace churn refreshes in place", () => {
     const workspaceLifecycle = scene.slice(
       scene.indexOf("target: KWin.Workspace"),
       scene.indexOf("Timer {", scene.indexOf("target: KWin.Workspace")),
@@ -122,9 +125,23 @@ describe("overview live model refresh", () => {
       scene.indexOf("function refreshOverviewSpatialSession("),
       scene.indexOf("function resetSpatialViewport("),
     );
+    const resetSession = scene.slice(
+      scene.indexOf("function resetOverviewSession("),
+      scene.indexOf("function scheduleDesktopTopologyRefresh("),
+    );
+    const topologySchedule = scene.slice(
+      scene.indexOf("function scheduleDesktopTopologyRefresh("),
+      scene.indexOf("function completeDesktopTopologyRefresh("),
+    );
+    const topologyCompletion = scene.slice(
+      scene.indexOf("function completeDesktopTopologyRefresh("),
+      scene.indexOf("function invalidateDesktopTopologyRefresh("),
+    );
 
+    expect(workspaceLifecycle).toMatch(
+      /function onDesktopsChanged\(\) \{\s*root\.scheduleDesktopTopologyRefresh\(\);/u,
+    );
     for (const signal of [
-      "onDesktopsChanged",
       "onCurrentActivityChanged",
       "onActivitiesChanged",
       "onScreensChanged",
@@ -136,6 +153,17 @@ describe("overview live model refresh", () => {
         ),
       );
     }
+    expect(resetSession).toContain("invalidateDesktopTopologyRefresh();");
+    expect(topologySchedule).toMatch(
+      /if \(!effect \|\| effect\.active !== true \|\| spatialPresentationPhase === "closing"[\s\S]*!expectedModel \|\| expectedSessionId <= 0\) \{\s*return false;/u,
+    );
+    expect(topologySchedule).toContain("resetWindowWorkspaceHover();");
+    expect(topologySchedule).toMatch(
+      /Qt\.callLater\(function\(\) \{\s*root\.completeDesktopTopologyRefresh\(requestId, expectedSessionId, expectedModel\);/u,
+    );
+    expect(topologyCompletion).toMatch(
+      /requestId !== desktopTopologyRefreshRequestId[\s\S]*spatialPresentationPhase === "closing"[\s\S]*effect\.activeSessionId !== expectedSessionId[\s\S]*overviewModel !== expectedModel[\s\S]*effect\.overviewModel !== expectedModel/u,
+    );
     expect(workspaceLifecycle).not.toContain("function onWindowAdded");
     expect(workspaceLifecycle).toMatch(
       /function onWindowRemoved\(window\) \{\s*root\.handleSpatialLiveCameraWindowRemoved\(window\);/u,

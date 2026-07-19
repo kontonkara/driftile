@@ -8,6 +8,13 @@ const desktopCard = readFileSync(
   ),
   "utf8",
 );
+const overviewScene = readFileSync(
+  new URL(
+    "../packaging/kwin-effect/contents/runtime/ui/OverviewScene.qml",
+    import.meta.url,
+  ),
+  "utf8",
+);
 
 const presentation = desktopCard.slice(
   desktopCard.indexOf("id: windowPresentation"),
@@ -20,6 +27,33 @@ const thumbnailDrag = handlerBlock(
 const lifecycle = desktopCard.slice(
   desktopCard.indexOf("function beginWindowSpatialDrag("),
   desktopCard.indexOf("function windowDropIsValid("),
+);
+const hoverSignals = desktopCard.slice(
+  desktopCard.indexOf("signal windowWorkspaceHoverEntered("),
+  desktopCard.indexOf("signal windowTapped("),
+);
+const dropArea = desktopCard.slice(
+  desktopCard.indexOf("id: windowDropArea"),
+  desktopCard.indexOf("onCurrentChanged:"),
+);
+const hoverLifecycle = desktopCard.slice(
+  desktopCard.indexOf("function claimWindowDropHover("),
+  desktopCard.indexOf("function windowDropIsValid("),
+);
+const dropValidation = desktopCard.slice(
+  desktopCard.indexOf("function windowDropIsValid("),
+  desktopCard.indexOf("function windowIsActionable("),
+);
+const hoverTimer = overviewScene.slice(
+  overviewScene.indexOf("id: spatialWindowDragHoverTimer"),
+  overviewScene.indexOf(
+    "NumberAnimation {",
+    overviewScene.indexOf("id: spatialWindowDragHoverTimer"),
+  ),
+);
+const hoverRouting = overviewScene.slice(
+  overviewScene.indexOf("function beginWindowWorkspaceHover("),
+  overviewScene.indexOf("function windowSpatialDragSourceIsExact("),
 );
 
 describe("spatial overview window drag lifecycle", () => {
@@ -89,6 +123,139 @@ describe("spatial overview window drag lifecycle", () => {
     expect(lifecycle).toContain("windowSpatialDragFinished(source)");
     expect(`${thumbnailDrag}\n${lifecycle}`).not.toMatch(
       /KWin\.Workspace\.(?:stackingOrder|windows)|\.setValue\s*\(|\b(?:MouseArea|Timer)\s*\{/u,
+    );
+  });
+
+  it("publishes an explicit external workspace hover lifecycle", () => {
+    expect(hoverSignals).toMatch(
+      /signal windowWorkspaceHoverEntered\(var source, var expectedTargetDesktop,\s*string expectedTargetDesktopId, var expectedTargetScreen,\s*real sceneX, real sceneY\)/u,
+    );
+    expect(hoverSignals).toMatch(
+      /signal windowWorkspaceHoverMoved\(var source, var expectedTargetDesktop,\s*string expectedTargetDesktopId, var expectedTargetScreen,\s*real sceneX, real sceneY\)/u,
+    );
+    expect(hoverSignals).toMatch(
+      /signal windowWorkspaceHoverLeft\(var source, var expectedTargetDesktop,\s*string expectedTargetDesktopId, var expectedTargetScreen\)/u,
+    );
+    expect(dropArea).toContain(
+      "? card.claimWindowDropHover(drag.source, drag)",
+    );
+    expect(dropArea).toContain("? card.moveWindowDropHover(drag.source, drag)");
+    expect(dropArea).toContain("onExited: card.clearWindowDropHover()");
+    expect(dropArea).toContain("onContainsDragChanged:");
+    expect(dropArea).toContain("card.clearWindowDropHover();");
+    expect(dropArea.indexOf("card.clearWindowDropHover();")).toBeLessThan(
+      dropArea.indexOf("card.windowDropped("),
+    );
+    expect(hoverLifecycle).toContain(
+      "windowWorkspaceHoverEntered(source, desktop, desktopId, screen,",
+    );
+    expect(hoverLifecycle).toContain(
+      "windowWorkspaceHoverMoved(source, windowDropHoverDesktop, windowDropHoverDesktopId,",
+    );
+    expect(hoverLifecycle).toContain(
+      "windowWorkspaceHoverLeft(source, targetDesktop, targetDesktopId, targetScreen)",
+    );
+  });
+
+  it("fails closed and releases stale hover ownership", () => {
+    expect(dropArea).toContain(
+      "enabled: card.enabled && card.searchQuery.trim().length === 0",
+    );
+    for (const signal of [
+      "Candidate",
+      "Destroyed",
+      "DragEligible",
+      "MinimizedWindow",
+      "SourceDesktop",
+      "SourceDesktopId",
+      "SourceScreen",
+      "SpatialDragLifecycleActive",
+    ]) {
+      expect(dropArea).toContain(`function on${signal}`);
+    }
+    expect(desktopCard).toContain("property bool windowDropHoverOwned");
+    expect(hoverLifecycle).toContain("source === windowDropHoverSource");
+    expect(hoverLifecycle).toContain(
+      "source.windowId === windowDropHoverSourceWindowId",
+    );
+    expect(hoverLifecycle).toContain(
+      "String(candidate.internalId) === windowDropHoverSourceWindowId",
+    );
+    expect(hoverLifecycle).toContain(
+      "source.spatialDragLifecycleActive === true",
+    );
+    expect(hoverLifecycle).toContain("source.dragEligible === true");
+    expect(hoverLifecycle).toContain("source.minimizedWindow !== true");
+    expect(hoverLifecycle).toContain("source.sourceDesktop !== desktop");
+    expect(hoverLifecycle).toContain("source.sourceDesktopId !== desktopId");
+    expect(hoverLifecycle).toContain("windowDropTargetIsExact()");
+    expect(hoverLifecycle).toContain("searchQuery.trim().length === 0");
+    expect(dropValidation).toContain("windowCanDrag(source)");
+    expect(dropValidation).toContain("source.sourceDesktop !== desktop");
+    expect(dropValidation).toContain(
+      "source.spatialDragLifecycleActive === true",
+    );
+    expect(hoverLifecycle).not.toContain("outputName");
+    expect(hoverLifecycle).toContain("Number.isFinite(drag.x)");
+    expect(hoverLifecycle).toContain("Number.isFinite(drag.y)");
+    expect(hoverLifecycle).toContain(
+      "windowDropArea.mapToItem(null, drag.x, drag.y)",
+    );
+    expect(hoverLifecycle).not.toMatch(
+      /\b(?:WeakSet|WeakMap|Timer|MouseArea)\b|KWin\.Workspace\.(?:stackingOrder|windows)|\.setValue\s*\(/u,
+    );
+  });
+
+  it("activates an exact hovered workspace after one bounded dwell", () => {
+    expect(hoverTimer).toContain(
+      "interval: root.spatialWindowDragHoverThresholdMilliseconds",
+    );
+    expect(hoverTimer).toContain("repeat: false");
+    expect(hoverTimer).toContain(
+      "onTriggered: root.completeWindowWorkspaceHover()",
+    );
+    expect(hoverRouting).toContain("planOverviewSpatialDragHover");
+    expect(hoverRouting).toContain("planWindowWorkspaceHover(0,");
+    expect(hoverRouting).toContain('plan.intent !== "pending"');
+    expect(hoverRouting).toContain('plan.intent !== "activate"');
+    expect(hoverRouting).toContain("spatialWindowDragHoverTimer.restart()");
+    expect(hoverRouting).toMatch(
+      /resetWindowWorkspaceHover\(\);\s*return requestDesktopSelection\(/u,
+    );
+    expect(hoverRouting).toContain("sceneEffect.activeSessionId");
+    expect(hoverRouting).toContain("overviewDesktopCardEpoch");
+    expect(hoverRouting).toContain("spatialHorizontalViewportRevision");
+    expect(hoverRouting).toContain("card.windowDropHoverOwned === true");
+    const hoverMove = hoverRouting.slice(
+      hoverRouting.indexOf("function moveWindowWorkspaceHover("),
+      hoverRouting.indexOf("function leaveWindowWorkspaceHover("),
+    );
+    expect(hoverMove).not.toContain("windowWorkspaceHoverContextIsExact()");
+  });
+
+  it("keeps the active window drag alive while dwell activation moves the camera", () => {
+    const currentDesktopHandler = overviewScene.slice(
+      overviewScene.indexOf("function handleCurrentDesktopChanged()"),
+      overviewScene.indexOf("onOverviewModelChanged:"),
+    );
+    expect(currentDesktopHandler).toContain("spatialWindowDragSource !== null");
+    expect(currentDesktopHandler).toContain(
+      "windowSpatialDragSourceIsExact(spatialWindowDragSource,",
+    );
+    expect(currentDesktopHandler).toContain(
+      "planSpatialWorkspaceCenter(currentWorkspaceIndex)",
+    );
+    expect(currentDesktopHandler).toContain(
+      "setSpatialContentY(plan.contentY, true)",
+    );
+    expect(currentDesktopHandler.indexOf("return;")).toBeLessThan(
+      currentDesktopHandler.indexOf("refreshOverviewSpatialSession("),
+    );
+    expect(overviewScene).toContain(
+      "windowWorkspaceHoverTarget: root.spatialWindowDragHoverTargetDesktopId",
+    );
+    expect(overviewScene).toMatch(
+      /function resetSpatialEdgePanTracking\(\) \{\s*resetWindowWorkspaceHover\(\);/u,
     );
   });
 });

@@ -97,6 +97,12 @@ export type {
   OverviewSpatialHorizontalDragInput,
   OverviewSpatialHorizontalDragPlan,
 } from "./spatial-horizontal-drag";
+export { planOverviewSpatialDragHover } from "./spatial-drag-hover";
+export type {
+  OverviewSpatialDragHoverInput,
+  OverviewSpatialDragHoverIntent,
+  OverviewSpatialDragHoverPlan,
+} from "./spatial-drag-hover";
 export { planOverviewSpatialHorizontalEdgePan } from "./spatial-horizontal-edge-pan";
 export type {
   OverviewSpatialHorizontalEdgePanDirection,
