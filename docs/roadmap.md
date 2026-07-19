@@ -2790,10 +2790,18 @@ Release criteria (met):
   native output transfer for floating and non-exact sources.
 - Roll back output, per-output desktop selection, focus, geometry, and layout
   state independently when KWin rejects a transfer.
+- Publish the transferred layout only after KWin reports both the destination
+  output and final frame, including delayed native Wayland commits.
+- Drive Overview presentation continuously from the configured touchpad swipe
+  and settle cancellation, completion, and context invalidation independently.
+- Start touchscreen window movement only after a long press on an eligible
+  thumbnail.
 
 Release criteria:
 
 - Exact cross-output placement is verified with native Wayland and XWayland
   applications in the existing two-output hidden VM scenario.
+- Touchpad and touchscreen input retain bounded ownership and cannot revive a
+  stale Overview session after its workspace context changes.
 - Existing settings and persistence remain compatible; no private KWin API,
   schema change, polling, or retained object cache is introduced.

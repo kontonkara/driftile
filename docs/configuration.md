@@ -24,9 +24,11 @@ The separately installed **Driftile Overview** effect uses a four-finger up
 swipe to open and a down swipe to close by default. Configure or disable the
 gesture from the effect's settings. Finger counts range from `3` to `5`. A
 pointer screen edge can also open the effect and is disabled by default. The
-same page controls the backdrop color and opacity. A swipe completes only in
-the activity, desktop selections, and output topology captured at its first
-progress; cancellation or a context change performs no open or close action.
+same page controls the backdrop color and opacity. Swipe progress drives the
+presentation directly; completion settles at the requested endpoint and
+cancellation returns to the previous endpoint. The captured activity, desktop
+selections, and output topology must remain unchanged, otherwise the Overview
+closes without reusing the stale session.
 
 While open, the Overview refreshes in place after windows are added or removed
 and retries an unstable sample once. It preserves search, help, and a valid
@@ -37,6 +39,10 @@ rapid steps accumulate before one deferred selection. Horizontal wheel input
 pans the current spatial row, and a manual horizontal offset detaches live
 geometry only for that output and workspace until another eligible active
 window takes over or the Overview session resets.
+
+Window thumbnails support spatial drag-and-drop with a mouse or touchpad. On a
+touchscreen, hold a thumbnail before dragging it; the close affordance never
+starts a window drag.
 
 Home Manager leaves these KConfig values unmanaged by default. It can manage
 them independently of package installation:
