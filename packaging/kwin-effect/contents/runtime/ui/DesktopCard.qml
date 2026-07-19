@@ -379,6 +379,7 @@ Item {
                 readonly property var thumbnailTarget: thumbnailShell
                 readonly property var minimizedPlaceholderTarget: minimizedPlaceholderShell
                 property bool spatialDragLifecycleActive: false
+                property bool touchSpatialDragArmed: false
 
                 width: viewport.width
                 height: viewport.height
@@ -498,10 +499,16 @@ Item {
 
                     Drag.active: false
                     Drag.source: windowPresentation
-                    Drag.hotSpot.x: thumbnailDragHandler.centroid.pressPosition.x
-                                    + thumbnailDragHandler.activeTranslation.x
-                    Drag.hotSpot.y: thumbnailDragHandler.centroid.pressPosition.y
-                                    + thumbnailDragHandler.activeTranslation.y
+                    Drag.hotSpot.x: thumbnailTouchDragHandler.active
+                        ? thumbnailTouchDragHandler.centroid.pressPosition.x
+                          + thumbnailTouchDragHandler.activeTranslation.x
+                        : thumbnailDragHandler.centroid.pressPosition.x
+                          + thumbnailDragHandler.activeTranslation.x
+                    Drag.hotSpot.y: thumbnailTouchDragHandler.active
+                        ? thumbnailTouchDragHandler.centroid.pressPosition.y
+                          + thumbnailTouchDragHandler.activeTranslation.y
+                        : thumbnailDragHandler.centroid.pressPosition.y
+                          + thumbnailDragHandler.activeTranslation.y
                     Drag.keys: ["driftile-window"]
                     Drag.proposedAction: Qt.MoveAction
                     Drag.supportedActions: Qt.MoveAction
@@ -704,6 +711,92 @@ Item {
                                                            windowPresentation.sourceDesktop,
                                                            windowPresentation.sourceDesktopId,
                                                            windowPresentation.sourceScreen)
+                    }
+
+                    TapHandler {
+                        id: thumbnailTouchHoldHandler
+
+                        target: null
+                        acceptedButtons: Qt.LeftButton
+                        acceptedDevices: PointerDevice.TouchScreen
+                        acceptedModifiers: Qt.NoModifier
+                        gesturePolicy: TapHandler.DragThreshold
+                        enabled: thumbnailShell.visible && windowPresentation.dragEligible
+
+                        onPressedChanged: {
+                            if (pressed || (point.state === EventPoint.Released
+                                            && !thumbnailTouchDragHandler.active)) {
+                                windowPresentation.touchSpatialDragArmed = false;
+                            }
+                        }
+                        onLongPressed: {
+                            if (card.closeButtonContainsPoint(thumbnailCloseButton, thumbnailShell,
+                                                              point.pressPosition)) {
+                                return;
+                            }
+                            windowPresentation.touchSpatialDragArmed = true;
+                        }
+                    }
+
+                    DragHandler {
+                        id: thumbnailTouchDragHandler
+
+                        target: null
+                        acceptedButtons: Qt.LeftButton
+                        acceptedDevices: PointerDevice.TouchScreen
+                        acceptedModifiers: Qt.NoModifier
+                        dragThreshold: windowPresentation.touchSpatialDragArmed ? 0 : 32767
+                        enabled: thumbnailShell.visible && windowPresentation.dragEligible
+
+                        function cancelSpatialDrag() {
+                            thumbnailShell.Drag.cancel();
+                            thumbnailShell.Drag.active = false;
+                            card.finishWindowSpatialDrag(windowPresentation);
+                            windowPresentation.touchSpatialDragArmed = false;
+                        }
+
+                        function releaseSpatialDrag(scenePosition) {
+                            const source = windowPresentation;
+                            const globalPosition = card.crossOutputWindowDropGlobalPosition(scenePosition);
+                            const action = thumbnailShell.Drag.drop();
+                            if (action !== Qt.MoveAction) {
+                                card.requestCrossOutputWindowDrop(source, globalPosition);
+                            }
+                            thumbnailShell.Drag.active = false;
+                            card.finishWindowSpatialDrag(source);
+                            windowPresentation.touchSpatialDragArmed = false;
+                        }
+
+                        onActiveTranslationChanged: {
+                            if (thumbnailTouchDragHandler.active
+                                    && windowPresentation.spatialDragLifecycleActive) {
+                                card.moveWindowSpatialDrag(windowPresentation,
+                                                           thumbnailTouchDragHandler.centroid.scenePosition);
+                            }
+                        }
+
+                        onGrabChanged: (transition, point) => {
+                            if (transition === PointerDevice.GrabExclusive) {
+                                if (!windowPresentation.touchSpatialDragArmed) {
+                                    return;
+                                }
+                                thumbnailShell.Drag.active = true;
+                                card.beginWindowSpatialDrag(windowPresentation, point.scenePosition);
+                                if (!windowPresentation.spatialDragLifecycleActive) {
+                                    thumbnailTouchDragHandler.cancelSpatialDrag();
+                                }
+                            } else if (transition === PointerDevice.UngrabExclusive) {
+                                if (point.state === EventPoint.Released
+                                        && windowPresentation.spatialDragLifecycleActive) {
+                                    thumbnailTouchDragHandler.releaseSpatialDrag(point.scenePosition);
+                                } else {
+                                    thumbnailTouchDragHandler.cancelSpatialDrag();
+                                }
+                            } else if (transition === PointerDevice.CancelGrabExclusive
+                                       || transition === PointerDevice.CancelGrabPassive) {
+                                thumbnailTouchDragHandler.cancelSpatialDrag();
+                            }
+                        }
                     }
 
                     DragHandler {

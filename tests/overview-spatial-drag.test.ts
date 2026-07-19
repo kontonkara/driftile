@@ -24,6 +24,14 @@ const thumbnailDrag = handlerBlock(
   "thumbnailDragHandler",
   "minimizedPlaceholderShell",
 );
+const thumbnailTouchHold = handlerBlock(
+  "thumbnailTouchHoldHandler",
+  "thumbnailTouchDragHandler",
+);
+const thumbnailTouchDrag = handlerBlock(
+  "thumbnailTouchDragHandler",
+  "thumbnailDragHandler",
+);
 const lifecycle = desktopCard.slice(
   desktopCard.indexOf("function beginWindowSpatialDrag("),
   desktopCard.indexOf("function windowDropIsValid("),
@@ -74,7 +82,7 @@ describe("spatial overview window drag lifecycle", () => {
     expect(presentation).toContain(
       "property bool spatialDragLifecycleActive: false",
     );
-    expect(desktopCard.match(/\bDragHandler\s*\{/gu)).toHaveLength(2);
+    expect(desktopCard.match(/\bDragHandler\s*\{/gu)).toHaveLength(3);
     expect(desktopCard).not.toContain("id: tabDragHandler");
     expect(
       desktopCard.slice(
@@ -105,6 +113,45 @@ describe("spatial overview window drag lifecycle", () => {
     expect(drag).toMatch(
       /transition === PointerDevice\.CancelGrabExclusive[\s\S]*?transition === PointerDevice\.CancelGrabPassive[\s\S]*?[A-Za-z]+Shell\.Drag\.cancel\(\);\s*[A-Za-z]+Shell\.Drag\.active = false;\s*card\.finishWindowSpatialDrag\(windowPresentation\);/u,
     );
+  });
+
+  it("arms touchscreen window movement only after a long press", () => {
+    expect(presentation).toContain(
+      "property bool touchSpatialDragArmed: false",
+    );
+    expect(thumbnailTouchHold).toContain(
+      "acceptedDevices: PointerDevice.TouchScreen",
+    );
+    expect(thumbnailTouchHold).toContain(
+      "gesturePolicy: TapHandler.DragThreshold",
+    );
+    expect(thumbnailTouchHold).toContain("onLongPressed:");
+    expect(thumbnailTouchHold).toContain(
+      "windowPresentation.touchSpatialDragArmed = true",
+    );
+    expect(thumbnailTouchHold).toContain(
+      "card.closeButtonContainsPoint(thumbnailCloseButton, thumbnailShell,",
+    );
+    expect(thumbnailTouchHold).toContain("point.pressPosition");
+    expect(thumbnailTouchDrag).toContain(
+      "acceptedDevices: PointerDevice.TouchScreen",
+    );
+    expect(thumbnailTouchDrag).toContain(
+      "dragThreshold: windowPresentation.touchSpatialDragArmed ? 0 : 32767",
+    );
+    expect(thumbnailTouchDrag).toMatch(
+      /PointerDevice\.GrabExclusive[\s\S]*?touchSpatialDragArmed[\s\S]*?card\.beginWindowSpatialDrag\(windowPresentation, point\.scenePosition\)/u,
+    );
+    expect(thumbnailTouchDrag).toContain(
+      "card.moveWindowSpatialDrag(windowPresentation,",
+    );
+    expect(thumbnailTouchDrag).toContain(
+      "thumbnailTouchDragHandler.releaseSpatialDrag(point.scenePosition)",
+    );
+    expect(thumbnailTouchDrag).toContain(
+      "thumbnailTouchDragHandler.cancelSpatialDrag()",
+    );
+    expect(thumbnailDrag).not.toContain("PointerDevice.TouchScreen");
   });
 
   it("guards finite coordinates, source identity, and duplicate finish signals", () => {
