@@ -13489,6 +13489,7 @@ let
       firefox_pid=""
       firefox_profile=""
       firefox_title="Driftile VM Firefox"
+      overview_command_file="''${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/driftile-overview-command.ini"
       layout_state_file="''${XDG_CONFIG_HOME:-$HOME/.config}/driftile-layout-state.ini"
       left_frame=""
       left_id=""
@@ -13524,6 +13525,8 @@ let
             "$(effect_loaded_state "$overview_plugin_id" 2>/dev/null || true)" \
             "$(effect_active_state "$overview_plugin_id" 2>/dev/null || true)" \
             "$(kwin_process_id 2>/dev/null || true)"
+          printf 'request-id=%s\n' \
+            "$(overview_command_request_id 2>/dev/null || true)"
           printf '\nFirefox frame:\n'
           window_frame_contains "$firefox_title" 2>&1 || true
           printf '\nFirefox info:\n'
@@ -13694,6 +13697,39 @@ let
 
         process_id=$(kwin_process_id) || return 1
         [[ "$process_id" == "$1" ]]
+      }
+
+      overview_command_request_id() {
+        local request_id
+
+        request_id=$(
+          ${pkgs.kdePackages.kconfig}/bin/kreadconfig6 \
+            --file "$overview_command_file" \
+            --group Command \
+            --key last-request-id \
+            --default 0
+        ) || return 1
+        [[ "$request_id" =~ ^[0-9]+$ ]] || return 1
+        printf '%s' "$request_id"
+      }
+
+      wait_for_overview_command_after() {
+        local attempt
+        local minimum_request_id=$1
+        local request_id
+
+        [[ "$minimum_request_id" =~ ^[0-9]+$ ]] || return 1
+        for ((attempt = 0; attempt < 20; attempt += 1)); do
+          request_id=$(overview_command_request_id 2>/dev/null || true)
+          if [[ "$request_id" =~ ^[0-9]+$ ]] \
+            && ((request_id > minimum_request_id)); then
+            printf '%s' "$request_id"
+            return 0
+          fi
+          sleep 0.1
+        done
+
+        return 1
       }
 
       overview_layout_document() {
@@ -14587,8 +14623,11 @@ let
         fail_test "The exact Overview cross-output fixture did not stabilize."
       fi
       overview_kwin_pid=$(kwin_process_id 2>/dev/null || true)
+      overview_request_before=$(overview_command_request_id 2>/dev/null || true)
       [[ "$overview_kwin_pid" =~ ^[1-9][0-9]*$ ]] \
         || fail_test "The KWin process was unavailable before the exact Overview drop."
+      [[ "$overview_request_before" =~ ^[0-9]+$ ]] \
+        || fail_test "The Overview command sequence was unavailable before the exact drop."
       invoke_shortcut "$overview_shortcut" \
         || fail_test "The Overview shortcut could not be invoked on two outputs."
       wait_for_effect_active_state "$overview_plugin_id" true \
@@ -14602,6 +14641,10 @@ let
         "$right_frame" \
         1 \
         || fail_test "The physical exact Overview cross-output drop was not delivered."
+      overview_request_after=$(wait_for_overview_command_after "$overview_request_before" 2>/dev/null || true)
+      if [[ ! "$overview_request_after" =~ ^[0-9]+$ ]]; then
+        fail_test "The physical exact Overview drop did not submit a spatial command."
+      fi
       verify_targeted_insertion "$xterm_width" \
         || fail_test "The exact Overview drop did not persist the destination stack."
       overview_layout_after=$(wait_for_stable_layout_digest 2>/dev/null || true)
