@@ -2178,8 +2178,8 @@ Rectangle {
         try {
             const workspaceIndex = spatialWindowDragSourceWorkspaceIndex;
             const expectedDesktopId = spatialWindowDragSourceDesktopId;
-            if (!Number.isInteger(workspaceIndex) || workspaceIndex !== currentWorkspaceIndex
-                    || workspaceIndex < 0 || workspaceIndex >= desktopIds.length
+            if (!Number.isInteger(workspaceIndex) || workspaceIndex < 0
+                    || workspaceIndex >= desktopIds.length
                     || desktopIds[workspaceIndex] !== expectedDesktopId
                     || !windowSpatialDragSourceIsExact(spatialWindowDragSource, expectedDesktopId)) {
                 return null;
@@ -2187,7 +2187,7 @@ Rectangle {
 
             const card = desktopCardAt(workspaceIndex);
             const bounds = spatialHorizontalViewportBounds(workspaceIndex, expectedDesktopId);
-            if (!card || card.current !== true || !bounds || !Number.isFinite(card.projectionScale)
+            if (!card || !bounds || !Number.isFinite(card.projectionScale)
                     || card.projectionScale <= 0 || !Number.isFinite(card.contentWidth)
                     || card.contentWidth <= 0) {
                 return null;
@@ -2371,8 +2371,9 @@ Rectangle {
             clearSpatialEdgePanScenePoint();
             return false;
         }
-        if (!detachSpatialLiveCameraForManualOffset(context.workspaceIndex, context.expectedDesktopId,
-                                                    context.viewportOffset, plan.viewportOffset)) {
+        if (context.workspaceIndex === currentWorkspaceIndex
+                && !detachSpatialLiveCameraForManualOffset(context.workspaceIndex, context.expectedDesktopId,
+                                                           context.viewportOffset, plan.viewportOffset)) {
             const rollbackBounds = spatialHorizontalViewportBounds(context.workspaceIndex,
                                                                    context.expectedDesktopId);
             setSpatialHorizontalViewportOffsetForBounds(context.workspaceIndex, context.expectedDesktopId,

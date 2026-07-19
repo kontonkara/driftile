@@ -1686,7 +1686,7 @@ describe("overview effect package", () => {
     );
     expect(spatialEdgePan).toContain("!canMoveUp && !canMoveDown");
     expect(spatialEdgePan).toMatch(
-      /function spatialHorizontalEdgePanContext[\s\S]*workspaceIndex !== currentWorkspaceIndex[\s\S]*windowSpatialDragSourceIsExact\(spatialWindowDragSource, expectedDesktopId\)[\s\S]*card\.mapToItem\(root, card\.contentLeft, card\.contentTop\)[\s\S]*spatialHorizontalViewportOffsetForBounds/u,
+      /function spatialHorizontalEdgePanContext[\s\S]*workspaceIndex >= desktopIds\.length[\s\S]*windowSpatialDragSourceIsExact\(spatialWindowDragSource, expectedDesktopId\)[\s\S]*card\.mapToItem\(root, card\.contentLeft, card\.contentTop\)[\s\S]*spatialHorizontalViewportOffsetForBounds/u,
     );
     expect(spatialEdgePan).toMatch(
       /function spatialHorizontalEdgePanCanRun[\s\S]*context\.pointerX < context\.viewportLeft \+ edgeZone[\s\S]*context\.viewportOffset > context\.bounds\.minimum[\s\S]*context\.pointerX > viewportRight - edgeZone[\s\S]*context\.viewportOffset < context\.bounds\.maximum/u,
@@ -1704,7 +1704,7 @@ describe("overview effect package", () => {
       /runtime\.planOverviewSpatialHorizontalEdgePan\(\{[\s\S]*maximumViewportOffset: context\.bounds\.maximum,[\s\S]*minimumViewportOffset: context\.bounds\.minimum,[\s\S]*pointerX: context\.pointerX,[\s\S]*projectionScale: context\.projectionScale,[\s\S]*viewportLeft: context\.viewportLeft,[\s\S]*viewportOffset: context\.viewportOffset,[\s\S]*viewportWidth: context\.viewportWidth/u,
     );
     expect(spatialEdgePan).toMatch(
-      /setSpatialHorizontalViewportOffsetForBounds\(context\.workspaceIndex,[\s\S]*plan\.viewportOffset, context\.bounds\)[\s\S]*detachSpatialLiveCameraForManualOffset\(context\.workspaceIndex, context\.expectedDesktopId,[\s\S]*context\.viewportOffset, plan\.viewportOffset\)/u,
+      /setSpatialHorizontalViewportOffsetForBounds\(context\.workspaceIndex,[\s\S]*plan\.viewportOffset, context\.bounds\)[\s\S]*context\.workspaceIndex === currentWorkspaceIndex[\s\S]*detachSpatialLiveCameraForManualOffset\(context\.workspaceIndex, context\.expectedDesktopId,[\s\S]*context\.viewportOffset, plan\.viewportOffset\)/u,
     );
     expect(spatialEdgePan).toMatch(
       /function spatialHorizontalEdgePanPlanIsValid[\s\S]*plan\.viewportOffset < context\.bounds\.minimum[\s\S]*plan\.viewportOffset > context\.bounds\.maximum[\s\S]*plan\.direction === "left" && delta < 0[\s\S]*plan\.direction === "right" && delta > 0/u,
