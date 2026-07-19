@@ -2762,3 +2762,21 @@ Release criteria (met):
   stale sessions, geometry, models, sources, and targets fail closed.
 - Desktop-topology refresh remains session-only and does not change layout
   ownership, settings, shortcuts, schema, or persistence.
+
+### 1.84.0 (in development)
+
+- Accept keyboard and pointer input from the first visible opening frame and
+  relinquish it as soon as closing begins.
+- Refresh an active Overview after authoritative layout publications without
+  polling or taking layout ownership.
+- Place a dragged tiled window at an exact stack half, column boundary, or
+  empty row on the same output, including across desktops.
+- Keep the Overview open after a successful placement and restore the prior
+  desktop, focus, and layout activation when a command is rejected.
+
+Release criteria (pending):
+
+- Spatial targets and the effect-to-script command channel are bounded,
+  replay-safe across effect reloads, and fail closed on stale identities.
+- One grouped local gate and the existing hidden VM Overview checkpoint pass;
+  no private KWin API, schema change, or polling is introduced.

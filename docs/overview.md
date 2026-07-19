@@ -90,7 +90,10 @@ A left click activates a visible window or selects a non-current workspace.
 Dragging a visible window can transfer it to another desktop or output after
 the source and destination are revalidated. Holding the dragged window over
 another workspace activates that workspace after a bounded dwell while keeping
-the drag active. Dragging the compact workspace number marker reorders eligible
+the drag active. On the same output, releasing over a window half inserts into
+that stack, releasing at a column boundary keeps a separate column, and an
+empty row accepts a new column. A rejected placement restores the prior desktop
+and focus. Dragging the compact workspace number marker reorders eligible
 desktops. The protected final empty desktop is never reordered or crossed.
 
 Adding, removing, or reordering virtual desktops refreshes an active Overview
