@@ -35,7 +35,8 @@ Precise vertical wheel input pans the workspace stack and settles on the nearest
 workspace when the gesture ends. Discrete vertical steps select workspaces;
 rapid steps accumulate before one deferred selection. Horizontal wheel input
 pans the current spatial row, and a manual horizontal offset detaches live
-geometry only for that output and workspace until the Overview session resets.
+geometry only for that output and workspace until another eligible active
+window takes over or the Overview session resets.
 
 Home Manager leaves these KConfig values unmanaged by default. It can manage
 them independently of package installation:
@@ -68,18 +69,18 @@ thumbnail footer, while `showApplicationIdentity` controls the application
 line or fallback. `showWindowCloseButtons` controls the hover and
 keyboard-selection close affordance for eligible Overview window previews.
 `showWindowStateBadges` controls static state badges on sufficiently large
-selected ordinary thumbnails; tabs, minimized placeholders, and state search
-are unaffected. `showDesktopNames` controls normalized names beside the number
-gutter on sufficiently large desktop cards; smaller cards stay compact, and
+selected ordinary thumbnails; state search is unaffected. `showDesktopNames`
+controls normalized names beside the number marker on sufficiently large
+workspace rows; smaller rows stay compact, and
 desktop-name search remains available when the label is hidden.
 `showApplicationIcons` controls lazily loaded icons on sufficiently large
-ordinary label footers, tabs, and minimized placeholders. A missing icon keeps
-the existing text presentation; disabling icons prevents the Loader payload
-from being instantiated, so it neither creates a Kirigami icon nor reads the
-public KWin icon. `showOutputNames` controls the bounded output label on large
+ordinary label footers. A missing icon keeps the existing text presentation;
+disabling icons prevents the Loader payload from being instantiated, so it
+neither creates a Kirigami icon nor reads the public KWin icon.
+`showOutputNames` controls the bounded output label on large
 multi-output scenes; search by output name remains available while the label is
-hidden. All seven boolean settings update live and default to enabled in the
-effect. Malformed values fall back to enabled, while their nullable Home
+hidden. All seven boolean settings update live and default to disabled in the
+effect. Malformed values fall back to disabled, while their nullable Home
 Manager options leave existing KConfig values untouched when set to `null`.
 The zoom and presentation options do not expand the NixOS option surface; a
 system-installed effect uses the same per-user KConfig values.
