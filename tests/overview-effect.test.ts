@@ -2631,7 +2631,7 @@ describe("overview effect package", () => {
     for (const signal of ["ItemAdded", "ItemRemoved"]) {
       expect(windowRepeaterHeader).toMatch(
         new RegExp(
-          `on${signal}: \\{\\s*card\\.navigationTargetsChanged\\(\\);\\s*card\\.attentionRevision \\+= 1;\\s*\\}`,
+          `on${signal}: \\{\\s*card\\.navigationTargetsChanged\\(\\);\\s*card\\.attentionRevision \\+= 1;\\s*card\\.spatialLiveGeometryRevision \\+= 1;\\s*\\}`,
           "u",
         ),
       );
@@ -2755,6 +2755,10 @@ describe("overview effect package", () => {
     const liveCameraProbeConnections = scene.slice(
       scene.indexOf("target: root.spatialLiveCameraProbeWindow"),
       scene.indexOf("target: root.targetScreen"),
+    );
+    const liveColumnFrames = desktopCard.slice(
+      desktopCard.indexOf("function buildSpatialLiveColumnFrames("),
+      desktopCard.indexOf("function spatialLiveColumnPlanIsExact("),
     );
 
     expect(scene).toContain("property real overviewWheelPixelRemainder: 0");
@@ -2898,7 +2902,10 @@ describe("overview effect package", () => {
       /function buildTiledPresentations[\s\S]*columnIndex,[\s\S]*memberIndex,[\s\S]*plannedColumnFrame: spatialSourceColumnFrame\(columnIndex\)/u,
     );
     expect(desktopCard).toMatch(
-      /function frameForWindow[\s\S]*planSpatialLiveWindowFrame\(window, windowId, tiled\)[\s\S]*return liveFrame;[\s\S]*return tiled\.thumbnailFrame;/u,
+      /readonly property var spatialLiveFrame: card\.planSpatialLiveWindowFrame\(model\.window, windowId,[\s\S]*tiledPresentation\)[\s\S]*readonly property var frame: card\.frameForWindow\(model\.window, windowId, tiledPresentation,[\s\S]*spatialLiveFrame\)/u,
+    );
+    expect(desktopCard).toMatch(
+      /function frameForWindow\(window, windowId, tiled, spatialLiveFrame\)[\s\S]*spatialLiveWindowPlanIsExact\(spatialLiveFrame, windowId, tiled\)[\s\S]*return spatialLiveFrame;[\s\S]*return tiled\.thumbnailFrame;/u,
     );
     expect(desktopCard).toMatch(
       /function planSpatialLiveWindowFrame[\s\S]*!liveGeometryEnabled \|\| !current[\s\S]*column\.presentation === "tabbed"[\s\S]*sourceColumnFrame !== tiled\.plannedColumnFrame[\s\S]*const deleted = window\.deleted;[\s\S]*const minimized = window\.minimized;[\s\S]*const output = window\.output;[\s\S]*const internalId = window\.internalId;[\s\S]*deleted !== false \|\| minimized !== false \|\| output !== expectedScreen[\s\S]*const liveGeometry = window\.frameGeometry;[\s\S]*const liveX = liveGeometry \? Number\(liveGeometry\.x\)[\s\S]*const outputX = outputGeometry \? Number\(outputGeometry\.x\)[\s\S]*const confirmedLiveGeometry = window\.frameGeometry;[\s\S]*tiledPresentations\[windowId\] !== tiled[\s\S]*window\.deleted !== false[\s\S]*window\.minimized !== false[\s\S]*window\.output !== expectedScreen[\s\S]*projectionGeometryMatches\(confirmedLiveGeometry, liveX, liveY, liveWidth, liveHeight\)/u,
@@ -2911,6 +2918,39 @@ describe("overview effect package", () => {
     );
     expect(desktopCard).not.toMatch(
       /projectOverviewSpatialLiveGeometry\(\{[\s\S]{0,900}\b(?:liveFrame|outputFrame|plannedColumnFrame)\b/u,
+    );
+    expect(desktopCard).toContain(
+      "readonly property var spatialLiveColumnFrames: buildSpatialLiveColumnFrames(spatialLiveGeometryRevision)",
+    );
+    expect(desktopCard).toContain(
+      "property int spatialLiveGeometryRevision: 0",
+    );
+    expect(desktopCard).toMatch(
+      /readonly property var frame: card\.columnShellFrame\(index\)[\s\S]*x: frame\.x[\s\S]*width: frame\.width/u,
+    );
+    expect(desktopCard).toMatch(
+      /function columnShellFrame\(columnIndex\)[\s\S]*spatialLiveColumnPlanIsExact\(liveFrame, columnIndex\) \? liveFrame : columnFrame\(columnIndex\)/u,
+    );
+    expect(liveColumnFrames).toMatch(
+      /!liveGeometryEnabled \|\| !current[\s\S]*context\.columns\.length > 512[\s\S]*windowRepeater\.count > 131072/u,
+    );
+    expect(liveColumnFrames).toMatch(
+      /column\.members\.length < 1 \|\| column\.members\.length > 256[\s\S]*column\.presentation === "tabbed" \? null : \[\]/u,
+    );
+    expect(liveColumnFrames).toMatch(
+      /for \(let index = 0; index < windowCount; index \+= 1\)[\s\S]*windowRepeater\.itemAt\(index\)[\s\S]*presentation\.spatialLiveFrame[\s\S]*spatialLiveWindowPlanIsExact\(plan, windowId, tiled\)[\s\S]*member\.windowId !== windowId[\s\S]*columnSamples\.push\(plan\)/u,
+    );
+    expect(liveColumnFrames).toMatch(
+      /tiledPresentations !== expectedPresentations[\s\S]*spatialLiveGeometryRevision !== revision[\s\S]*aggregateOverviewSpatialLiveColumnGeometry\(\{[\s\S]*columnIndex,[\s\S]*memberCount: column\.members\.length,[\s\S]*samples: samples\[columnIndex\]/u,
+    );
+    expect(liveColumnFrames).toMatch(
+      /column\.presentation === "tabbed"[\s\S]*frames\.push\(null\);[\s\S]*spatialLiveColumnPlanIsExact\(plan, columnIndex\) \? plan : null/u,
+    );
+    expect(
+      liveColumnFrames.match(/windowRepeater\.itemAt\(/gu) ?? [],
+    ).toHaveLength(1);
+    expect(liveColumnFrames).not.toMatch(
+      /WeakSet|WeakMap|KWin\.|Qt\.callLater|\b(?:Timer|Behavior|Animation)\s*\{/u,
     );
     expect(scene).toMatch(
       /function desktopIdListShapeIsValid\(candidate\) \{\s*return candidate !== undefined && candidate !== null && Number\.isInteger\(candidate\.length\)[\s\S]*candidate\.length >= 0 && candidate\.length <= 512;\s*\}/u,
@@ -4186,7 +4226,7 @@ describe("overview effect package", () => {
     );
     const columnFrame = desktopCard.slice(
       desktopCard.indexOf("function columnFrame("),
-      desktopCard.indexOf("function widthForColumn("),
+      desktopCard.indexOf("function columnShellFrame("),
     );
     expect(columnFrame).not.toMatch(/for\s*\(|\.slice\(|\.map\(/u);
     expect(desktopCard).toMatch(

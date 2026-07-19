@@ -28,6 +28,29 @@ export interface OverviewSpatialLiveGeometryPlan extends OverviewSpatialLiveGeom
   readonly windowId: string;
 }
 
+export interface OverviewSpatialLiveColumnGeometryInput {
+  readonly columnIndex: number;
+  readonly memberCount: number;
+  readonly samples: readonly unknown[];
+}
+
+export interface OverviewSpatialLiveColumnGeometryPlan {
+  readonly columnIndex: number;
+  readonly width: number;
+  readonly x: number;
+}
+
+interface OverviewSpatialLiveGeometrySample {
+  readonly columnIndex: number;
+  readonly floating: false;
+  readonly height: number;
+  readonly memberIndex: number;
+  readonly width: number;
+  readonly windowId: string;
+  readonly x: number;
+  readonly y: number;
+}
+
 const MAXIMUM_GEOMETRY_MAGNITUDE = LAYOUT_PERSISTENCE_LIMITS.numericMagnitude;
 const HORIZONTAL_OUTPUT_ENVELOPE_SPANS =
   LAYOUT_PERSISTENCE_LIMITS.columnsPerContext + 1;
@@ -124,6 +147,75 @@ export function projectOverviewSpatialLiveGeometry(
   }
 }
 
+export function aggregateOverviewSpatialLiveColumnGeometry(
+  input: unknown,
+): OverviewSpatialLiveColumnGeometryPlan | null {
+  try {
+    if (!isRecord(input)) {
+      return null;
+    }
+
+    const columnIndex = input["columnIndex"];
+    const memberCount = input["memberCount"];
+    const samples = input["samples"];
+    if (
+      !isBoundedIndex(
+        columnIndex,
+        LAYOUT_PERSISTENCE_LIMITS.columnsPerContext,
+      ) ||
+      !isPositiveBoundedCount(
+        memberCount,
+        LAYOUT_PERSISTENCE_LIMITS.membersPerColumn,
+      ) ||
+      !Array.isArray(samples) ||
+      samples.length !== memberCount
+    ) {
+      return null;
+    }
+
+    const seenMembers: boolean[] = [];
+    let columnX: number | null = null;
+    let columnWidth: number | null = null;
+    for (const sample of samples) {
+      const snapshot = readSpatialLiveGeometrySample(
+        sample,
+        columnIndex,
+        memberCount,
+      );
+      if (snapshot === null) {
+        return null;
+      }
+
+      const memberIndex = snapshot.memberIndex;
+      if (seenMembers[memberIndex] === true) {
+        return null;
+      }
+      seenMembers[memberIndex] = true;
+
+      const x = snapshot.x;
+      const width = snapshot.width;
+      if (columnX === null) {
+        columnX = x;
+        columnWidth = width;
+      } else if (x !== columnX || width !== columnWidth) {
+        return null;
+      }
+    }
+
+    if (columnX === null || columnWidth === null) {
+      return null;
+    }
+
+    return Object.freeze({
+      columnIndex,
+      width: normalizeZero(columnWidth),
+      x: normalizeZero(columnX),
+    });
+  } catch {
+    return null;
+  }
+}
+
 function rectIntersectsOutputEnvelope(
   liveX: number,
   liveY: number,
@@ -190,6 +282,62 @@ function isBoundedIndex(value: unknown, maximum: number): value is number {
     value >= 0 &&
     value < maximum
   );
+}
+
+function isPositiveBoundedCount(
+  value: unknown,
+  maximum: number,
+): value is number {
+  return (
+    typeof value === "number" &&
+    Number.isSafeInteger(value) &&
+    value > 0 &&
+    value <= maximum
+  );
+}
+
+function readSpatialLiveGeometrySample(
+  sample: unknown,
+  columnIndex: number,
+  memberCount: number,
+): OverviewSpatialLiveGeometrySample | null {
+  if (!isRecord(sample)) {
+    return null;
+  }
+
+  const sampleColumnIndex = sample["columnIndex"];
+  const floating = sample["floating"];
+  const height = sample["height"];
+  const memberIndex = sample["memberIndex"];
+  const width = sample["width"];
+  const windowId = sample["windowId"];
+  const x = sample["x"];
+  const y = sample["y"];
+  if (
+    sampleColumnIndex !== columnIndex ||
+    floating !== false ||
+    !isBoundedIndex(memberIndex, memberCount) ||
+    !isBoundedNumber(x) ||
+    !isBoundedNumber(y) ||
+    !isPositiveBoundedNumber(width) ||
+    !isPositiveBoundedNumber(height) ||
+    !isBoundedNumber(x + width) ||
+    !isBoundedNumber(y + height) ||
+    !isIdentifier(windowId)
+  ) {
+    return null;
+  }
+
+  return {
+    columnIndex: sampleColumnIndex,
+    floating,
+    height,
+    memberIndex,
+    width,
+    windowId,
+    x,
+    y,
+  };
 }
 
 function isBoundedNumber(value: unknown): value is number {

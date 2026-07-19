@@ -112,8 +112,13 @@ export type {
   OverviewSpatialRowGeometryInput,
   OverviewSpatialRowGeometryPlan,
 } from "./spatial-row-geometry";
-export { projectOverviewSpatialLiveGeometry } from "./spatial-live-geometry";
+export {
+  aggregateOverviewSpatialLiveColumnGeometry,
+  projectOverviewSpatialLiveGeometry,
+} from "./spatial-live-geometry";
 export type {
+  OverviewSpatialLiveColumnGeometryInput,
+  OverviewSpatialLiveColumnGeometryPlan,
   OverviewSpatialLiveGeometryFrame,
   OverviewSpatialLiveGeometryInput,
   OverviewSpatialLiveGeometryPlan,

@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { LAYOUT_PERSISTENCE_LIMITS } from "../../src/core/layout-persistence";
-import { projectOverviewSpatialLiveGeometry } from "../../src/overview/spatial-live-geometry";
+import {
+  aggregateOverviewSpatialLiveColumnGeometry,
+  projectOverviewSpatialLiveGeometry,
+} from "../../src/overview/spatial-live-geometry";
 
 describe("projectOverviewSpatialLiveGeometry", () => {
   it("maps an exact live frame into viewport-local card coordinates", () => {
@@ -139,6 +142,92 @@ describe("projectOverviewSpatialLiveGeometry", () => {
     });
 
     expect(projectOverviewSpatialLiveGeometry(hostile)).toBeNull();
+  });
+});
+
+describe("aggregateOverviewSpatialLiveColumnGeometry", () => {
+  it("derives one frozen primitive column frame from every live member", () => {
+    const samples = [
+      project({ memberIndex: 1, windowId: "window-2" }),
+      project({ memberIndex: 0, windowId: "window-1" }),
+    ];
+
+    const result = aggregateOverviewSpatialLiveColumnGeometry({
+      columnIndex: 1,
+      memberCount: 2,
+      samples,
+    });
+
+    expect(result).toEqual({ columnIndex: 1, width: 350, x: 10 });
+    expect(Object.isFrozen(result)).toBe(true);
+    expect(
+      Object.values(result ?? {}).every((value) => typeof value !== "object"),
+    ).toBe(true);
+  });
+
+  it.each([
+    { memberCount: 2, samples: [project()] },
+    {
+      memberCount: 2,
+      samples: [project(), project({ windowId: "window-2" })],
+    },
+    {
+      memberCount: 2,
+      samples: [
+        project(),
+        project({ memberIndex: 1, windowId: "window-2", liveX: 24 }),
+      ],
+    },
+    {
+      memberCount: 2,
+      samples: [
+        project(),
+        project({ memberIndex: 1, windowId: "window-2", liveWidth: 702 }),
+      ],
+    },
+  ])("fails closed for a partial or inconsistent column (%o)", (candidate) => {
+    expect(
+      aggregateOverviewSpatialLiveColumnGeometry({
+        columnIndex: 1,
+        ...candidate,
+      }),
+    ).toBeNull();
+  });
+
+  it("fails closed when a sample accessor throws", () => {
+    const hostile = Object.defineProperty({}, "columnIndex", {
+      get(): never {
+        throw new Error("unavailable");
+      },
+    });
+
+    expect(
+      aggregateOverviewSpatialLiveColumnGeometry({
+        columnIndex: 1,
+        memberCount: 1,
+        samples: [hostile],
+      }),
+    ).toBeNull();
+  });
+
+  it("snapshots each sample scalar once", () => {
+    const sample = project();
+    let memberIndexReads = 0;
+    const changing = Object.defineProperty({ ...sample }, "memberIndex", {
+      get(): number {
+        memberIndexReads += 1;
+        return memberIndexReads === 1 ? 0 : 4_000;
+      },
+    });
+
+    expect(
+      aggregateOverviewSpatialLiveColumnGeometry({
+        columnIndex: 1,
+        memberCount: 1,
+        samples: [changing],
+      }),
+    ).toEqual({ columnIndex: 1, width: 350, x: 10 });
+    expect(memberIndexReads).toBe(1);
   });
 });
 

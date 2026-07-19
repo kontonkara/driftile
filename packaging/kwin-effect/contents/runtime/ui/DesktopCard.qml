@@ -76,8 +76,10 @@ Rectangle {
     readonly property real logicalViewportOffset: finiteNumber(previewViewportOffset, 0)
     readonly property var columnFrames: buildColumnFrames()
     readonly property var tiledPresentations: buildTiledPresentations()
+    readonly property var spatialLiveColumnFrames: buildSpatialLiveColumnFrames(spatialLiveGeometryRevision)
     readonly property var floatingWindowIds: buildFloatingWindowIds()
     property int columnDelegateRevision: 0
+    property int spatialLiveGeometryRevision: 0
     property int attentionRevision: 0
 
     color: windowDropArea.validTarget ? "#ee2f4057"
@@ -252,7 +254,7 @@ Rectangle {
                 required property var modelData
                 required property int index
 
-                readonly property var frame: card.columnFrame(index)
+                readonly property var frame: card.columnShellFrame(index)
 
                 x: frame.x
                 y: 0
@@ -321,10 +323,12 @@ Rectangle {
             onItemAdded: {
                 card.navigationTargetsChanged();
                 card.attentionRevision += 1;
+                card.spatialLiveGeometryRevision += 1;
             }
             onItemRemoved: {
                 card.navigationTargetsChanged();
                 card.attentionRevision += 1;
+                card.spatialLiveGeometryRevision += 1;
             }
 
             Item {
@@ -336,7 +340,10 @@ Rectangle {
                 readonly property bool attentionRequested: card.windowDemandsAttention(candidate)
                 readonly property string windowId: model.window ? String(model.window.internalId) : ""
                 readonly property var tiledPresentation: card.tiledPresentations[windowId]
-                readonly property var frame: card.frameForWindow(model.window, windowId)
+                readonly property var spatialLiveFrame: card.planSpatialLiveWindowFrame(model.window, windowId,
+                                                                                         tiledPresentation)
+                readonly property var frame: card.frameForWindow(model.window, windowId, tiledPresentation,
+                                                                  spatialLiveFrame)
                 readonly property var windowState: card.planWindowState(candidate, frame, tiledPresentation,
                                                                         windowStateRevision)
                 readonly property bool matchesSearch: card.windowMatchesSearch(candidate, windowState)
@@ -2157,6 +2164,112 @@ Rectangle {
         return frame;
     }
 
+    function columnShellFrame(columnIndex) {
+        const liveFrames = spatialLiveColumnFrames;
+        const liveFrame = liveFrames && Number.isInteger(columnIndex)
+            && columnIndex >= 0 && columnIndex < liveFrames.length ? liveFrames[columnIndex] : null;
+        return spatialLiveColumnPlanIsExact(liveFrame, columnIndex) ? liveFrame : columnFrame(columnIndex);
+    }
+
+    function buildSpatialLiveColumnFrames(revision) {
+        try {
+            if (!Number.isInteger(revision) || !liveGeometryEnabled || !current || !context || !context.columns
+                    || !screen || !Number.isInteger(context.columns.length) || context.columns.length > 512
+                    || !Number.isInteger(windowRepeater.count) || windowRepeater.count < 0
+                    || windowRepeater.count > 131072) {
+                return null;
+            }
+
+            const expectedContext = context;
+            const expectedColumns = expectedContext.columns;
+            const expectedScreen = screen;
+            const expectedPresentations = tiledPresentations;
+            const windowCount = windowRepeater.count;
+            const samples = [];
+            for (let columnIndex = 0; columnIndex < expectedColumns.length; columnIndex += 1) {
+                const column = expectedColumns[columnIndex];
+                if (!column || !column.members || !Number.isInteger(column.members.length)
+                        || column.members.length < 1 || column.members.length > 256) {
+                    return null;
+                }
+                samples.push(column.presentation === "tabbed" ? null : []);
+            }
+
+            for (let index = 0; index < windowCount; index += 1) {
+                const presentation = windowRepeater.itemAt(index);
+                if (!presentation) {
+                    continue;
+                }
+
+                const plan = presentation.spatialLiveFrame;
+                if (plan === null || plan === undefined) {
+                    continue;
+                }
+
+                const tiled = presentation.tiledPresentation;
+                const windowId = presentation.windowId;
+                if (!tiled || !spatialLiveWindowPlanIsExact(plan, windowId, tiled)) {
+                    return null;
+                }
+
+                const columnIndex = plan.columnIndex;
+                const memberIndex = plan.memberIndex;
+                const column = expectedColumns[columnIndex];
+                const members = column ? column.members : null;
+                const member = members && memberIndex >= 0 && memberIndex < members.length
+                    ? members[memberIndex] : null;
+                const columnSamples = samples[columnIndex];
+                if (!column || column.presentation === "tabbed" || !member || member.windowId !== windowId
+                        || !columnSamples || columnSamples.length >= members.length) {
+                    return null;
+                }
+                columnSamples.push(plan);
+            }
+
+            if (!liveGeometryEnabled || !current || context !== expectedContext || screen !== expectedScreen
+                    || expectedContext.columns !== expectedColumns || tiledPresentations !== expectedPresentations
+                    || windowRepeater.count !== windowCount || spatialLiveGeometryRevision !== revision) {
+                return null;
+            }
+
+            const runtime = OverviewRuntime.DriftileOverview;
+            if (!runtime || typeof runtime.aggregateOverviewSpatialLiveColumnGeometry !== "function") {
+                return null;
+            }
+
+            const frames = [];
+            for (let columnIndex = 0; columnIndex < expectedColumns.length; columnIndex += 1) {
+                const column = expectedColumns[columnIndex];
+                if (column.presentation === "tabbed") {
+                    frames.push(null);
+                    continue;
+                }
+
+                const plan = runtime.aggregateOverviewSpatialLiveColumnGeometry({
+                                                                                    columnIndex,
+                                                                                    memberCount: column.members.length,
+                                                                                    samples: samples[columnIndex]
+                                                                                });
+                frames.push(spatialLiveColumnPlanIsExact(plan, columnIndex) ? plan : null);
+            }
+
+            if (!liveGeometryEnabled || !current || context !== expectedContext || screen !== expectedScreen
+                    || expectedContext.columns !== expectedColumns || tiledPresentations !== expectedPresentations
+                    || windowRepeater.count !== windowCount || spatialLiveGeometryRevision !== revision) {
+                return null;
+            }
+            return frames;
+        } catch (error) {
+            return null;
+        }
+    }
+
+    function spatialLiveColumnPlanIsExact(plan, columnIndex) {
+        return plan && !Array.isArray(plan) && plan.columnIndex === columnIndex
+            && Number.isFinite(plan.x) && Number.isFinite(plan.width) && plan.width > 0
+            && Number.isFinite(plan.x + plan.width);
+    }
+
     function widthForColumn(width) {
         if (!width || !Number.isFinite(width.value) || width.value <= 0) {
             return 1;
@@ -2261,12 +2374,10 @@ Rectangle {
         return contentHeight / Math.max(1, memberCount);
     }
 
-    function frameForWindow(window, windowId) {
-        const tiled = tiledPresentations[windowId];
+    function frameForWindow(window, windowId, tiled, spatialLiveFrame) {
         if (tiled !== undefined) {
-            const liveFrame = planSpatialLiveWindowFrame(window, windowId, tiled);
-            if (liveFrame !== null) {
-                return liveFrame;
+            if (spatialLiveWindowPlanIsExact(spatialLiveFrame, windowId, tiled)) {
+                return spatialLiveFrame;
             }
             return tiled.thumbnailFrame;
         }
