@@ -26,7 +26,10 @@ QtObject {
     property bool overviewAlwaysCenterSingleColumn: false
     property real overviewGap: 16
     property bool touchpadGestureEnabled: false
+    property bool touchpadGestureDispatching: false
     property int touchpadGestureFingerCount: 4
+    property real touchpadGestureProgress: 0
+    property string touchpadGestureOwner: ""
     readonly property var overviewDelegate: Qt.createComponent("OverviewScene.qml")
 
     readonly property NumberAnimation presentationAnimation: NumberAnimation {
@@ -100,12 +103,24 @@ QtObject {
         ignoreUnknownSignals: true
         target: touchpadGestureLoader.item
 
-        function onOpenRequested() {
-            controller.openFromTouchpadGesture()
+        function onGestureStarted(owner, progress) {
+            controller.beginTouchpadGesture(owner, progress)
         }
 
-        function onCloseRequested() {
-            controller.closeFromTouchpadGesture()
+        function onGestureProgressed(owner, progress) {
+            controller.updateTouchpadGesture(owner, progress)
+        }
+
+        function onGestureCancelled(owner) {
+            controller.cancelTouchpadGesture(owner)
+        }
+
+        function onGestureActivated(owner) {
+            controller.activateTouchpadGesture(owner)
+        }
+
+        function onGestureInvalidated(owner) {
+            controller.invalidateTouchpadGesture(owner)
         }
     }
 
@@ -180,6 +195,9 @@ QtObject {
     }
 
     function rebuildTouchpadGesture() {
+        if (touchpadGestureOwner !== "") {
+            cancelTouchpadGesture(touchpadGestureOwner);
+        }
         touchpadGestureLoader.active = false;
         touchpadGestureLoader.source = "";
 
@@ -193,12 +211,125 @@ QtObject {
         touchpadGestureLoader.active = true;
     }
 
-    function openFromTouchpadGesture() {
-        open();
+    function resetTouchpadGestureState() {
+        touchpadGestureOwner = "";
+        touchpadGestureProgress = 0;
     }
 
-    function closeFromTouchpadGesture() {
-        close();
+    function touchpadGestureTarget(owner, progress) {
+        const bounded = boundedPresentationProgress(progress);
+        return owner === "close" ? 1 - bounded : bounded;
+    }
+
+    function applyTouchpadGestureProgress(owner, progress) {
+        if (owner !== touchpadGestureOwner || !active || loading
+                || activeSessionId <= 0 || !overviewModel) {
+            return false;
+        }
+
+        presentationPhase = owner === "close" ? "closing" : "opening";
+        presentationProgress = touchpadGestureTarget(owner, progress);
+        return true;
+    }
+
+    function beginTouchpadGesture(owner, progress) {
+        const numericProgress = Number(progress);
+        if ((owner !== "open" && owner !== "close")
+                || !Number.isFinite(numericProgress) || numericProgress <= 0
+                || touchpadGestureOwner !== "") {
+            return false;
+        }
+
+        const boundedProgress = boundedPresentationProgress(numericProgress);
+        if (owner === "open") {
+            if (active || loading || presentationPhase !== "closed"
+                    || plasmaOverviewIsActive()) {
+                return false;
+            }
+
+            touchpadGestureOwner = owner;
+            touchpadGestureProgress = boundedProgress;
+            touchpadGestureDispatching = true;
+            try {
+                activate();
+            } finally {
+                touchpadGestureDispatching = false;
+            }
+            if (!active && !loading) {
+                resetTouchpadGestureState();
+                return false;
+            }
+            return true;
+        }
+
+        if (!active || loading || presentationPhase !== "open"
+                || activeSessionId <= 0 || !overviewModel) {
+            return false;
+        }
+
+        touchpadGestureOwner = owner;
+        touchpadGestureProgress = boundedProgress;
+        if (pendingLiveRefreshAttemptId > 0) {
+            pendingPostTransitionLiveRefresh = true;
+        }
+        clearPendingLiveModelRefresh();
+        layoutStateReader.cancel();
+        invalidatePresentationTransition();
+        return applyTouchpadGestureProgress(owner, boundedProgress);
+    }
+
+    function updateTouchpadGesture(owner, progress) {
+        const numericProgress = Number(progress);
+        if (owner !== touchpadGestureOwner || owner === ""
+                || !Number.isFinite(numericProgress)) {
+            return false;
+        }
+
+        const boundedProgress = boundedPresentationProgress(numericProgress);
+        touchpadGestureProgress = boundedProgress;
+        if (owner === "open" && loading && !active) {
+            return true;
+        }
+        return applyTouchpadGestureProgress(owner, boundedProgress);
+    }
+
+    function finishTouchpadGesture(owner, committed) {
+        if (owner === "" || owner !== touchpadGestureOwner) {
+            return false;
+        }
+
+        resetTouchpadGestureState();
+        if (owner === "open" && loading && !active) {
+            if (!committed) {
+                deactivateImmediately();
+            }
+            return true;
+        }
+        if (!active || loading || activeSessionId <= 0 || !overviewModel) {
+            return false;
+        }
+
+        const opening = owner === "open" ? committed : !committed;
+        const phase = opening ? "opening" : "closing";
+        const target = phase === "opening" ? 1 : 0;
+        return startPresentationTransition(phase, target, activeSessionId);
+    }
+
+    function cancelTouchpadGesture(owner) {
+        return finishTouchpadGesture(owner, false);
+    }
+
+    function activateTouchpadGesture(owner) {
+        return finishTouchpadGesture(owner, true);
+    }
+
+    function invalidateTouchpadGesture(owner) {
+        if (owner === "" || owner !== touchpadGestureOwner) {
+            return false;
+        }
+
+        deactivateImmediately();
+        return true;
     }
 
     function emptyDesktopAboveFirstFromConfig() {
@@ -234,8 +365,14 @@ QtObject {
     }
 
     function activate() {
+        const interruptedTouchpadGesture = !touchpadGestureDispatching
+            && touchpadGestureOwner !== "";
+        if (interruptedTouchpadGesture) {
+            resetTouchpadGestureState();
+        }
         if (active) {
-            if (presentationPhase === "closing" && activeSessionId > 0 && overviewModel) {
+            if ((presentationPhase === "closing" || interruptedTouchpadGesture)
+                    && activeSessionId > 0 && overviewModel) {
                 startPresentationTransition("opening", 1, activeSessionId);
             }
             return;
@@ -262,11 +399,16 @@ QtObject {
     }
 
     function deactivate() {
+        const interruptedTouchpadGesture = !touchpadGestureDispatching
+            && touchpadGestureOwner !== "";
+        if (interruptedTouchpadGesture) {
+            resetTouchpadGestureState();
+        }
         if (loading && !active) {
             deactivateImmediately();
             return;
         }
-        if (!active || presentationPhase === "closing") {
+        if (!active || (presentationPhase === "closing" && !interruptedTouchpadGesture)) {
             return;
         }
         if (activeSessionId <= 0 || !overviewModel) {
@@ -283,6 +425,8 @@ QtObject {
     }
 
     function deactivateImmediately() {
+        resetTouchpadGestureState();
+        touchpadGestureDispatching = false;
         invalidatePresentationTransition();
         pendingActivationAttemptId = 0;
         clearPendingLiveModelRefresh();
@@ -411,6 +555,7 @@ QtObject {
             return false;
         }
 
+        resetTouchpadGestureState();
         pendingActivationAttemptId = 0;
         clearPendingLiveModelRefresh();
         layoutStateReader.cancel();
@@ -458,8 +603,14 @@ QtObject {
             overviewModel = result.value;
             loading = false;
             active = true;
-            presentationProgress = 0;
-            startPresentationTransition("opening", 1, attemptId);
+            if (touchpadGestureOwner === "open") {
+                invalidatePresentationTransition();
+                presentationPhase = "opening";
+                presentationProgress = touchpadGestureTarget("open", touchpadGestureProgress);
+            } else {
+                presentationProgress = 0;
+                startPresentationTransition("opening", 1, attemptId);
+            }
         } catch (error) {
             rejectLayoutState(attemptId, "runtime-error");
         }

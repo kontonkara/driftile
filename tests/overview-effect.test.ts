@@ -183,22 +183,26 @@ describe("overview effect package", () => {
     expect(main).not.toContain("ShortcutHandler");
   });
 
-  it("recreates one configured vertical touchpad gesture pair", () => {
+  it("drives one configured vertical touchpad gesture pair interactively", () => {
     const applySettings = controller.slice(
       controller.indexOf("function applyTouchpadGestureSettings("),
       controller.indexOf("function rebuildTouchpadGesture("),
     );
     const rebuild = controller.slice(
       controller.indexOf("function rebuildTouchpadGesture("),
-      controller.indexOf("function openFromTouchpadGesture("),
+      controller.indexOf("function resetTouchpadGestureState("),
     );
-    const open = controller.slice(
-      controller.indexOf("function openFromTouchpadGesture("),
-      controller.indexOf("function closeFromTouchpadGesture("),
+    const beginTouchpadGesture = controller.slice(
+      controller.indexOf("function beginTouchpadGesture("),
+      controller.indexOf("function updateTouchpadGesture("),
     );
-    const close = controller.slice(
-      controller.indexOf("function closeFromTouchpadGesture("),
-      controller.indexOf("function activate("),
+    const updateTouchpadGesture = controller.slice(
+      controller.indexOf("function updateTouchpadGesture("),
+      controller.indexOf("function finishTouchpadGesture("),
+    );
+    const finishTouchpadGesture = controller.slice(
+      controller.indexOf("function finishTouchpadGesture("),
+      controller.indexOf("function cancelTouchpadGesture("),
     );
     const gestureContext = touchpadGesture.slice(
       touchpadGesture.indexOf("function valueKey("),
@@ -206,8 +210,8 @@ describe("overview effect package", () => {
         "readonly property KWin.SwipeGestureHandler upSwipe",
       ),
     );
-    const beginGesture = gestureContext.slice(
-      gestureContext.indexOf("function beginGesture("),
+    const updateGesture = gestureContext.slice(
+      gestureContext.indexOf("function updateGesture("),
       gestureContext.indexOf("function invalidateGestureContext("),
     );
     const desktopForOutput = gestureContext.slice(
@@ -220,10 +224,10 @@ describe("overview effect package", () => {
     );
     const cancelGesture = gestureContext.slice(
       gestureContext.indexOf("function cancelGesture("),
-      gestureContext.indexOf("function completeGesture("),
+      gestureContext.indexOf("function activateGesture("),
     );
-    const completeGesture = gestureContext.slice(
-      gestureContext.indexOf("function completeGesture("),
+    const activateGesture = gestureContext.slice(
+      gestureContext.indexOf("function activateGesture("),
       gestureContext.indexOf(
         "readonly property Connections workspaceContextConnection",
       ),
@@ -263,13 +267,22 @@ describe("overview effect package", () => {
     );
 
     expect(controller).toContain("property bool touchpadGestureEnabled: false");
+    expect(controller).toContain('property string touchpadGestureOwner: ""');
+    expect(controller).toContain("property real touchpadGestureProgress: 0");
     expect(controller).toContain("property int touchpadGestureFingerCount: 4");
     expect(controller).toMatch(
       /readonly property Loader touchpadGestureLoader: Loader \{\s*active: false\s*\}/u,
     );
     expect(controller).toContain("target: touchpadGestureLoader.item");
-    expect(controller).toContain("controller.openFromTouchpadGesture()");
-    expect(controller).toContain("controller.closeFromTouchpadGesture()");
+    expect(controller).toContain(
+      "controller.beginTouchpadGesture(owner, progress)",
+    );
+    expect(controller).toContain(
+      "controller.updateTouchpadGesture(owner, progress)",
+    );
+    expect(controller).toContain("controller.cancelTouchpadGesture(owner)");
+    expect(controller).toContain("controller.activateTouchpadGesture(owner)");
+    expect(controller).toContain("controller.invalidateTouchpadGesture(owner)");
 
     expect(applySettings).toContain("const nextEnabled = enabled === true;");
     expect(applySettings).toContain("Number(fingerCount)");
@@ -279,7 +292,7 @@ describe("overview effect package", () => {
     expect(applySettings.match(/rebuildTouchpadGesture\(\)/gu)).toHaveLength(1);
 
     expect(rebuild).toMatch(
-      /touchpadGestureLoader\.active = false;\s*touchpadGestureLoader\.source = "";/u,
+      /if \(touchpadGestureOwner !== ""\) \{\s*cancelTouchpadGesture\(touchpadGestureOwner\);\s*\}[\s\S]*touchpadGestureLoader\.active = false;\s*touchpadGestureLoader\.source = "";/u,
     );
     expect(rebuild).toMatch(
       /if \(!touchpadGestureEnabled\) \{\s*return;\s*\}/u,
@@ -295,8 +308,30 @@ describe("overview effect package", () => {
       rebuild.indexOf("touchpadGestureLoader.active = true"),
     ).toBeGreaterThan(rebuild.indexOf("setSource("));
 
-    expect(open).toMatch(/open\(\);/u);
-    expect(close).toMatch(/close\(\);/u);
+    expect(beginTouchpadGesture).toMatch(
+      /owner !== "open" && owner !== "close"[\s\S]*!Number\.isFinite\(numericProgress\)[\s\S]*touchpadGestureOwner !== ""/u,
+    );
+    expect(beginTouchpadGesture).toMatch(
+      /owner === "open"[\s\S]*presentationPhase !== "closed"[\s\S]*touchpadGestureDispatching = true;[\s\S]*activate\(\);[\s\S]*touchpadGestureDispatching = false;/u,
+    );
+    expect(beginTouchpadGesture).toMatch(
+      /presentationPhase !== "open"[\s\S]*invalidatePresentationTransition\(\);[\s\S]*applyTouchpadGestureProgress\(owner, boundedProgress\)/u,
+    );
+    expect(updateTouchpadGesture).toMatch(
+      /owner !== touchpadGestureOwner[\s\S]*touchpadGestureProgress = boundedProgress;[\s\S]*owner === "open" && loading && !active[\s\S]*applyTouchpadGestureProgress\(owner, boundedProgress\)/u,
+    );
+    expect(finishTouchpadGesture).toMatch(
+      /resetTouchpadGestureState\(\);[\s\S]*owner === "open" && loading && !active[\s\S]*!committed[\s\S]*deactivateImmediately\(\);[\s\S]*startPresentationTransition\(phase, target, activeSessionId\)/u,
+    );
+    expect(controller).toMatch(
+      /if \(touchpadGestureOwner === "open"\) \{[\s\S]*presentationPhase = "opening";[\s\S]*presentationProgress = touchpadGestureTarget\("open", touchpadGestureProgress\);[\s\S]*\} else \{[\s\S]*startPresentationTransition\("opening", 1, attemptId\);/u,
+    );
+    expect(controller).toMatch(
+      /function activate\(\) \{[\s\S]*interruptedTouchpadGesture[\s\S]*resetTouchpadGestureState\(\);[\s\S]*startPresentationTransition\("opening", 1, activeSessionId\)/u,
+    );
+    expect(controller).toMatch(
+      /function deactivate\(\) \{[\s\S]*interruptedTouchpadGesture[\s\S]*resetTouchpadGestureState\(\);[\s\S]*startPresentationTransition\("closing", 0, activeSessionId\)/u,
+    );
 
     expect(
       touchpadGesture.match(/KWin\.SwipeGestureHandler \{/gu),
@@ -315,6 +350,15 @@ describe("overview effect package", () => {
       'property string blockedGestureOwner: ""',
     );
     expect(touchpadGesture).toContain('property string gestureContextKey: ""');
+    for (const signal of [
+      "gestureStarted(string owner, real progress)",
+      "gestureProgressed(string owner, real progress)",
+      "gestureCancelled(string owner)",
+      "gestureActivated(string owner)",
+      "gestureInvalidated(string owner)",
+    ]) {
+      expect(touchpadGesture).toContain(`signal ${signal}`);
+    }
     expect(gestureContext).toContain("KWin.Workspace.currentActivity");
     expect(gestureContext).toContain("KWin.Workspace.currentDesktopForScreen");
     expect(gestureContext).toContain("KWin.Workspace.currentDesktop");
@@ -325,24 +369,29 @@ describe("overview effect package", () => {
       /if \(typeof KWin\.Workspace\.currentDesktopForScreen !== "function"\) \{\s*return KWin\.Workspace\.currentDesktop;\s*\}[\s\S]*return KWin\.Workspace\.currentDesktopForScreen\(output\) \|\| null;[\s\S]*catch \(error\) \{\s*return null;/u,
     );
     expect(desktopForOutput).not.toMatch(/desktop \|\|/u);
-    expect(beginGesture).toMatch(/if \(!\(progress > 0\)\) \{\s*return;\s*\}/u);
-    expect(beginGesture).toMatch(
-      /if \(root\.activeGestureOwner !== "" \|\| root\.blockedGestureOwner !== ""\) \{\s*return;\s*\}/u,
+    expect(gestureContext).toMatch(
+      /function boundedGestureProgress\(progress\)[\s\S]*Number\.isFinite\(numeric\)[\s\S]*Math\.max\(0, Math\.min\(1, numeric\)\)/u,
     );
-    expect(beginGesture).toMatch(
-      /const contextKey = root\.currentGestureContextKey\(\);[\s\S]*if \(contextKey\.length === 0\) \{\s*return;\s*\}[\s\S]*root\.activeGestureOwner = owner;[\s\S]*root\.gestureContextKey = contextKey;/u,
+    expect(updateGesture).toMatch(
+      /const boundedProgress = root\.boundedGestureProgress\(progress\);[\s\S]*root\.activeGestureOwner === owner[\s\S]*root\.gestureContextKey !== root\.currentGestureContextKey\(\)[\s\S]*root\.gestureProgressed\(owner, boundedProgress\);/u,
+    );
+    expect(updateGesture).toMatch(
+      /boundedProgress <= 0 \|\| root\.activeGestureOwner !== ""[\s\S]*root\.blockedGestureOwner !== ""[\s\S]*root\.activeGestureOwner = owner;[\s\S]*root\.gestureContextKey = contextKey;[\s\S]*root\.gestureStarted\(owner, boundedProgress\);/u,
     );
     expect(invalidateGesture).toMatch(
-      /if \(root\.activeGestureOwner === ""\) \{\s*return;\s*\}[\s\S]*root\.blockedGestureOwner = root\.activeGestureOwner;[\s\S]*root\.activeGestureOwner = "";[\s\S]*root\.gestureContextKey = "";/u,
+      /const owner = root\.activeGestureOwner;[\s\S]*root\.blockedGestureOwner = owner;[\s\S]*root\.activeGestureOwner = "";[\s\S]*root\.gestureInvalidated\(owner\);/u,
+    );
+    expect(controller).toMatch(
+      /function invalidateTouchpadGesture\(owner\)[\s\S]*owner !== touchpadGestureOwner[\s\S]*deactivateImmediately\(\);[\s\S]*return true;/u,
     );
     expect(cancelGesture).toMatch(
-      /if \(owner === root\.activeGestureOwner \|\| owner === root\.blockedGestureOwner\) \{\s*root\.resetGesture\(\);\s*\}/u,
+      /if \(owner === root\.blockedGestureOwner\) \{\s*root\.resetGesture\(\);\s*return;\s*\}[\s\S]*if \(owner !== root\.activeGestureOwner\)[\s\S]*root\.resetGesture\(\);[\s\S]*root\.gestureCancelled\(owner\);/u,
     );
-    expect(completeGesture).toMatch(
-      /if \(owner === root\.blockedGestureOwner\) \{\s*root\.resetGesture\(\);\s*return false;\s*\}[\s\S]*if \(owner !== root\.activeGestureOwner\) \{\s*return false;\s*\}/u,
+    expect(activateGesture).toMatch(
+      /if \(owner === root\.blockedGestureOwner\) \{\s*root\.resetGesture\(\);\s*return;\s*\}[\s\S]*if \(owner !== root\.activeGestureOwner\) \{\s*return;\s*\}/u,
     );
-    expect(completeGesture).toMatch(
-      /root\.gestureContextKey === root\.currentGestureContextKey\(\)[\s\S]*root\.resetGesture\(\);[\s\S]*return accepted;/u,
+    expect(activateGesture).toMatch(
+      /root\.gestureContextKey === root\.currentGestureContextKey\(\)[\s\S]*root\.resetGesture\(\);[\s\S]*if \(accepted\) \{\s*root\.gestureActivated\(owner\);\s*\} else \{\s*root\.gestureCancelled\(owner\);/u,
     );
     expect(touchpadGesture).toMatch(
       /target: KWin\.Workspace[\s\S]*onCurrentDesktopChanged[\s\S]*onCurrentActivityChanged[\s\S]*onDesktopsChanged[\s\S]*onScreensChanged[\s\S]*onVirtualScreenGeometryChanged/u,
@@ -351,22 +400,18 @@ describe("overview effect package", () => {
       "direction: KWin.SwipeGestureHandler.Direction.Up",
     );
     expect(upSwipe).toContain(
-      'onProgressChanged: root.beginGesture("open", progress)',
+      'onProgressChanged: root.updateGesture("open", progress)',
     );
     expect(upSwipe).toContain('onCancelled: root.cancelGesture("open")');
-    expect(upSwipe).toMatch(
-      /if \(!root\.completeGesture\("open"\)\) \{\s*return;\s*\}[\s\S]*root\.openRequested\(\);/u,
-    );
+    expect(upSwipe).toContain('onActivated: root.activateGesture("open")');
     expect(downSwipe).toContain(
       "direction: KWin.SwipeGestureHandler.Direction.Down",
     );
     expect(downSwipe).toContain(
-      'onProgressChanged: root.beginGesture("close", progress)',
+      'onProgressChanged: root.updateGesture("close", progress)',
     );
     expect(downSwipe).toContain('onCancelled: root.cancelGesture("close")');
-    expect(downSwipe).toMatch(
-      /if \(!root\.completeGesture\("close"\)\) \{\s*return;\s*\}[\s\S]*root\.closeRequested\(\);/u,
-    );
+    expect(downSwipe).toContain('onActivated: root.activateGesture("close")');
     expect(touchpadGesture).toContain(
       'Component.onCompleted: console.info("[driftile-overview] touchpad-gesture lifecycle=created")',
     );
@@ -375,7 +420,7 @@ describe("overview effect package", () => {
     );
     expect(touchpadGesture.match(/console\.info\(/gu)).toHaveLength(2);
     expect(touchpadGesture).not.toMatch(
-      /\bprogress\s*:|ShortcutHandler|sequence\s*:|Timer|KWin\.DBusCall|callDBus/iu,
+      /\bprogress\s*:|ShortcutHandler|sequence\s*:|Timer|WeakSet|WeakMap|new Set|new Map|KWin\.DBusCall|callDBus/iu,
     );
   });
 
@@ -1044,10 +1089,10 @@ describe("overview effect package", () => {
     expect(desktopCard).toMatch(
       /signal windowDropped\(var candidate, string expectedWindowId, var expectedSourceDesktop,\s*string expectedSourceDesktopId, var expectedTargetDesktop,\s*string expectedTargetDesktopId, var expectedScreen, var exactTarget\)/u,
     );
-    expect(desktopCard.match(/\bDragHandler\s*\{/gu)).toHaveLength(2);
+    expect(desktopCard.match(/\bDragHandler\s*\{/gu)).toHaveLength(3);
     expect(desktopCard.match(/\bDropArea\s*\{/gu)).toHaveLength(1);
-    expect(desktopCard.match(/\.Drag\.active = true;/gu)).toHaveLength(1);
-    expect(desktopCard.match(/\.Drag\.active = false;/gu)).toHaveLength(3);
+    expect(desktopCard.match(/\.Drag\.active = true;/gu)).toHaveLength(2);
+    expect(desktopCard.match(/\.Drag\.active = false;/gu)).toHaveLength(5);
     expect(delegate).toMatch(
       /onWindowDropped:\s*\(\s*candidate,\s*expectedWindowId,\s*expectedSourceDesktop,\s*expectedSourceDesktopId,\s*expectedTargetDesktop,\s*expectedTargetDesktopId,\s*expectedScreen,\s*exactTarget\s*\)\s*=>\s*root\.submitWindowSpatialDrop\(\s*candidate,\s*expectedWindowId,\s*expectedSourceDesktop,\s*expectedSourceDesktopId,\s*expectedTargetDesktop,\s*expectedTargetDesktopId,\s*expectedScreen,\s*expectedScreen,\s*exactTarget\s*\)/u,
     );

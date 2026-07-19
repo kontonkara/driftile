@@ -9,8 +9,11 @@ QtObject {
     property string blockedGestureOwner: ""
     property string gestureContextKey: ""
 
-    signal openRequested()
-    signal closeRequested()
+    signal gestureStarted(string owner, real progress)
+    signal gestureProgressed(string owner, real progress)
+    signal gestureCancelled(string owner)
+    signal gestureActivated(string owner)
+    signal gestureInvalidated(string owner)
 
     function valueKey(value) {
         return value === undefined || value === null ? "" : String(value);
@@ -83,14 +86,33 @@ QtObject {
                                desktopKeys]);
     }
 
-    function beginGesture(owner, progress) {
-        if (!(progress > 0)) {
-            return;
+    function boundedGestureProgress(progress) {
+        const numeric = Number(progress);
+        if (!Number.isFinite(numeric)) {
+            return 0;
         }
+
+        return Math.max(0, Math.min(1, numeric));
+    }
+
+    function updateGesture(owner, progress) {
         if (owner !== "open" && owner !== "close") {
             return;
         }
-        if (root.activeGestureOwner !== "" || root.blockedGestureOwner !== "") {
+
+        const boundedProgress = root.boundedGestureProgress(progress);
+        if (root.activeGestureOwner === owner) {
+            if (root.gestureContextKey.length === 0
+                    || root.gestureContextKey !== root.currentGestureContextKey()) {
+                root.invalidateGestureContext();
+                return;
+            }
+
+            root.gestureProgressed(owner, boundedProgress);
+            return;
+        }
+        if (boundedProgress <= 0 || root.activeGestureOwner !== ""
+                || root.blockedGestureOwner !== "") {
             return;
         }
 
@@ -101,6 +123,7 @@ QtObject {
 
         root.activeGestureOwner = owner;
         root.gestureContextKey = contextKey;
+        root.gestureStarted(owner, boundedProgress);
     }
 
     function invalidateGestureContext() {
@@ -108,9 +131,11 @@ QtObject {
             return;
         }
 
-        root.blockedGestureOwner = root.activeGestureOwner;
+        const owner = root.activeGestureOwner;
+        root.blockedGestureOwner = owner;
         root.activeGestureOwner = "";
         root.gestureContextKey = "";
+        root.gestureInvalidated(owner);
     }
 
     function resetGesture() {
@@ -120,24 +145,35 @@ QtObject {
     }
 
     function cancelGesture(owner) {
-        if (owner === root.activeGestureOwner || owner === root.blockedGestureOwner) {
-            root.resetGesture();
-        }
-    }
-
-    function completeGesture(owner) {
         if (owner === root.blockedGestureOwner) {
             root.resetGesture();
-            return false;
+            return;
         }
         if (owner !== root.activeGestureOwner) {
-            return false;
+            return;
+        }
+
+        root.resetGesture();
+        root.gestureCancelled(owner);
+    }
+
+    function activateGesture(owner) {
+        if (owner === root.blockedGestureOwner) {
+            root.resetGesture();
+            return;
+        }
+        if (owner !== root.activeGestureOwner) {
+            return;
         }
 
         const accepted = root.gestureContextKey.length > 0
             && root.gestureContextKey === root.currentGestureContextKey();
         root.resetGesture();
-        return accepted;
+        if (accepted) {
+            root.gestureActivated(owner);
+        } else {
+            root.gestureCancelled(owner);
+        }
     }
 
     readonly property Connections workspaceContextConnection: Connections {
@@ -169,28 +205,18 @@ QtObject {
         deviceType: KWin.SwipeGestureHandler.Device.Touchpad
         direction: KWin.SwipeGestureHandler.Direction.Up
         fingerCount: root.fingerCount
-        onProgressChanged: root.beginGesture("open", progress)
+        onProgressChanged: root.updateGesture("open", progress)
         onCancelled: root.cancelGesture("open")
-        onActivated: {
-            if (!root.completeGesture("open")) {
-                return;
-            }
-            root.openRequested();
-        }
+        onActivated: root.activateGesture("open")
     }
 
     readonly property KWin.SwipeGestureHandler downSwipe: KWin.SwipeGestureHandler {
         deviceType: KWin.SwipeGestureHandler.Device.Touchpad
         direction: KWin.SwipeGestureHandler.Direction.Down
         fingerCount: root.fingerCount
-        onProgressChanged: root.beginGesture("close", progress)
+        onProgressChanged: root.updateGesture("close", progress)
         onCancelled: root.cancelGesture("close")
-        onActivated: {
-            if (!root.completeGesture("close")) {
-                return;
-            }
-            root.closeRequested();
-        }
+        onActivated: root.activateGesture("close")
     }
 
     Component.onCompleted: console.info("[driftile-overview] touchpad-gesture lifecycle=created")
