@@ -458,7 +458,7 @@ describe("overview effect package", () => {
 
   it("keeps a fixed scene-effect proxy over the cache-busted controller", () => {
     expect(createHash("sha256").update(main, "utf8").digest("hex")).toBe(
-      "0e12e73f76c0c1deedf9e436c9f785b38681f1e9b41b757eac5575adfd8c9a72",
+      "d97e28698025443af6769782e83b943aa64960a2bd114c6348d385c1545ebfc4",
     );
     expect(main).toContain("KWin.SceneEffect {");
     expect(main).toContain("Date.now().toString(36)");

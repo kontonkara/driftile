@@ -15,9 +15,20 @@ const controller = readFileSync(
   ),
   "utf8",
 );
+const effectRoot = readFileSync(
+  new URL("../packaging/kwin-effect/contents/ui/main.qml", import.meta.url),
+  "utf8",
+);
 const receiver = readFileSync(
   new URL(
     "../packaging/kwin-script/contents/runtime/ui/OverviewSpatialDropReceiver.qml",
+    import.meta.url,
+  ),
+  "utf8",
+);
+const scriptRoot = readFileSync(
+  new URL(
+    "../packaging/kwin-script/contents/runtime/ui/main.qml",
     import.meta.url,
   ),
   "utf8",
@@ -180,7 +191,7 @@ describe("overview spatial drop command channel", () => {
     );
     const clearSync = receiver.indexOf("commandSettings.sync();", clear);
     const apply = receiver.indexOf(
-      "runtime.applyOverviewSpatialDrop(document, Date.now(), lastConsumedRequestId)",
+      "applyCommand(document, Date.now(), lastConsumedRequestId)",
       clearSync,
     );
     const validate = receiver.indexOf("result.consumed !== true", apply);
@@ -196,8 +207,28 @@ describe("overview spatial drop command channel", () => {
     expect(validate).toBeGreaterThan(apply);
     expect(advance).toBeGreaterThan(validate);
     expect(receiver).toContain("return result.applied;");
+    expect(receiver).toContain("required property var applyCommand");
+    expect(receiver).toContain('typeof applyCommand !== "function"');
+    expect(receiver).not.toContain('import "../code/main.js" as Runtime');
     expect(receiver).not.toMatch(
       /Timer\s*\{|setTimeout|setInterval|Weak(?:Map|Set)|org\.kde\.kwin\.private/u,
+    );
+  });
+
+  it("passes the initialized runtime command into the receiver", () => {
+    const binding = scriptRoot.slice(
+      scriptRoot.indexOf(
+        "readonly property OverviewSpatialDropReceiver overviewSpatialDropReceiver",
+      ),
+      scriptRoot.indexOf("readonly property DBusCall tabIndicatorCall"),
+    );
+
+    expect(binding).toContain("OverviewSpatialDropReceiver {");
+    expect(binding).toContain(
+      "applyCommand: Runtime.DriftileRuntime.applyOverviewSpatialDrop",
+    );
+    expect(binding).not.toMatch(
+      /Component\.createObject|Loader\s*\{|Timer\s*\{/u,
     );
   });
 
@@ -217,5 +248,23 @@ describe("overview spatial drop command channel", () => {
       "return spatialDropWriter.submitSpatialDropCommand(source, target);",
     );
     expect(submit.match(/submitSpatialDropCommand/gu)).toHaveLength(2);
+  });
+
+  it("bridges scene views to the guarded controller entry point", () => {
+    const bridge = effectRoot.slice(
+      effectRoot.indexOf("function submitSpatialDropCommand(source, target)"),
+      effectRoot.indexOf("function syncTouchpadGestureSettings("),
+    );
+
+    expect(bridge).toContain(
+      'typeof controller.submitSpatialDropCommand === "function"',
+    );
+    expect(bridge).toContain(
+      "controller.submitSpatialDropCommand(source, target) === true",
+    );
+    expect(bridge).toContain(": false;");
+    expect(bridge).not.toMatch(
+      /Timer\s*\{|setTimeout|setInterval|\.setValue\s*\(/u,
+    );
   });
 });

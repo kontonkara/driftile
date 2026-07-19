@@ -87,6 +87,12 @@ KWin.SceneEffect {
         }
     }
 
+    function submitSpatialDropCommand(source, target) {
+        return controller && typeof controller.submitSpatialDropCommand === "function"
+            ? controller.submitSpatialDropCommand(source, target) === true
+            : false;
+    }
+
     function syncTouchpadGestureSettings() {
         if (controller && typeof controller.applyTouchpadGestureSettings === "function") {
             controller.applyTouchpadGestureSettings(configuredTouchpadGesture,

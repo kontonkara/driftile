@@ -1,11 +1,11 @@
 import QtCore
 import QtQuick
 import org.kde.kwin
-import "../code/main.js" as Runtime
 
 QtObject {
     id: root
 
+    required property var applyCommand
     property double lastConsumedRequestId: 0
 
     readonly property Settings commandSettings: Settings {
@@ -33,14 +33,13 @@ QtObject {
             return false;
         }
 
-        const runtime = Runtime.DriftileRuntime;
-        if (!runtime || typeof runtime.applyOverviewSpatialDrop !== "function") {
+        if (typeof applyCommand !== "function") {
             return false;
         }
 
         let result = null;
         try {
-            result = runtime.applyOverviewSpatialDrop(document, Date.now(), lastConsumedRequestId);
+            result = applyCommand(document, Date.now(), lastConsumedRequestId);
         } catch (error) {
             return false;
         }
