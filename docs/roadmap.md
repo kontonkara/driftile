@@ -2781,3 +2781,19 @@ Release criteria (met):
   replay-safe across effect reloads, and fail closed on stale identities.
 - One grouped local gate and the existing hidden VM Overview checkpoint pass;
   no private KWin API, schema change, or polling is introduced.
+
+### 1.85.0 (in development)
+
+- Preview exact window-drop targets for stack insertion, column boundaries, and
+  empty workspace rows.
+- Place tiled windows at those exact targets across outputs while preserving
+  native output transfer for floating and non-exact sources.
+- Roll back output, per-output desktop selection, focus, geometry, and layout
+  state independently when KWin rejects a transfer.
+
+Release criteria:
+
+- Exact cross-output placement is verified with native Wayland and XWayland
+  applications in the existing two-output hidden VM scenario.
+- Existing settings and persistence remain compatible; no private KWin API,
+  schema change, polling, or retained object cache is introduced.

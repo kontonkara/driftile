@@ -92,9 +92,12 @@ the source and destination are revalidated. Holding the dragged window over
 another workspace activates that workspace after a bounded dwell while keeping
 the drag active. On the same output, releasing over a window half inserts into
 that stack, releasing at a column boundary keeps a separate column, and an
-empty row accepts a new column. A rejected placement restores the prior desktop
-and focus. Dragging the compact workspace number marker reorders eligible
-desktops. The protected final empty desktop is never reordered or crossed.
+empty row accepts a new column. The same exact targets work across outputs for
+tiled windows; floating and non-exact sources retain Plasma's native output
+transfer. The active target is previewed before release. A rejected exact
+placement restores the prior output, desktop, focus, and layout state. Dragging
+the compact workspace number marker reorders eligible desktops. The protected
+final empty desktop is never reordered or crossed.
 
 Adding, removing, or reordering virtual desktops refreshes an active Overview
 in place. Activity and output topology changes still close a stale scene

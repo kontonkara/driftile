@@ -452,7 +452,8 @@ tools/vm/run.sh two-head
 
 This separate mode opens two non-fullscreen `688x768` SDL scanouts, verifies
 native Wayland Firefox and XWayland xterm, injects physical cross-output drags,
-checks targeted insertion and empty-output fallback, then closes immediately.
+checks targeted insertion, empty-output fallback, and exact Overview stack
+placement without restarting KWin, then closes immediately.
 
 For the focused release migration checkpoint, run:
 
