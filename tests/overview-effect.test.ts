@@ -696,7 +696,9 @@ describe("overview effect package", () => {
     expect(desktopCard.match(/KWin\.WindowModel\s*\{/gu)).toHaveLength(1);
     expect(desktopCard.match(/KWin\.WindowFilterModel\s*\{/gu)).toHaveLength(1);
     expect(desktopCard).toContain("minimizedWindows: false");
-    expect(qmlSources.join("\n")).not.toContain("KWin.DesktopBackground");
+    expect(
+      qmlSources.join("\n").match(/KWin\.DesktopBackground\s*\{/gu) ?? [],
+    ).toHaveLength(1);
     const kwinWrites =
       qmlSources
         .join("\n")
@@ -718,6 +720,157 @@ describe("overview effect package", () => {
       "candidate.desktops",
     ]);
     expect(qmlSources.join("\n")).not.toMatch(/\.setValue\s*\(/u);
+  });
+
+  it("renders one public desktop surface only for exact visible workspace rows", () => {
+    const projectedSurfaceStart = desktopCard.indexOf(
+      "id: projectedOutputSurface",
+    );
+    const projectedSurfaceEnd = desktopCard.indexOf(
+      "id: columnRepeater",
+      projectedSurfaceStart,
+    );
+    const projectedSurface = desktopCard.slice(
+      projectedSurfaceStart,
+      projectedSurfaceEnd,
+    );
+    const surfaceLoaderStart = projectedSurface.indexOf(
+      "id: desktopSurfaceLoader",
+    );
+    const surfaceTintStart = projectedSurface.lastIndexOf(
+      "Rectangle {",
+      projectedSurface.indexOf("color: windowDropArea.validTarget"),
+    );
+    const surfaceBorderStart = projectedSurface.lastIndexOf(
+      "Rectangle {",
+      projectedSurface.indexOf("border.width:"),
+    );
+    const surfaceLoader = projectedSurface.slice(
+      surfaceLoaderStart,
+      surfaceTintStart,
+    );
+    const surfaceTint = projectedSurface.slice(
+      surfaceTintStart,
+      surfaceBorderStart,
+    );
+    const surfaceBorder = projectedSurface.slice(surfaceBorderStart);
+    const surfaceContext = desktopCard.slice(
+      desktopCard.indexOf("function desktopSurfaceContextIsExact("),
+      desktopCard.indexOf("function collectNavigationTargets("),
+    );
+    const desktopCardLoader = scene.slice(
+      scene.indexOf("id: desktopCardLoader"),
+      scene.indexOf(
+        "sourceComponent: Component",
+        scene.indexOf("id: desktopCardLoader"),
+      ),
+    );
+    const desktopCardDelegate = scene.slice(
+      scene.indexOf("DesktopCard {"),
+      scene.indexOf(
+        "onDesktopReorderCanceled:",
+        scene.indexOf("DesktopCard {"),
+      ),
+    );
+    const cardLoadPolicy = scene.slice(
+      scene.indexOf("function desktopCardShouldLoad("),
+      scene.indexOf("function desktopSurfaceShouldLoad("),
+    );
+    const surfaceLoadPolicy = scene.slice(
+      scene.indexOf("function desktopSurfaceShouldLoad("),
+      scene.indexOf("function desktopCardAt("),
+    );
+
+    expect(projectedSurfaceStart).toBeGreaterThan(0);
+    expect(projectedSurfaceEnd).toBeGreaterThan(projectedSurfaceStart);
+    expect(surfaceLoaderStart).toBeGreaterThan(0);
+    expect(surfaceTintStart).toBeGreaterThan(surfaceLoaderStart);
+    expect(surfaceBorderStart).toBeGreaterThan(surfaceTintStart);
+    expect(desktopCard).toContain("import org.kde.kwin as KWin");
+    expect(desktopCard).not.toContain("org.kde.kwin.private");
+    expect(scene).not.toContain("KWin.DesktopBackground");
+    expect(desktopCard.match(/KWin\.DesktopBackground\s*\{/gu)).toHaveLength(1);
+
+    expect(desktopCard).toContain(
+      "required property bool desktopSurfaceEnabled",
+    );
+    expect(desktopCard).toContain(
+      "readonly property bool desktopSurfaceContextExact: desktopSurfaceContextIsExact()",
+    );
+    expect(surfaceLoader).toContain(
+      "active: card.desktopSurfaceEnabled && card.desktopSurfaceContextExact",
+    );
+    expect(surfaceLoader).toContain("KWin.DesktopBackground {");
+    expect(surfaceLoader).toContain("anchors.fill: parent");
+    expect(surfaceLoader).toContain("output: card.screen");
+    expect(surfaceLoader).toContain("desktop: card.desktop");
+    expect(surfaceLoader).toContain("activity: KWin.Workspace.currentActivity");
+    expect(surfaceLoader).toContain("enabled: false");
+    expect(surfaceLoader).toContain("z: 0");
+
+    expect(surfaceContext).toMatch(
+      /!desktopSurfaceEnabled \|\| !desktop \|\| desktop\.id === undefined \|\| desktop\.id === null[\s\S]*String\(desktop\.id\) !== desktopId[\s\S]*!screen[\s\S]*String\(screen\.name\)\.length === 0[\s\S]*outputId\.length === 0/u,
+    );
+    expect(surfaceContext).toContain(
+      "for (const liveDesktop of KWin.Workspace.desktops)",
+    );
+    expect(surfaceContext).toContain("liveDesktop === desktop");
+    expect(surfaceContext).toContain("desktopIdMatches !== 1");
+    expect(surfaceContext).toContain("!desktopObjectExact");
+    expect(surfaceContext).toContain(
+      "for (const liveScreen of KWin.Workspace.screens)",
+    );
+    expect(surfaceContext).toContain("liveScreen === screen");
+    expect(surfaceContext).toContain("return screenMatches === 1;");
+    expect(surfaceContext).toMatch(/catch \(error\) \{\s*return false;/u);
+
+    expect(projectedSurface).toContain("clip: true");
+    expect(projectedSurface).toContain('color: "#171e2a"');
+    expect(projectedSurface).toContain("z: -100");
+    expect(surfaceTint).toContain("z: 1");
+    expect(surfaceBorder).toContain("border.width:");
+    expect(surfaceBorder).toContain("z: 2");
+    expect(projectedSurface.indexOf('color: "#171e2a"')).toBeLessThan(
+      projectedSurface.indexOf("id: desktopSurfaceLoader"),
+    );
+    expect(projectedSurface.indexOf("KWin.DesktopBackground {")).toBeLessThan(
+      surfaceTintStart,
+    );
+    expect(projectedSurface).not.toMatch(
+      /\b(?:TapHandler|DragHandler|HoverHandler|WheelHandler|DropArea|MouseArea|ShortcutHandler|Connections)\s*\{/u,
+    );
+
+    expect(desktopCardLoader).toContain(
+      "readonly property var desktopObject: root.desktopForId(modelData)",
+    );
+    expect(desktopCardDelegate).toContain(
+      "desktop: desktopCardLoader.desktopObject",
+    );
+    expect(desktopCardDelegate).toMatch(
+      /desktopSurfaceEnabled: root\.desktopSurfaceShouldLoad\(\s*desktopCardLoader\.index,\s*desktopCardLoader\.modelData,\s*desktopCardLoader\.desktopObject\)/u,
+    );
+    expect(scene).toMatch(
+      /readonly property var overviewSpatialVisibleRangePlan: planSpatialVisibleRange\(\)[\s\S]*readonly property var overviewSpatialVisibleRange:\s*spatialVisibleRangeIsValid\(overviewSpatialVisibleRangePlan\)\s*\? overviewSpatialVisibleRangePlan : allDesktopCardsRange\(\)/u,
+    );
+    expect(surfaceLoadPolicy).toContain(
+      "spatialVisibleRangeIsValid(overviewSpatialVisibleRangePlan)",
+    );
+    expect(surfaceLoadPolicy).toContain(
+      "String(expectedDesktop.id) !== expectedDesktopId",
+    );
+    expect(surfaceLoadPolicy).toContain(
+      "index >= overviewSpatialVisibleRangePlan.firstIndex",
+    );
+    expect(surfaceLoadPolicy).toContain(
+      "index <= overviewSpatialVisibleRangePlan.lastIndex",
+    );
+    expect(surfaceLoadPolicy).not.toMatch(
+      /searchQuery|spatialPresentationPhase|desktopReorderActive|spatialWindowDragSource/u,
+    );
+    expect(cardLoadPolicy).toContain("if (searchQuery.length > 0");
+    expect(cardLoadPolicy).toContain('spatialPresentationPhase !== "open"');
+    expect(cardLoadPolicy).toContain("desktopReorderActive");
+    expect(cardLoadPolicy).toContain("spatialWindowDragSource !== null");
   });
 
   it("activates current and non-current thumbnails through one guarded path", () => {

@@ -65,7 +65,10 @@ Rectangle {
         ? sceneEffect.overviewGap
         : 16
     readonly property var overviewSpatialLayout: planSpatialLayout()
-    readonly property var overviewSpatialVisibleRange: planSpatialVisibleRange()
+    readonly property var overviewSpatialVisibleRangePlan: planSpatialVisibleRange()
+    readonly property var overviewSpatialVisibleRange:
+        spatialVisibleRangeIsValid(overviewSpatialVisibleRangePlan)
+        ? overviewSpatialVisibleRangePlan : allDesktopCardsRange()
     readonly property real outerMargin: Math.max(20, Math.min(width, height) * 0.035)
     readonly property real cardGap: overviewSpatialLayout.gap
     readonly property real cardHeight: overviewSpatialLayout.cardHeight
@@ -820,6 +823,7 @@ Rectangle {
 
                 required property string modelData
                 required property int index
+                readonly property var desktopObject: root.desktopForId(modelData)
 
                 x: 0
                 y: index * (root.cardHeight + root.cardGap)
@@ -841,7 +845,7 @@ Rectangle {
                         context: root.contextFor(desktopCardLoader.modelData)
                         current: root.currentDesktop !== null
                             && String(root.currentDesktop.id) === desktopCardLoader.modelData
-                        desktop: root.desktopForId(desktopCardLoader.modelData)
+                        desktop: desktopCardLoader.desktopObject
                         desktopReorderEnabled: root.desktopReorderAvailable
                                                  && root.desktopIds.length > (root.emptyDesktopAboveFirst ? 3 : 2)
                                                  && desktopCardLoader.index >= (root.emptyDesktopAboveFirst ? 1 : 0)
@@ -849,6 +853,10 @@ Rectangle {
                         desktopReorderSource: root.desktopReorderActive
                             && root.desktopReorderSourceId === desktopCardLoader.modelData
                         desktopId: desktopCardLoader.modelData
+                        desktopSurfaceEnabled: root.desktopSurfaceShouldLoad(
+                                                   desktopCardLoader.index,
+                                                   desktopCardLoader.modelData,
+                                                   desktopCardLoader.desktopObject)
                         floatingWindows: root.floatingFor(desktopCardLoader.modelData)
                         keyboardSelectionId: root.keyboardSelectionId
                         liveGeometryEnabled: current && !root.spatialLiveGeometryIsManuallyDetached(
@@ -1409,19 +1417,18 @@ Rectangle {
     }
 
     function planSpatialVisibleRange() {
-        const fallback = allDesktopCardsRange();
         if (desktopIds.length <= 0) {
-            return fallback;
+            return null;
         }
 
         const runtime = OverviewRuntime.DriftileOverview;
         if (!runtime || typeof runtime.planOverviewSpatialVisibleRange !== "function") {
-            return fallback;
+            return null;
         }
 
         const logicalRange = planSpatialVisibleRangeAt(runtime, spatialContentY);
         if (!spatialVisibleRangeIsValid(logicalRange)) {
-            return fallback;
+            return null;
         }
 
         if (Math.abs(spatialVisualContentY - spatialContentY) <= 0.000001) {
@@ -1430,7 +1437,7 @@ Rectangle {
 
         const visualRange = planSpatialVisibleRangeAt(runtime, spatialVisualContentY);
         if (!spatialVisibleRangeIsValid(visualRange)) {
-            return fallback;
+            return null;
         }
 
         return {
@@ -1485,6 +1492,27 @@ Rectangle {
 
         return index >= overviewSpatialVisibleRange.firstIndex
             && index <= overviewSpatialVisibleRange.lastIndex;
+    }
+
+    function desktopSurfaceShouldLoad(index, expectedDesktopId, expectedDesktop) {
+        if (!Number.isInteger(index) || index < 0 || index >= desktopIds.length
+                || typeof expectedDesktopId !== "string" || desktopIds[index] !== expectedDesktopId
+                || outputId.length === 0 || !targetScreen
+                || !spatialVisibleRangeIsValid(overviewSpatialVisibleRangePlan)) {
+            return false;
+        }
+
+        try {
+            if (!expectedDesktop || expectedDesktop.id === undefined || expectedDesktop.id === null
+                    || String(expectedDesktop.id) !== expectedDesktopId) {
+                return false;
+            }
+        } catch (error) {
+            return false;
+        }
+
+        return index >= overviewSpatialVisibleRangePlan.firstIndex
+            && index <= overviewSpatialVisibleRangePlan.lastIndex;
     }
 
     function desktopCardAt(index) {

@@ -19,8 +19,17 @@ closing an inactive Overview are safe no-ops.
 Each output gets its own output-local plane. Its virtual desktops are continuous
 full-width rows stacked vertically, with the current desktop centered when the
 effect opens. Neighboring rows remain spatially above and below it instead of
-being presented as independent cards. Rows outside the bounded visible range
-are not instantiated.
+being presented as independent cards. Ordinary visual row rendering stays
+within a bounded visible range. Search or an active drag may retain an
+off-screen card temporarily for state continuity.
+
+Each instantiated visible-range row shows KWin's public Desktop surface for its
+exact output, virtual desktop, and current activity inside the projected output
+area. The surface stays behind window thumbnails and every input layer. Missing
+or inexact identity, or an unavailable surface, leaves a solid dark fallback
+visible. Desktop surfaces are virtualized separately from cards, so a retained
+off-screen card does not create one. KWin's Desktop selection excludes panels,
+docks, and notifications.
 
 Every row uses the normal layout solver for its usable work area, pixel grid,
 gaps, horizontal camera, columns, and member frames. Captured rows preserve

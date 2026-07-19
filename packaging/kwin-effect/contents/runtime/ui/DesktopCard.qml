@@ -10,6 +10,7 @@ Item {
     required property var desktop
     required property bool desktopReorderEnabled
     required property bool desktopReorderSource
+    required property bool desktopSurfaceEnabled
     required property string desktopId
     required property var floatingWindows
     required property bool liveGeometryEnabled
@@ -61,6 +62,7 @@ Item {
     readonly property var desktopLabel: planDesktopLabel(desktop)
     readonly property bool desktopNamePresented: showDesktopNames && desktopLabel !== null
         && width >= 560 && height >= 72
+    readonly property bool desktopSurfaceContextExact: desktopSurfaceContextIsExact()
     readonly property real contentLeft: 0
     readonly property real contentTop: 0
     readonly property real contentWidth: Math.max(1, width)
@@ -259,16 +261,37 @@ Item {
             height: card.projectedViewportHeight
             visible: width > 0 && height > 0
             enabled: false
+            clip: true
             color: "#171e2a"
             opacity: card.presentationProgress
             radius: 2
             z: -100
+
+            Loader {
+                id: desktopSurfaceLoader
+
+                anchors.fill: parent
+                active: card.desktopSurfaceEnabled && card.desktopSurfaceContextExact
+                enabled: false
+                z: 0
+
+                sourceComponent: Component {
+                    KWin.DesktopBackground {
+                        anchors.fill: parent
+                        output: card.screen
+                        desktop: card.desktop
+                        activity: KWin.Workspace.currentActivity
+                        enabled: false
+                    }
+                }
+            }
 
             Rectangle {
                 anchors.fill: parent
                 color: windowDropArea.validTarget ? "#282f4057"
                                                   : card.desktopReorderSource ? "#1850607a"
                                                                               : "transparent"
+                z: 1
             }
 
             Rectangle {
@@ -278,6 +301,7 @@ Item {
                 border.color: windowDropArea.validTarget ? "#86aee8"
                                                          : "#668baad6"
                 radius: 2
+                z: 2
             }
         }
 
@@ -1200,6 +1224,42 @@ Item {
     }
 
     Component.onDestruction: card.clearWindowDropHover()
+
+    function desktopSurfaceContextIsExact() {
+        try {
+            if (!desktopSurfaceEnabled || !desktop || desktop.id === undefined || desktop.id === null
+                    || typeof desktopId !== "string" || desktopId.length === 0
+                    || String(desktop.id) !== desktopId || !screen
+                    || screen.name === undefined || screen.name === null
+                    || String(screen.name).length === 0 || outputId.length === 0) {
+                return false;
+            }
+
+            let desktopIdMatches = 0;
+            let desktopObjectExact = false;
+            for (const liveDesktop of KWin.Workspace.desktops) {
+                if (liveDesktop && liveDesktop.id !== undefined && liveDesktop.id !== null
+                        && String(liveDesktop.id) === desktopId) {
+                    desktopIdMatches += 1;
+                    desktopObjectExact = desktopObjectExact || liveDesktop === desktop;
+                }
+            }
+            if (desktopIdMatches !== 1 || !desktopObjectExact) {
+                return false;
+            }
+
+            let screenMatches = 0;
+            for (const liveScreen of KWin.Workspace.screens) {
+                if (liveScreen === screen) {
+                    screenMatches += 1;
+                }
+            }
+
+            return screenMatches === 1;
+        } catch (error) {
+            return false;
+        }
+    }
 
     function collectNavigationTargets(sceneItem, includeOffscreen = false) {
         const targets = [];

@@ -167,6 +167,13 @@ across live refreshes. Manual horizontal input detaches that row for the
 remainder of the session; Overview navigation never writes the offset back to
 the normal layout.
 
+Each instantiated visible-range row renders KWin's public Desktop surface for
+its exact output, virtual desktop, and current activity behind windows and input
+layers. An unavailable or inexact surface keeps a solid dark fallback. Ordinary
+visual row rendering stays within a bounded visible range, while search or drag
+state may retain an off-screen card without creating its Desktop surface.
+Panels, docks, and notifications are excluded from Desktop surface selection.
+
 Vertical input moves between workspace rows, while horizontal input pans or
 selects within a row. Precise wheel or touchpad input drives the camera
 directly; discrete input selects workspaces or columns. Empty-space dragging
