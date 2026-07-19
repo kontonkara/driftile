@@ -3254,10 +3254,10 @@ export class RuntimeController {
       ? this.resolveManagedContext(observedSource)
       : null;
     const matchingOutputs = this.workspace.screens.filter(
-      (candidate) => String(candidate.name) === command.source.outputId,
+      (candidate) => candidate.name === command.source.outputId,
     );
     const matchingDesktops = this.workspace.desktops.filter(
-      (candidate) => String(candidate.id) === command.source.desktopId,
+      (candidate) => candidate.id === command.source.desktopId,
     );
     const output = matchingOutputs[0];
     const sourceDesktop = matchingDesktops[0];
