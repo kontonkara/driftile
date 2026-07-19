@@ -29,7 +29,10 @@ area. The surface stays behind window thumbnails and every input layer. Missing
 or inexact identity, or an unavailable surface, leaves a solid dark fallback
 visible. Desktop surfaces are virtualized separately from cards, so a retained
 off-screen card does not create one. KWin's Desktop selection excludes panels,
-docks, and notifications.
+docks, and notifications. If the desktop shell restarts while Overview is open,
+visible rows discard the stale surface immediately, expose the solid fallback,
+and reconnect when the replacement Desktop window appears. Ordinary wallpaper
+damage remains live without polling.
 
 Every row uses the normal layout solver for its usable work area, pixel grid,
 gaps, horizontal camera, columns, and member frames. Captured rows preserve

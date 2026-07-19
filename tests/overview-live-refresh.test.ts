@@ -28,10 +28,10 @@ describe("overview live model refresh", () => {
 
     expect(lifecycle).toContain("target: KWin.Workspace");
     expect(lifecycle).toMatch(
-      /function onWindowAdded\(\) \{\s*controller\.requestLiveModelRefresh\(\);/u,
+      /function onWindowAdded\(window\) \{\s*controller\.advanceDesktopSurfaceLifecycleRevision\(window\);\s*controller\.requestLiveModelRefresh\(\);/u,
     );
     expect(lifecycle).toMatch(
-      /function onWindowRemoved\(\) \{\s*controller\.requestLiveModelRefresh\(\);/u,
+      /function onWindowRemoved\(window\) \{\s*controller\.advanceDesktopSurfaceLifecycleRevision\(window\);\s*controller\.requestLiveModelRefresh\(\);/u,
     );
     expect(lifecycle).toMatch(
       /function onDesktopsChanged\(\) \{\s*controller\.requestLiveModelRefresh\(\);/u,
@@ -57,6 +57,42 @@ describe("overview live model refresh", () => {
     expect(reader).toMatch(/interval: root\.sampleInterval\s*repeat: false/u);
     expect(reader).toMatch(
       /function sample\(requestId\) \{\s*cancel\(\);[\s\S]*firstSample = [\s\S]*secondSampleTimer\.start\(\);/u,
+    );
+  });
+
+  it("advances only public desktop-window surface lifecycles without polling", () => {
+    const lifecycle = controller.slice(
+      controller.indexOf("id: workspaceWindowLifecycleConnection"),
+      controller.indexOf("function toggle("),
+    );
+    const revisionAdvance = controller.slice(
+      controller.indexOf(
+        "function advanceDesktopSurfaceLifecycleRevision(window)",
+      ),
+      controller.indexOf("function open()"),
+    );
+
+    expect(controller).toContain(
+      "property int desktopSurfaceLifecycleRevision: 0",
+    );
+    expect(
+      lifecycle.match(/advanceDesktopSurfaceLifecycleRevision\(window\)/gu),
+    ).toHaveLength(2);
+    expect(lifecycle).toMatch(
+      /function onWindowAdded\(window\) \{\s*controller\.advanceDesktopSurfaceLifecycleRevision\(window\);\s*controller\.requestLiveModelRefresh\(\);/u,
+    );
+    expect(lifecycle).toMatch(
+      /function onWindowRemoved\(window\) \{\s*controller\.advanceDesktopSurfaceLifecycleRevision\(window\);\s*controller\.requestLiveModelRefresh\(\);/u,
+    );
+    expect(revisionAdvance).toMatch(
+      /try \{\s*if \(!window \|\| window\.desktopWindow !== true\) \{\s*return false;\s*\}\s*\} catch \(error\) \{\s*return false;/u,
+    );
+    expect(revisionAdvance).toMatch(
+      /desktopSurfaceLifecycleRevision = desktopSurfaceLifecycleRevision >= 2147483647\s*\? 1 : desktopSurfaceLifecycleRevision \+ 1;\s*return true;/u,
+    );
+    expect(revisionAdvance.match(/desktopWindow/gu)).toHaveLength(1);
+    expect(`${lifecycle}\n${revisionAdvance}`).not.toMatch(
+      /org\.kde\.kwin\.private|\bTimer\s*\{|repeat:\s*true|setInterval|setTimeout|Qt\.callLater|KWin\.Workspace\.(?:stackingOrder|windows)\b/u,
     );
   });
 

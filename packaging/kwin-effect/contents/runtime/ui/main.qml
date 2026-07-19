@@ -8,6 +8,7 @@ QtObject {
 
     property bool active: false
     property int activeSessionId: 0
+    property int desktopSurfaceLifecycleRevision: 0
     property bool loading: false
     property var overviewModel: null
     property int lastActivationAttemptId: 0
@@ -130,11 +131,13 @@ QtObject {
         target: KWin.Workspace
         ignoreUnknownSignals: true
 
-        function onWindowAdded() {
+        function onWindowAdded(window) {
+            controller.advanceDesktopSurfaceLifecycleRevision(window);
             controller.requestLiveModelRefresh();
         }
 
-        function onWindowRemoved() {
+        function onWindowRemoved(window) {
+            controller.advanceDesktopSurfaceLifecycleRevision(window);
             controller.requestLiveModelRefresh();
         }
 
@@ -151,6 +154,20 @@ QtObject {
         } else {
             activate();
         }
+    }
+
+    function advanceDesktopSurfaceLifecycleRevision(window) {
+        try {
+            if (!window || window.desktopWindow !== true) {
+                return false;
+            }
+        } catch (error) {
+            return false;
+        }
+
+        desktopSurfaceLifecycleRevision = desktopSurfaceLifecycleRevision >= 2147483647
+            ? 1 : desktopSurfaceLifecycleRevision + 1;
+        return true;
     }
 
     function open() {

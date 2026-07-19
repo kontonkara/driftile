@@ -11,6 +11,7 @@ Item {
     required property bool desktopReorderEnabled
     required property bool desktopReorderSource
     required property bool desktopSurfaceEnabled
+    required property int desktopSurfaceLifecycleRevision
     required property string desktopId
     required property var floatingWindows
     required property bool liveGeometryEnabled
@@ -67,6 +68,8 @@ Item {
     readonly property string desktopSurfaceActivityBindingId: desktopSurfaceActivityId.length > 0
         ? desktopSurfaceActivityId : "driftile-unavailable-activity"
     readonly property bool desktopSurfaceContextExact: desktopSurfaceContextIsExact()
+    property bool desktopSurfaceReady: true
+    property int desktopSurfaceReloadToken: 0
     readonly property real contentLeft: 0
     readonly property real contentTop: 0
     readonly property real contentWidth: Math.max(1, width)
@@ -276,6 +279,7 @@ Item {
 
                 anchors.fill: parent
                 active: card.desktopSurfaceEnabled && card.desktopSurfaceContextExact
+                    && card.desktopSurfaceReady
                 enabled: false
                 z: 0
 
@@ -1207,6 +1211,7 @@ Item {
     onContextChanged: card.clearInvalidWindowDropHover()
     onDesktopChanged: card.clearWindowDropHover()
     onDesktopIdChanged: card.clearWindowDropHover()
+    onDesktopSurfaceLifecycleRevisionChanged: card.scheduleDesktopSurfaceReload()
     onEnabledChanged: {
         if (!enabled) {
             card.clearWindowDropHover();
@@ -1228,6 +1233,31 @@ Item {
     }
 
     Component.onDestruction: card.clearWindowDropHover()
+
+    function scheduleDesktopSurfaceReload() {
+        desktopSurfaceReloadToken = desktopSurfaceReloadToken >= 2147483647
+            ? 1 : desktopSurfaceReloadToken + 1;
+        const token = desktopSurfaceReloadToken;
+        const expectedRevision = desktopSurfaceLifecycleRevision;
+
+        if (!desktopSurfaceEnabled || !desktopSurfaceContextExact) {
+            desktopSurfaceReady = true;
+            return;
+        }
+
+        desktopSurfaceReady = false;
+        Qt.callLater(card.completeDesktopSurfaceReload, token, expectedRevision);
+    }
+
+    function completeDesktopSurfaceReload(token, expectedRevision) {
+        if (token !== desktopSurfaceReloadToken
+                || expectedRevision !== desktopSurfaceLifecycleRevision) {
+            return false;
+        }
+
+        desktopSurfaceReady = true;
+        return true;
+    }
 
     function desktopSurfaceContextIsExact() {
         try {

@@ -686,8 +686,8 @@ describe("overview effect package", () => {
     expect(scene).toContain("for (const desktop of KWin.Workspace.desktops)");
     expect(scene).toContain("function onCurrentActivityChanged()");
     expect(scene).toContain("function onActivitiesChanged()");
-    expect(controller).toContain("function onWindowAdded()");
-    expect(controller).toContain("function onWindowRemoved()");
+    expect(controller).toContain("function onWindowAdded(window)");
+    expect(controller).toContain("function onWindowRemoved(window)");
     expect(scene).not.toContain("function onWindowAdded()");
     expect(scene).not.toContain("function onWindowRemoved()");
     expect(desktopCard).toContain("KWin.WindowModel");
@@ -758,6 +758,14 @@ describe("overview effect package", () => {
       desktopCard.indexOf("function desktopSurfaceContextIsExact("),
       desktopCard.indexOf("function collectNavigationTargets("),
     );
+    const surfaceReloadSchedule = desktopCard.slice(
+      desktopCard.indexOf("function scheduleDesktopSurfaceReload()"),
+      desktopCard.indexOf("function completeDesktopSurfaceReload("),
+    );
+    const surfaceReloadCompletion = desktopCard.slice(
+      desktopCard.indexOf("function completeDesktopSurfaceReload("),
+      desktopCard.indexOf("function desktopSurfaceContextIsExact("),
+    );
     const desktopCardLoader = scene.slice(
       scene.indexOf("id: desktopCardLoader"),
       scene.indexOf(
@@ -794,6 +802,14 @@ describe("overview effect package", () => {
     expect(desktopCard).toContain(
       "required property bool desktopSurfaceEnabled",
     );
+    expect(desktopCard).toContain(
+      "required property int desktopSurfaceLifecycleRevision",
+    );
+    expect(desktopCard).toContain("property bool desktopSurfaceReady:");
+    expect(desktopCard).toContain("property int desktopSurfaceReloadToken: 0");
+    expect(desktopCard).toContain(
+      "onDesktopSurfaceLifecycleRevisionChanged: card.scheduleDesktopSurfaceReload()",
+    );
     expect(desktopCard).toMatch(
       /readonly property string desktopSurfaceActivityId: KWin\.Workspace\.currentActivity === undefined[\s\S]*KWin\.Workspace\.currentActivity === null \? "" : String\(KWin\.Workspace\.currentActivity\)/u,
     );
@@ -803,8 +819,8 @@ describe("overview effect package", () => {
     expect(desktopCard).toContain(
       "readonly property bool desktopSurfaceContextExact: desktopSurfaceContextIsExact()",
     );
-    expect(surfaceLoader).toContain(
-      "active: card.desktopSurfaceEnabled && card.desktopSurfaceContextExact",
+    expect(surfaceLoader).toMatch(
+      /active: card\.desktopSurfaceEnabled && card\.desktopSurfaceContextExact\s*&& card\.desktopSurfaceReady/u,
     );
     expect(surfaceLoader).toContain("KWin.DesktopBackground {");
     expect(surfaceLoader).toContain("anchors.fill: parent");
@@ -839,6 +855,36 @@ describe("overview effect package", () => {
     expect(surfaceContext).toContain("return screenMatches === 1;");
     expect(surfaceContext).toMatch(/catch \(error\) \{\s*return false;/u);
 
+    expect(surfaceReloadSchedule).toMatch(
+      /desktopSurfaceReloadToken = desktopSurfaceReloadToken >= 2147483647\s*\? 1 : desktopSurfaceReloadToken \+ 1;/u,
+    );
+    expect(surfaceReloadSchedule).toContain(
+      "const token = desktopSurfaceReloadToken;",
+    );
+    expect(surfaceReloadSchedule).toContain(
+      "const expectedRevision = desktopSurfaceLifecycleRevision;",
+    );
+    expect(surfaceReloadSchedule).toMatch(
+      /if \(!desktopSurfaceEnabled \|\| !desktopSurfaceContextExact\) \{\s*desktopSurfaceReady = true;\s*return;/u,
+    );
+    expect(surfaceReloadSchedule).toContain("desktopSurfaceReady = false;");
+    expect(surfaceReloadSchedule).toMatch(
+      /Qt\.callLater\(card\.completeDesktopSurfaceReload,\s*token,\s*expectedRevision\);/u,
+    );
+    expect(surfaceReloadCompletion).toMatch(
+      /function completeDesktopSurfaceReload\(token, expectedRevision\)[\s\S]*token !== desktopSurfaceReloadToken[\s\S]*expectedRevision !== desktopSurfaceLifecycleRevision[\s\S]*return false;/u,
+    );
+    expect(surfaceReloadCompletion).toMatch(
+      /desktopSurfaceReady = true;\s*return true;/u,
+    );
+    expect(
+      surfaceReloadSchedule.indexOf("desktopSurfaceReady = false;"),
+    ).toBeLessThan(surfaceReloadSchedule.indexOf("Qt.callLater("));
+    expect(surfaceReloadSchedule.match(/Qt\.callLater\(/gu)).toHaveLength(1);
+    expect(`${surfaceReloadSchedule}\n${surfaceReloadCompletion}`).not.toMatch(
+      /org\.kde\.kwin\.private|\bTimer\s*\{|repeat:\s*true|setInterval|setTimeout|KWin\.Workspace\.(?:stackingOrder|windows)\b/u,
+    );
+
     expect(projectedSurface).toContain("clip: true");
     expect(projectedSurface).toContain('color: "#171e2a"');
     expect(projectedSurface).toContain("z: -100");
@@ -865,6 +911,12 @@ describe("overview effect package", () => {
       /desktopSurfaceEnabled: root\.desktopSurfaceShouldLoad\(\s*desktopCardLoader\.index,\s*desktopCardLoader\.modelData,\s*desktopCardLoader\.desktopObject\)/u,
     );
     expect(scene).toMatch(
+      /readonly property int desktopSurfaceLifecycleRevision: sceneEffect\s*&& sceneEffect\.controller\s*&& Number\.isInteger\(sceneEffect\.controller\.desktopSurfaceLifecycleRevision\)\s*&& sceneEffect\.controller\.desktopSurfaceLifecycleRevision >= 0\s*\? sceneEffect\.controller\.desktopSurfaceLifecycleRevision\s*: 0/u,
+    );
+    expect(desktopCardDelegate).toContain(
+      "desktopSurfaceLifecycleRevision: root.desktopSurfaceLifecycleRevision",
+    );
+    expect(scene).toMatch(
       /readonly property var overviewSpatialVisibleRangePlan: planSpatialVisibleRange\(\)[\s\S]*readonly property var overviewSpatialVisibleRange:\s*spatialVisibleRangeIsValid\(overviewSpatialVisibleRangePlan\)\s*\? overviewSpatialVisibleRangePlan : allDesktopCardsRange\(\)/u,
     );
     expect(surfaceLoadPolicy).toContain(
@@ -880,7 +932,7 @@ describe("overview effect package", () => {
       "index <= overviewSpatialVisibleRangePlan.lastIndex",
     );
     expect(surfaceLoadPolicy).not.toMatch(
-      /searchQuery|spatialPresentationPhase|desktopReorderActive|spatialWindowDragSource/u,
+      /searchQuery|spatialPresentationPhase|desktopReorderActive|spatialWindowDragSource|desktopSurfaceLifecycleRevision|desktopSurfaceReady/u,
     );
     expect(cardLoadPolicy).toContain("if (searchQuery.length > 0");
     expect(cardLoadPolicy).toContain('spatialPresentationPhase !== "open"');
@@ -4353,7 +4405,7 @@ describe("overview effect package", () => {
       /KWin\.(?:SceneView|Workspace)\.[A-Za-z0-9_]+\s*=(?!=)|candidate\.[A-Za-z0-9_]+\s*=(?!=)|\bTimer\s*\{|\.setValue\s*\(/u,
     );
     expect(controller).toMatch(
-      /function onWindowRemoved\(\) \{\s*controller\.requestLiveModelRefresh\(\);/u,
+      /function onWindowRemoved\(window\) \{\s*controller\.advanceDesktopSurfaceLifecycleRevision\(window\);\s*controller\.requestLiveModelRefresh\(\);/u,
     );
   });
 

@@ -173,6 +173,9 @@ layers. An unavailable or inexact surface keeps a solid dark fallback. Ordinary
 visual row rendering stays within a bounded visible range, while search or drag
 state may retain an off-screen card without creating its Desktop surface.
 Panels, docks, and notifications are excluded from Desktop surface selection.
+A desktop-shell restart clears any stale visible surface to the fallback and
+reacquires the replacement Desktop window without polling or activating an
+off-screen surface. Normal wallpaper damage continues to update live.
 
 Vertical input moves between workspace rows, while horizontal input pans or
 selects within a row. Precise wheel or touchpad input drives the camera

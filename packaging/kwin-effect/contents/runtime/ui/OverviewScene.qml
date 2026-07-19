@@ -38,6 +38,11 @@ Rectangle {
         && typeof sceneEffect.showApplicationIcons === "boolean"
         ? sceneEffect.showApplicationIcons
         : false
+    readonly property int desktopSurfaceLifecycleRevision: sceneEffect && sceneEffect.controller
+        && Number.isInteger(sceneEffect.controller.desktopSurfaceLifecycleRevision)
+        && sceneEffect.controller.desktopSurfaceLifecycleRevision >= 0
+        ? sceneEffect.controller.desktopSurfaceLifecycleRevision
+        : 0
     readonly property bool showOutputNames: sceneEffect && typeof sceneEffect.showOutputNames === "boolean"
         ? sceneEffect.showOutputNames
         : false
@@ -857,6 +862,7 @@ Rectangle {
                                                    desktopCardLoader.index,
                                                    desktopCardLoader.modelData,
                                                    desktopCardLoader.desktopObject)
+                        desktopSurfaceLifecycleRevision: root.desktopSurfaceLifecycleRevision
                         floatingWindows: root.floatingFor(desktopCardLoader.modelData)
                         keyboardSelectionId: root.keyboardSelectionId
                         liveGeometryEnabled: current && !root.spatialLiveGeometryIsManuallyDetached(
