@@ -487,6 +487,29 @@ Item {
                     readonly property bool keyboardSelected: keyboardTarget
                         && card.keyboardSelectionId === card.navigationTargetId(windowPresentation.windowId)
                     readonly property bool closeButtonLargeEnough: width >= 52 && height >= 40
+                    property point spatialDragHotSpot: Qt.point(0, 0)
+
+                    function storeSpatialDragHotSpot(scenePosition) {
+                        if (!scenePosition || !Number.isFinite(scenePosition.x)
+                                || !Number.isFinite(scenePosition.y)) {
+                            return false;
+                        }
+
+                        try {
+                            const localPosition = thumbnailShell.mapFromItem(
+                                null, scenePosition.x, scenePosition.y);
+                            if (!localPosition || !Number.isFinite(localPosition.x)
+                                    || !Number.isFinite(localPosition.y)) {
+                                return false;
+                            }
+
+                            thumbnailShell.spatialDragHotSpot = Qt.point(localPosition.x,
+                                                                         localPosition.y);
+                            return true;
+                        } catch (error) {
+                            return false;
+                        }
+                    }
 
                     x: windowPresentation.frame ? windowPresentation.frame.x : 0
                     y: windowPresentation.frame ? windowPresentation.frame.y : 0
@@ -499,16 +522,8 @@ Item {
 
                     Drag.active: false
                     Drag.source: windowPresentation
-                    Drag.hotSpot.x: thumbnailTouchDragHandler.active
-                        ? thumbnailTouchDragHandler.centroid.pressPosition.x
-                          + thumbnailTouchDragHandler.activeTranslation.x
-                        : thumbnailDragHandler.centroid.pressPosition.x
-                          + thumbnailDragHandler.activeTranslation.x
-                    Drag.hotSpot.y: thumbnailTouchDragHandler.active
-                        ? thumbnailTouchDragHandler.centroid.pressPosition.y
-                          + thumbnailTouchDragHandler.activeTranslation.y
-                        : thumbnailDragHandler.centroid.pressPosition.y
-                          + thumbnailDragHandler.activeTranslation.y
+                    Drag.hotSpot.x: spatialDragHotSpot.x
+                    Drag.hotSpot.y: spatialDragHotSpot.y
                     Drag.keys: ["driftile-window"]
                     Drag.proposedAction: Qt.MoveAction
                     Drag.supportedActions: Qt.MoveAction
@@ -756,6 +771,11 @@ Item {
                         }
 
                         function releaseSpatialDrag(scenePosition) {
+                            if (!thumbnailShell.storeSpatialDragHotSpot(scenePosition)) {
+                                thumbnailTouchDragHandler.cancelSpatialDrag();
+                                return;
+                            }
+
                             const source = windowPresentation;
                             const globalPosition = card.crossOutputWindowDropGlobalPosition(scenePosition);
                             const action = thumbnailShell.Drag.drop();
@@ -770,14 +790,22 @@ Item {
                         onActiveTranslationChanged: {
                             if (thumbnailTouchDragHandler.active
                                     && windowPresentation.spatialDragLifecycleActive) {
+                                const scenePosition = thumbnailTouchDragHandler.centroid.scenePosition;
+                                if (!thumbnailShell.storeSpatialDragHotSpot(scenePosition)) {
+                                    return;
+                                }
                                 card.moveWindowSpatialDrag(windowPresentation,
-                                                           thumbnailTouchDragHandler.centroid.scenePosition);
+                                                           scenePosition);
                             }
                         }
 
                         onGrabChanged: (transition, point) => {
                             if (transition === PointerDevice.GrabExclusive) {
                                 if (!windowPresentation.touchSpatialDragArmed) {
+                                    return;
+                                }
+                                if (!thumbnailShell.storeSpatialDragHotSpot(point.scenePosition)) {
+                                    thumbnailTouchDragHandler.cancelSpatialDrag();
                                     return;
                                 }
                                 thumbnailShell.Drag.active = true;
@@ -810,17 +838,25 @@ Item {
 
                         onActiveTranslationChanged: {
                             if (thumbnailDragHandler.active) {
-                                card.moveWindowSpatialDrag(windowPresentation,
-                                                           thumbnailDragHandler.centroid.scenePosition);
+                                const scenePosition = thumbnailDragHandler.centroid.scenePosition;
+                                if (!thumbnailShell.storeSpatialDragHotSpot(scenePosition)) {
+                                    return;
+                                }
+                                card.moveWindowSpatialDrag(windowPresentation, scenePosition);
                             }
                         }
 
                         onGrabChanged: (transition, point) => {
                             if (transition === PointerDevice.GrabExclusive) {
+                                if (!thumbnailShell.storeSpatialDragHotSpot(point.scenePosition)) {
+                                    return;
+                                }
                                 thumbnailShell.Drag.active = true;
                                 card.beginWindowSpatialDrag(windowPresentation, point.scenePosition);
                             } else if (transition === PointerDevice.UngrabExclusive) {
-                                if (point.state === EventPoint.Released) {
+                                if (point.state === EventPoint.Released
+                                        && windowPresentation.spatialDragLifecycleActive
+                                        && thumbnailShell.storeSpatialDragHotSpot(point.scenePosition)) {
                                     const source = windowPresentation;
                                     const globalPosition = card.crossOutputWindowDropGlobalPosition(
                                         point.scenePosition);

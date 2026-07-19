@@ -1262,8 +1262,9 @@ describe("overview effect package", () => {
       /drop\.action = accepted \? Qt\.MoveAction : Qt\.IgnoreAction;[\s\S]*drop\.accepted = accepted;/u,
     );
     expect(gapDelegate).toMatch(
-      /readonly property var plan: root\.workspaceGapPreviewIndex === workspaceGapDropSlot\.index[\s\S]*root\.workspaceGapPreviewIsExact\(\)[\s\S]*x: root\.cardX[\s\S]*y: plan \? plan\.lineY - workspaceGapDropSlot\.y - height \/ 2[\s\S]*width: root\.cardWidth[\s\S]*visible: plan !== null/u,
+      /readonly property var plan: root\.workspaceGapPreviewSource !== null\s*&& root\.workspaceGapPreviewWindowId\.length > 0\s*&& root\.workspaceGapPreviewSource\.windowId === root\.workspaceGapPreviewWindowId\s*&& root\.workspaceGapPreviewIndex === workspaceGapDropSlot\.index\s*&& root\.workspaceGapPreviewPlan !== null \? root\.workspaceGapPreviewPlan : null[\s\S]*x: root\.cardX[\s\S]*y: plan \? plan\.lineY - workspaceGapDropSlot\.y - height \/ 2[\s\S]*width: root\.cardWidth[\s\S]*visible: plan !== null/u,
     );
+    expect(gapDelegate).not.toContain("workspaceGapPreviewIsExact()");
     expect(gapDelegate).toContain(
       "onExited: root.releaseWorkspaceGapPreview(workspaceGapDropSlot.index)",
     );
@@ -1286,6 +1287,12 @@ describe("overview effect package", () => {
     expect(planning).toContain("windowSpatialDropSceneIsExact(");
     expect(planning).toContain("windowDesktopDropCandidateIsExact(");
     expect(planning).toContain("clearInvalidWorkspaceGapPreview()");
+    expect(planning).toMatch(
+      /function claimWorkspaceGapPreview[\s\S]*!workspaceGapPreviewContextIsExact\(source, plan, expectedGapIndex\)/u,
+    );
+    expect(planning).toMatch(
+      /function clearInvalidWorkspaceGapPreview[\s\S]*!workspaceGapPreviewIsExact\(\)/u,
+    );
     for (const field of [
       "cardGap: cardGap",
       "cardHeight: cardHeight",

@@ -42719,6 +42719,64 @@ describe("RuntimeController", () => {
     }
   });
 
+  it("moves a non-active same-output workspace-gap source across deferred reconciliation", () => {
+    const setup = createWorkspaceGapDropRuntimeFixture();
+
+    expect(setup.fixture.workspace.activeWindow).toBe(setup.peer.window);
+    expect(
+      setup.controller.executeSpatialDrop(workspaceGapDropCommand(setup)),
+    ).toBe(true);
+
+    const created = setup.createdDesktop;
+    if (!created) {
+      throw new Error(
+        "same-output workspace-gap drop did not create a desktop",
+      );
+    }
+    expect(setup.createCount).toBe(1);
+    expect(setup.removeCount).toBe(0);
+    expect(setup.scheduler.pendingCount).toBeGreaterThan(0);
+    expect(setup.desktopIds).toEqual([
+      setup.sourceDesktop.id,
+      created.id,
+      setup.trailingDesktop.id,
+    ]);
+    expect(setup.dragged.window.desktops).toEqual([created]);
+    expect(setup.fixture.workspace.activeWindow).toBe(setup.dragged.window);
+    expect(
+      testLayoutColumns(
+        setup.controller,
+        setup.sourceOutput,
+        setup.sourceDesktop,
+      ),
+    ).toEqual([{ id: "column:source", windowIds: ["peer"] }]);
+    expect(
+      testLayoutColumns(setup.controller, setup.sourceOutput, created),
+    ).toEqual([{ id: "column:dragged", windowIds: ["dragged"] }]);
+
+    flushManualScheduler(setup.scheduler);
+
+    expect(setup.desktopIds).toEqual([
+      setup.sourceDesktop.id,
+      created.id,
+      setup.trailingDesktop.id,
+    ]);
+    expect(setup.createCount).toBe(1);
+    expect(setup.removeCount).toBe(0);
+    expect(setup.dragged.window.desktops).toEqual([created]);
+    expect(setup.fixture.workspace.activeWindow).toBe(setup.dragged.window);
+    expect(
+      testLayoutColumns(
+        setup.controller,
+        setup.sourceOutput,
+        setup.sourceDesktop,
+      ),
+    ).toEqual([{ id: "column:source", windowIds: ["peer"] }]);
+    expect(
+      testLayoutColumns(setup.controller, setup.sourceOutput, created),
+    ).toEqual([{ id: "column:dragged", windowIds: ["dragged"] }]);
+  });
+
   it("compensates an asynchronous workspace-gap drop after desktop topology drift", () => {
     const setup = createWorkspaceGapDropRuntimeFixture({ crossOutput: true });
     const sourceBefore = runtimeLayout(setup.controller).snapshot(

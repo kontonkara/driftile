@@ -20,6 +20,10 @@ const presentation = desktopCard.slice(
   desktopCard.indexOf("id: windowPresentation"),
   desktopCard.indexOf("id: thumbnailShell"),
 );
+const thumbnailSurface = desktopCard.slice(
+  desktopCard.indexOf("id: thumbnailShell"),
+  desktopCard.indexOf("Rectangle {", desktopCard.indexOf("id: thumbnailShell")),
+);
 const thumbnailDrag = handlerBlock(
   "thumbnailDragHandler",
   "minimizedPlaceholderShell",
@@ -113,6 +117,40 @@ describe("spatial overview window drag lifecycle", () => {
     expect(drag).toMatch(
       /transition === PointerDevice\.CancelGrabExclusive[\s\S]*?transition === PointerDevice\.CancelGrabPassive[\s\S]*?[A-Za-z]+Shell\.Drag\.cancel\(\);\s*[A-Za-z]+Shell\.Drag\.active = false;\s*card\.finishWindowSpatialDrag\(windowPresentation\);/u,
     );
+  });
+
+  it("stores the final scene position before completing either thumbnail drag", () => {
+    expect(thumbnailSurface).toContain(
+      "property point spatialDragHotSpot: Qt.point(0, 0)",
+    );
+    expect(thumbnailSurface).toContain(
+      "function storeSpatialDragHotSpot(scenePosition)",
+    );
+    expect(thumbnailSurface).toContain(
+      "thumbnailShell.mapFromItem(\n                                null, scenePosition.x, scenePosition.y)",
+    );
+    expect(thumbnailSurface).toContain(
+      "thumbnailShell.spatialDragHotSpot = Qt.point(localPosition.x,\n                                                                         localPosition.y)",
+    );
+    expect(thumbnailSurface).toContain("Drag.hotSpot.x: spatialDragHotSpot.x");
+    expect(thumbnailSurface).toContain("Drag.hotSpot.y: spatialDragHotSpot.y");
+    expect(thumbnailSurface).not.toContain("activeTranslation");
+    expect(thumbnailSurface).not.toContain("pressPosition");
+
+    for (const drag of [thumbnailDrag, thumbnailTouchDrag]) {
+      expect(
+        drag.match(/thumbnailShell\.storeSpatialDragHotSpot\(/gu),
+      ).toHaveLength(3);
+      expect(drag).toMatch(
+        /GrabExclusive[\s\S]*?storeSpatialDragHotSpot\(point\.scenePosition\)[\s\S]*?Drag\.active = true/u,
+      );
+      expect(drag).toMatch(
+        /onActiveTranslationChanged:[\s\S]*?const scenePosition = [^;]+\.centroid\.scenePosition;[\s\S]*?storeSpatialDragHotSpot\(scenePosition\)[\s\S]*?card\.moveWindowSpatialDrag/u,
+      );
+      expect(drag).toMatch(
+        /storeSpatialDragHotSpot\((?:point\.)?scenePosition\)[\s\S]*?Drag\.drop\(\)/u,
+      );
+    }
   });
 
   it("arms touchscreen window movement only after a long press", () => {

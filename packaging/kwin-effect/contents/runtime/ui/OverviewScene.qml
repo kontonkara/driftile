@@ -995,8 +995,11 @@ Rectangle {
                 }
 
                 Rectangle {
-                    readonly property var plan: root.workspaceGapPreviewIndex === workspaceGapDropSlot.index
-                        && root.workspaceGapPreviewIsExact() ? root.workspaceGapPreviewPlan : null
+                    readonly property var plan: root.workspaceGapPreviewSource !== null
+                        && root.workspaceGapPreviewWindowId.length > 0
+                        && root.workspaceGapPreviewSource.windowId === root.workspaceGapPreviewWindowId
+                        && root.workspaceGapPreviewIndex === workspaceGapDropSlot.index
+                        && root.workspaceGapPreviewPlan !== null ? root.workspaceGapPreviewPlan : null
 
                     x: root.cardX
                     y: plan ? plan.lineY - workspaceGapDropSlot.y - height / 2 : 0
