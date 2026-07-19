@@ -794,6 +794,12 @@ describe("overview effect package", () => {
     expect(desktopCard).toContain(
       "required property bool desktopSurfaceEnabled",
     );
+    expect(desktopCard).toMatch(
+      /readonly property string desktopSurfaceActivityId: KWin\.Workspace\.currentActivity === undefined[\s\S]*KWin\.Workspace\.currentActivity === null \? "" : String\(KWin\.Workspace\.currentActivity\)/u,
+    );
+    expect(desktopCard).toMatch(
+      /readonly property string desktopSurfaceActivityBindingId: desktopSurfaceActivityId\.length > 0\s*\? desktopSurfaceActivityId : "driftile-unavailable-activity"/u,
+    );
     expect(desktopCard).toContain(
       "readonly property bool desktopSurfaceContextExact: desktopSurfaceContextIsExact()",
     );
@@ -804,12 +810,14 @@ describe("overview effect package", () => {
     expect(surfaceLoader).toContain("anchors.fill: parent");
     expect(surfaceLoader).toContain("output: card.screen");
     expect(surfaceLoader).toContain("desktop: card.desktop");
-    expect(surfaceLoader).toContain("activity: KWin.Workspace.currentActivity");
+    expect(surfaceLoader).toContain(
+      "activity: card.desktopSurfaceActivityBindingId",
+    );
     expect(surfaceLoader).toContain("enabled: false");
     expect(surfaceLoader).toContain("z: 0");
 
     expect(surfaceContext).toMatch(
-      /!desktopSurfaceEnabled \|\| !desktop \|\| desktop\.id === undefined \|\| desktop\.id === null[\s\S]*String\(desktop\.id\) !== desktopId[\s\S]*!screen[\s\S]*String\(screen\.name\)\.length === 0[\s\S]*outputId\.length === 0/u,
+      /!desktopSurfaceEnabled \|\| !desktop \|\| desktop\.id === undefined \|\| desktop\.id === null[\s\S]*String\(desktop\.id\) !== desktopId[\s\S]*!screen[\s\S]*String\(screen\.name\)\.length === 0[\s\S]*outputId\.length === 0[\s\S]*desktopSurfaceActivityId\.length === 0/u,
     );
     expect(surfaceContext).toContain(
       "for (const liveDesktop of KWin.Workspace.desktops)",
@@ -817,6 +825,13 @@ describe("overview effect package", () => {
     expect(surfaceContext).toContain("liveDesktop === desktop");
     expect(surfaceContext).toContain("desktopIdMatches !== 1");
     expect(surfaceContext).toContain("!desktopObjectExact");
+    expect(surfaceContext).toContain(
+      "for (const liveActivityId of KWin.Workspace.activities)",
+    );
+    expect(surfaceContext).toContain(
+      "String(liveActivityId) === desktopSurfaceActivityId",
+    );
+    expect(surfaceContext).toContain("activityMatches !== 1");
     expect(surfaceContext).toContain(
       "for (const liveScreen of KWin.Workspace.screens)",
     );

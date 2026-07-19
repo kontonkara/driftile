@@ -62,6 +62,10 @@ Item {
     readonly property var desktopLabel: planDesktopLabel(desktop)
     readonly property bool desktopNamePresented: showDesktopNames && desktopLabel !== null
         && width >= 560 && height >= 72
+    readonly property string desktopSurfaceActivityId: KWin.Workspace.currentActivity === undefined
+        || KWin.Workspace.currentActivity === null ? "" : String(KWin.Workspace.currentActivity)
+    readonly property string desktopSurfaceActivityBindingId: desktopSurfaceActivityId.length > 0
+        ? desktopSurfaceActivityId : "driftile-unavailable-activity"
     readonly property bool desktopSurfaceContextExact: desktopSurfaceContextIsExact()
     readonly property real contentLeft: 0
     readonly property real contentTop: 0
@@ -280,7 +284,7 @@ Item {
                         anchors.fill: parent
                         output: card.screen
                         desktop: card.desktop
-                        activity: KWin.Workspace.currentActivity
+                        activity: card.desktopSurfaceActivityBindingId
                         enabled: false
                     }
                 }
@@ -1231,7 +1235,8 @@ Item {
                     || typeof desktopId !== "string" || desktopId.length === 0
                     || String(desktop.id) !== desktopId || !screen
                     || screen.name === undefined || screen.name === null
-                    || String(screen.name).length === 0 || outputId.length === 0) {
+                    || String(screen.name).length === 0 || outputId.length === 0
+                    || desktopSurfaceActivityId.length === 0) {
                 return false;
             }
 
@@ -1245,6 +1250,17 @@ Item {
                 }
             }
             if (desktopIdMatches !== 1 || !desktopObjectExact) {
+                return false;
+            }
+
+            let activityMatches = 0;
+            for (const liveActivityId of KWin.Workspace.activities) {
+                if (liveActivityId !== undefined && liveActivityId !== null
+                        && String(liveActivityId) === desktopSurfaceActivityId) {
+                    activityMatches += 1;
+                }
+            }
+            if (activityMatches !== 1) {
                 return false;
             }
 
