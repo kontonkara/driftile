@@ -1,19 +1,18 @@
 # Installation
 
 Driftile 1.81.0 is the latest stable release. It requires KDE Plasma with KWin
-6.7 or newer and `kpackagetool6`, and targets Wayland, XWayland, and a
-single-output native X11 session.
+6.7 or newer and targets Wayland, XWayland, and a single-output native X11
+session. The standard KPackage path also requires `kpackagetool6`; the NixOS
+and Home Manager modules install their packages declaratively.
 Touchpad navigation is available only on native Wayland. Run all commands as
 the desktop user, not with `sudo`.
 
 ## Choose an installation path
 
-- **Any compatible Linux distribution:** install the standard KWin package from
+- **Standard KPackage:** on any compatible distribution, follow
   [Install a release](#install-a-release).
-- **NixOS:** use the system module under
-  [NixOS](#nixos).
-- **Home Manager:** use the per-user module under
-  [Home Manager](#home-manager).
+- **NixOS system module:** follow [NixOS](#nixos).
+- **Home Manager user module:** follow [Home Manager](#home-manager).
 
 ## Install a release
 

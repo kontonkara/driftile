@@ -28,11 +28,11 @@ compositor and window manager.
 Driftile requires KDE Plasma with KWin 6.7 or newer. Choose the installation
 path for your system:
 
-| System                            | Instructions                                                           |
-| --------------------------------- | ---------------------------------------------------------------------- |
-| Any compatible Linux distribution | [Install the release KPackage](docs/installation.md#install-a-release) |
-| NixOS                             | [Import the NixOS flake module](docs/installation.md#nixos)            |
-| Home Manager                      | [Import the per-user flake module](docs/installation.md#home-manager)  |
+| Installation scope                             | Instructions                                                           |
+| ---------------------------------------------- | ---------------------------------------------------------------------- |
+| Standard KPackage on a compatible distribution | [Install the release KPackage](docs/installation.md#install-a-release) |
+| NixOS system module                            | [Import the NixOS flake module](docs/installation.md#nixos)            |
+| Home Manager user module                       | [Import the per-user flake module](docs/installation.md#home-manager)  |
 
 For a standard installation, download the `.kwinscript` archive and
 `SHA256SUMS` from the
