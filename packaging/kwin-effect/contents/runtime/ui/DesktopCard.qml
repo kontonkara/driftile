@@ -13,6 +13,7 @@ Item {
     required property string desktopId
     required property var floatingWindows
     required property bool liveGeometryEnabled
+    required property string outputId
     required property string outputName
     required property real presentationProgress
     required property var screen
@@ -39,7 +40,7 @@ Item {
     signal navigationTargetsChanged()
     signal windowDropped(var candidate, string expectedWindowId, var expectedSourceDesktop,
                          string expectedSourceDesktopId, var expectedTargetDesktop,
-                         string expectedTargetDesktopId, var expectedScreen)
+                         string expectedTargetDesktopId, var expectedScreen, var exactTarget)
     signal windowCloseRequested(var candidate, string expectedWindowId, var expectedDesktop,
                                 string expectedDesktopId, var expectedScreen)
     signal windowSpatialDragStarted(var source, real sceneX, real sceneY)
@@ -96,6 +97,9 @@ Item {
     property var windowDropHoverDesktop: null
     property string windowDropHoverDesktopId: ""
     property var windowDropHoverScreen: null
+    property var windowDropHoverSnapshot: null
+    property var windowDropHoverTarget: null
+    property bool windowDropHoverCrossWorkspace: false
 
     opacity: searchDeemphasized ? 0.42 : 1
 
@@ -904,7 +908,8 @@ Item {
     DropArea {
         id: windowDropArea
 
-        readonly property bool validTarget: containsDrag && card.windowDropSourceIsEligible(drag.source, drag.keys)
+        readonly property bool validTarget: containsDrag && card.windowDropHoverOwned
+            && card.windowDropHoverTarget !== null && card.windowDropHoverOwnershipIsValid()
 
         anchors.fill: parent
         enabled: card.enabled && card.searchQuery.trim().length === 0
@@ -915,7 +920,9 @@ Item {
             ? card.claimWindowDropHover(drag.source, drag)
             : card.rejectWindowDropHover()
         onPositionChanged: drag => drag.accepted = card.windowDropIsValid(drag.source, drag.keys)
-            ? card.moveWindowDropHover(drag.source, drag)
+            ? card.windowDropHoverOwned
+              ? card.moveWindowDropHover(drag.source, drag)
+              : card.claimWindowDropHover(drag.source, drag)
             : card.rejectWindowDropHover()
         onExited: card.clearWindowDropHover()
         onContainsDragChanged: {
@@ -925,7 +932,14 @@ Item {
         }
         onDropped: drop => {
             const source = drop.source;
-            if (!card.windowDropIsValid(source, drop.keys)) {
+            if (!card.windowDropIsValid(source, drop.keys) || !card.moveWindowDropHover(source, drop)) {
+                card.clearWindowDropHover();
+                drop.accepted = false;
+                return;
+            }
+
+            const exactTarget = card.windowDropHoverTarget;
+            if (!card.windowDropPlannerTargetIsExact(exactTarget, card.windowDropHoverSnapshot)) {
                 card.clearWindowDropHover();
                 drop.accepted = false;
                 return;
@@ -935,7 +949,7 @@ Item {
             drop.accepted = true;
             card.clearWindowDropHover();
             card.windowDropped(source.candidate, source.windowId, source.sourceDesktop, source.sourceDesktopId,
-                               card.desktop, card.desktopId, card.screen);
+                               card.desktop, card.desktopId, card.screen, exactTarget);
         }
 
         Connections {
@@ -987,6 +1001,7 @@ Item {
     }
 
     onCurrentChanged: card.navigationTargetsChanged()
+    onContextChanged: card.clearInvalidWindowDropHover()
     onDesktopChanged: card.clearWindowDropHover()
     onDesktopIdChanged: card.clearWindowDropHover()
     onEnabledChanged: {
@@ -995,6 +1010,13 @@ Item {
         }
     }
     onScreenChanged: card.clearWindowDropHover()
+    onOutputIdChanged: card.clearInvalidWindowDropHover()
+    onColumnFramesChanged: card.clearInvalidWindowDropHover()
+    onTiledPresentationsChanged: card.clearInvalidWindowDropHover()
+    onSpatialLiveColumnFramesChanged: card.clearInvalidWindowDropHover()
+    onSpatialRowGeometryPlanChanged: card.clearInvalidWindowDropHover()
+    onWidthChanged: card.clearInvalidWindowDropHover()
+    onHeightChanged: card.clearInvalidWindowDropHover()
     onSearchQueryChanged: {
         card.navigationTargetsChanged();
         if (searchQuery.trim().length > 0) {
@@ -1323,28 +1345,42 @@ Item {
     }
 
     function claimWindowDropHover(source, drag) {
+        const localPosition = windowDropLocalPosition(drag);
         const scenePosition = windowDropScenePosition(drag);
-        if (!scenePosition) {
+        if (!localPosition || !scenePosition) {
             clearWindowDropHover();
             return false;
         }
 
         if (windowDropHoverOwned) {
             if (windowDropHoverOwnershipMatches(source)) {
-                return moveWindowDropHoverToScenePosition(source, scenePosition);
+                return moveWindowDropHoverToPositions(source, localPosition, scenePosition);
             }
             clearWindowDropHover();
         }
 
         try {
+            const snapshot = buildWindowDropPlannerSnapshot();
+            const target = hitWindowDropPlannerSnapshot(snapshot, localPosition);
+            if (!snapshot || !target || !windowDropSourceWorkspaceRelationIsExact(source)) {
+                clearWindowDropHover();
+                return false;
+            }
+
+            const crossWorkspace = windowDropSourceTargetsDifferentWorkspace(source);
             windowDropHoverSource = source;
             windowDropHoverSourceWindowId = source.windowId;
             windowDropHoverDesktop = desktop;
             windowDropHoverDesktopId = desktopId;
             windowDropHoverScreen = screen;
+            windowDropHoverSnapshot = snapshot;
+            windowDropHoverTarget = target;
+            windowDropHoverCrossWorkspace = crossWorkspace;
             windowDropHoverOwned = true;
-            windowWorkspaceHoverEntered(source, desktop, desktopId, screen,
-                                        scenePosition.x, scenePosition.y);
+            if (crossWorkspace) {
+                windowWorkspaceHoverEntered(source, desktop, desktopId, screen,
+                                            scenePosition.x, scenePosition.y);
+            }
             return true;
         } catch (error) {
             clearWindowDropHover();
@@ -1353,22 +1389,33 @@ Item {
     }
 
     function moveWindowDropHover(source, drag) {
+        const localPosition = windowDropLocalPosition(drag);
         const scenePosition = windowDropScenePosition(drag);
-        if (!scenePosition) {
+        if (!localPosition || !scenePosition) {
             clearWindowDropHover();
             return false;
         }
-        return moveWindowDropHoverToScenePosition(source, scenePosition);
+        return moveWindowDropHoverToPositions(source, localPosition, scenePosition);
     }
 
-    function moveWindowDropHoverToScenePosition(source, scenePosition) {
-        if (!windowDropHoverOwnershipMatches(source) || !spatialDragScenePointIsFinite(scenePosition)) {
+    function moveWindowDropHoverToPositions(source, localPosition, scenePosition) {
+        if (!windowDropHoverOwnershipMatches(source) || !spatialDragScenePointIsFinite(localPosition)
+                || !spatialDragScenePointIsFinite(scenePosition)) {
             clearWindowDropHover();
             return false;
         }
 
-        windowWorkspaceHoverMoved(source, windowDropHoverDesktop, windowDropHoverDesktopId,
-                                  windowDropHoverScreen, scenePosition.x, scenePosition.y);
+        const target = hitWindowDropPlannerSnapshot(windowDropHoverSnapshot, localPosition);
+        if (!target) {
+            clearWindowDropHover();
+            return false;
+        }
+
+        windowDropHoverTarget = target;
+        if (windowDropHoverCrossWorkspace) {
+            windowWorkspaceHoverMoved(source, windowDropHoverDesktop, windowDropHoverDesktopId,
+                                      windowDropHoverScreen, scenePosition.x, scenePosition.y);
+        }
         return true;
     }
 
@@ -1393,8 +1440,11 @@ Item {
         const targetDesktop = windowDropHoverDesktop;
         const targetDesktopId = windowDropHoverDesktopId;
         const targetScreen = windowDropHoverScreen;
+        const crossWorkspace = windowDropHoverCrossWorkspace;
         resetWindowDropHoverOwnership();
-        windowWorkspaceHoverLeft(source, targetDesktop, targetDesktopId, targetScreen);
+        if (crossWorkspace) {
+            windowWorkspaceHoverLeft(source, targetDesktop, targetDesktopId, targetScreen);
+        }
     }
 
     function resetWindowDropHoverOwnership() {
@@ -1404,6 +1454,9 @@ Item {
         windowDropHoverDesktop = null;
         windowDropHoverDesktopId = "";
         windowDropHoverScreen = null;
+        windowDropHoverSnapshot = null;
+        windowDropHoverTarget = null;
+        windowDropHoverCrossWorkspace = false;
     }
 
     function windowDropHoverOwnershipIsValid() {
@@ -1420,13 +1473,26 @@ Item {
                     && candidate.internalId !== undefined && candidate.internalId !== null
                     && String(candidate.internalId) === windowDropHoverSourceWindowId
                     && source.spatialDragLifecycleActive === true && source.dragEligible === true
-                    && source.minimizedWindow !== true && source.sourceDesktop !== desktop
-                    && source.sourceDesktopId !== desktopId && source.sourceScreen === screen
+                    && source.minimizedWindow !== true && source.sourceScreen === screen
+                    && windowDropSourceWorkspaceRelationIsExact(source)
+                    && windowDropHoverCrossWorkspace === windowDropSourceTargetsDifferentWorkspace(source)
                     && windowDropHoverDesktop === desktop && windowDropHoverDesktopId === desktopId
-                    && windowDropHoverScreen === screen && windowDropTargetIsExact();
+                    && windowDropHoverScreen === screen && windowDropTargetIsExact()
+                    && windowDropPlannerSnapshotIsExact(windowDropHoverSnapshot)
+                    && windowDropPlannerTargetMatchesSnapshot(windowDropHoverTarget, windowDropHoverSnapshot);
         } catch (error) {
             return false;
         }
+    }
+
+    function windowDropLocalPosition(drag) {
+        if (!drag || !Number.isFinite(drag.x) || !Number.isFinite(drag.y)) {
+            return null;
+        }
+        return {
+            x: Number(drag.x),
+            y: Number(drag.y)
+        };
     }
 
     function windowDropScenePosition(drag) {
@@ -1442,15 +1508,304 @@ Item {
         }
     }
 
-    function windowDropTargetIsExact() {
+    function buildWindowDropPlannerSnapshot() {
         try {
-            return enabled && typeof searchQuery === "string" && searchQuery.trim().length === 0
-                    && desktop && screen && desktop.id !== undefined && desktop.id !== null
-                    && typeof desktopId === "string" && desktopId.length > 0
-                    && String(desktop.id) === desktopId;
+            if (!windowDropTargetIsExact()) {
+                return null;
+            }
+
+            const expectedContext = context;
+            const expectedColumns = columns;
+            const expectedColumnFrames = columnFrames;
+            const expectedPresentations = tiledPresentations;
+            const expectedLiveColumnFrames = spatialLiveColumnFrames;
+            const expectedRowGeometryPlan = spatialRowGeometryPlan;
+            const expectedDesktop = desktop;
+            const expectedDesktopId = desktopId;
+            const expectedScreen = screen;
+            const expectedOutputId = outputId;
+            const activityId = String(KWin.Workspace.currentActivity);
+            const cardWidth = Number(width);
+            const cardHeight = Number(height);
+            if (!Array.isArray(expectedColumns) || expectedColumns.length > 512
+                    || !Array.isArray(expectedColumnFrames)
+                    || expectedColumnFrames.length !== expectedColumns.length
+                    || !expectedPresentations || !expectedRowGeometryPlan
+                    || !Number.isFinite(cardWidth) || cardWidth <= 0
+                    || !Number.isFinite(cardHeight) || cardHeight <= 0
+                    || (expectedContext === null
+                        ? expectedColumns.length !== 0
+                        : expectedContext.columns !== expectedColumns
+                          || expectedContext.activityId !== activityId
+                          || expectedContext.desktopId !== expectedDesktopId
+                          || expectedContext.outputId !== expectedOutputId)
+                    || (expectedLiveColumnFrames !== null
+                        && (!Array.isArray(expectedLiveColumnFrames)
+                            || expectedLiveColumnFrames.length !== expectedColumns.length))) {
+                return null;
+            }
+
+            const rowFrame = {
+                height: cardHeight,
+                width: cardWidth,
+                x: 0,
+                y: 0
+            };
+            const plannerColumns = [];
+            const knownWindowIds = Object.create(null);
+            const targetWindowIds = Object.create(null);
+            for (let columnIndex = 0; columnIndex < expectedColumns.length; columnIndex += 1) {
+                const column = expectedColumns[columnIndex];
+                const members = column ? column.members : null;
+                const selectedMemberIndex = column ? column.selectedMemberIndex : -1;
+                if (!column || !Array.isArray(members) || members.length < 1 || members.length > 256
+                        || (column.presentation !== "stacked" && column.presentation !== "tabbed")
+                        || !Number.isInteger(selectedMemberIndex) || selectedMemberIndex < 0
+                        || selectedMemberIndex >= members.length) {
+                    return null;
+                }
+
+                const sourceColumnFrame = spatialSourceColumnFrame(columnIndex);
+                const projectedColumnFrame = expectedColumnFrames[columnIndex];
+                const liveColumnPlan = expectedLiveColumnFrames === null
+                    ? null : expectedLiveColumnFrames[columnIndex];
+                if (!sourceColumnFrame || !projectedColumnFrame
+                        || !Number.isFinite(projectedColumnFrame.x)
+                        || !Number.isFinite(projectedColumnFrame.width)
+                        || projectedColumnFrame.width <= 0
+                        || (liveColumnPlan !== null
+                            && !spatialLiveColumnPlanIsExact(liveColumnPlan, columnIndex))) {
+                    return null;
+                }
+
+                const liveColumn = liveColumnPlan !== null;
+                const projectedX = liveColumn ? Number(liveColumnPlan.x) : Number(projectedColumnFrame.x);
+                const projectedWidth = liveColumn
+                    ? Number(liveColumnPlan.width) : Number(projectedColumnFrame.width);
+                const visibleColumnFrame = intersectRects(rowFrame, {
+                    height: cardHeight,
+                    width: projectedWidth,
+                    x: projectedX,
+                    y: 0
+                });
+                const plannerMembers = [];
+                for (let memberIndex = 0; memberIndex < members.length; memberIndex += 1) {
+                    const member = members[memberIndex];
+                    const windowId = member ? member.windowId : null;
+                    const tiled = typeof windowId === "string" ? expectedPresentations[windowId] : null;
+                    const selected = column.presentation !== "tabbed"
+                        || memberIndex === selectedMemberIndex;
+                    if (typeof windowId !== "string" || windowId.length === 0
+                            || knownWindowIds[windowId] === true || !tiled
+                            || tiled.columnIndex !== columnIndex || tiled.memberIndex !== memberIndex
+                            || tiled.selected !== selected || tiled.plannedColumnFrame !== sourceColumnFrame) {
+                        return null;
+                    }
+                    knownWindowIds[windowId] = true;
+
+                    const liveMemberFrame = liveColumn ? liveColumnPlan.memberFrames[memberIndex] : null;
+                    if (!selected) {
+                        if (tiled.thumbnailFrame !== null || liveMemberFrame !== null) {
+                            return null;
+                        }
+                        continue;
+                    }
+                    if (!visibleColumnFrame) {
+                        continue;
+                    }
+
+                    const projectedMemberFrame = liveColumn ? liveMemberFrame : tiled.thumbnailFrame;
+                    if (!projectedMemberFrame
+                            || !projectionGeometryScalarsAreValid(projectedMemberFrame.x,
+                                                                  projectedMemberFrame.y,
+                                                                  projectedMemberFrame.width,
+                                                                  projectedMemberFrame.height)) {
+                        return null;
+                    }
+
+                    const visibleMemberFrame = intersectRects(visibleColumnFrame, projectedMemberFrame);
+                    if (!visibleMemberFrame) {
+                        continue;
+                    }
+                    plannerMembers.push({
+                        frame: plainRect(visibleMemberFrame),
+                        windowId
+                    });
+                    targetWindowIds[windowId] = true;
+                }
+
+                if (!visibleColumnFrame) {
+                    continue;
+                }
+                if (plannerMembers.length === 0) {
+                    return null;
+                }
+                plannerColumns.push({
+                    frame: plainRect(visibleColumnFrame),
+                    members: plannerMembers
+                });
+            }
+
+            if (expectedColumns.length > 0 && plannerColumns.length === 0) {
+                return null;
+            }
+
+            const runtime = OverviewRuntime.DriftileOverview;
+            if (!runtime || typeof runtime.buildOverviewSpatialWindowDropPlan !== "function"
+                    || typeof runtime.hitTestOverviewSpatialWindowDrop !== "function") {
+                return null;
+            }
+
+            const plan = runtime.buildOverviewSpatialWindowDropPlan({
+                rows: [{
+                    activityId,
+                    columns: plannerColumns,
+                    desktopId: expectedDesktopId,
+                    frame: rowFrame,
+                    outputId: expectedOutputId
+                }]
+            });
+            if (!plan || !Object.isFrozen(plan)
+                    || context !== expectedContext || columns !== expectedColumns
+                    || (expectedContext !== null && expectedContext.columns !== expectedColumns)
+                    || columnFrames !== expectedColumnFrames
+                    || tiledPresentations !== expectedPresentations
+                    || spatialLiveColumnFrames !== expectedLiveColumnFrames
+                    || spatialRowGeometryPlan !== expectedRowGeometryPlan || desktop !== expectedDesktop
+                    || desktopId !== expectedDesktopId || screen !== expectedScreen || outputId !== expectedOutputId
+                    || Number(width) !== cardWidth || Number(height) !== cardHeight
+                    || String(KWin.Workspace.currentActivity) !== activityId) {
+                return null;
+            }
+
+            Object.freeze(targetWindowIds);
+            return Object.freeze({
+                activityId,
+                cardHeight,
+                cardWidth,
+                columnFrames: expectedColumnFrames,
+                columns: expectedColumns,
+                context: expectedContext,
+                contextColumnCount: expectedColumns.length,
+                desktop: expectedDesktop,
+                desktopId: expectedDesktopId,
+                liveColumnFrames: expectedLiveColumnFrames,
+                outputId: expectedOutputId,
+                plan,
+                rowGeometryPlan: expectedRowGeometryPlan,
+                screen: expectedScreen,
+                targetWindowIds,
+                tiledPresentations: expectedPresentations
+            });
+        } catch (error) {
+            return null;
+        }
+    }
+
+    function windowDropPlannerSnapshotIsExact(snapshot) {
+        try {
+            return snapshot && Object.isFrozen(snapshot) && Object.isFrozen(snapshot.plan)
+                    && Object.isFrozen(snapshot.targetWindowIds) && windowDropTargetIsExact()
+                    && snapshot.context === context && snapshot.columns === columns
+                    && (snapshot.context === null
+                        ? snapshot.contextColumnCount === 0
+                        : snapshot.context.columns === snapshot.columns
+                          && snapshot.context.activityId === snapshot.activityId
+                          && snapshot.context.desktopId === snapshot.desktopId
+                          && snapshot.context.outputId === snapshot.outputId)
+                    && snapshot.columnFrames === columnFrames
+                    && snapshot.tiledPresentations === tiledPresentations
+                    && snapshot.liveColumnFrames === spatialLiveColumnFrames
+                    && snapshot.rowGeometryPlan === spatialRowGeometryPlan
+                    && snapshot.desktop === desktop && snapshot.desktopId === desktopId
+                    && snapshot.screen === screen && snapshot.outputId === outputId
+                    && snapshot.activityId === String(KWin.Workspace.currentActivity)
+                    && snapshot.cardWidth === Number(width) && snapshot.cardHeight === Number(height)
+                    && snapshot.contextColumnCount === snapshot.columns.length;
         } catch (error) {
             return false;
         }
+    }
+
+    function hitWindowDropPlannerSnapshot(snapshot, localPosition) {
+        try {
+            if (!windowDropPlannerSnapshotIsExact(snapshot)
+                    || !spatialDragScenePointIsFinite(localPosition)) {
+                return null;
+            }
+
+            const runtime = OverviewRuntime.DriftileOverview;
+            if (!runtime || typeof runtime.hitTestOverviewSpatialWindowDrop !== "function") {
+                return null;
+            }
+            const target = runtime.hitTestOverviewSpatialWindowDrop(snapshot.plan, localPosition);
+            return windowDropPlannerTargetMatchesSnapshot(target, snapshot) ? target : null;
+        } catch (error) {
+            return null;
+        }
+    }
+
+    function windowDropPlannerTargetIsExact(target, snapshot) {
+        return windowDropPlannerSnapshotIsExact(snapshot)
+            && windowDropPlannerTargetMatchesSnapshot(target, snapshot);
+    }
+
+    function windowDropPlannerTargetMatchesSnapshot(target, snapshot) {
+        try {
+            if (!target || !snapshot || !Object.isFrozen(target) || target.rowIndex !== 0
+                    || target.activityId !== snapshot.activityId
+                    || target.desktopId !== snapshot.desktopId || target.outputId !== snapshot.outputId) {
+                return false;
+            }
+            if (target.kind === "empty-row") {
+                return snapshot.contextColumnCount === 0;
+            }
+            return (target.kind === "column-boundary" || target.kind === "stack-insertion")
+                    && (target.position === "before" || target.position === "after")
+                    && typeof target.targetWindowId === "string" && target.targetWindowId.length > 0
+                    && snapshot.targetWindowIds[target.targetWindowId] === true;
+        } catch (error) {
+            return false;
+        }
+    }
+
+    function windowDropTargetIsExact() {
+        try {
+            const activityId = String(KWin.Workspace.currentActivity);
+            const contextIsExact = context === null
+                ? Array.isArray(columns) && columns.length === 0
+                : context && context.columns === columns && context.desktopId === desktopId
+                  && context.outputId === outputId && context.activityId === activityId;
+            return enabled && typeof searchQuery === "string" && searchQuery.trim().length === 0
+                    && desktop && screen && desktop.id !== undefined && desktop.id !== null
+                    && typeof desktopId === "string" && desktopId.length > 0
+                    && String(desktop.id) === desktopId
+                    && typeof outputId === "string" && outputId.length > 0
+                    && activityId.length > 0 && contextIsExact;
+        } catch (error) {
+            return false;
+        }
+    }
+
+    function windowDropSourceWorkspaceRelationIsExact(source) {
+        try {
+            if (!source || !source.sourceDesktop || source.sourceDesktop.id === undefined
+                    || source.sourceDesktop.id === null || typeof source.sourceDesktopId !== "string"
+                    || source.sourceDesktopId.length === 0
+                    || String(source.sourceDesktop.id) !== source.sourceDesktopId) {
+                return false;
+            }
+
+            const sameDesktop = source.sourceDesktop === desktop;
+            const sameDesktopId = source.sourceDesktopId === desktopId;
+            return sameDesktop === sameDesktopId;
+        } catch (error) {
+            return false;
+        }
+    }
+
+    function windowDropSourceTargetsDifferentWorkspace(source) {
+        return source && source.sourceDesktop !== desktop && source.sourceDesktopId !== desktopId;
     }
 
     function windowDropIsValid(source, keys) {
@@ -1458,8 +1813,7 @@ Item {
             return keys && typeof keys.indexOf === "function" && keys.indexOf("driftile-window") >= 0
                     && windowCanDrag(source) && source.dragEligible === true
                     && source.spatialDragLifecycleActive === true && windowDropTargetIsExact()
-                    && source.sourceScreen === screen && source.sourceDesktop !== desktop
-                    && source.sourceDesktopId !== desktopId;
+                    && source.sourceScreen === screen && windowDropSourceWorkspaceRelationIsExact(source);
         } catch (error) {
             return false;
         }
@@ -1467,11 +1821,11 @@ Item {
 
     function windowDropSourceIsEligible(source, keys) {
         try {
-            return keys && typeof keys.indexOf === "function" && keys.indexOf("driftile-window") >= 0 && source
+            return keys && typeof keys.indexOf === "function" && keys.indexOf("driftile-window") >= 0
+                    && windowCanDrag(source)
                     && source.dragEligible === true && source.spatialDragLifecycleActive === true
                     && source.minimizedWindow !== true && windowDropTargetIsExact()
-                    && source.sourceScreen === screen && source.sourceDesktop !== desktop
-                    && source.sourceDesktopId !== desktopId;
+                    && source.sourceScreen === screen && windowDropSourceWorkspaceRelationIsExact(source);
         } catch (error) {
             return false;
         }

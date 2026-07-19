@@ -40,6 +40,10 @@ const hoverLifecycle = desktopCard.slice(
   desktopCard.indexOf("function claimWindowDropHover("),
   desktopCard.indexOf("function windowDropIsValid("),
 );
+const dropPlanner = desktopCard.slice(
+  desktopCard.indexOf("function buildWindowDropPlannerSnapshot("),
+  desktopCard.indexOf("function windowDropTargetIsExact("),
+);
 const dropValidation = desktopCard.slice(
   desktopCard.indexOf("function windowDropIsValid("),
   desktopCard.indexOf("function windowIsActionable("),
@@ -155,6 +159,90 @@ describe("spatial overview window drag lifecycle", () => {
     expect(hoverLifecycle).toContain(
       "windowWorkspaceHoverLeft(source, targetDesktop, targetDesktopId, targetScreen)",
     );
+    expect(hoverLifecycle).toContain("if (crossWorkspace) {");
+    expect(hoverLifecycle).toContain("if (windowDropHoverCrossWorkspace) {");
+  });
+
+  it("caches one exact card-local spatial target for hover and drop", () => {
+    expect(desktopCard).toContain("required property string outputId");
+    expect(desktopCard).toMatch(
+      /signal windowDropped\(var candidate, string expectedWindowId, var expectedSourceDesktop,\s*string expectedSourceDesktopId, var expectedTargetDesktop,\s*string expectedTargetDesktopId, var expectedScreen, var exactTarget\)/u,
+    );
+    expect(desktopCard).toContain("property var windowDropHoverSnapshot: null");
+    expect(desktopCard).toContain("property var windowDropHoverTarget: null");
+    expect(dropPlanner).toContain("function buildWindowDropPlannerSnapshot()");
+    expect(dropPlanner).toContain(
+      "runtime.buildOverviewSpatialWindowDropPlan({",
+    );
+    expect(dropPlanner).toContain(
+      "runtime.hitTestOverviewSpatialWindowDrop(snapshot.plan, localPosition)",
+    );
+    expect(dropPlanner).toContain("activityId,");
+    expect(dropPlanner).toContain("desktopId: expectedDesktopId");
+    expect(dropPlanner).toContain("outputId: expectedOutputId");
+    expect(dropPlanner).toContain("frame: rowFrame");
+    expect(dropPlanner).toContain("frame: plainRect(visibleColumnFrame)");
+    expect(dropPlanner).toContain("frame: plainRect(visibleMemberFrame)");
+    expect(dropPlanner).toContain("windowId");
+    expect(dropPlanner).toContain("context !== expectedContext");
+    expect(dropPlanner).toContain("columnFrames !== expectedColumnFrames");
+    expect(dropPlanner).toContain(
+      "tiledPresentations !== expectedPresentations",
+    );
+    expect(dropPlanner).toContain(
+      "spatialLiveColumnFrames !== expectedLiveColumnFrames",
+    );
+    expect(dropPlanner).toContain(
+      "spatialRowGeometryPlan !== expectedRowGeometryPlan",
+    );
+    expect(dropPlanner).toContain("Object.isFrozen(target)");
+    expect(dropPlanner).toContain("target.rowIndex !== 0");
+    expect(dropPlanner).toContain("expectedContext === null");
+    expect(dropPlanner).toContain("expectedColumns.length !== 0");
+    expect(dropPlanner).toContain("snapshot.context === null");
+    expect(dropPlanner).toContain(
+      "snapshot.targetWindowIds[target.targetWindowId] === true",
+    );
+    expect(hoverLifecycle).toContain("windowDropHoverSnapshot = snapshot");
+    expect(hoverLifecycle).toContain("windowDropHoverTarget = target");
+    expect(hoverLifecycle).toContain("windowDropHoverSnapshot = null");
+    expect(hoverLifecycle).toContain("windowDropHoverTarget = null");
+    expect(dropArea).toContain(
+      "const exactTarget = card.windowDropHoverTarget;",
+    );
+    expect(dropArea.indexOf("const exactTarget")).toBeLessThan(
+      dropArea.indexOf(
+        "card.clearWindowDropHover();",
+        dropArea.indexOf("const exactTarget"),
+      ),
+    );
+    expect(dropArea).toContain(
+      "card.desktop, card.desktopId, card.screen, exactTarget);",
+    );
+  });
+
+  it("uses only visible tab members and keeps same-workspace drops local", () => {
+    expect(dropPlanner).toContain('column.presentation !== "tabbed"');
+    expect(dropPlanner).toContain("memberIndex === selectedMemberIndex");
+    expect(dropPlanner).toMatch(
+      /if \(!selected\) \{\s*if \(tiled\.thumbnailFrame !== null \|\| liveMemberFrame !== null\) \{\s*return null;\s*\}\s*continue;/u,
+    );
+    expect(hoverLifecycle).toContain(
+      "function windowDropSourceWorkspaceRelationIsExact(source)",
+    );
+    expect(hoverLifecycle).toContain("return sameDesktop === sameDesktopId;");
+    expect(hoverLifecycle).toContain(
+      "function windowDropSourceTargetsDifferentWorkspace(source)",
+    );
+    expect(hoverLifecycle).toContain(
+      "source.sourceDesktop !== desktop && source.sourceDesktopId !== desktopId",
+    );
+    expect(hoverLifecycle).toContain(
+      "windowDropHoverCrossWorkspace = crossWorkspace",
+    );
+    expect(dropValidation).toContain(
+      "windowDropSourceWorkspaceRelationIsExact(source)",
+    );
   });
 
   it("fails closed and releases stale hover ownership", () => {
@@ -186,12 +274,15 @@ describe("spatial overview window drag lifecycle", () => {
     );
     expect(hoverLifecycle).toContain("source.dragEligible === true");
     expect(hoverLifecycle).toContain("source.minimizedWindow !== true");
-    expect(hoverLifecycle).toContain("source.sourceDesktop !== desktop");
-    expect(hoverLifecycle).toContain("source.sourceDesktopId !== desktopId");
+    expect(hoverLifecycle).toContain(
+      "windowDropSourceWorkspaceRelationIsExact(source)",
+    );
     expect(hoverLifecycle).toContain("windowDropTargetIsExact()");
     expect(hoverLifecycle).toContain("searchQuery.trim().length === 0");
     expect(dropValidation).toContain("windowCanDrag(source)");
-    expect(dropValidation).toContain("source.sourceDesktop !== desktop");
+    expect(dropValidation).toContain(
+      "windowDropSourceWorkspaceRelationIsExact(source)",
+    );
     expect(dropValidation).toContain(
       "source.spatialDragLifecycleActive === true",
     );

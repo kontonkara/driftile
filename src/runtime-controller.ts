@@ -190,6 +190,7 @@ import {
   type PointerVerticalResize,
   type PointerVerticalResizeEdge,
 } from "./core/pointer-resize";
+import type { SpatialDropCommand } from "./overview/spatial-drop-command";
 import type {
   KWinOutput,
   KWinVirtualDesktop,
@@ -1329,6 +1330,7 @@ export class RuntimeController {
     PendingManualFloatingSizeChange
   >();
   private readonly observer: WindowObserver;
+  private overviewSpatialDropActivation: object | null = null;
   private readonly onLayoutStateChanged:
     ((canonicalState: string) => void) | undefined;
   private readonly pendingAdmissionContexts = new Set<string>();
@@ -3242,6 +3244,327 @@ export class RuntimeController {
     return false;
   }
 
+  executeSpatialDrop(command: SpatialDropCommand): boolean {
+    const sourceId = windowId(command.source.windowId);
+    const sourceWindow = this.observer.source(sourceId);
+    const owner = this.managedWindows.get(sourceId);
+    const sourceContext = owner ? this.contexts.get(owner.contextKey) : null;
+    const observedSource = sourceWindow ? normalizeWindow(sourceWindow) : null;
+    const liveSourceContext = observedSource
+      ? this.resolveManagedContext(observedSource)
+      : null;
+    const matchingOutputs = this.workspace.screens.filter(
+      (candidate) => String(candidate.name) === command.source.outputId,
+    );
+    const matchingDesktops = this.workspace.desktops.filter(
+      (candidate) => String(candidate.id) === command.source.desktopId,
+    );
+    const output = matchingOutputs[0];
+    const sourceDesktop = matchingDesktops[0];
+    const originalDesktop = output
+      ? currentDesktopForOutput(this.workspace, output)
+      : null;
+    const originalActiveWindow = this.workspace.activeWindow;
+
+    if (
+      this.overviewSpatialDropActivation !== null ||
+      !this.started ||
+      this.stackEditOperation !== null ||
+      this.windowTransferOperation !== null ||
+      this.interactiveResizeSource !== null ||
+      this.pointerMoveIntent !== null ||
+      this.pointerResizeIntent !== null ||
+      this.pointerResizeSettlement !== null ||
+      this.startupStabilizationToken !== null ||
+      this.hasTopologyBarrier() ||
+      !sourceWindow ||
+      !owner ||
+      !sourceContext ||
+      !liveSourceContext ||
+      contextKey(liveSourceContext) !== owner.contextKey ||
+      String(sourceContext.activityId) !== command.source.activityId ||
+      String(sourceContext.desktopId) !== command.source.desktopId ||
+      String(sourceContext.outputId) !== command.source.outputId ||
+      command.target.activityId !== command.source.activityId ||
+      command.target.outputId !== command.source.outputId ||
+      matchingOutputs.length !== 1 ||
+      matchingDesktops.length !== 1 ||
+      !output ||
+      !sourceDesktop ||
+      !originalDesktop ||
+      sourceWindow.output?.name !== output.name ||
+      sourceWindow.desktops.length !== 1 ||
+      sourceWindow.desktops[0]?.id !== sourceDesktop.id ||
+      this.floatingWindows.has(sourceId) ||
+      this.automaticFloatingWindows.has(sourceId) ||
+      this.automaticallyFloats(sourceWindow) ||
+      this.suspendedWindows.has(sourceId) ||
+      this.requestedSuspensions.has(sourceId) ||
+      !this.toggleGeometrySettled(sourceId) ||
+      !isGeometryWritable(sourceWindow)
+    ) {
+      return false;
+    }
+
+    const sourceBefore = this.layout.snapshot(
+      sourceContext.outputId,
+      sourceContext.desktopId,
+      sourceContext.activityId,
+    );
+    const sourceColumn = sourceBefore.columns.find((column) =>
+      column.windowIds.includes(sourceId),
+    );
+    const previousSourceColumn = sourceBefore.columns.find(
+      (column) => column.id === sourceBefore.activeColumnId,
+    );
+    const previousSourceWindowId = previousSourceColumn?.selectedWindowId;
+
+    if (!sourceColumn || !previousSourceWindowId) {
+      return false;
+    }
+
+    const activation = {};
+    let applied = false;
+    this.overviewSpatialDropActivation = activation;
+
+    try {
+      this.layout.activateWindow(sourceId);
+      const activated = this.layout.snapshot(
+        sourceContext.outputId,
+        sourceContext.desktopId,
+        sourceContext.activityId,
+      );
+      const activatedColumn = activated.columns.find(
+        (column) => column.id === sourceColumn.id,
+      );
+
+      if (
+        activated.activeColumnId !== sourceColumn.id ||
+        activatedColumn?.selectedWindowId !== sourceId
+      ) {
+        return false;
+      }
+
+      if (originalDesktop.id !== sourceDesktop.id) {
+        this.switchDesktop(sourceDesktop, output);
+      }
+      if (
+        currentDesktopForOutput(this.workspace, output)?.id !== sourceDesktop.id
+      ) {
+        return false;
+      }
+
+      if (this.workspace.activeWindow !== sourceWindow) {
+        this.workspace.activeWindow = sourceWindow;
+      }
+      if (this.workspace.activeWindow !== sourceWindow) {
+        return false;
+      }
+
+      applied = this.executeActiveSpatialDrop(command);
+
+      if (
+        applied &&
+        command.target.desktopId === command.source.desktopId &&
+        originalDesktop.id !== sourceDesktop.id
+      ) {
+        this.recordDesktopSelection(originalDesktop, sourceDesktop, output);
+      }
+    } catch {
+      applied = false;
+    } finally {
+      try {
+        if (!applied) {
+          this.layout.activateWindow(previousSourceWindowId);
+
+          if (
+            currentDesktopForOutput(this.workspace, output)?.id ===
+            sourceDesktop.id
+          ) {
+            this.switchDesktop(originalDesktop, output);
+          }
+
+          if (
+            currentDesktopForOutput(this.workspace, output)?.id ===
+            originalDesktop.id
+          ) {
+            if (originalActiveWindow === null) {
+              this.workspace.activeWindow = null;
+            } else if (
+              !originalActiveWindow.deleted &&
+              this.observer.source(
+                windowId(String(originalActiveWindow.internalId)),
+              ) === originalActiveWindow
+            ) {
+              this.workspace.activeWindow = originalActiveWindow;
+            }
+          }
+        }
+      } catch {
+        // KWin may reject best-effort restoration after an external state change.
+      }
+
+      if (this.overviewSpatialDropActivation === activation) {
+        this.overviewSpatialDropActivation = null;
+      }
+      try {
+        this.handleWindowActivated(this.workspace.activeWindow);
+      } catch {
+        // The command result remains authoritative after post-transaction bookkeeping.
+      }
+    }
+
+    return applied;
+  }
+
+  private executeActiveSpatialDrop(command: SpatialDropCommand): boolean {
+    if (
+      this.pointerMoveIntent !== null ||
+      this.pendingDefaultColumnWidth !== null ||
+      this.pendingGap !== null
+    ) {
+      return false;
+    }
+
+    const prepared = this.prepareActiveColumnCommand();
+
+    if (
+      !prepared ||
+      this.hasPendingCapacityState(prepared.context.key) ||
+      this.pendingAdmissionContexts.has(prepared.context.key) ||
+      this.waitingWindowIds.has(prepared.context.key) ||
+      this.dirtyContexts.has(prepared.context.key) ||
+      this.floatingWindows.has(prepared.activeId)
+    ) {
+      return false;
+    }
+
+    const activeWindow = this.workspace.activeWindow;
+    const { source, target } = command;
+
+    if (
+      !activeWindow ||
+      this.observer.source(prepared.activeId) !== activeWindow ||
+      String(prepared.activeId) !== source.windowId ||
+      String(prepared.context.activityId) !== source.activityId ||
+      String(prepared.context.desktopId) !== source.desktopId ||
+      String(prepared.context.outputId) !== source.outputId ||
+      target.activityId !== source.activityId ||
+      target.outputId !== source.outputId
+    ) {
+      return false;
+    }
+
+    if (target.desktopId !== source.desktopId) {
+      const applied = this.moveActiveWindowToDesktop(
+        { desktopId: desktopId(target.desktopId), kind: "id" },
+        false,
+        true,
+        target,
+      );
+
+      if (applied) {
+        this.requestLayoutStatePublication();
+      }
+
+      return applied;
+    }
+
+    if (target.kind === "empty-row") {
+      return false;
+    }
+
+    const targetId = windowId(target.targetWindowId);
+
+    if (target.kind === "stack-insertion" && targetId === prepared.activeId) {
+      return false;
+    }
+
+    const targetColumn = prepared.before.columns.find((column) =>
+      column.windowIds.includes(targetId),
+    );
+
+    if (!targetColumn) {
+      return false;
+    }
+
+    const participantColumns =
+      targetColumn.id === prepared.activeColumn.id
+        ? [prepared.activeColumn]
+        : [prepared.activeColumn, targetColumn];
+    const acceptance = this.prepareStackTransferAcceptance(
+      participantColumns,
+      prepared.context,
+      prepared.activeId,
+      prepared.activeId,
+      targetId,
+    );
+
+    if (!acceptance) {
+      return false;
+    }
+
+    const editState: { value: StackEditResult | null } = { value: null };
+    const applied = this.applyActiveColumnMutation(
+      prepared,
+      "overview spatial drop",
+      () => {
+        editState.value =
+          target.kind === "stack-insertion"
+            ? this.layout.reinsertWindow(prepared.activeId, {
+                position: target.position,
+                targetWindowId: targetId,
+              })
+            : this.layout.reinsertWindowAtColumnBoundary(
+                prepared.activeId,
+                {
+                  position: target.position,
+                  targetColumnId: targetColumn.id,
+                },
+                this.availableColumnId(
+                  prepared.before,
+                  prepared.activeId,
+                  "overview",
+                ),
+                this.initialColumnPresentation(activeWindow),
+              );
+        return editState.value !== null;
+      },
+      () =>
+        editState.value !== null &&
+        this.layout.rollbackStackEdit(editState.value.rollback),
+      () => acceptance.accept(acceptance.activeWindow),
+    );
+    const edit = editState.value;
+
+    if (!applied || !edit) {
+      return false;
+    }
+
+    this.layout.discardStackEditRollback(edit.rollback);
+    this.reconcileColumnFullWidthRestore(
+      prepared.context.key,
+      prepared.before,
+      this.layout.snapshot(
+        prepared.context.outputId,
+        prepared.context.desktopId,
+        prepared.context.activityId,
+      ),
+    );
+    this.capacityParkBackoffs.delete(prepared.context.key);
+
+    if (
+      edit.kind === "merge" &&
+      this.waitingWindowIds.get(prepared.context.key)?.size
+    ) {
+      this.pendingAdmissionContexts.add(prepared.context.key);
+      this.scheduleWork();
+    }
+
+    this.requestLayoutStatePublication();
+    return true;
+  }
+
   moveDesktopDown(): boolean {
     return this.moveSelectedDesktop(1);
   }
@@ -4925,6 +5248,10 @@ export class RuntimeController {
     current?: KWinVirtualDesktop | null,
     output?: KWinOutput,
   ): void => {
+    if (this.overviewSpatialDropActivation !== null) {
+      return;
+    }
+
     this.clearDesktopFocusTransition();
     this.pointerResizeIntent = null;
     this.cancelInvalidWindowRemovalFocusRecovery();
@@ -8803,6 +9130,10 @@ export class RuntimeController {
     window: KWinWindow | null,
     allowSuspended = false,
   ): void => {
+    if (this.overviewSpatialDropActivation !== null) {
+      return;
+    }
+
     if (!window) {
       this.cancelDesktopFocusReplay();
     }
@@ -14514,8 +14845,12 @@ export class RuntimeController {
     target: DesktopTransferTarget,
     wholeColumn = false,
     follow = true,
+    spatialTarget?: SpatialDropCommand["target"],
   ): boolean {
-    if (this.stackEditOperation) {
+    if (
+      this.stackEditOperation ||
+      (spatialTarget && (wholeColumn || !follow))
+    ) {
       return false;
     }
 
@@ -14582,8 +14917,20 @@ export class RuntimeController {
 
     if (
       targetContextKey === active.contextKey ||
+      (spatialTarget !== undefined &&
+        (spatialTarget.activityId !== String(targetContext.activityId) ||
+          spatialTarget.desktopId !== String(targetContext.desktopId) ||
+          spatialTarget.outputId !== String(targetContext.outputId))) ||
       this.hasPendingCapacityState(active.contextKey) ||
       this.hasPendingCapacityState(targetContextKey) ||
+      (spatialTarget !== undefined &&
+        (this.pointerMoveIntent !== null ||
+          this.pendingDefaultColumnWidth !== null ||
+          this.pendingGap !== null ||
+          this.pendingAdmissionContexts.has(active.contextKey) ||
+          this.pendingAdmissionContexts.has(targetContextKey) ||
+          this.dirtyContexts.has(active.contextKey) ||
+          this.dirtyContexts.has(targetContextKey))) ||
       this.waitingWindowIds.has(active.contextKey) ||
       this.waitingWindowIds.has(targetContextKey) ||
       this.toggleTransitionPending(active.contextKey) ||
@@ -14646,20 +14993,54 @@ export class RuntimeController {
       targetBefore,
       wholeColumn ? selection.sourceColumn.id : undefined,
     );
-    const previewValue = wholeColumn
-      ? this.layout.previewColumnTransfer(active.activeId, {
+    let previewValue: ColumnTransferPreview | WindowTransferPreview | null;
+
+    if (wholeColumn) {
+      previewValue = this.layout.previewColumnTransfer(active.activeId, {
+        activityId: targetContext.activityId,
+        columnId: targetColumnId,
+        desktopId: targetContext.desktopId,
+        outputId: targetContext.outputId,
+      });
+    } else if (!spatialTarget || spatialTarget.kind === "empty-row") {
+      previewValue =
+        spatialTarget && targetBefore.columns.length !== 0
+          ? null
+          : this.layout.previewWindowTransfer(active.activeId, {
+              activityId: targetContext.activityId,
+              columnId: targetColumnId,
+              desktopId: targetContext.desktopId,
+              outputId: targetContext.outputId,
+              presentation: this.initialColumnPresentation(active.activeWindow),
+            });
+    } else if (spatialTarget.kind === "stack-insertion") {
+      previewValue = this.layout.previewWindowTransferToWindow(
+        active.activeId,
+        {
           activityId: targetContext.activityId,
-          columnId: targetColumnId,
           desktopId: targetContext.desktopId,
           outputId: targetContext.outputId,
-        })
-      : this.layout.previewWindowTransfer(active.activeId, {
-          activityId: targetContext.activityId,
-          columnId: targetColumnId,
-          desktopId: targetContext.desktopId,
-          outputId: targetContext.outputId,
-          presentation: this.initialColumnPresentation(active.activeWindow),
-        });
+          position: spatialTarget.position,
+          targetWindowId: windowId(spatialTarget.targetWindowId),
+        },
+      );
+    } else {
+      const targetWindowId = windowId(spatialTarget.targetWindowId);
+      const targetColumn = targetBefore.columns.find((column) =>
+        column.windowIds.includes(targetWindowId),
+      );
+      previewValue = targetColumn
+        ? this.layout.previewWindowTransferToColumnBoundary(active.activeId, {
+            activityId: targetContext.activityId,
+            columnId: targetColumnId,
+            desktopId: targetContext.desktopId,
+            outputId: targetContext.outputId,
+            position: spatialTarget.position,
+            presentation: this.initialColumnPresentation(active.activeWindow),
+            targetColumnId: targetColumn.id,
+          })
+        : null;
+    }
 
     if (!previewValue) {
       return false;

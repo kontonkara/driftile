@@ -70,6 +70,9 @@ QtObject {
         onPublicationDetected: controller.requestLiveModelRefresh()
     }
 
+    readonly property OverviewSpatialDropWriter spatialDropWriter: OverviewSpatialDropWriter {
+    }
+
     readonly property KWin.ShortcutHandler toggleShortcut: KWin.ShortcutHandler {
         name: "driftile_toggle_overview"
         text: "Driftile: Toggle overview"
@@ -145,6 +148,15 @@ QtObject {
         }
 
         deactivate();
+    }
+
+    function submitSpatialDropCommand(source, target) {
+        if (!active || loading || activeSessionId <= 0 || !overviewModel
+                || (presentationPhase !== "opening" && presentationPhase !== "open")) {
+            return false;
+        }
+
+        return spatialDropWriter.submitSpatialDropCommand(source, target);
     }
 
     function applyTouchpadGestureSettings(enabled, fingerCount) {

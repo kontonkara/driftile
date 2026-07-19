@@ -671,7 +671,6 @@ describe("overview effect package", () => {
       "candidate.minimized",
       "candidate.desktops",
       "candidate.desktops",
-      "candidate.desktops",
     ]);
     expect(qmlSources.join("\n")).not.toMatch(/\.setValue\s*\(/u);
   });
@@ -987,9 +986,12 @@ describe("overview effect package", () => {
       "candidate.minimized !== snapshot.minimized",
     );
     expect(snapshotDrop).toContain("source.dragEligible === true");
-    expect(snapshotDrop).not.toContain("windowCanDrag(");
+    expect(snapshotDrop).toContain("windowCanDrag(source)");
     expect(desktopCard).toContain(
-      "containsDrag && card.windowDropSourceIsEligible(drag.source, drag.keys)",
+      "readonly property bool validTarget: containsDrag && card.windowDropHoverOwned",
+    );
+    expect(desktopCard).toContain(
+      "card.windowDropHoverTarget !== null && card.windowDropHoverOwnershipIsValid()",
     );
     expect(liveDrop).toContain("windowCanDrag(source)");
     expect(desktopCard).toContain(
@@ -999,37 +1001,55 @@ describe("overview effect package", () => {
       "onPositionChanged: drag => drag.accepted = card.windowDropIsValid(drag.source, drag.keys)",
     );
     expect(desktopCard).toContain(
-      "if (!card.windowDropIsValid(source, drop.keys))",
+      "if (!card.windowDropIsValid(source, drop.keys) || !card.moveWindowDropHover(source, drop))",
     );
   });
 
-  it("moves one exact live window through a guarded desktop drop", () => {
+  it("submits one exact live window through a guarded spatial drop", () => {
     const delegate = scene.slice(
       scene.indexOf("DesktopCard {"),
       scene.indexOf("Rectangle {", scene.indexOf("DesktopCard {")),
     );
     const transaction = scene.slice(
-      scene.indexOf("function moveWindowToDesktop("),
-      scene.indexOf("function windowDesktopDropSceneIsExact("),
+      scene.indexOf("function submitWindowSpatialDrop("),
+      scene.indexOf("function canonicalSpatialDropTarget("),
+    );
+    const canonicalTarget = scene.slice(
+      scene.indexOf("function canonicalSpatialDropTarget("),
+      scene.indexOf("function spatialDropContextContainsWindow("),
+    );
+    const targetMembership = scene.slice(
+      scene.indexOf("function spatialDropContextContainsWindow("),
+      scene.indexOf("function windowSpatialDropSceneIsExact("),
     );
     const sceneGuard = scene.slice(
-      scene.indexOf("function windowDesktopDropSceneIsExact("),
+      scene.indexOf("function windowSpatialDropSceneIsExact("),
       scene.indexOf("function windowDesktopDropCandidateIsExact("),
     );
     const candidateGuard = scene.slice(
       scene.indexOf("function windowDesktopDropCandidateIsExact("),
       scene.indexOf("function orderedDesktopIds("),
     );
+    const workspaceRelation = desktopCard.slice(
+      desktopCard.indexOf("function windowDropSourceWorkspaceRelationIsExact("),
+      desktopCard.indexOf(
+        "function windowDropSourceTargetsDifferentWorkspace(",
+      ),
+    );
+    const dropValidation = desktopCard.slice(
+      desktopCard.indexOf("function windowDropIsValid("),
+      desktopCard.indexOf("function windowDropSourceIsEligible("),
+    );
 
     expect(desktopCard).toMatch(
-      /signal windowDropped\(var candidate, string expectedWindowId, var expectedSourceDesktop,\s*string expectedSourceDesktopId, var expectedTargetDesktop,\s*string expectedTargetDesktopId, var expectedScreen\)/u,
+      /signal windowDropped\(var candidate, string expectedWindowId, var expectedSourceDesktop,\s*string expectedSourceDesktopId, var expectedTargetDesktop,\s*string expectedTargetDesktopId, var expectedScreen, var exactTarget\)/u,
     );
     expect(desktopCard.match(/\bDragHandler\s*\{/gu)).toHaveLength(2);
     expect(desktopCard.match(/\bDropArea\s*\{/gu)).toHaveLength(1);
     expect(desktopCard.match(/\.Drag\.active = true;/gu)).toHaveLength(1);
     expect(desktopCard.match(/\.Drag\.active = false;/gu)).toHaveLength(3);
     expect(delegate).toMatch(
-      /onWindowDropped:\s*\(\s*candidate,\s*expectedWindowId,\s*expectedSourceDesktop,\s*expectedSourceDesktopId,\s*expectedTargetDesktop,\s*expectedTargetDesktopId,\s*expectedScreen\s*\)\s*=>\s*root\.moveWindowToDesktop\(\s*candidate,\s*expectedWindowId,\s*expectedSourceDesktop,\s*expectedSourceDesktopId,\s*expectedTargetDesktop,\s*expectedTargetDesktopId,\s*expectedScreen\s*\)/u,
+      /onWindowDropped:\s*\(\s*candidate,\s*expectedWindowId,\s*expectedSourceDesktop,\s*expectedSourceDesktopId,\s*expectedTargetDesktop,\s*expectedTargetDesktopId,\s*expectedScreen,\s*exactTarget\s*\)\s*=>\s*root\.submitWindowSpatialDrop\(\s*candidate,\s*expectedWindowId,\s*expectedSourceDesktop,\s*expectedSourceDesktopId,\s*expectedTargetDesktop,\s*expectedTargetDesktopId,\s*expectedScreen,\s*exactTarget\s*\)/u,
     );
 
     expect(transaction).toContain("const effect = sceneEffect;");
@@ -1047,34 +1067,78 @@ describe("overview effect package", () => {
       "liveDesktopFor(expectedTargetDesktop, expectedTargetDesktopId)",
     );
     expect(transaction).toContain(
-      'typeof runtime.planOverviewWindowDesktopDrop !== "function"',
+      "const target = canonicalSpatialDropTarget(exactTarget, expectedActivityId, expectedOutputId,",
     );
     expect(transaction).toContain(
-      "accepted = runtime.planOverviewWindowDesktopDrop(model, {",
+      "expectedTargetDesktopId, expectedWindowId);",
     );
+    expect(transaction).toContain(
+      'typeof effect.submitSpatialDropCommand !== "function"',
+    );
+    expect(transaction).toContain("effect.submitSpatialDropCommand({");
     for (const field of [
-      "sourceDesktopId: expectedSourceDesktopId",
-      "sourceOutputId: expectedOutputId",
-      "targetDesktopId: expectedTargetDesktopId",
-      "targetOutputId: expectedOutputId",
+      "activityId: expectedActivityId",
+      "desktopId: expectedSourceDesktopId",
+      "outputId: expectedOutputId",
       "windowId: expectedWindowId",
     ]) {
       expect(transaction).toContain(field);
     }
-    expect(transaction).toContain("}) === true;");
-    expect(transaction).toContain("catch (error)");
-    expect(transaction.match(/windowDesktopDropSceneIsExact\(/gu)).toHaveLength(
-      3,
+    expect(transaction).toContain("}, target);");
+    expect(transaction.match(/windowSpatialDropSceneIsExact\(/gu)).toHaveLength(
+      1,
     );
     expect(
       transaction.match(/windowDesktopDropCandidateIsExact\(/gu),
-    ).toHaveLength(3);
+    ).toHaveLength(1);
+    expect(transaction).not.toMatch(
+      /requestDesktopSelection\(|KWin\.Workspace\.activeWindow\s*=|effect\.deactivate\(/u,
+    );
 
-    expect(sceneGuard).toContain("liveSourceDesktop !== liveTargetDesktop");
-    expect(sceneGuard).toContain(
+    expect(sceneGuard).not.toContain("liveSourceDesktop !== liveTargetDesktop");
+    expect(sceneGuard).not.toContain(
       "expectedSourceDesktopId !== expectedTargetDesktopId",
     );
     expect(sceneGuard.match(/desktopContextIsExact\(/gu)).toHaveLength(2);
+    expect(workspaceRelation).toContain(
+      "const sameDesktop = source.sourceDesktop === desktop;",
+    );
+    expect(workspaceRelation).toContain(
+      "const sameDesktopId = source.sourceDesktopId === desktopId;",
+    );
+    expect(workspaceRelation).toContain(
+      "return sameDesktop === sameDesktopId;",
+    );
+    expect(dropValidation).toContain(
+      "windowDropSourceWorkspaceRelationIsExact(source)",
+    );
+    expect(dropValidation).not.toContain(
+      "windowDropSourceTargetsDifferentWorkspace(source)",
+    );
+
+    for (const guard of [
+      "!exactTarget",
+      "!Object.isFrozen(exactTarget)",
+      "exactTarget.rowIndex !== 0",
+      "exactTarget.activityId !== expectedActivityId",
+      "exactTarget.outputId !== expectedOutputId",
+      "exactTarget.desktopId !== expectedTargetDesktopId",
+      'exactTarget.kind === "empty-row"',
+      "const exactEmptyContext = targetContext === null",
+      "Array.isArray(targetContext.columns)",
+      "targetContext.columns.length === 0",
+      'exactTarget.kind !== "column-boundary"',
+      'exactTarget.kind !== "stack-insertion"',
+      'exactTarget.position !== "before"',
+      'exactTarget.position !== "after"',
+      'typeof exactTarget.targetWindowId !== "string"',
+      'exactTarget.kind === "stack-insertion"',
+      "exactTarget.targetWindowId === expectedSourceWindowId",
+      "spatialDropContextContainsWindow(targetContext, exactTarget.targetWindowId)",
+    ]) {
+      expect(canonicalTarget).toContain(guard);
+    }
+    expect(targetMembership).toContain("return matches === 1;");
     for (const guard of [
       "candidate.deleted",
       "candidate.minimized",
@@ -1098,43 +1162,19 @@ describe("overview effect package", () => {
       expect(candidateGuard).toContain(guard);
     }
 
-    expect(
-      transaction.match(/candidate\.desktops\s*=\s*\[liveTargetDesktop\]/gu),
-    ).toHaveLength(1);
-    expect(transaction).toContain(
-      "windowUsesDesktop(candidate, liveSourceDesktop, expectedSourceDesktopId)",
+    const canonicalization = transaction.indexOf(
+      "const target = canonicalSpatialDropTarget(",
     );
-    expect(transaction.match(/effect\.deactivate\(\)/gu)).toHaveLength(1);
-
     const initialValidation = transaction.indexOf(
-      "if (!windowDesktopDropSceneIsExact(",
+      "if (!windowSpatialDropSceneIsExact(",
     );
-    const planner = transaction.indexOf(
-      "accepted = runtime.planOverviewWindowDesktopDrop(",
-    );
-    const preWriteValidation = transaction.indexOf("if (!accepted", planner);
-    const desktopWrite = transaction.indexOf(
-      "candidate.desktops = [liveTargetDesktop]",
-    );
-    const confirmation = transaction.indexOf(
-      "if (!windowDesktopDropSceneIsExact(",
-      desktopWrite,
-    );
-    const sourceGone = transaction.indexOf(
-      "windowUsesDesktop(candidate, liveSourceDesktop, expectedSourceDesktopId)",
-      desktopWrite,
-    );
-    const deactivate = transaction.indexOf("effect.deactivate()");
-    expect(initialValidation).toBeGreaterThan(0);
-    expect(planner).toBeGreaterThan(initialValidation);
-    expect(preWriteValidation).toBeGreaterThan(planner);
-    expect(desktopWrite).toBeGreaterThan(preWriteValidation);
-    expect(confirmation).toBeGreaterThan(desktopWrite);
-    expect(sourceGone).toBeGreaterThan(confirmation);
-    expect(deactivate).toBeGreaterThan(sourceGone);
+    const submit = transaction.indexOf("effect.submitSpatialDropCommand({");
+    expect(canonicalization).toBeGreaterThan(0);
+    expect(initialValidation).toBeGreaterThan(canonicalization);
+    expect(submit).toBeGreaterThan(initialValidation);
 
     expect(transaction).not.toMatch(
-      /KWin\.(?:SceneView|Workspace)\.[A-Za-z0-9_]+\s*=(?!=)|candidate\.(?:output|geometry|frameGeometry)\s*=(?!=)|org\.kde\.kwin\.private|\bTimer\s*\{|setTimeout|\.setValue\s*\(/u,
+      /candidate\.(?:desktops|output|geometry|frameGeometry)\s*=(?!=)|effect\.deactivate\(|org\.kde\.kwin\.private|\bTimer\s*\{|setTimeout|\.setValue\s*\(/u,
     );
   });
 

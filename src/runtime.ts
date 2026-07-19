@@ -1,5 +1,6 @@
 import type { Rect } from "./core/geometry";
 import type { ColumnWidth } from "./core/layout-engine";
+import { decodeSpatialDropCommand } from "./overview/spatial-drop-command";
 import type { KWinWorkspace } from "./platform/kwin/api";
 import type { KWinRectFactory } from "./platform/kwin/geometry-adapter";
 import { RuntimeController } from "./runtime-controller";
@@ -16,6 +17,18 @@ import {
 const STARTUP_STABILIZATION_PROBES = 20;
 const LAYOUT_HYDRATION_RETRY_PROBES = 100;
 const LAYOUT_HYDRATION_QUIET_SAMPLES = 2;
+export const OVERVIEW_SPATIAL_DROP_COMMAND_TTL_MILLISECONDS = 5_000;
+
+const MAXIMUM_SPATIAL_DROP_REQUEST_ID = Number.MAX_SAFE_INTEGER;
+const MAXIMUM_UNAMBIGUOUS_SPATIAL_DROP_REQUEST_DISTANCE = Math.floor(
+  MAXIMUM_SPATIAL_DROP_REQUEST_ID / 2,
+);
+
+export interface OverviewSpatialDropApplicationResult {
+  readonly applied: boolean;
+  readonly consumed: true;
+  readonly requestId: number;
+}
 
 let controller: RuntimeController | undefined;
 let appliedSettings: DriftileSettings | undefined;
@@ -340,6 +353,70 @@ function runCommand(
 
   activeController.requestLayoutStatePublication();
   activeController.flushLayoutStatePublication();
+}
+
+export function applyOverviewSpatialDrop(
+  document: unknown,
+  observedAt: unknown,
+  lastConsumedRequestId: unknown,
+): Readonly<OverviewSpatialDropApplicationResult> | null {
+  const command = decodeSpatialDropCommand(document);
+
+  if (
+    command === null ||
+    !isNonNegativeSafeInteger(observedAt) ||
+    !isNonNegativeSafeInteger(lastConsumedRequestId) ||
+    command.createdAt > observedAt ||
+    observedAt - command.createdAt >
+      OVERVIEW_SPATIAL_DROP_COMMAND_TTL_MILLISECONDS ||
+    !isNewerSpatialDropRequestId(command.requestId, lastConsumedRequestId)
+  ) {
+    return null;
+  }
+
+  const activeController = controller;
+  const applied = activeController?.executeSpatialDrop(command) === true;
+
+  if (applied) {
+    activeController.flushLayoutStatePublication();
+  }
+
+  return Object.freeze({
+    applied,
+    consumed: true as const,
+    requestId: command.requestId,
+  });
+}
+
+function isNewerSpatialDropRequestId(
+  requestId: number,
+  lastConsumedRequestId: number,
+): boolean {
+  if (lastConsumedRequestId === 0) {
+    return true;
+  }
+
+  if (requestId === lastConsumedRequestId) {
+    return false;
+  }
+
+  const forwardDistance =
+    requestId > lastConsumedRequestId
+      ? requestId - lastConsumedRequestId
+      : MAXIMUM_SPATIAL_DROP_REQUEST_ID - lastConsumedRequestId + requestId;
+  return (
+    forwardDistance > 0 &&
+    forwardDistance <= MAXIMUM_UNAMBIGUOUS_SPATIAL_DROP_REQUEST_DISTANCE
+  );
+}
+
+function isNonNegativeSafeInteger(value: unknown): value is number {
+  return (
+    typeof value === "number" &&
+    Number.isSafeInteger(value) &&
+    value >= 0 &&
+    !Object.is(value, -0)
+  );
 }
 
 export function focusLeft(): void {

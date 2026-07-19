@@ -811,6 +811,7 @@ Rectangle {
                         keyboardSelectionId: root.keyboardSelectionId
                         liveGeometryEnabled: current && !root.spatialLiveGeometryIsManuallyDetached(
                                                  root.outputId, desktopCardLoader.modelData)
+                        outputId: root.outputId
                         outputName: root.outputName
                         presentationProgress: root.spatialPresentationProgress
                         previewViewportOffset: root.spatialPresentationViewportOffsetAt(
@@ -856,12 +857,13 @@ Rectangle {
                                                                                       expectedScreen)
                         onWindowDropped: (candidate, expectedWindowId, expectedSourceDesktop,
                                           expectedSourceDesktopId, expectedTargetDesktop,
-                                          expectedTargetDesktopId, expectedScreen) =>
-                                             root.moveWindowToDesktop(candidate, expectedWindowId,
-                                                                      expectedSourceDesktop,
-                                                                      expectedSourceDesktopId,
-                                                                      expectedTargetDesktop,
-                                                                      expectedTargetDesktopId, expectedScreen)
+                                          expectedTargetDesktopId, expectedScreen, exactTarget) =>
+                                             root.submitWindowSpatialDrop(candidate, expectedWindowId,
+                                                                          expectedSourceDesktop,
+                                                                          expectedSourceDesktopId,
+                                                                          expectedTargetDesktop,
+                                                                          expectedTargetDesktopId,
+                                                                          expectedScreen, exactTarget)
                         onWindowSpatialDragStarted: (source, sceneX, sceneY) =>
                                                         root.beginWindowSpatialEdgePan(
                                                             source, desktopCardLoader.modelData, sceneX, sceneY)
@@ -6092,8 +6094,9 @@ Rectangle {
         return matches === 1;
     }
 
-    function moveWindowToDesktop(candidate, expectedWindowId, expectedSourceDesktop, expectedSourceDesktopId,
-                                 expectedTargetDesktop, expectedTargetDesktopId, expectedScreen) {
+    function submitWindowSpatialDrop(candidate, expectedWindowId, expectedSourceDesktop,
+                                     expectedSourceDesktopId, expectedTargetDesktop,
+                                     expectedTargetDesktopId, expectedScreen, exactTarget) {
         const effect = sceneEffect;
         const model = overviewModel;
         const liveScreen = liveScreenFor(expectedScreen);
@@ -6104,62 +6107,102 @@ Rectangle {
         const currentActivity = KWin.Workspace.currentActivity;
         const expectedActivityId = currentActivity === undefined || currentActivity === null ? ""
                                                                                               : String(currentActivity);
-        if (!windowDesktopDropSceneIsExact(effect, model, liveScreen, expectedOutput, expectedOutputId,
+        const target = canonicalSpatialDropTarget(exactTarget, expectedActivityId, expectedOutputId,
+                                                  expectedTargetDesktopId, expectedWindowId);
+        if (!windowSpatialDropSceneIsExact(effect, model, liveScreen, expectedOutput, expectedOutputId,
                                            liveSourceDesktop, expectedSourceDesktopId, liveTargetDesktop,
-                                           expectedTargetDesktopId)
+                                           expectedTargetDesktopId) || !target
                 || !windowDesktopDropCandidateIsExact(candidate, expectedWindowId, liveScreen, liveSourceDesktop,
-                                                       expectedSourceDesktopId, expectedActivityId)) {
+                                                       expectedSourceDesktopId, expectedActivityId)
+                || typeof effect.submitSpatialDropCommand !== "function") {
             return;
         }
 
-        const runtime = OverviewRuntime.DriftileOverview;
-        if (!runtime || typeof runtime.planOverviewWindowDesktopDrop !== "function") {
-            return;
-        }
-
-        let accepted = false;
-        try {
-            accepted = runtime.planOverviewWindowDesktopDrop(model, {
-                                                                 sourceDesktopId: expectedSourceDesktopId,
-                                                                 sourceOutputId: expectedOutputId,
-                                                                 targetDesktopId: expectedTargetDesktopId,
-                                                                 targetOutputId: expectedOutputId,
-                                                                 windowId: expectedWindowId
-                                                             }) === true;
-        } catch (error) {
-            return;
-        }
-        if (!accepted || !windowDesktopDropSceneIsExact(effect, model, liveScreen, expectedOutput, expectedOutputId,
-                                                        liveSourceDesktop, expectedSourceDesktopId, liveTargetDesktop,
-                                                        expectedTargetDesktopId)
-                || !windowDesktopDropCandidateIsExact(candidate, expectedWindowId, liveScreen, liveSourceDesktop,
-                                                       expectedSourceDesktopId, expectedActivityId)) {
-            return;
-        }
-
-        try {
-            candidate.desktops = [liveTargetDesktop];
-        } catch (error) {
-            return;
-        }
-
-        if (!windowDesktopDropSceneIsExact(effect, model, liveScreen, expectedOutput, expectedOutputId,
-                                           liveSourceDesktop, expectedSourceDesktopId, liveTargetDesktop,
-                                           expectedTargetDesktopId)
-                || !windowDesktopDropCandidateIsExact(candidate, expectedWindowId, liveScreen, liveTargetDesktop,
-                                                       expectedTargetDesktopId, expectedActivityId)
-                || windowUsesDesktop(candidate, liveSourceDesktop, expectedSourceDesktopId)) {
-            return;
-        }
-        effect.deactivate();
+        effect.submitSpatialDropCommand({
+                                            activityId: expectedActivityId,
+                                            desktopId: expectedSourceDesktopId,
+                                            outputId: expectedOutputId,
+                                            windowId: expectedWindowId
+                                        }, target);
     }
 
-    function windowDesktopDropSceneIsExact(effect, model, liveScreen, expectedOutput, expectedOutputId,
+    function canonicalSpatialDropTarget(exactTarget, expectedActivityId, expectedOutputId,
+                                        expectedTargetDesktopId, expectedSourceWindowId) {
+        try {
+            if (!exactTarget || !Object.isFrozen(exactTarget) || exactTarget.rowIndex !== 0
+                    || exactTarget.activityId !== expectedActivityId
+                    || exactTarget.outputId !== expectedOutputId
+                    || exactTarget.desktopId !== expectedTargetDesktopId) {
+                return null;
+            }
+
+            const targetContext = contextFor(expectedTargetDesktopId);
+            if (exactTarget.kind === "empty-row") {
+                const exactEmptyContext = targetContext === null
+                    || (targetContext && Array.isArray(targetContext.columns)
+                        && targetContext.columns.length === 0);
+                return exactEmptyContext
+                    ? {
+                          activityId: expectedActivityId,
+                          desktopId: expectedTargetDesktopId,
+                          kind: "empty-row",
+                          outputId: expectedOutputId
+                      }
+                    : null;
+            }
+
+            if ((exactTarget.kind !== "column-boundary" && exactTarget.kind !== "stack-insertion")
+                    || (exactTarget.position !== "before" && exactTarget.position !== "after")
+                    || typeof exactTarget.targetWindowId !== "string"
+                    || exactTarget.targetWindowId.length === 0 || !targetContext
+                    || (exactTarget.kind === "stack-insertion"
+                        && exactTarget.targetWindowId === expectedSourceWindowId)
+                    || !spatialDropContextContainsWindow(targetContext, exactTarget.targetWindowId)) {
+                return null;
+            }
+
+            return {
+                activityId: expectedActivityId,
+                desktopId: expectedTargetDesktopId,
+                kind: exactTarget.kind,
+                outputId: expectedOutputId,
+                position: exactTarget.position,
+                targetWindowId: exactTarget.targetWindowId
+            };
+        } catch (error) {
+            return null;
+        }
+    }
+
+    function spatialDropContextContainsWindow(targetContext, expectedWindowId) {
+        if (!targetContext || !targetContext.columns || !Number.isInteger(targetContext.columns.length)
+                || targetContext.columns.length < 1 || targetContext.columns.length > 512) {
+            return false;
+        }
+
+        let matches = 0;
+        for (const column of targetContext.columns) {
+            if (!column || !column.members || !Number.isInteger(column.members.length)
+                    || column.members.length < 1 || column.members.length > 256) {
+                return false;
+            }
+            for (const member of column.members) {
+                if (!member || typeof member.windowId !== "string" || member.windowId.length === 0) {
+                    return false;
+                }
+                if (member.windowId === expectedWindowId) {
+                    matches += 1;
+                }
+            }
+        }
+        return matches === 1;
+    }
+
+    function windowSpatialDropSceneIsExact(effect, model, liveScreen, expectedOutput, expectedOutputId,
                                            liveSourceDesktop, expectedSourceDesktopId, liveTargetDesktop,
                                            expectedTargetDesktopId) {
-        return liveSourceDesktop !== liveTargetDesktop && expectedSourceDesktopId !== expectedTargetDesktopId
-                && desktopContextIsExact(effect, model, liveScreen, expectedOutput, expectedOutputId,
-                                         liveSourceDesktop, expectedSourceDesktopId)
+        return desktopContextIsExact(effect, model, liveScreen, expectedOutput, expectedOutputId,
+                                     liveSourceDesktop, expectedSourceDesktopId)
                 && desktopContextIsExact(effect, model, liveScreen, expectedOutput, expectedOutputId,
                                          liveTargetDesktop, expectedTargetDesktopId);
     }

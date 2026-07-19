@@ -27,6 +27,8 @@ QtObject {
         location: StandardPaths.writableLocation(StandardPaths.GenericConfigLocation) + "/driftile-layout-state.ini"
     }
 
+    readonly property OverviewSpatialDropReceiver overviewSpatialDropReceiver: OverviewSpatialDropReceiver {}
+
     readonly property DBusCall tabIndicatorCall: DBusCall {
         service: "org.kde.plasmashell"
         path: "/org/kde/osdService"
