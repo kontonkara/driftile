@@ -910,11 +910,55 @@ Item {
 
         readonly property bool validTarget: containsDrag && card.windowDropHoverOwned
             && card.windowDropHoverTarget !== null && card.windowDropHoverOwnershipIsValid()
+        readonly property var spatialPreview: validTarget
+            ? card.planWindowDropPreview(card.windowDropHoverTarget, card.windowDropHoverSnapshot) : null
 
         anchors.fill: parent
         enabled: card.enabled && card.searchQuery.trim().length === 0
         keys: ["driftile-window"]
         z: 10000
+
+        Rectangle {
+            id: spatialWindowDropPreviewSurface
+
+            readonly property var plan: windowDropArea.spatialPreview
+
+            x: plan ? plan.surface.x : 0
+            y: plan ? plan.surface.y : 0
+            width: plan ? plan.surface.width : 0
+            height: plan ? plan.surface.height : 0
+            visible: plan !== null
+            enabled: false
+            color: !plan ? "transparent"
+                         : plan.kind === "empty-row" ? "#4d86aee8"
+                         : plan.kind === "stack-insertion" ? "#3dffd166" : "#3386aee8"
+            border.width: plan && plan.kind === "empty-row" ? 2 : 1
+            border.color: !plan ? "transparent"
+                               : plan.kind === "stack-insertion" ? "#d9ffd166" : "#d986aee8"
+            radius: 3
+            opacity: card.presentationProgress
+            antialiasing: false
+            z: 1
+        }
+
+        Rectangle {
+            id: spatialWindowDropPreviewMarker
+
+            readonly property var plan: windowDropArea.spatialPreview
+            readonly property var marker: plan ? plan.marker : null
+
+            x: marker ? marker.x : 0
+            y: marker ? marker.y : 0
+            width: marker ? marker.width : 0
+            height: marker ? marker.height : 0
+            visible: marker !== null
+            enabled: false
+            color: plan && plan.kind === "stack-insertion" ? "#fff0b35f" : "#ff9fc5ff"
+            radius: 2
+            opacity: card.presentationProgress
+            antialiasing: false
+            z: 2
+        }
 
         onEntered: drag => drag.accepted = card.windowDropIsValid(drag.source, drag.keys)
             ? card.claimWindowDropHover(drag.source, drag)
@@ -1553,6 +1597,7 @@ Item {
             };
             const plannerColumns = [];
             const knownWindowIds = Object.create(null);
+            const previewFrames = Object.create(null);
             const targetWindowIds = Object.create(null);
             for (let columnIndex = 0; columnIndex < expectedColumns.length; columnIndex += 1) {
                 const column = expectedColumns[columnIndex];
@@ -1588,6 +1633,8 @@ Item {
                     x: projectedX,
                     y: 0
                 });
+                const previewColumnFrame = visibleColumnFrame
+                    ? Object.freeze(plainRect(visibleColumnFrame)) : null;
                 const plannerMembers = [];
                 for (let memberIndex = 0; memberIndex < members.length; memberIndex += 1) {
                     const member = members[memberIndex];
@@ -1627,9 +1674,14 @@ Item {
                     if (!visibleMemberFrame) {
                         continue;
                     }
+                    const previewMemberFrame = Object.freeze(plainRect(visibleMemberFrame));
                     plannerMembers.push({
-                        frame: plainRect(visibleMemberFrame),
+                        frame: previewMemberFrame,
                         windowId
+                    });
+                    previewFrames[windowId] = Object.freeze({
+                        columnFrame: previewColumnFrame,
+                        memberFrame: previewMemberFrame
                     });
                     targetWindowIds[windowId] = true;
                 }
@@ -1641,7 +1693,7 @@ Item {
                     return null;
                 }
                 plannerColumns.push({
-                    frame: plainRect(visibleColumnFrame),
+                    frame: previewColumnFrame,
                     members: plannerMembers
                 });
             }
@@ -1678,6 +1730,7 @@ Item {
                 return null;
             }
 
+            Object.freeze(previewFrames);
             Object.freeze(targetWindowIds);
             return Object.freeze({
                 activityId,
@@ -1692,6 +1745,7 @@ Item {
                 liveColumnFrames: expectedLiveColumnFrames,
                 outputId: expectedOutputId,
                 plan,
+                previewFrames,
                 rowGeometryPlan: expectedRowGeometryPlan,
                 screen: expectedScreen,
                 targetWindowIds,
@@ -1705,7 +1759,8 @@ Item {
     function windowDropPlannerSnapshotIsExact(snapshot) {
         try {
             return snapshot && Object.isFrozen(snapshot) && Object.isFrozen(snapshot.plan)
-                    && Object.isFrozen(snapshot.targetWindowIds) && windowDropTargetIsExact()
+                    && Object.isFrozen(snapshot.previewFrames) && Object.isFrozen(snapshot.targetWindowIds)
+                    && windowDropTargetIsExact()
                     && snapshot.context === context && snapshot.columns === columns
                     && (snapshot.context === null
                         ? snapshot.contextColumnCount === 0
@@ -1767,6 +1822,91 @@ Item {
         } catch (error) {
             return false;
         }
+    }
+
+    function planWindowDropPreview(target, snapshot) {
+        try {
+            if (!windowDropPlannerTargetIsExact(target, snapshot)
+                    || !snapshot.previewFrames || !Object.isFrozen(snapshot.previewFrames)) {
+                return null;
+            }
+
+            if (target.kind === "empty-row") {
+                const minimumExtent = Math.min(snapshot.cardWidth, snapshot.cardHeight);
+                const inset = Math.max(0, Math.min(10, Math.floor((minimumExtent - 1) / 4)));
+                const surface = Object.freeze({
+                    height: snapshot.cardHeight - inset * 2,
+                    width: snapshot.cardWidth - inset * 2,
+                    x: inset,
+                    y: inset
+                });
+                return windowDropPreviewFrameIsBounded(surface, snapshot)
+                    ? Object.freeze({ kind: target.kind, marker: null, surface }) : null;
+            }
+
+            const frames = snapshot.previewFrames[target.targetWindowId];
+            if (!frames || !Object.isFrozen(frames) || !Object.isFrozen(frames.columnFrame)
+                    || !Object.isFrozen(frames.memberFrame)
+                    || !windowDropPreviewFrameIsBounded(frames.columnFrame, snapshot)
+                    || !windowDropPreviewFrameIsBounded(frames.memberFrame, snapshot)) {
+                return null;
+            }
+
+            if (target.kind === "stack-insertion") {
+                const frame = frames.memberFrame;
+                const thickness = Math.max(2, Math.min(6, frame.width, frame.height));
+                const halfHeight = frame.height / 2;
+                const surface = Object.freeze({
+                    height: halfHeight,
+                    width: frame.width,
+                    x: frame.x,
+                    y: target.position === "before" ? frame.y : frame.y + halfHeight
+                });
+                const marker = Object.freeze({
+                    height: thickness,
+                    width: frame.width,
+                    x: frame.x,
+                    y: target.position === "before" ? frame.y : frame.y + frame.height - thickness
+                });
+                return windowDropPreviewFrameIsBounded(surface, snapshot)
+                        && windowDropPreviewFrameIsBounded(marker, snapshot)
+                    ? Object.freeze({ kind: target.kind, marker, surface }) : null;
+            }
+
+            if (target.kind !== "column-boundary") {
+                return null;
+            }
+
+            const frame = frames.columnFrame;
+            const thickness = Math.max(2, Math.min(6, frame.width, frame.height));
+            const surfaceWidth = Math.max(thickness, Math.min(28, frame.width / 4));
+            const surface = Object.freeze({
+                height: frame.height,
+                width: surfaceWidth,
+                x: target.position === "before" ? frame.x : frame.x + frame.width - surfaceWidth,
+                y: frame.y
+            });
+            const marker = Object.freeze({
+                height: frame.height,
+                width: thickness,
+                x: target.position === "before" ? frame.x : frame.x + frame.width - thickness,
+                y: frame.y
+            });
+            return windowDropPreviewFrameIsBounded(surface, snapshot)
+                    && windowDropPreviewFrameIsBounded(marker, snapshot)
+                ? Object.freeze({ kind: target.kind, marker, surface }) : null;
+        } catch (error) {
+            return null;
+        }
+    }
+
+    function windowDropPreviewFrameIsBounded(frame, snapshot) {
+        return frame && snapshot
+                && Number.isFinite(frame.x) && Number.isFinite(frame.y)
+                && Number.isFinite(frame.width) && Number.isFinite(frame.height)
+                && frame.x >= 0 && frame.y >= 0 && frame.width > 0 && frame.height > 0
+                && frame.x + frame.width <= snapshot.cardWidth
+                && frame.y + frame.height <= snapshot.cardHeight;
     }
 
     function windowDropTargetIsExact() {

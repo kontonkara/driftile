@@ -181,8 +181,8 @@ describe("spatial overview window drag lifecycle", () => {
     expect(dropPlanner).toContain("desktopId: expectedDesktopId");
     expect(dropPlanner).toContain("outputId: expectedOutputId");
     expect(dropPlanner).toContain("frame: rowFrame");
-    expect(dropPlanner).toContain("frame: plainRect(visibleColumnFrame)");
-    expect(dropPlanner).toContain("frame: plainRect(visibleMemberFrame)");
+    expect(dropPlanner).toContain("frame: previewColumnFrame");
+    expect(dropPlanner).toContain("frame: previewMemberFrame");
     expect(dropPlanner).toContain("windowId");
     expect(dropPlanner).toContain("context !== expectedContext");
     expect(dropPlanner).toContain("columnFrames !== expectedColumnFrames");
@@ -218,6 +218,40 @@ describe("spatial overview window drag lifecycle", () => {
     );
     expect(dropArea).toContain(
       "card.desktop, card.desktopId, card.screen, exactTarget);",
+    );
+  });
+
+  it("renders a bounded preview from the cached exact drop target", () => {
+    expect(dropArea).toContain(
+      "readonly property var spatialPreview: validTarget",
+    );
+    expect(dropArea).toContain(
+      "card.planWindowDropPreview(card.windowDropHoverTarget, card.windowDropHoverSnapshot)",
+    );
+    expect(dropArea).toContain("id: spatialWindowDropPreviewSurface");
+    expect(dropArea).toContain("id: spatialWindowDropPreviewMarker");
+    expect(dropArea).toContain('plan.kind === "empty-row"');
+    expect(dropArea).toContain('plan.kind === "stack-insertion"');
+    expect(dropPlanner).toContain("const previewFrames = Object.create(null)");
+    expect(dropPlanner).toContain("Object.freeze(previewFrames)");
+    expect(dropPlanner).toContain("previewFrames,");
+    expect(dropPlanner).toContain(
+      "function planWindowDropPreview(target, snapshot)",
+    );
+    expect(dropPlanner).toContain(
+      "windowDropPlannerTargetIsExact(target, snapshot)",
+    );
+    expect(dropPlanner).toContain(
+      "function windowDropPreviewFrameIsBounded(frame, snapshot)",
+    );
+    expect(dropPlanner).toContain(
+      "frame.x + frame.width <= snapshot.cardWidth",
+    );
+    expect(dropPlanner).toContain(
+      "frame.y + frame.height <= snapshot.cardHeight",
+    );
+    expect(`${dropArea}\n${dropPlanner}`).not.toMatch(
+      /\b(?:Behavior|NumberAnimation|Timer)\b|\.setValue\s*\(/u,
     );
   });
 
