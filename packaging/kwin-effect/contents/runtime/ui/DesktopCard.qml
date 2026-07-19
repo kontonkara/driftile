@@ -254,7 +254,8 @@ Rectangle {
                 required property var modelData
                 required property int index
 
-                readonly property var frame: card.columnShellFrame(index)
+                readonly property var liveGeometryPlan: card.spatialLiveColumnPlan(index)
+                readonly property var frame: card.columnShellFrame(index, liveGeometryPlan)
 
                 x: frame.x
                 y: 0
@@ -273,7 +274,8 @@ Rectangle {
 
                         readonly property var memberPresentation:
                             card.tiledPresentations[columnShell.modelData.members[index].windowId]
-                        readonly property var memberFrame: memberPresentation ? memberPresentation.thumbnailFrame : null
+                        readonly property var memberFrame:
+                            card.columnMemberGuideFrame(columnShell.liveGeometryPlan, index, memberPresentation)
 
                         anchors.left: parent.left
                         anchors.right: parent.right
@@ -2164,11 +2166,20 @@ Rectangle {
         return frame;
     }
 
-    function columnShellFrame(columnIndex) {
+    function spatialLiveColumnPlan(columnIndex) {
         const liveFrames = spatialLiveColumnFrames;
         const liveFrame = liveFrames && Number.isInteger(columnIndex)
             && columnIndex >= 0 && columnIndex < liveFrames.length ? liveFrames[columnIndex] : null;
-        return spatialLiveColumnPlanIsExact(liveFrame, columnIndex) ? liveFrame : columnFrame(columnIndex);
+        return spatialLiveColumnPlanIsExact(liveFrame, columnIndex) ? liveFrame : null;
+    }
+
+    function columnShellFrame(columnIndex, livePlan) {
+        return livePlan !== null ? livePlan : columnFrame(columnIndex);
+    }
+
+    function columnMemberGuideFrame(livePlan, memberIndex, plannedPresentation) {
+        return livePlan !== null ? livePlan.memberFrames[memberIndex]
+                                 : plannedPresentation ? plannedPresentation.thumbnailFrame : null;
     }
 
     function buildSpatialLiveColumnFrames(revision) {
@@ -2258,16 +2269,44 @@ Rectangle {
                     || windowRepeater.count !== windowCount || spatialLiveGeometryRevision !== revision) {
                 return null;
             }
-            return frames;
+            return Object.freeze(frames);
         } catch (error) {
             return null;
         }
     }
 
     function spatialLiveColumnPlanIsExact(plan, columnIndex) {
-        return plan && !Array.isArray(plan) && plan.columnIndex === columnIndex
-            && Number.isFinite(plan.x) && Number.isFinite(plan.width) && plan.width > 0
-            && Number.isFinite(plan.x + plan.width);
+        try {
+            if (!plan || Array.isArray(plan) || !Number.isInteger(columnIndex)
+                    || columnIndex < 0 || columnIndex >= columns.length || plan.columnIndex !== columnIndex
+                    || !Number.isFinite(plan.x) || !Number.isFinite(plan.width) || plan.width <= 0
+                    || !Number.isFinite(plan.x + plan.width) || !Array.isArray(plan.memberFrames)) {
+                return false;
+            }
+
+            const column = columns[columnIndex];
+            const members = column ? column.members : null;
+            if (!column || column.presentation === "tabbed" || !members
+                    || !Number.isInteger(members.length) || members.length < 1 || members.length > 256
+                    || plan.memberFrames.length !== members.length) {
+                return false;
+            }
+
+            for (let memberIndex = 0; memberIndex < members.length; memberIndex += 1) {
+                const member = members[memberIndex];
+                const frame = plan.memberFrames[memberIndex];
+                if (!member || !frame || Array.isArray(frame) || frame.windowId !== member.windowId
+                        || frame.columnIndex !== columnIndex || frame.memberIndex !== memberIndex
+                        || frame.floating !== false || frame.x !== plan.x || frame.width !== plan.width
+                        || !projectionGeometryScalarsAreValid(frame.x, frame.y, frame.width, frame.height)) {
+                    return false;
+                }
+            }
+
+            return true;
+        } catch (error) {
+            return false;
+        }
     }
 
     function widthForColumn(width) {

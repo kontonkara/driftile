@@ -158,11 +158,26 @@ describe("aggregateOverviewSpatialLiveColumnGeometry", () => {
       samples,
     });
 
-    expect(result).toEqual({ columnIndex: 1, width: 350, x: 10 });
+    expect(result).toEqual({
+      columnIndex: 1,
+      memberFrames: [
+        project({ memberIndex: 0, windowId: "window-1" }),
+        project({ memberIndex: 1, windowId: "window-2" }),
+      ],
+      width: 350,
+      x: 10,
+    });
     expect(Object.isFrozen(result)).toBe(true);
+    expect(Object.isFrozen(result?.memberFrames)).toBe(true);
     expect(
-      Object.values(result ?? {}).every((value) => typeof value !== "object"),
+      result?.memberFrames.every(
+        (frame) =>
+          Object.isFrozen(frame) &&
+          Object.values(frame).every((value) => typeof value !== "object"),
+      ),
     ).toBe(true);
+    expect(result?.memberFrames[0]).not.toBe(samples[1]);
+    expect(result?.memberFrames[1]).not.toBe(samples[0]);
   });
 
   it.each([
@@ -226,7 +241,12 @@ describe("aggregateOverviewSpatialLiveColumnGeometry", () => {
         memberCount: 1,
         samples: [changing],
       }),
-    ).toEqual({ columnIndex: 1, width: 350, x: 10 });
+    ).toEqual({
+      columnIndex: 1,
+      memberFrames: [project()],
+      width: 350,
+      x: 10,
+    });
     expect(memberIndexReads).toBe(1);
   });
 });

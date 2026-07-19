@@ -2760,6 +2760,18 @@ describe("overview effect package", () => {
       desktopCard.indexOf("function buildSpatialLiveColumnFrames("),
       desktopCard.indexOf("function spatialLiveColumnPlanIsExact("),
     );
+    const liveColumnPlan = desktopCard.slice(
+      desktopCard.indexOf("function spatialLiveColumnPlan("),
+      desktopCard.indexOf("function buildSpatialLiveColumnFrames("),
+    );
+    const liveColumnValidation = desktopCard.slice(
+      desktopCard.indexOf("function spatialLiveColumnPlanIsExact("),
+      desktopCard.indexOf("function widthForColumn("),
+    );
+    const columnGuides = desktopCard.slice(
+      desktopCard.indexOf("id: columnShell"),
+      desktopCard.indexOf("id: emptyContentInput"),
+    );
 
     expect(scene).toContain("property real overviewWheelPixelRemainder: 0");
     expect(scene).toContain("property int overviewWheelRemainder: 0");
@@ -2926,10 +2938,19 @@ describe("overview effect package", () => {
       "property int spatialLiveGeometryRevision: 0",
     );
     expect(desktopCard).toMatch(
-      /readonly property var frame: card\.columnShellFrame\(index\)[\s\S]*x: frame\.x[\s\S]*width: frame\.width/u,
+      /readonly property var liveGeometryPlan: card\.spatialLiveColumnPlan\(index\)[\s\S]*readonly property var frame: card\.columnShellFrame\(index, liveGeometryPlan\)[\s\S]*x: frame\.x[\s\S]*width: frame\.width/u,
     );
-    expect(desktopCard).toMatch(
-      /function columnShellFrame\(columnIndex\)[\s\S]*spatialLiveColumnPlanIsExact\(liveFrame, columnIndex\) \? liveFrame : columnFrame\(columnIndex\)/u,
+    expect(liveColumnPlan).toMatch(
+      /function spatialLiveColumnPlan\(columnIndex\)[\s\S]*spatialLiveColumnPlanIsExact\(liveFrame, columnIndex\) \? liveFrame : null[\s\S]*function columnShellFrame\(columnIndex, livePlan\)[\s\S]*livePlan !== null \? livePlan : columnFrame\(columnIndex\)/u,
+    );
+    expect(columnGuides).toMatch(
+      /columnMemberGuideFrame\(columnShell\.liveGeometryPlan, index, memberPresentation\)[\s\S]*y: memberFrame \? memberFrame\.y : 0[\s\S]*height: memberFrame \? memberFrame\.height : 0/u,
+    );
+    expect(columnGuides).not.toContain(
+      "memberPresentation ? memberPresentation.thumbnailFrame : null",
+    );
+    expect(liveColumnPlan).toMatch(
+      /function columnMemberGuideFrame\(livePlan, memberIndex, plannedPresentation\)[\s\S]*livePlan\.memberFrames\[memberIndex\][\s\S]*plannedPresentation\.thumbnailFrame/u,
     );
     expect(liveColumnFrames).toMatch(
       /!liveGeometryEnabled \|\| !current[\s\S]*context\.columns\.length > 512[\s\S]*windowRepeater\.count > 131072/u,
@@ -2945,6 +2966,10 @@ describe("overview effect package", () => {
     );
     expect(liveColumnFrames).toMatch(
       /column\.presentation === "tabbed"[\s\S]*frames\.push\(null\);[\s\S]*spatialLiveColumnPlanIsExact\(plan, columnIndex\) \? plan : null/u,
+    );
+    expect(liveColumnFrames).toContain("return Object.freeze(frames);");
+    expect(liveColumnValidation).toMatch(
+      /column\.presentation === "tabbed"[\s\S]*plan\.memberFrames\.length !== members\.length[\s\S]*for \(let memberIndex = 0; memberIndex < members\.length; memberIndex \+= 1\)[\s\S]*frame\.windowId !== member\.windowId[\s\S]*frame\.columnIndex !== columnIndex[\s\S]*frame\.memberIndex !== memberIndex[\s\S]*frame\.x !== plan\.x \|\| frame\.width !== plan\.width/u,
     );
     expect(
       liveColumnFrames.match(/windowRepeater\.itemAt\(/gu) ?? [],

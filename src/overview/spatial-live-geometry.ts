@@ -36,6 +36,7 @@ export interface OverviewSpatialLiveColumnGeometryInput {
 
 export interface OverviewSpatialLiveColumnGeometryPlan {
   readonly columnIndex: number;
+  readonly memberFrames: readonly OverviewSpatialLiveGeometryPlan[];
   readonly width: number;
   readonly x: number;
 }
@@ -173,7 +174,7 @@ export function aggregateOverviewSpatialLiveColumnGeometry(
       return null;
     }
 
-    const seenMembers: boolean[] = [];
+    const memberFrames: OverviewSpatialLiveGeometryPlan[] = [];
     let columnX: number | null = null;
     let columnWidth: number | null = null;
     for (const sample of samples) {
@@ -187,10 +188,19 @@ export function aggregateOverviewSpatialLiveColumnGeometry(
       }
 
       const memberIndex = snapshot.memberIndex;
-      if (seenMembers[memberIndex] === true) {
+      if (memberFrames[memberIndex] !== undefined) {
         return null;
       }
-      seenMembers[memberIndex] = true;
+      memberFrames[memberIndex] = Object.freeze({
+        columnIndex: snapshot.columnIndex,
+        floating: false,
+        height: normalizeZero(snapshot.height),
+        memberIndex,
+        width: normalizeZero(snapshot.width),
+        windowId: snapshot.windowId,
+        x: normalizeZero(snapshot.x),
+        y: normalizeZero(snapshot.y),
+      });
 
       const x = snapshot.x;
       const width = snapshot.width;
@@ -202,12 +212,17 @@ export function aggregateOverviewSpatialLiveColumnGeometry(
       }
     }
 
-    if (columnX === null || columnWidth === null) {
+    if (
+      columnX === null ||
+      columnWidth === null ||
+      memberFrames.length !== memberCount
+    ) {
       return null;
     }
 
     return Object.freeze({
       columnIndex,
+      memberFrames: Object.freeze(memberFrames),
       width: normalizeZero(columnWidth),
       x: normalizeZero(columnX),
     });
