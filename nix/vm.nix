@@ -918,6 +918,32 @@ let
         return 1
       }
 
+      overview_spatial_drop_request_id() {
+        ${pkgs.kdePackages.kconfig}/bin/kreadconfig6 \
+          --file "''${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/driftile-overview-command.ini" \
+          --group Command \
+          --key last-request-id \
+          --default 0
+      }
+
+      wait_for_overview_spatial_drop_request_after() {
+        local attempt
+        local current
+        local previous=$1
+
+        [[ "$previous" =~ ^[0-9]+$ ]] || return 1
+
+        for ((attempt = 0; attempt < 50; attempt += 1)); do
+          current=$(overview_spatial_drop_request_id 2>/dev/null || true)
+          if [[ "$current" =~ ^[1-9][0-9]*$ ]] && ((current != previous)); then
+            return 0
+          fi
+          sleep 0.1
+        done
+
+        return 1
+      }
+
       current_desktop_id() {
         busctl --user --json=short get-property \
           org.kde.KWin \
@@ -4635,6 +4661,52 @@ let
         printf '%s' "$bytes"
       }
 
+      capture_stable_overview_active_semantic_digest() {
+        local excluded_desktop_id=''${1:-}
+        local expected_digest
+        local first_digest
+        local layout_document
+        local layout_representation
+        local second_digest
+        local snapshot
+        local snapshot_digest
+
+        expected_digest=$(wait_for_stable_overview_layout_digest) || return 1
+        first_digest=$(sha256sum "$layout_state_file" 2>/dev/null) || return 1
+        layout_representation=$(overview_layout_representation 2>/dev/null) || return 1
+        second_digest=$(sha256sum "$layout_state_file" 2>/dev/null) || return 1
+        first_digest=''${first_digest%% *}
+        second_digest=''${second_digest%% *}
+        [[ "$first_digest" == "$expected_digest" \
+          && "$second_digest" == "$expected_digest" ]] || return 1
+
+        layout_document=$(normalize_overview_layout_document \
+          <<< "$layout_representation" 2>/dev/null) || return 1
+        if [[ -n "$excluded_desktop_id" ]] \
+          && ! jq \
+            --exit-status \
+            --arg desktopId "$excluded_desktop_id" \
+            '(.snapshots[0].state.contexts | all(.desktopId != $desktopId))
+              and (.snapshots[0].state.floatingWindows | all(.desktopId != $desktopId))' \
+            <<< "$layout_document" >/dev/null 2>&1; then
+          return 1
+        fi
+
+        snapshot=$(jq \
+          --exit-status \
+          --sort-keys \
+          --compact-output \
+          '.snapshots[0]
+            | select(type == "object")
+            | .state.contexts |= map(
+                del(.restoreFingerprint)
+                | .columns |= map(.members |= map(del(.restoreBaseline)))
+              )' \
+          <<< "$layout_document" 2>/dev/null) || return 1
+        snapshot_digest=$(printf '%s' "$snapshot" | sha256sum) || return 1
+        printf '%s' "''${snapshot_digest%% *}"
+      }
+
       touchpad_navigation_checkpoint_once() {
         local core_loaded
         local layout_bytes
@@ -4907,7 +4979,11 @@ let
 
       verify_overview_effect_checkpoint() {
         local after_checkpoint
+        local after_active_layout_digest
+        local after_semantic_checkpoint
+        local baseline_active_layout_digest
         local baseline_checkpoint
+        local baseline_semantic_checkpoint
         local checkpoint_separator=$'\037'
         local desktop_count
         local expected_reordered_checkpoint
@@ -4937,6 +5013,7 @@ let
         local spatial_drop_target_width
         local trailing_desktop_id=""
         local workspace_gap_before_count
+        local workspace_gap_before_request_id
         local workspace_gap_before_sequence
         local workspace_gap_created_desktop_id=""
         local xterm_title=$5
@@ -4960,6 +5037,12 @@ let
             "the real-application layout or persisted v2 state did not stabilize"
           return 1
         }
+        baseline_active_layout_digest=$(capture_stable_overview_active_semantic_digest) || {
+          overview_checkpoint_failure \
+            "the active persisted layout snapshot did not stabilize"
+          return 1
+        }
+        baseline_semantic_checkpoint="''${baseline_checkpoint#*"$checkpoint_separator"}"
         plasma_loaded=$(effect_loaded_state "$plasma_overview_effect_id") || return 1
         plasma_active=$(effect_active_state "$plasma_overview_effect_id") || return 1
         journal_cursor=$(capture_journal_cursor) || {
@@ -5503,11 +5586,13 @@ let
         spatial_drop_target_width=$(window_frame_width "$xterm_title" 2>/dev/null || true)
         output_frame=$(single_enabled_output_frame 2>/dev/null || true)
         workspace_gap_before_count=$(virtual_desktop_count 2>/dev/null || true)
+        workspace_gap_before_request_id=$(overview_spatial_drop_request_id 2>/dev/null || true)
         workspace_gap_before_sequence=$(virtual_desktop_sequence 2>/dev/null || true)
         if ! frame_is_valid "$spatial_drop_source_frame" \
           || ! frame_is_valid "$spatial_drop_target_frame" \
           || ! frame_is_valid "$output_frame" \
           || [[ ! "$spatial_drop_target_width" =~ ^[1-9][0-9]*$ ]] \
+          || [[ ! "$workspace_gap_before_request_id" =~ ^[0-9]+$ ]] \
           || [[ "$workspace_gap_before_count" != 2 ]] \
           || [[ "$workspace_gap_before_sequence" \
             != "$primary_desktop_id $secondary_desktop_id" ]] \
@@ -5527,24 +5612,55 @@ let
             "the overview could not reopen for the workspace-gap drop"
           return 1
         fi
-        sleep 0.3
+        # Pointer geometry must be sampled after the opening transform settles.
+        sleep 3
 
         if ! request_physical_overview_workspace_gap_drop \
             "$spatial_drop_source_frame" \
-            "$output_frame" \
-          || ! wait_for_single_inserted_desktop_between \
+            "$output_frame"; then
+          overview_checkpoint_failure \
+            "the physical workspace-gap drag was not delivered"
+          return 1
+        fi
+        if ! wait_for_overview_spatial_drop_request_after \
+            "$workspace_gap_before_request_id"; then
+          overview_checkpoint_failure \
+            "the physical workspace-gap drag did not submit a spatial drop command"
+          return 1
+        fi
+        if ! wait_for_single_inserted_desktop_between \
             workspace_gap_created_desktop_id \
             "$primary_desktop_id" \
-            "$secondary_desktop_id" \
-          || ! wait_for_window_desktop \
-            "$xterm_title" \
-            "$workspace_gap_created_desktop_id" \
-          || ! wait_for_window_desktop "$firefox_title" "$primary_desktop_id" \
-          || [[ "$(effect_active_state "$overview_plugin_id" 2>/dev/null || true)" != true ]] \
-          || ! kwin_process_is_unchanged "$kwin_spatial_drop_process_id" \
-          || ! overview_component_errors_after "$journal_cursor"; then
+            "$secondary_desktop_id"; then
           overview_checkpoint_failure \
-            "the physical workspace-gap drop did not insert one exact desktop, move xterm, and keep Overview and KWin alive"
+            "the physical workspace-gap drop did not insert one exact desktop"
+          return 1
+        fi
+        if ! wait_for_window_desktop \
+            "$xterm_title" \
+            "$workspace_gap_created_desktop_id"; then
+          overview_checkpoint_failure \
+            "the workspace-gap drop did not move the exact XWayland window"
+          return 1
+        fi
+        if ! wait_for_window_desktop "$firefox_title" "$primary_desktop_id"; then
+          overview_checkpoint_failure \
+            "the workspace-gap drop changed the peer window desktop"
+          return 1
+        fi
+        if [[ "$(effect_active_state "$overview_plugin_id" 2>/dev/null || true)" != true ]]; then
+          overview_checkpoint_failure \
+            "the workspace-gap drop closed the active overview"
+          return 1
+        fi
+        if ! kwin_process_is_unchanged "$kwin_spatial_drop_process_id"; then
+          overview_checkpoint_failure \
+            "the workspace-gap drop restarted KWin"
+          return 1
+        fi
+        if ! overview_component_errors_after "$journal_cursor"; then
+          overview_checkpoint_failure \
+            "the workspace-gap drop produced an Overview component error"
           return 1
         fi
 
@@ -5575,7 +5691,15 @@ let
             "the workspace-gap checkpoint did not stabilize after cleanup"
           return 1
         }
-        if [[ "$after_checkpoint" != "$firefox_checkpoint" ]]; then
+        after_active_layout_digest=$(capture_stable_overview_active_semantic_digest \
+          "$workspace_gap_created_desktop_id") || {
+          overview_checkpoint_failure \
+            "the workspace-gap active layout snapshot did not stabilize or retained the removed workspace"
+          return 1
+        }
+        after_semantic_checkpoint="''${after_checkpoint#*"$checkpoint_separator"}"
+        if [[ "$after_semantic_checkpoint" != "$baseline_semantic_checkpoint" \
+          || "$after_active_layout_digest" != "$baseline_active_layout_digest" ]]; then
           if ! invoke_shortcut "driftile_move_window_left" \
             || ! wait_for_pointer_stack_order \
               "$firefox_title" \
@@ -5590,8 +5714,16 @@ let
               "the restored workspace-gap source stack did not stabilize"
             return 1
           }
+          after_active_layout_digest=$(capture_stable_overview_active_semantic_digest \
+            "$workspace_gap_created_desktop_id") || {
+            overview_checkpoint_failure \
+              "the restored workspace-gap active layout snapshot did not stabilize or retained the removed workspace"
+            return 1
+          }
+          after_semantic_checkpoint="''${after_checkpoint#*"$checkpoint_separator"}"
         fi
-        if [[ "$after_checkpoint" != "$firefox_checkpoint" ]] \
+        if [[ "$after_semantic_checkpoint" != "$baseline_semantic_checkpoint" \
+          || "$after_active_layout_digest" != "$baseline_active_layout_digest" ]] \
           || ! overview_component_errors_after "$journal_cursor"; then
           overview_checkpoint_failure \
             "workspace-gap cleanup did not restore the exact desktops, window, and layout"
@@ -7492,7 +7624,16 @@ let
         local baseline_third=""
         local cleanup_verified=true
         local handshake_verified=true
+        local output_frame=""
+        local output_height
+        local output_width
+        local output_x
+        local output_y
+        local pointer_x
+        local pointer_y
         local process_id=""
+        local ready_file=/tmp/shared/driftile-wheel-control-ready
+        local temporary_file="$ready_file.tmp"
 
         clear_physical_wheel_control_handshake || return 1
         if ! effect_is_available "$wheel_control_effect_id" \
@@ -7513,13 +7654,36 @@ let
         baseline_first=$stable_first_frame
         baseline_second=$stable_second_frame
         baseline_third=$stable_third_frame
+        output_frame=$(single_enabled_output_frame 2>/dev/null || true)
         process_id=$(kwin_process_id 2>/dev/null || true)
 
         if [[ ! "$process_id" =~ ^[1-9][0-9]*$ ]] \
-          || ! : > /tmp/shared/driftile-wheel-control-ready; then
+          || ! frame_is_valid "$output_frame"; then
           clear_physical_wheel_control_handshake || true
           record_focus_state \
             "the physical wheel control handshake could not start"
+          return 1
+        fi
+        IFS=, read -r \
+          output_x \
+          output_y \
+          output_width \
+          output_height \
+          <<< "$output_frame"
+        pointer_x=$((output_x + output_width / 2))
+        pointer_y=$((output_y + output_height / 2))
+        if ! printf '%s %s %s %s %s %s\n' \
+            "$pointer_x" \
+            "$pointer_y" \
+            "$output_x" \
+            "$output_y" \
+            "$output_width" \
+            "$output_height" \
+            > "$temporary_file" \
+          || ! mv "$temporary_file" "$ready_file"; then
+          clear_physical_wheel_control_handshake || true
+          record_focus_state \
+            "the physical wheel control pointer handshake could not start"
           return 1
         fi
 
@@ -9258,6 +9422,7 @@ let
       clear_physical_wheel_control_handshake() {
         rm -f \
           /tmp/shared/driftile-wheel-control-ready \
+          /tmp/shared/driftile-wheel-control-ready.tmp \
           /tmp/shared/driftile-wheel-control-sent \
           /tmp/shared/driftile-wheel-control-desktop-next-sent \
           /tmp/shared/driftile-wheel-control-desktop-next-verified \

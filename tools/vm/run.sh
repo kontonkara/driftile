@@ -761,36 +761,84 @@ wait_for_guest_exchange_file() {
 
 send_physical_wheel_control_phase() {
   local capabilities='{"execute":"qmp_capabilities"}'
-  local input
+  local modifiers_down
+  local modifiers_up
+  local wheel_input
 
   case "$1" in
     desktop-next)
-      input='{"execute":"input-send-event","arguments":{"events":[{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"meta_l"}}},{"type":"btn","data":{"down":true,"button":"wheel-down"}},{"type":"btn","data":{"down":false,"button":"wheel-down"}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"meta_l"}}}]}}'
+      modifiers_down='{"execute":"input-send-event","arguments":{"events":[{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"meta_l"}}}]}}'
+      wheel_input='{"execute":"input-send-event","arguments":{"events":[{"type":"btn","data":{"down":true,"button":"wheel-down"}},{"type":"btn","data":{"down":false,"button":"wheel-down"}}]}}'
+      modifiers_up='{"execute":"input-send-event","arguments":{"events":[{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"meta_l"}}}]}}'
       ;;
     desktop-previous)
-      input='{"execute":"input-send-event","arguments":{"events":[{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"meta_l"}}},{"type":"btn","data":{"down":true,"button":"wheel-up"}},{"type":"btn","data":{"down":false,"button":"wheel-up"}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"meta_l"}}}]}}'
+      modifiers_down='{"execute":"input-send-event","arguments":{"events":[{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"meta_l"}}}]}}'
+      wheel_input='{"execute":"input-send-event","arguments":{"events":[{"type":"btn","data":{"down":true,"button":"wheel-up"}},{"type":"btn","data":{"down":false,"button":"wheel-up"}}]}}'
+      modifiers_up='{"execute":"input-send-event","arguments":{"events":[{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"meta_l"}}}]}}'
       ;;
     focus-right)
-      input='{"execute":"input-send-event","arguments":{"events":[{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"meta_l"}}},{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"shift"}}},{"type":"btn","data":{"down":true,"button":"wheel-down"}},{"type":"btn","data":{"down":false,"button":"wheel-down"}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"shift"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"meta_l"}}}]}}'
+      modifiers_down='{"execute":"input-send-event","arguments":{"events":[{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"meta_l"}}},{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"shift"}}}]}}'
+      wheel_input='{"execute":"input-send-event","arguments":{"events":[{"type":"btn","data":{"down":true,"button":"wheel-down"}},{"type":"btn","data":{"down":false,"button":"wheel-down"}}]}}'
+      modifiers_up='{"execute":"input-send-event","arguments":{"events":[{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"shift"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"meta_l"}}}]}}'
       ;;
     focus-left)
-      input='{"execute":"input-send-event","arguments":{"events":[{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"meta_l"}}},{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"shift"}}},{"type":"btn","data":{"down":true,"button":"wheel-up"}},{"type":"btn","data":{"down":false,"button":"wheel-up"}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"shift"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"meta_l"}}}]}}'
+      modifiers_down='{"execute":"input-send-event","arguments":{"events":[{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"meta_l"}}},{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"shift"}}}]}}'
+      wheel_input='{"execute":"input-send-event","arguments":{"events":[{"type":"btn","data":{"down":true,"button":"wheel-up"}},{"type":"btn","data":{"down":false,"button":"wheel-up"}}]}}'
+      modifiers_up='{"execute":"input-send-event","arguments":{"events":[{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"shift"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"meta_l"}}}]}}'
       ;;
     *)
       return 1
       ;;
   esac
 
-  send_qmp_commands "$capabilities" "$input"
+  send_qmp_commands "$capabilities" "$modifiers_down" || return 1
+  sleep 0.05
+  if ! send_qmp_commands "$capabilities" "$wheel_input"; then
+    send_qmp_commands "$capabilities" "$modifiers_up" >/dev/null 2>&1 || true
+    return 1
+  fi
+  sleep 0.05
+  if ! send_qmp_commands "$capabilities" "$modifiers_up"; then
+    sleep 0.05
+    send_qmp_commands "$capabilities" "$modifiers_up" >/dev/null 2>&1 || true
+    return 1
+  fi
 }
 
 send_physical_wheel_control() {
+  local absolute_x
+  local absolute_y
   local exchange_directory
+  local extra
   local marker_prefix
+  local output_height
+  local output_width
+  local output_x
+  local output_y
   local phase
   local ready_file=$1
+  local x
+  local y
 
   [[ -f "$ready_file" ]] || return 1
+  IFS=' ' read -r \
+    x \
+    y \
+    output_x \
+    output_y \
+    output_width \
+    output_height \
+    extra < "$ready_file" || return 1
+  [[ -z "${extra:-}" ]] || return 1
+  absolute_x=$(absolute_pointer_coordinate \
+    "$x" "$output_x" "$output_width") || return 1
+  absolute_y=$(absolute_pointer_coordinate \
+    "$y" "$output_y" "$output_height") || return 1
+
+  absolute_pointer_available || return 1
+  send_absolute_pointer_position "$absolute_x" "$absolute_y" || return 1
+  sleep 0.1
+
   exchange_directory=$(dirname -- "$ready_file") || return 1
   marker_prefix="$exchange_directory/driftile-wheel-control"
 
@@ -799,9 +847,17 @@ send_physical_wheel_control() {
     desktop-previous \
     focus-right \
     focus-left; do
-    send_physical_wheel_control_phase "$phase" || return 1
+    if ! send_physical_wheel_control_phase "$phase"; then
+      printf 'QMP could not send the physical wheel phase: %s.\n' \
+        "$phase" >&2
+      return 1
+    fi
     : > "$marker_prefix-$phase-sent"
-    wait_for_guest_exchange_file "$marker_prefix-$phase-verified" || return 1
+    if ! wait_for_guest_exchange_file "$marker_prefix-$phase-verified"; then
+      printf 'The guest did not verify the physical wheel phase: %s.\n' \
+        "$phase" >&2
+      return 1
+    fi
     sleep 0.2
   done
 }
