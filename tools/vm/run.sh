@@ -510,6 +510,7 @@ monitor_two_head_guest() {
   local attempt
   local diagnostics_file="$temporary_directory/xchg/driftile-two-head-diagnostics"
   local drag_name
+  local plain_drag
   local probe_name
   local ready_file
   local result_file="$temporary_directory/xchg/driftile-two-head-verified"
@@ -517,6 +518,7 @@ monitor_two_head_guest() {
   local -A drags_sent=(
     [fallback]=false
     [insert]=false
+    [overview-insert]=false
   )
   local -A probes_sent=(
     [left]=false
@@ -541,12 +543,16 @@ monitor_two_head_guest() {
       fi
     done
 
-    for drag_name in insert fallback; do
+    for drag_name in insert fallback overview-insert; do
       ready_file="$temporary_directory/xchg/driftile-two-head-pointer-drag-$drag_name-ready"
       sent_file="$temporary_directory/xchg/driftile-two-head-pointer-drag-$drag_name-sent"
 
       if [[ "${drags_sent[$drag_name]}" == false && -f "$ready_file" ]]; then
-        if ! send_two_head_pointer_drag "$ready_file"; then
+        plain_drag=false
+        [[ "$drag_name" == overview-insert ]] && plain_drag=true
+        if ! send_two_head_pointer_drag \
+          "$ready_file" \
+          "$plain_drag"; then
           printf 'Could not send the two-output physical pointer drag: %s.\n' \
             "$drag_name" >&2
           stop_vm || true
@@ -560,7 +566,7 @@ monitor_two_head_guest() {
 
     if [[ -f "$result_file" ]]; then
       if [[ "$(<"$result_file")" == true ]]; then
-        printf 'The two-output VM verified targeted insertion and empty-output fallback.\n'
+        printf 'The two-output VM verified targeted insertion, empty-output fallback, and exact Overview insertion.\n'
         stop_vm || true
         return 0
       fi
@@ -848,6 +854,9 @@ send_two_head_pointer_drag() {
   local source_y
   local source_output_x
   local source_output_y
+  local plain=${2:-false}
+
+  [[ "$plain" == true || "$plain" == false ]] || return 1
 
   IFS=' ' read -r \
     source_head \
@@ -902,14 +911,14 @@ send_two_head_pointer_drag() {
     "$edge_y" "$two_head_desktop_y" "$two_head_desktop_height") || return 1
 
   absolute_pointer_available || return 1
-  set_physical_pointer_drag_state false || return 1
+  set_pointer_drag_button_state false "$plain" || return 1
   send_absolute_pointer_position \
     "$source_absolute_x" "$source_absolute_y" \
     || result=1
   sleep 0.1
 
   if ((result == 0)); then
-    set_physical_pointer_drag_state true || result=1
+    set_pointer_drag_button_state true "$plain" || result=1
   fi
   sleep 0.1
 
@@ -927,7 +936,7 @@ send_two_head_pointer_drag() {
   fi
   sleep 0.1
 
-  set_physical_pointer_drag_state false || result=1
+  set_pointer_drag_button_state false "$plain" || result=1
   return "$result"
 }
 

@@ -13489,8 +13489,11 @@ let
       firefox_pid=""
       firefox_profile=""
       firefox_title="Driftile VM Firefox"
+      layout_state_file="''${XDG_CONFIG_HOME:-$HOME/.config}/driftile-layout-state.ini"
       left_frame=""
       left_id=""
+      overview_plugin_id="io.github.kontonkara.driftile.overview"
+      overview_shortcut="driftile_toggle_overview"
       right_frame=""
       right_id=""
       xterm_pid=""
@@ -13516,6 +13519,11 @@ let
             2>&1 || true
           printf '\nActive window:\n'
           kdotool getactivewindow getwindowname 2>&1 || true
+          printf '\nOverview state:\n'
+          printf 'loaded=%s active=%s kwin-pid=%s\n' \
+            "$(effect_loaded_state "$overview_plugin_id" 2>/dev/null || true)" \
+            "$(effect_active_state "$overview_plugin_id" 2>/dev/null || true)" \
+            "$(kwin_process_id 2>/dev/null || true)"
           printf '\nFirefox frame:\n'
           window_frame_contains "$firefox_title" 2>&1 || true
           printf '\nFirefox info:\n'
@@ -13564,6 +13572,181 @@ let
 
           if [[ "$state" == "b true" ]]; then
             return 0
+          fi
+
+          sleep 0.1
+        done
+
+        return 1
+      }
+
+      effect_is_available() {
+        busctl --user --json=short get-property \
+          org.kde.KWin \
+          /Effects \
+          org.kde.kwin.Effects \
+          listOfEffects 2>/dev/null \
+          | jq --exit-status \
+            --arg effectId "$1" \
+            '.data | any(. == $effectId)' \
+            >/dev/null
+      }
+
+      effect_loaded_state() {
+        local state
+
+        state=$(busctl --user call \
+          org.kde.KWin \
+          /Effects \
+          org.kde.kwin.Effects \
+          isEffectLoaded \
+          s "$1" 2>/dev/null) || return 1
+
+        case "$state" in
+          "b true") printf '%s' true ;;
+          "b false") printf '%s' false ;;
+          *) return 1 ;;
+        esac
+      }
+
+      effect_active_state() {
+        busctl --user --json=short get-property \
+          org.kde.KWin \
+          /Effects \
+          org.kde.kwin.Effects \
+          activeEffects 2>/dev/null \
+          | jq --exit-status --raw-output \
+            --arg effectId "$1" \
+            '.data | any(. == $effectId) | tostring'
+      }
+
+      wait_for_effect_loaded_state() {
+        local attempt
+        local expected=$2
+
+        for ((attempt = 0; attempt < 100; attempt += 1)); do
+          if [[ "$(effect_loaded_state "$1" 2>/dev/null || true)" == "$expected" ]]; then
+            return 0
+          fi
+
+          sleep 0.1
+        done
+
+        return 1
+      }
+
+      wait_for_effect_active_state() {
+        local attempt
+        local expected=$2
+
+        for ((attempt = 0; attempt < 100; attempt += 1)); do
+          if [[ "$(effect_active_state "$1" 2>/dev/null || true)" == "$expected" ]]; then
+            return 0
+          fi
+
+          sleep 0.1
+        done
+
+        return 1
+      }
+
+      load_overview_effect() {
+        local result
+
+        if [[ "$(effect_loaded_state "$overview_plugin_id" 2>/dev/null || true)" == true ]]; then
+          return 0
+        fi
+
+        result=$(busctl --user call \
+          org.kde.KWin \
+          /Effects \
+          org.kde.kwin.Effects \
+          loadEffect \
+          s "$overview_plugin_id" 2>/dev/null) || return 1
+
+        [[ "$result" == "b true" ]] \
+          && wait_for_effect_loaded_state "$overview_plugin_id" true
+      }
+
+      kwin_process_id() {
+        local process_id
+        local reply
+        local signature
+        local trailing
+
+        reply=$(busctl --user call \
+          org.freedesktop.DBus \
+          /org/freedesktop/DBus \
+          org.freedesktop.DBus \
+          GetConnectionUnixProcessID \
+          s org.kde.KWin 2>/dev/null) || return 1
+        read -r signature process_id trailing <<< "$reply"
+
+        [[ "$signature" == u \
+          && "$process_id" =~ ^[1-9][0-9]*$ \
+          && -z "$trailing" ]] || return 1
+
+        printf '%s' "$process_id"
+      }
+
+      kwin_process_is_unchanged() {
+        local process_id
+
+        process_id=$(kwin_process_id) || return 1
+        [[ "$process_id" == "$1" ]]
+      }
+
+      overview_layout_document() {
+        local representation
+
+        representation=$(
+          ${pkgs.kdePackages.kconfig}/bin/kreadconfig6 \
+            --file "$layout_state_file" \
+            --group Layout \
+            --key layout-v1 \
+            --default ""
+        ) || return 1
+
+        jq --exit-status --compact-output --sort-keys --slurp '
+          select(length == 1)
+          | .[0]
+          | if type == "object" then
+              .
+            elif type == "string" then
+              fromjson | select(type == "object")
+            else
+              empty
+            end
+          | select(.version == 2 and (.snapshots | length) > 0)
+        ' <<< "$representation"
+      }
+
+      wait_for_stable_layout_digest() {
+        local attempt
+        local current=""
+        local document
+        local previous=""
+        local stable_samples=0
+
+        for ((attempt = 0; attempt < 50; attempt += 1)); do
+          if document=$(overview_layout_document 2>/dev/null) \
+            && current=$(printf '%s' "$document" | sha256sum 2>/dev/null); then
+            current="''${current%% *}"
+
+            if [[ -n "$previous" && "$current" == "$previous" ]]; then
+              stable_samples=$((stable_samples + 1))
+            else
+              stable_samples=1
+            fi
+            previous=$current
+
+            if ((stable_samples >= 3)); then
+              printf '%s' "$current"
+              return 0
+            fi
+          else
+            previous=""
+            stable_samples=0
           fi
 
           sleep 0.1
@@ -14051,7 +14234,7 @@ let
         local temporary_file="$ready_file.tmp"
 
         case "$drag_name" in
-          insert|fallback) ;;
+          insert|fallback|overview-insert) ;;
           *) return 1 ;;
         esac
 
@@ -14106,6 +14289,118 @@ let
         done
 
         return 1
+      }
+
+      request_overview_pointer_drag() {
+        local destination_head=$6
+        local destination_output_frame=$5
+        local destination_output_height
+        local destination_output_width
+        local destination_output_x
+        local destination_output_y
+        local destination_pointer_x
+        local destination_pointer_y
+        local destination_viewport_x_milli
+        local destination_window_frame=$4
+        local destination_window_height
+        local destination_window_width
+        local destination_window_x
+        local destination_window_y
+        local edge_margin_milli
+        local extra
+        local source_head=$3
+        local source_output_frame=$2
+        local source_output_height
+        local source_output_width
+        local source_output_x
+        local source_output_y
+        local source_pointer_x
+        local source_pointer_y
+        local source_viewport_x_milli
+        local source_window_frame=$1
+        local source_window_height
+        local source_window_width
+        local source_window_x
+        local source_window_y
+        local zoom_milli=500
+
+        frame_is_valid "$source_window_frame" || return 1
+        frame_is_valid "$source_output_frame" || return 1
+        frame_is_valid "$destination_window_frame" || return 1
+        frame_is_valid "$destination_output_frame" || return 1
+        IFS=, read -r \
+          source_window_x \
+          source_window_y \
+          source_window_width \
+          source_window_height \
+          extra \
+          <<< "$source_window_frame"
+        [[ -z "''${extra:-}" ]] || return 1
+        IFS=, read -r \
+          source_output_x \
+          source_output_y \
+          source_output_width \
+          source_output_height \
+          extra \
+          <<< "$source_output_frame"
+        [[ -z "''${extra:-}" ]] || return 1
+        IFS=, read -r \
+          destination_window_x \
+          destination_window_y \
+          destination_window_width \
+          destination_window_height \
+          extra \
+          <<< "$destination_window_frame"
+        [[ -z "''${extra:-}" ]] || return 1
+        IFS=, read -r \
+          destination_output_x \
+          destination_output_y \
+          destination_output_width \
+          destination_output_height \
+          extra \
+          <<< "$destination_output_frame"
+        [[ -z "''${extra:-}" ]] || return 1
+
+        source_viewport_x_milli=$(((source_output_width * 1000 \
+          - source_output_width * zoom_milli) / 2))
+        edge_margin_milli=$(((source_output_height * 1000 \
+          - source_output_height * zoom_milli) / 2))
+        source_pointer_x=$((source_output_x \
+          + (source_viewport_x_milli \
+            + (source_window_x - source_output_x) * zoom_milli \
+            + source_window_width * zoom_milli / 2 \
+            + 500) / 1000))
+        source_pointer_y=$((source_output_y \
+          + (edge_margin_milli \
+            + (source_window_y - source_output_y) * zoom_milli \
+            + source_window_height * zoom_milli / 2 \
+            + 500) / 1000))
+
+        destination_viewport_x_milli=$(((destination_output_width * 1000 \
+          - destination_output_width * zoom_milli) / 2))
+        edge_margin_milli=$(((destination_output_height * 1000 \
+          - destination_output_height * zoom_milli) / 2))
+        destination_pointer_x=$((destination_output_x \
+          + (destination_viewport_x_milli \
+            + (destination_window_x - destination_output_x) * zoom_milli \
+            + destination_window_width * zoom_milli / 2 \
+            + 500) / 1000))
+        destination_pointer_y=$((destination_output_y \
+          + (edge_margin_milli \
+            + (destination_window_y - destination_output_y) * zoom_milli \
+            + destination_window_height * zoom_milli * 3 / 4 \
+            + 500) / 1000))
+
+        request_pointer_drag \
+          overview-insert \
+          "$source_head" \
+          "$source_pointer_x" \
+          "$source_pointer_y" \
+          "$source_output_frame" \
+          "$destination_head" \
+          "$destination_pointer_x" \
+          "$destination_pointer_y" \
+          "$destination_output_frame"
       }
 
       verify_targeted_insertion() {
@@ -14193,6 +14488,12 @@ let
         || fail_test "The extension did not load."
       configure_outputs \
         || fail_test "KScreen did not expose two 688x768 connected outputs."
+      effect_is_available "$overview_plugin_id" \
+        || fail_test "The Overview effect was not installed in the two-output VM."
+      load_overview_effect \
+        || fail_test "KWin could not load the Overview effect in the two-output VM."
+      wait_for_effect_active_state "$overview_plugin_id" false \
+        || fail_test "The loaded Overview effect did not start inactive."
 
       IFS=, read -r left_x left_y left_width left_height <<< "$left_frame"
       IFS=, read -r right_x right_y right_width right_height <<< "$right_frame"
@@ -14277,8 +14578,51 @@ let
       verify_empty_output_fallback \
         || fail_test "The empty-output drop did not use ordinary admission."
 
+      firefox_frame=$(capture_stable_window_frame "$firefox_title" 2>/dev/null || true)
+      xterm_frame=$(capture_stable_window_frame "$xterm_title" 2>/dev/null || true)
+      overview_layout_before=$(wait_for_stable_layout_digest 2>/dev/null || true)
+      if ! frame_is_valid "$firefox_frame" \
+        || ! frame_is_valid "$xterm_frame" \
+        || [[ -z "$overview_layout_before" ]]; then
+        fail_test "The exact Overview cross-output fixture did not stabilize."
+      fi
+      overview_kwin_pid=$(kwin_process_id 2>/dev/null || true)
+      [[ "$overview_kwin_pid" =~ ^[1-9][0-9]*$ ]] \
+        || fail_test "The KWin process was unavailable before the exact Overview drop."
+      invoke_shortcut "$overview_shortcut" \
+        || fail_test "The Overview shortcut could not be invoked on two outputs."
+      wait_for_effect_active_state "$overview_plugin_id" true \
+        || fail_test "The Overview effect did not become active on two outputs."
+      sleep 0.3
+      request_overview_pointer_drag \
+        "$firefox_frame" \
+        "$left_frame" \
+        0 \
+        "$xterm_frame" \
+        "$right_frame" \
+        1 \
+        || fail_test "The physical exact Overview cross-output drop was not delivered."
+      verify_targeted_insertion "$xterm_width" \
+        || fail_test "The exact Overview drop did not persist the destination stack."
+      overview_layout_after=$(wait_for_stable_layout_digest 2>/dev/null || true)
+      if [[ -z "$overview_layout_after" \
+        || "$overview_layout_after" == "$overview_layout_before" \
+        || "$(effect_loaded_state "$overview_plugin_id" 2>/dev/null || true)" != true \
+        || "$(effect_active_state "$overview_plugin_id" 2>/dev/null || true)" != true ]] \
+        || ! kwin_process_is_unchanged "$overview_kwin_pid"; then
+        fail_test "The exact Overview drop did not preserve its persisted layout, active effect, and KWin process."
+      fi
+      invoke_shortcut "$overview_shortcut" \
+        || fail_test "The Overview shortcut could not close the two-output checkpoint."
+      wait_for_effect_active_state "$overview_plugin_id" false \
+        || fail_test "The Overview effect did not close after the exact drop."
+      if [[ "$(effect_loaded_state "$overview_plugin_id" 2>/dev/null || true)" != true ]] \
+        || ! kwin_process_is_unchanged "$overview_kwin_pid"; then
+        fail_test "The Overview effect unloaded or KWin restarted while closing the exact checkpoint."
+      fi
+
       printf '%s\n' \
-        "two real outputs, native Wayland Firefox, XWayland xterm, targeted insertion, and empty-output fallback passed" \
+        "two real outputs, native Wayland Firefox, XWayland xterm, targeted insertion, empty-output fallback, and exact Overview insertion passed" \
         >> "$diagnostics_file"
       write_result true
     '';
@@ -14353,7 +14697,7 @@ in
 {
   networking.hostName = if driftileVmTwoHead then "driftile-vm-two-head" else "driftile-vm";
   programs.driftile.enable = true;
-  programs.driftile.overview.enable = !driftileVmTwoHead;
+  programs.driftile.overview.enable = true;
   programs.driftile.shortcutEditor.enable = true;
   system.stateVersion = "26.05";
   system.switch.enable = false;
