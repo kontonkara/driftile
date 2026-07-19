@@ -115,6 +115,7 @@ Rectangle {
         ? Math.max(0, Math.min(1, sceneEffect.presentationProgress)) : 1
     readonly property bool spatialPresentationInteractive:
         spatialPresentationPhase === "open" && spatialPresentationProgress >= 1
+    readonly property bool spatialHorizontalRowDragActive: spatialHorizontalRowDragHandler.active
     property int spatialPresentationWorkspaceIndex: -1
     property var spatialHorizontalDesktopIds: []
     property var spatialHorizontalGeometryPlans: []
@@ -773,7 +774,7 @@ Rectangle {
 
                 sourceComponent: Component {
                     DesktopCard {
-                        enabled: !root.keyboardHelpVisible && !root.spatialHorizontalRowDragHandler.active
+                        enabled: !root.keyboardHelpVisible && !root.spatialHorizontalRowDragActive
                         context: root.contextFor(desktopCardLoader.modelData)
                         current: root.currentDesktop !== null
                             && String(root.currentDesktop.id) === desktopCardLoader.modelData

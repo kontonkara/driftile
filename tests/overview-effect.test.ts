@@ -3593,7 +3593,13 @@ describe("overview effect package", () => {
     expect(scene).toMatch(
       /function resetOverviewSession\(\)[\s\S]*keyboardHelpVisible = false;/u,
     );
-    expect(scene).toContain("enabled: !root.keyboardHelpVisible");
+    expect(scene).toContain(
+      "readonly property bool spatialHorizontalRowDragActive: spatialHorizontalRowDragHandler.active",
+    );
+    expect(scene).toContain(
+      "enabled: !root.keyboardHelpVisible && !root.spatialHorizontalRowDragActive",
+    );
+    expect(scene).not.toContain("root.spatialHorizontalRowDragHandler");
 
     expect(help).toContain("active: root.keyboardHelpVisible");
     expect(help).toContain("sourceComponent: Component {");
