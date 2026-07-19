@@ -3456,7 +3456,7 @@ export class RuntimeController {
           // Focus restoration below remains fail-closed.
         }
 
-        let sourceDesktopRestored = false;
+        let sourceDesktopRestored: boolean;
         try {
           sourceDesktopRestored =
             this.workspace.screens.includes(output) &&
