@@ -353,7 +353,8 @@ Rectangle {
                 readonly property bool minimizedWindow: model.window ? model.window.minimized : false
                 readonly property bool minimizedActivationEligible: minimizedWindow
                     && card.windowSnapshotCanActivateMinimizedWindow(windowPresentation)
-                readonly property bool hasMinimizedTabFrame: tiledPresentation && tiledPresentation.tabFrame !== null
+                readonly property bool hasMinimizedTabFrame: tiledPresentation !== null
+                    && tiledPresentation !== undefined && tiledPresentation.tabFrame !== null
                     && tiledPresentation.tabFrame !== undefined
                 readonly property var minimizedPlaceholderFrame: minimizedActivationEligible
                     ? card.planMinimizedPlaceholderFrame(frame, hasMinimizedTabFrame) : null
@@ -769,9 +770,10 @@ Rectangle {
                 Rectangle {
                     id: tabShell
 
-                    readonly property var frame: windowPresentation.tiledPresentation
-                        ? windowPresentation.tiledPresentation.tabFrame : null
-                    readonly property bool activationEligible: windowPresentation.tiledPresentation
+                    readonly property var frame:
+                        card.tabFrameForPresentation(windowPresentation.tiledPresentation)
+                    readonly property bool activationEligible: windowPresentation.tiledPresentation !== null
+                        && windowPresentation.tiledPresentation !== undefined
                         && (windowPresentation.minimizedWindow
                             ? windowPresentation.minimizedActivationEligible
                             : !windowPresentation.tiledPresentation.selected)
@@ -2168,9 +2170,8 @@ Rectangle {
 
     function spatialLiveColumnPlan(columnIndex) {
         const liveFrames = spatialLiveColumnFrames;
-        const liveFrame = liveFrames && Number.isInteger(columnIndex)
+        return liveFrames && Number.isInteger(columnIndex)
             && columnIndex >= 0 && columnIndex < liveFrames.length ? liveFrames[columnIndex] : null;
-        return spatialLiveColumnPlanIsExact(liveFrame, columnIndex) ? liveFrame : null;
     }
 
     function columnShellFrame(columnIndex, livePlan) {
@@ -2203,7 +2204,24 @@ Rectangle {
                         || column.members.length < 1 || column.members.length > 256) {
                     return null;
                 }
-                samples.push(column.presentation === "tabbed" ? null : []);
+                if (column.presentation === "tabbed"
+                        && (!Number.isInteger(column.selectedMemberIndex)
+                            || column.selectedMemberIndex < 0
+                            || column.selectedMemberIndex >= column.members.length)) {
+                    return null;
+                }
+                if (column.presentation === "tabbed") {
+                    const memberIds = Object.create(null);
+                    for (let memberIndex = 0; memberIndex < column.members.length; memberIndex += 1) {
+                        const member = column.members[memberIndex];
+                        const memberId = member ? member.windowId : null;
+                        if (typeof memberId !== "string" || memberId.length === 0 || memberIds[memberId] === true) {
+                            return null;
+                        }
+                        memberIds[memberId] = true;
+                    }
+                }
+                samples.push([]);
             }
 
             for (let index = 0; index < windowCount; index += 1) {
@@ -2230,8 +2248,13 @@ Rectangle {
                 const member = members && memberIndex >= 0 && memberIndex < members.length
                     ? members[memberIndex] : null;
                 const columnSamples = samples[columnIndex];
-                if (!column || column.presentation === "tabbed" || !member || member.windowId !== windowId
+                const tabbed = column && column.presentation === "tabbed";
+                if (!column || !member || member.windowId !== windowId
                         || !columnSamples || columnSamples.length >= members.length) {
+                    return null;
+                }
+                if (tabbed && (column.selectedMemberIndex !== memberIndex || tiled.selected !== true
+                               || columnSamples.length !== 0)) {
                     return null;
                 }
                 columnSamples.push(plan);
@@ -2251,17 +2274,19 @@ Rectangle {
             const frames = [];
             for (let columnIndex = 0; columnIndex < expectedColumns.length; columnIndex += 1) {
                 const column = expectedColumns[columnIndex];
-                if (column.presentation === "tabbed") {
-                    frames.push(null);
-                    continue;
-                }
+                const tabbed = column.presentation === "tabbed";
 
                 const plan = runtime.aggregateOverviewSpatialLiveColumnGeometry({
                                                                                     columnIndex,
                                                                                     memberCount: column.members.length,
-                                                                                    samples: samples[columnIndex]
+                                                                                    presentation: tabbed
+                                                                                        ? "tabbed" : "stacked",
+                                                                                    samples: samples[columnIndex],
+                                                                                    selectedMemberIndex: tabbed
+                                                                                        ? column.selectedMemberIndex
+                                                                                        : undefined
                                                                                 });
-                frames.push(spatialLiveColumnPlanIsExact(plan, columnIndex) ? plan : null);
+                frames.push(prepareSpatialLiveColumnDisplayPlan(plan, columnIndex));
             }
 
             if (!liveGeometryEnabled || !current || context !== expectedContext || screen !== expectedScreen
@@ -2270,6 +2295,63 @@ Rectangle {
                 return null;
             }
             return Object.freeze(frames);
+        } catch (error) {
+            return null;
+        }
+    }
+
+    function prepareSpatialLiveColumnDisplayPlan(plan, columnIndex) {
+        try {
+            if (!spatialLiveColumnPlanIsExact(plan, columnIndex)) {
+                return null;
+            }
+
+            const column = columns[columnIndex];
+            if (column.presentation !== "tabbed") {
+                return plan;
+            }
+
+            const members = column.members;
+            const selectedMemberIndex = plan.selectedMemberIndex;
+            const selectedSourceFrame = plan.memberFrames[selectedMemberIndex];
+            const selectedDisplayFrame = spatialLiveTabbedDisplayFrame(selectedSourceFrame);
+            if (!selectedDisplayFrame) {
+                return null;
+            }
+
+            const gap = Math.max(2, Math.min(8, contentWidth * 0.008));
+            const tabWidth = (plan.width - gap) / members.length;
+            const tabHeight = Math.max(1, boundedTabStripHeight() - gap);
+            const tabY = selectedSourceFrame.y + gap / 2;
+            if (!projectionGeometryScalarsAreValid(plan.x + gap / 2, tabY, tabWidth, tabHeight)) {
+                return null;
+            }
+
+            const tabFrames = [];
+            const memberFrames = Array(members.length).fill(null);
+            memberFrames[selectedMemberIndex] = selectedDisplayFrame;
+            for (let memberIndex = 0; memberIndex < members.length; memberIndex += 1) {
+                const tabX = plan.x + gap / 2 + tabWidth * memberIndex;
+                if (!projectionGeometryScalarsAreValid(tabX, tabY, tabWidth, tabHeight)) {
+                    return null;
+                }
+                tabFrames.push(Object.freeze({
+                                                 height: tabHeight,
+                                                 width: tabWidth,
+                                                 x: tabX,
+                                                 y: tabY
+                                             }));
+            }
+
+            return Object.freeze({
+                                     columnIndex,
+                                     memberFrames: Object.freeze(memberFrames),
+                                     presentation: "tabbed",
+                                     selectedMemberIndex,
+                                     tabFrames: Object.freeze(tabFrames),
+                                     width: plan.width,
+                                     x: plan.x
+                                 });
         } catch (error) {
             return null;
         }
@@ -2286,16 +2368,33 @@ Rectangle {
 
             const column = columns[columnIndex];
             const members = column ? column.members : null;
-            if (!column || column.presentation === "tabbed" || !members
+            if (!column || !members
                     || !Number.isInteger(members.length) || members.length < 1 || members.length > 256
                     || plan.memberFrames.length !== members.length) {
+                return false;
+            }
+
+            const tabbed = column.presentation === "tabbed";
+            const selectedMemberIndex = column.selectedMemberIndex;
+            if (tabbed && (!Number.isInteger(selectedMemberIndex) || selectedMemberIndex < 0
+                           || selectedMemberIndex >= members.length
+                           || plan.selectedMemberIndex !== selectedMemberIndex)) {
                 return false;
             }
 
             for (let memberIndex = 0; memberIndex < members.length; memberIndex += 1) {
                 const member = members[memberIndex];
                 const frame = plan.memberFrames[memberIndex];
-                if (!member || !frame || Array.isArray(frame) || frame.windowId !== member.windowId
+                if (!member || typeof member.windowId !== "string" || member.windowId.length === 0) {
+                    return false;
+                }
+                if (tabbed && memberIndex !== selectedMemberIndex) {
+                    if (frame !== null) {
+                        return false;
+                    }
+                    continue;
+                }
+                if (!frame || Array.isArray(frame) || frame.windowId !== member.windowId
                         || frame.columnIndex !== columnIndex || frame.memberIndex !== memberIndex
                         || frame.floating !== false || frame.x !== plan.x || frame.width !== plan.width
                         || !projectionGeometryScalarsAreValid(frame.x, frame.y, frame.width, frame.height)) {
@@ -2415,6 +2514,13 @@ Rectangle {
 
     function frameForWindow(window, windowId, tiled, spatialLiveFrame) {
         if (tiled !== undefined) {
+            const column = context && context.columns && Number.isInteger(tiled.columnIndex)
+                && tiled.columnIndex >= 0 && tiled.columnIndex < context.columns.length
+                ? context.columns[tiled.columnIndex] : null;
+            if (column && column.presentation === "tabbed") {
+                const liveFrame = spatialLiveTabbedWindowFrame(windowId, tiled, column);
+                return liveFrame !== null ? liveFrame : tiled.thumbnailFrame;
+            }
             if (spatialLiveWindowPlanIsExact(spatialLiveFrame, windowId, tiled)) {
                 return spatialLiveFrame;
             }
@@ -2438,6 +2544,92 @@ Rectangle {
         };
     }
 
+    function spatialLiveTabbedWindowFrame(windowId, tiled, column) {
+        try {
+            if (!liveGeometryEnabled || !current || !tiled || !column || column.presentation !== "tabbed"
+                    || !column.members || !Number.isInteger(tiled.columnIndex)
+                    || !Number.isInteger(tiled.memberIndex) || tiled.selected !== true
+                    || !Number.isInteger(column.selectedMemberIndex)
+                    || column.selectedMemberIndex !== tiled.memberIndex
+                    || tiled.memberIndex < 0 || tiled.memberIndex >= column.members.length
+                    || context.columns[tiled.columnIndex] !== column
+                    || tiledPresentations[windowId] !== tiled) {
+                return null;
+            }
+
+            const member = column.members[tiled.memberIndex];
+            const plan = spatialLiveColumnPlan(tiled.columnIndex);
+            const frame = plan && plan.memberFrames ? plan.memberFrames[tiled.memberIndex] : null;
+            if (!member || member.windowId !== windowId || !plan
+                    || plan.selectedMemberIndex !== tiled.memberIndex
+                    || !spatialLiveWindowPlanIsExact(frame, windowId, tiled)) {
+                return null;
+            }
+
+            return frame;
+        } catch (error) {
+            return null;
+        }
+    }
+
+    function tabFrameForPresentation(tiled) {
+        try {
+            const plannedFrame = tiled ? tiled.tabFrame : null;
+            if (!plannedFrame || !Number.isInteger(tiled.columnIndex)
+                    || !Number.isInteger(tiled.memberIndex)) {
+                return plannedFrame;
+            }
+
+            const column = context && context.columns && tiled.columnIndex >= 0
+                && tiled.columnIndex < context.columns.length ? context.columns[tiled.columnIndex] : null;
+            const plan = spatialLiveColumnPlan(tiled.columnIndex);
+            if (!column || column.presentation !== "tabbed" || !column.members
+                    || tiled.memberIndex < 0 || tiled.memberIndex >= column.members.length
+                    || !plan || plan.presentation !== "tabbed" || !Array.isArray(plan.tabFrames)
+                    || plan.tabFrames.length !== column.members.length) {
+                return plannedFrame;
+            }
+
+            const frame = plan.tabFrames[tiled.memberIndex];
+            return frame && projectionGeometryScalarsAreValid(frame.x, frame.y, frame.width, frame.height)
+                ? frame : plannedFrame;
+        } catch (error) {
+            return tiled && tiled.tabFrame ? tiled.tabFrame : null;
+        }
+    }
+
+    function spatialLiveTabbedDisplayFrame(frame) {
+        try {
+            if (!frame || frame.floating !== false
+                    || !projectionGeometryScalarsAreValid(frame.x, frame.y, frame.width, frame.height)) {
+                return null;
+            }
+
+            const gap = Math.max(2, Math.min(8, contentWidth * 0.008));
+            const tabStripHeight = boundedTabStripHeight();
+            const x = frame.x + gap / 2;
+            const y = frame.y + tabStripHeight + gap / 2;
+            const width = frame.width - gap;
+            const height = frame.height - tabStripHeight - gap;
+            if (!projectionGeometryScalarsAreValid(x, y, width, height)) {
+                return null;
+            }
+
+            return Object.freeze({
+                                     columnIndex: frame.columnIndex,
+                                     floating: false,
+                                     height,
+                                     memberIndex: frame.memberIndex,
+                                     width,
+                                     windowId: frame.windowId,
+                                     x,
+                                     y
+                                 });
+        } catch (error) {
+            return null;
+        }
+    }
+
     function planSpatialLiveWindowFrame(window, windowId, tiled) {
         try {
             if (!liveGeometryEnabled || !current || !window || !tiled || !context || !context.columns
@@ -2453,16 +2645,21 @@ Rectangle {
             const columnIndex = tiled.columnIndex;
             const memberIndex = tiled.memberIndex;
             const column = expectedColumns[columnIndex];
-            if (!column || column.presentation === "tabbed" || !column.members
+            if (!column || !column.members
                     || memberIndex < 0 || memberIndex >= column.members.length) {
                 return null;
             }
 
             const expectedMembers = column.members;
+            const expectedPresentation = column.presentation;
+            const expectedSelectedMemberIndex = column.selectedMemberIndex;
+            const tabbed = expectedPresentation === "tabbed";
             const member = expectedMembers[memberIndex];
             const sourceColumnFrame = spatialSourceColumnFrame(columnIndex);
             if (!member || member.windowId !== windowId || !sourceColumnFrame
-                    || sourceColumnFrame !== tiled.plannedColumnFrame) {
+                    || sourceColumnFrame !== tiled.plannedColumnFrame || tiled.selected !== true
+                    || (tabbed && (!Number.isInteger(expectedSelectedMemberIndex)
+                                   || expectedSelectedMemberIndex !== memberIndex))) {
                 return null;
             }
 
@@ -2500,10 +2697,13 @@ Rectangle {
             const confirmedOutputGeometry = expectedScreen.geometry;
             if (!liveGeometryEnabled || !current || context !== expectedContext || screen !== expectedScreen
                     || expectedContext.columns !== expectedColumns || expectedColumns[columnIndex] !== column
-                    || column.presentation === "tabbed" || column.members !== expectedMembers
+                    || column.presentation !== expectedPresentation || column.members !== expectedMembers
+                    || column.selectedMemberIndex !== expectedSelectedMemberIndex
                     || expectedMembers[memberIndex] !== member || member.windowId !== windowId
                     || tiledPresentations[windowId] !== tiled || tiled.columnIndex !== columnIndex
-                    || tiled.memberIndex !== memberIndex || tiled.plannedColumnFrame !== sourceColumnFrame
+                    || tiled.memberIndex !== memberIndex || tiled.selected !== true
+                    || (tabbed && expectedSelectedMemberIndex !== memberIndex)
+                    || tiled.plannedColumnFrame !== sourceColumnFrame
                     || spatialSourceColumnFrame(columnIndex) !== sourceColumnFrame || window.deleted !== false
                     || window.minimized !== false || window.output !== expectedScreen
                     || window.internalId === undefined || window.internalId === null

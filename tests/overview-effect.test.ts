@@ -1396,11 +1396,14 @@ describe("overview effect package", () => {
     expect(desktopLoader).toContain(
       "active: root.desktopCardShouldLoad(index, modelData)",
     );
-    expect(desktopLoader).toContain(
-      "onActiveChanged: Qt.callLater(root.repairKeyboardSelection)",
+    expect(desktopLoader).toMatch(
+      /onActiveChanged: \{[\s\S]*root\.advanceOverviewDesktopCardEpoch\(\);[\s\S]*Qt\.callLater\(root\.repairKeyboardSelection\);[\s\S]*\}/u,
     );
-    expect(desktopLoader).toContain(
-      "onLoaded: Qt.callLater(root.repairKeyboardSelection)",
+    expect(desktopLoader).toMatch(
+      /onLoaded: \{[\s\S]*root\.advanceOverviewDesktopCardEpoch\(\);[\s\S]*Qt\.callLater\(root\.repairKeyboardSelection\);[\s\S]*\}/u,
+    );
+    expect(reorderDelegate).toMatch(
+      /onNavigationTargetsChanged: \{[\s\S]*root\.advanceOverviewDesktopCardEpoch\(\);[\s\S]*Qt\.callLater\(root\.repairKeyboardSelection\);[\s\S]*\}/u,
     );
     expect(reorderDelegate).toContain(
       "desktopReorderSource: root.desktopReorderActive",
@@ -1770,7 +1773,10 @@ describe("overview effect package", () => {
       "card.windowSnapshotCanActivateMinimizedWindow(windowPresentation)",
     );
     expect(presentation).toContain(
-      "readonly property bool hasMinimizedTabFrame: tiledPresentation && tiledPresentation.tabFrame !== null",
+      "readonly property bool hasMinimizedTabFrame: tiledPresentation !== null",
+    );
+    expect(presentation).toContain(
+      "tiledPresentation !== undefined && tiledPresentation.tabFrame !== null",
     );
     expect(presentation).toContain(
       "readonly property var minimizedPlaceholderFrame: minimizedActivationEligible",
@@ -2556,10 +2562,14 @@ describe("overview effect package", () => {
     );
     expect(thumbnail).toContain("!windowPresentation.minimizedWindow");
     expect(tab).toContain(
-      "readonly property bool activationEligible: windowPresentation.tiledPresentation",
+      "readonly property bool activationEligible: windowPresentation.tiledPresentation !== null",
     );
+    expect(tab).toContain("windowPresentation.tiledPresentation !== undefined");
     expect(tab).toContain("windowPresentation.minimizedWindow");
     expect(tab).toContain("? windowPresentation.minimizedActivationEligible");
+    expect(tab).toContain(
+      "card.tabFrameForPresentation(windowPresentation.tiledPresentation)",
+    );
     expect(tab).toContain(": !windowPresentation.tiledPresentation.selected");
     expect(tab).toContain(
       "readonly property bool keyboardTarget: activationEligible && windowPresentation.matchesSearch",
@@ -2716,6 +2726,30 @@ describe("overview effect package", () => {
       scene.indexOf("function completeSpatialWheelWorkspaceSelection("),
       scene.indexOf("function deferredSpatialWheelWorkspaceRequest("),
     );
+    const horizontalSelectionHandler = scene.slice(
+      scene.indexOf("function handleSpatialHorizontalSelectionWheel("),
+      scene.indexOf("function planSpatialHorizontalWheel("),
+    );
+    const horizontalSelectionRequest = scene.slice(
+      scene.indexOf("function requestSpatialHorizontalWheelSelection("),
+      scene.indexOf("function horizontalWheelSelectionTargetPlan("),
+    );
+    const horizontalSelectionTarget = scene.slice(
+      scene.indexOf("function horizontalWheelSelectionTargetPlan("),
+      scene.indexOf("function completeSpatialHorizontalWheelSelection("),
+    );
+    const horizontalSelectionCompletion = scene.slice(
+      scene.indexOf("function completeSpatialHorizontalWheelSelection("),
+      scene.indexOf("function horizontalWheelSelectionRequestContextIsExact("),
+    );
+    const horizontalSelectionGuard = scene.slice(
+      scene.indexOf("function horizontalWheelSelectionRequestContextIsExact("),
+      scene.indexOf("function horizontalBoundaryNavigationTarget("),
+    );
+    const horizontalSelectionFailure = scene.slice(
+      scene.indexOf("function finishFailedSpatialHorizontalWheelSelection("),
+      scene.indexOf("function horizontalWheelScalarIdIsValid("),
+    );
     const preciseWorkspaceSettleSchedule = scene.slice(
       scene.indexOf("function finishSpatialVerticalWheelGesture("),
       scene.indexOf("function completeSpatialVerticalWheelSettle("),
@@ -2794,6 +2828,19 @@ describe("overview effect package", () => {
       "property real overviewHorizontalWheelPixelRemainder: 0",
     );
     expect(scene).toContain("property int overviewHorizontalWheelRemainder: 0");
+    expect(scene).toContain("property int overviewDesktopCardEpoch: 0");
+    expect(scene).toContain(
+      "property bool overviewHorizontalWheelSelectionPending: false",
+    );
+    expect(scene).toContain(
+      "property int overviewHorizontalWheelSelectionRequestId: 0",
+    );
+    expect(scene).toContain(
+      "property int overviewHorizontalWheelSelectionStepOffset: 0",
+    );
+    expect(scene).toContain(
+      'property string overviewHorizontalWheelSelectionTargetId: ""',
+    );
     expect(wheelHandler).toMatch(
       /id: spatialVerticalWheelHandler[\s\S]*target: null[\s\S]*acceptedDevices: PointerDevice\.Mouse \| PointerDevice\.TouchPad[\s\S]*acceptedModifiers: Qt\.NoModifier[\s\S]*blocking: false[\s\S]*orientation: Qt\.Vertical[\s\S]*onWheel: event => root\.routeOverviewWheel\(event, point\.position, "vertical"\)/u,
     );
@@ -2870,8 +2917,61 @@ describe("overview effect package", () => {
     expect(wheelNavigation).toMatch(
       /function handleOverviewHorizontalWheelInput[\s\S]*resetOverviewVerticalWheelState\(\);[\s\S]*handleSpatialHorizontalViewportWheel/u,
     );
+    expect(horizontalSelectionHandler).toMatch(
+      /plan\.steps > 0[\s\S]*requestSpatialHorizontalWheelSelection\(workspaceIndex, expectedDesktopId,[\s\S]*plan\.direction, plan\.steps\)/u,
+    );
+    expect(horizontalSelectionHandler).not.toMatch(
+      /setKeyboardSelectionTarget|setSpatialHorizontalViewportOffset|Qt\.callLater/u,
+    );
+    expect(horizontalSelectionRequest).toMatch(
+      /const sourceTargetId = pendingExact[\s\S]*overviewHorizontalWheelSelectionSourceTargetId : keyboardSelectionId;[\s\S]*const currentStepOffset = pendingExact[\s\S]*overviewHorizontalWheelSelectionStepOffset : 0;/u,
+    );
+    expect(horizontalSelectionRequest).toMatch(
+      /const stepDelta = direction === "next" \? steps : -steps;[\s\S]*const requestedStepOffset = Math\.max\(-4, Math\.min\(4, currentStepOffset \+ stepDelta\)\);[\s\S]*if \(requestedStepOffset === 0\) \{[\s\S]*if \(pendingExact\) \{[\s\S]*cancelOverviewHorizontalWheelSelectionRequest\(\);/u,
+    );
+    expect(horizontalSelectionRequest).toMatch(
+      /horizontalWheelSelectionTargetPlan\(expectedDesktopId, sourceTargetId,[\s\S]*requestedStepOffset\)[\s\S]*catch \(error\) \{[\s\S]*if \(pendingExact\) \{[\s\S]*cancelOverviewHorizontalWheelSelectionRequest\(\);[\s\S]*Math\.abs\(targetPlan\.stepOffset\) > Math\.abs\(requestedStepOffset\)[\s\S]*Math\.sign\(targetPlan\.stepOffset\) !== Math\.sign\(requestedStepOffset\)[\s\S]*if \(pendingExact\) \{[\s\S]*cancelOverviewHorizontalWheelSelectionRequest\(\);/u,
+    );
+    expect(horizontalSelectionRequest).toMatch(
+      /if \(pendingExact\) \{[\s\S]*overviewHorizontalWheelSelectionStepOffset = targetPlan\.stepOffset;[\s\S]*overviewHorizontalWheelSelectionTargetId = targetPlan\.targetId;[\s\S]*return true;[\s\S]*overviewHorizontalWheelSelectionSourceTargetId = sourceTargetId;[\s\S]*overviewHorizontalWheelSelectionStepOffset = targetPlan\.stepOffset;[\s\S]*overviewHorizontalWheelSelectionTargetId = targetPlan\.targetId;[\s\S]*Qt\.callLater\(root\.completeSpatialHorizontalWheelSelection,[\s\S]*requestId, expectedOutputId, expectedDesktopId, workspaceIndex,[\s\S]*geometryEpoch, cardEpoch, sourceTargetId\)/u,
+    );
+    expect(horizontalSelectionRequest).not.toContain("startingTargetId");
+    expect(
+      horizontalSelectionRequest.match(/Qt\.callLater\(/gu) ?? [],
+    ).toHaveLength(1);
+    expect(horizontalSelectionTarget).toMatch(
+      /requestedStepOffset === 0[\s\S]*Math\.abs\(requestedStepOffset\) > 4[\s\S]*rowTargets\.length >= 131072/u,
+    );
+    expect(horizontalSelectionTarget).toMatch(
+      /const direction = requestedStepOffset > 0 \? "next" : "previous";[\s\S]*const stepSign = requestedStepOffset > 0 \? 1 : -1;[\s\S]*let remainingSteps = Math\.abs\(requestedStepOffset\);[\s\S]*let appliedSteps = 0;[\s\S]*navigationTargetForId\(rowTargets, sourceTargetId\)/u,
+    );
+    expect(horizontalSelectionTarget).toMatch(
+      /if \(!selected\) \{[\s\S]*horizontalBoundaryNavigationTarget\(rowTargets, direction === "next" \? "first" : "last"\);[\s\S]*remainingSteps -= 1;[\s\S]*appliedSteps = 1;/u,
+    );
+    expect(horizontalSelectionTarget).toMatch(
+      /for \(let step = 0; step < remainingSteps; step \+= 1\)[\s\S]*findOverviewNavigationTarget\(selected\.id, rowTargets, navigationDirection\)[\s\S]*if \(!target\) \{[\s\S]*break;[\s\S]*selected = target;[\s\S]*appliedSteps \+= 1;[\s\S]*stepOffset: appliedSteps \* stepSign,[\s\S]*targetId: selected\.id/u,
+    );
+    expect(horizontalSelectionTarget).not.toMatch(
+      /setKeyboardSelectionTarget|setSpatialHorizontalViewportOffset|Qt\.callLater/u,
+    );
+    expect(horizontalSelectionTarget).not.toContain("return false;");
+    expect(horizontalSelectionCompletion).toMatch(
+      /horizontalWheelSelectionRequestContextIsExact[\s\S]*collectNavigationTargets\(\)[\s\S]*horizontalWheelSelectionRequestContextIsExact[\s\S]*clearOverviewHorizontalWheelSelectionRequest\(\);[\s\S]*setKeyboardSelectionTarget\(target\)/u,
+    );
+    expect(horizontalSelectionGuard).toMatch(
+      /requestId !== overviewHorizontalWheelSelectionRequestId[\s\S]*expectedGeometryEpoch !== spatialHorizontalViewportRevision[\s\S]*expectedCardEpoch !== overviewDesktopCardEpoch[\s\S]*overviewHorizontalWheelSelectionStepOffset === 0[\s\S]*Math\.abs\(overviewHorizontalWheelSelectionStepOffset\) > 4[\s\S]*keyboardSelectionId !== expectedSourceTargetId[\s\S]*searchQuery\.length > 0[\s\S]*card\.desktopId === expectedDesktopId/u,
+    );
+    expect(horizontalSelectionFailure).toMatch(
+      /requestId !== overviewHorizontalWheelSelectionRequestId[\s\S]*return;[\s\S]*clearOverviewHorizontalWheelSelectionRequest\(\);/u,
+    );
+    expect(scene).toMatch(
+      /function clearOverviewHorizontalWheelSelectionRequest\(\) \{[\s\S]*overviewHorizontalWheelSelectionSourceTargetId = "";[\s\S]*overviewHorizontalWheelSelectionStepOffset = 0;[\s\S]*overviewHorizontalWheelSelectionTargetId = "";/u,
+    );
     expect(wheelNavigation).toMatch(
-      /function navigateHorizontalWheelSelection[\s\S]*target\.desktopId === expectedDesktopId[\s\S]*findOverviewNavigationTarget\(selected\.id, rowTargets, navigationDirection\)/u,
+      /function handleOverviewHorizontalWheelInput[\s\S]*if \(pixelDeltaX !== 0\) \{[\s\S]*cancelOverviewHorizontalWheelSelectionRequest\(\);[\s\S]*spatialWorkspaceIndexAtPoint\(point\)/u,
+    );
+    expect(wheelNavigation).toMatch(
+      /function resetOverviewHorizontalWheelState\(\) \{[\s\S]*cancelOverviewHorizontalWheelSelectionRequest\(\);[\s\S]*overviewHorizontalWheelPixelRemainder = 0;/u,
     );
     expect(wheelNavigation).toMatch(
       /function revealHorizontalNavigationTarget[\s\S]*sceneAdjustment \/ card\.projectionScale[\s\S]*setSpatialHorizontalViewportOffset/u,
@@ -2917,10 +3017,19 @@ describe("overview effect package", () => {
       /readonly property var spatialLiveFrame: card\.planSpatialLiveWindowFrame\(model\.window, windowId,[\s\S]*tiledPresentation\)[\s\S]*readonly property var frame: card\.frameForWindow\(model\.window, windowId, tiledPresentation,[\s\S]*spatialLiveFrame\)/u,
     );
     expect(desktopCard).toMatch(
-      /function frameForWindow\(window, windowId, tiled, spatialLiveFrame\)[\s\S]*spatialLiveWindowPlanIsExact\(spatialLiveFrame, windowId, tiled\)[\s\S]*return spatialLiveFrame;[\s\S]*return tiled\.thumbnailFrame;/u,
+      /function frameForWindow\(window, windowId, tiled, spatialLiveFrame\)[\s\S]*column\.presentation === "tabbed"[\s\S]*spatialLiveTabbedWindowFrame\(windowId, tiled, column\)[\s\S]*liveFrame !== null \? liveFrame : tiled\.thumbnailFrame[\s\S]*spatialLiveWindowPlanIsExact\(spatialLiveFrame, windowId, tiled\)[\s\S]*return spatialLiveFrame;[\s\S]*return tiled\.thumbnailFrame;/u,
     );
     expect(desktopCard).toMatch(
-      /function planSpatialLiveWindowFrame[\s\S]*!liveGeometryEnabled \|\| !current[\s\S]*column\.presentation === "tabbed"[\s\S]*sourceColumnFrame !== tiled\.plannedColumnFrame[\s\S]*const deleted = window\.deleted;[\s\S]*const minimized = window\.minimized;[\s\S]*const output = window\.output;[\s\S]*const internalId = window\.internalId;[\s\S]*deleted !== false \|\| minimized !== false \|\| output !== expectedScreen[\s\S]*const liveGeometry = window\.frameGeometry;[\s\S]*const liveX = liveGeometry \? Number\(liveGeometry\.x\)[\s\S]*const outputX = outputGeometry \? Number\(outputGeometry\.x\)[\s\S]*const confirmedLiveGeometry = window\.frameGeometry;[\s\S]*tiledPresentations\[windowId\] !== tiled[\s\S]*window\.deleted !== false[\s\S]*window\.minimized !== false[\s\S]*window\.output !== expectedScreen[\s\S]*projectionGeometryMatches\(confirmedLiveGeometry, liveX, liveY, liveWidth, liveHeight\)/u,
+      /function spatialLiveTabbedWindowFrame[\s\S]*!liveGeometryEnabled \|\| !current[\s\S]*column\.presentation !== "tabbed"[\s\S]*tiled\.selected !== true[\s\S]*column\.selectedMemberIndex !== tiled\.memberIndex[\s\S]*context\.columns\[tiled\.columnIndex\] !== column[\s\S]*tiledPresentations\[windowId\] !== tiled[\s\S]*spatialLiveColumnPlan\(tiled\.columnIndex\)[\s\S]*plan\.selectedMemberIndex !== tiled\.memberIndex[\s\S]*spatialLiveWindowPlanIsExact\(frame, windowId, tiled\)/u,
+    );
+    expect(desktopCard).toMatch(
+      /function tabFrameForPresentation[\s\S]*spatialLiveColumnPlan\(tiled\.columnIndex\)[\s\S]*plan\.presentation !== "tabbed"[\s\S]*Array\.isArray\(plan\.tabFrames\)[\s\S]*plan\.tabFrames\.length !== column\.members\.length[\s\S]*const frame = plan\.tabFrames\[tiled\.memberIndex\][\s\S]*projectionGeometryScalarsAreValid\(frame\.x, frame\.y, frame\.width, frame\.height\)[\s\S]*\? frame : plannedFrame;/u,
+    );
+    expect(desktopCard).toMatch(
+      /function spatialLiveTabbedDisplayFrame[\s\S]*const tabStripHeight = boundedTabStripHeight\(\);[\s\S]*frame\.x \+ gap \/ 2[\s\S]*frame\.y \+ tabStripHeight \+ gap \/ 2[\s\S]*frame\.height - tabStripHeight - gap/u,
+    );
+    expect(desktopCard).toMatch(
+      /function planSpatialLiveWindowFrame[\s\S]*!liveGeometryEnabled \|\| !current[\s\S]*const expectedPresentation = column\.presentation;[\s\S]*const expectedSelectedMemberIndex = column\.selectedMemberIndex;[\s\S]*const tabbed = expectedPresentation === "tabbed"[\s\S]*tiled\.selected !== true[\s\S]*expectedSelectedMemberIndex !== memberIndex[\s\S]*const deleted = window\.deleted;[\s\S]*const minimized = window\.minimized;[\s\S]*const output = window\.output;[\s\S]*const internalId = window\.internalId;[\s\S]*deleted !== false \|\| minimized !== false \|\| output !== expectedScreen[\s\S]*const liveGeometry = window\.frameGeometry;[\s\S]*const liveX = liveGeometry \? Number\(liveGeometry\.x\)[\s\S]*const outputX = outputGeometry \? Number\(outputGeometry\.x\)[\s\S]*const confirmedLiveGeometry = window\.frameGeometry;[\s\S]*column\.presentation !== expectedPresentation[\s\S]*column\.selectedMemberIndex !== expectedSelectedMemberIndex[\s\S]*tiledPresentations\[windowId\] !== tiled[\s\S]*tiled\.selected !== true[\s\S]*window\.deleted !== false[\s\S]*window\.minimized !== false[\s\S]*window\.output !== expectedScreen[\s\S]*projectionGeometryMatches\(confirmedLiveGeometry, liveX, liveY, liveWidth, liveHeight\)/u,
     );
     expect(desktopCard).toMatch(
       /runtime\.projectOverviewSpatialLiveGeometry\(\{[\s\S]*columnIndex,[\s\S]*liveHeight,[\s\S]*liveWidth,[\s\S]*liveX,[\s\S]*liveY,[\s\S]*memberIndex,[\s\S]*outputHeight,[\s\S]*outputWidth,[\s\S]*outputX,[\s\S]*outputY,[\s\S]*projectionScale: scale,[\s\S]*viewportOriginX: originX,[\s\S]*viewportOriginY: originY,[\s\S]*windowId/u,
@@ -2941,8 +3050,9 @@ describe("overview effect package", () => {
       /readonly property var liveGeometryPlan: card\.spatialLiveColumnPlan\(index\)[\s\S]*readonly property var frame: card\.columnShellFrame\(index, liveGeometryPlan\)[\s\S]*x: frame\.x[\s\S]*width: frame\.width/u,
     );
     expect(liveColumnPlan).toMatch(
-      /function spatialLiveColumnPlan\(columnIndex\)[\s\S]*spatialLiveColumnPlanIsExact\(liveFrame, columnIndex\) \? liveFrame : null[\s\S]*function columnShellFrame\(columnIndex, livePlan\)[\s\S]*livePlan !== null \? livePlan : columnFrame\(columnIndex\)/u,
+      /function spatialLiveColumnPlan\(columnIndex\)[\s\S]*columnIndex >= 0 && columnIndex < liveFrames\.length \? liveFrames\[columnIndex\] : null[\s\S]*function columnShellFrame\(columnIndex, livePlan\)[\s\S]*livePlan !== null \? livePlan : columnFrame\(columnIndex\)/u,
     );
+    expect(liveColumnPlan).not.toContain("spatialLiveColumnPlanIsExact(");
     expect(columnGuides).toMatch(
       /columnMemberGuideFrame\(columnShell\.liveGeometryPlan, index, memberPresentation\)[\s\S]*y: memberFrame \? memberFrame\.y : 0[\s\S]*height: memberFrame \? memberFrame\.height : 0/u,
     );
@@ -2956,20 +3066,20 @@ describe("overview effect package", () => {
       /!liveGeometryEnabled \|\| !current[\s\S]*context\.columns\.length > 512[\s\S]*windowRepeater\.count > 131072/u,
     );
     expect(liveColumnFrames).toMatch(
-      /column\.members\.length < 1 \|\| column\.members\.length > 256[\s\S]*column\.presentation === "tabbed" \? null : \[\]/u,
+      /column\.members\.length < 1 \|\| column\.members\.length > 256[\s\S]*column\.presentation === "tabbed"[\s\S]*column\.selectedMemberIndex < 0[\s\S]*samples\.push\(\[\]\)/u,
     );
     expect(liveColumnFrames).toMatch(
-      /for \(let index = 0; index < windowCount; index \+= 1\)[\s\S]*windowRepeater\.itemAt\(index\)[\s\S]*presentation\.spatialLiveFrame[\s\S]*spatialLiveWindowPlanIsExact\(plan, windowId, tiled\)[\s\S]*member\.windowId !== windowId[\s\S]*columnSamples\.push\(plan\)/u,
+      /for \(let index = 0; index < windowCount; index \+= 1\)[\s\S]*windowRepeater\.itemAt\(index\)[\s\S]*presentation\.spatialLiveFrame[\s\S]*spatialLiveWindowPlanIsExact\(plan, windowId, tiled\)[\s\S]*member\.windowId !== windowId[\s\S]*column\.selectedMemberIndex !== memberIndex[\s\S]*tiled\.selected !== true[\s\S]*columnSamples\.length !== 0[\s\S]*columnSamples\.push\(plan\)/u,
     );
     expect(liveColumnFrames).toMatch(
-      /tiledPresentations !== expectedPresentations[\s\S]*spatialLiveGeometryRevision !== revision[\s\S]*aggregateOverviewSpatialLiveColumnGeometry\(\{[\s\S]*columnIndex,[\s\S]*memberCount: column\.members\.length,[\s\S]*samples: samples\[columnIndex\]/u,
+      /tiledPresentations !== expectedPresentations[\s\S]*spatialLiveGeometryRevision !== revision[\s\S]*aggregateOverviewSpatialLiveColumnGeometry\(\{[\s\S]*columnIndex,[\s\S]*memberCount: column\.members\.length,[\s\S]*presentation: tabbed[\s\S]*samples: samples\[columnIndex\],[\s\S]*selectedMemberIndex: tabbed[\s\S]*column\.selectedMemberIndex/u,
     );
-    expect(liveColumnFrames).toMatch(
-      /column\.presentation === "tabbed"[\s\S]*frames\.push\(null\);[\s\S]*spatialLiveColumnPlanIsExact\(plan, columnIndex\) \? plan : null/u,
+    expect(liveColumnFrames).not.toContain(
+      'if (column.presentation === "tabbed") {\n                    frames.push(null);',
     );
     expect(liveColumnFrames).toContain("return Object.freeze(frames);");
     expect(liveColumnValidation).toMatch(
-      /column\.presentation === "tabbed"[\s\S]*plan\.memberFrames\.length !== members\.length[\s\S]*for \(let memberIndex = 0; memberIndex < members\.length; memberIndex \+= 1\)[\s\S]*frame\.windowId !== member\.windowId[\s\S]*frame\.columnIndex !== columnIndex[\s\S]*frame\.memberIndex !== memberIndex[\s\S]*frame\.x !== plan\.x \|\| frame\.width !== plan\.width/u,
+      /plan\.memberFrames\.length !== members\.length[\s\S]*const tabbed = column\.presentation === "tabbed"[\s\S]*plan\.selectedMemberIndex !== selectedMemberIndex[\s\S]*memberIndex !== selectedMemberIndex[\s\S]*frame !== null[\s\S]*frame\.windowId !== member\.windowId[\s\S]*frame\.columnIndex !== columnIndex[\s\S]*frame\.memberIndex !== memberIndex[\s\S]*frame\.x !== plan\.x \|\| frame\.width !== plan\.width/u,
     );
     expect(
       liveColumnFrames.match(/windowRepeater\.itemAt\(/gu) ?? [],
@@ -3272,7 +3382,7 @@ describe("overview effect package", () => {
       /function resetOverviewWheelState\(\) \{\s*resetOverviewHorizontalWheelState\(\);\s*resetOverviewVerticalWheelState\(\);\s*\}/u,
     );
     expect(wheelNavigation).toMatch(
-      /function resetOverviewHorizontalWheelState\(\) \{\s*overviewHorizontalWheelPixelRemainder = 0;\s*overviewHorizontalWheelRemainder = 0;\s*\}/u,
+      /function resetOverviewHorizontalWheelState\(\) \{\s*cancelOverviewHorizontalWheelSelectionRequest\(\);\s*overviewHorizontalWheelPixelRemainder = 0;\s*overviewHorizontalWheelRemainder = 0;\s*\}/u,
     );
     expect(wheelNavigation).toMatch(
       /function resetOverviewVerticalWheelState\(\) \{\s*resetOverviewPreciseVerticalWheelState\(\);\s*clearOverviewVerticalWheelWorkspaceRequest\(\);\s*advanceOverviewVerticalWheelWorkspaceRequestId\(\);\s*overviewWheelRemainder = 0;\s*\}/u,

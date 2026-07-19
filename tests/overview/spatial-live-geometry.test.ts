@@ -172,12 +172,84 @@ describe("aggregateOverviewSpatialLiveColumnGeometry", () => {
     expect(
       result?.memberFrames.every(
         (frame) =>
+          frame !== null &&
           Object.isFrozen(frame) &&
           Object.values(frame).every((value) => typeof value !== "object"),
       ),
     ).toBe(true);
     expect(result?.memberFrames[0]).not.toBe(samples[1]);
     expect(result?.memberFrames[1]).not.toBe(samples[0]);
+  });
+
+  it("derives a tabbed column from only its selected live member", () => {
+    const selected = project({
+      memberIndex: 1,
+      windowId: "window-2",
+      liveHeight: 840,
+      liveWidth: 920,
+      liveX: -120,
+      liveY: 80,
+    });
+
+    const result = aggregateOverviewSpatialLiveColumnGeometry({
+      columnIndex: 1,
+      memberCount: 3,
+      presentation: "tabbed",
+      samples: [selected],
+      selectedMemberIndex: 1,
+    });
+
+    expect(result).toEqual({
+      columnIndex: 1,
+      memberFrames: [null, selected, null],
+      selectedMemberIndex: 1,
+      width: 460,
+      x: -60,
+    });
+    expect(Object.isFrozen(result)).toBe(true);
+    expect(Object.isFrozen(result?.memberFrames)).toBe(true);
+    expect(Object.isFrozen(result?.memberFrames[1])).toBe(true);
+    expect(result?.memberFrames[1]).not.toBe(selected);
+  });
+
+  it.each([
+    {
+      memberCount: 3,
+      presentation: "tabbed",
+      samples: [],
+      selectedMemberIndex: 1,
+    },
+    {
+      memberCount: 3,
+      presentation: "tabbed",
+      samples: [project(), project({ memberIndex: 1, windowId: "window-2" })],
+      selectedMemberIndex: 1,
+    },
+    {
+      memberCount: 3,
+      presentation: "tabbed",
+      samples: [project()],
+      selectedMemberIndex: 1,
+    },
+    {
+      memberCount: 3,
+      presentation: "tabbed",
+      samples: [project()],
+      selectedMemberIndex: 3,
+    },
+    {
+      memberCount: 1,
+      presentation: "unknown",
+      samples: [project()],
+      selectedMemberIndex: 0,
+    },
+  ])("fails closed for an ambiguous tabbed column (%o)", (candidate) => {
+    expect(
+      aggregateOverviewSpatialLiveColumnGeometry({
+        columnIndex: 1,
+        ...candidate,
+      }),
+    ).toBeNull();
   });
 
   it.each([

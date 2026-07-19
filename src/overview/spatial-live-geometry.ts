@@ -31,12 +31,15 @@ export interface OverviewSpatialLiveGeometryPlan extends OverviewSpatialLiveGeom
 export interface OverviewSpatialLiveColumnGeometryInput {
   readonly columnIndex: number;
   readonly memberCount: number;
+  readonly presentation?: "stacked" | "tabbed";
   readonly samples: readonly unknown[];
+  readonly selectedMemberIndex?: number;
 }
 
 export interface OverviewSpatialLiveColumnGeometryPlan {
   readonly columnIndex: number;
-  readonly memberFrames: readonly OverviewSpatialLiveGeometryPlan[];
+  readonly memberFrames: readonly (OverviewSpatialLiveGeometryPlan | null)[];
+  readonly selectedMemberIndex?: number;
   readonly width: number;
   readonly x: number;
 }
@@ -158,7 +161,11 @@ export function aggregateOverviewSpatialLiveColumnGeometry(
 
     const columnIndex = input["columnIndex"];
     const memberCount = input["memberCount"];
+    const presentationValue = input["presentation"];
+    const presentation =
+      presentationValue === undefined ? "stacked" : presentationValue;
     const samples = input["samples"];
+    const selectedMemberIndex = input["selectedMemberIndex"];
     if (
       !isBoundedIndex(
         columnIndex,
@@ -169,12 +176,27 @@ export function aggregateOverviewSpatialLiveColumnGeometry(
         LAYOUT_PERSISTENCE_LIMITS.membersPerColumn,
       ) ||
       !Array.isArray(samples) ||
-      samples.length !== memberCount
+      (presentation !== "stacked" && presentation !== "tabbed") ||
+      (presentation === "stacked" && samples.length !== memberCount)
     ) {
       return null;
     }
 
-    const memberFrames: OverviewSpatialLiveGeometryPlan[] = [];
+    let exactSelectedMemberIndex: number | undefined;
+    if (presentation === "tabbed") {
+      if (
+        samples.length !== 1 ||
+        !isBoundedIndex(selectedMemberIndex, memberCount)
+      ) {
+        return null;
+      }
+      exactSelectedMemberIndex = selectedMemberIndex;
+    }
+
+    const memberFrames: (OverviewSpatialLiveGeometryPlan | null)[] =
+      presentation === "tabbed"
+        ? Array<OverviewSpatialLiveGeometryPlan | null>(memberCount).fill(null)
+        : [];
     let columnX: number | null = null;
     let columnWidth: number | null = null;
     for (const sample of samples) {
@@ -188,7 +210,16 @@ export function aggregateOverviewSpatialLiveColumnGeometry(
       }
 
       const memberIndex = snapshot.memberIndex;
-      if (memberFrames[memberIndex] !== undefined) {
+      if (
+        presentation === "tabbed" &&
+        memberIndex !== exactSelectedMemberIndex
+      ) {
+        return null;
+      }
+      if (
+        memberFrames[memberIndex] !== undefined &&
+        memberFrames[memberIndex] !== null
+      ) {
         return null;
       }
       memberFrames[memberIndex] = Object.freeze({
@@ -220,9 +251,23 @@ export function aggregateOverviewSpatialLiveColumnGeometry(
       return null;
     }
 
+    const frozenMemberFrames = Object.freeze(memberFrames);
+    if (presentation === "tabbed") {
+      if (exactSelectedMemberIndex === undefined) {
+        return null;
+      }
+      return Object.freeze({
+        columnIndex,
+        memberFrames: frozenMemberFrames,
+        selectedMemberIndex: exactSelectedMemberIndex,
+        width: normalizeZero(columnWidth),
+        x: normalizeZero(columnX),
+      });
+    }
+
     return Object.freeze({
       columnIndex,
-      memberFrames: Object.freeze(memberFrames),
+      memberFrames: frozenMemberFrames,
       width: normalizeZero(columnWidth),
       x: normalizeZero(columnX),
     });
