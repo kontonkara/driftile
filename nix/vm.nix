@@ -9038,25 +9038,26 @@ let
         local attempt
         local card_height_milli
         local card_width_milli
-        local card_x_milli
         local desktop_count=$2
         local destination_x
         local destination_y
         local edge_margin_milli
         local gap_milli
-        local horizontal_margin_limit_milli
-        local minimum_output_dimension
+        local gutter_x_milli
+        local gutter_y_milli
         local output_frame=$1
         local output_height
         local output_width
         local output_x
         local output_y
+        local projected_width_milli
         local ready_file=/tmp/shared/driftile-overview-desktop-drag-ready
         local sent_file=/tmp/shared/driftile-overview-desktop-drag-sent
         local source_x
         local source_y
         local stride_milli
         local temporary_file="$ready_file.tmp"
+        local viewport_origin_x_milli
 
         frame_is_valid "$output_frame" || return 1
         [[ "$desktop_count" =~ ^[0-9]+$ ]] || return 1
@@ -9069,26 +9070,29 @@ let
           <<< "$output_frame"
 
         card_height_milli=$((output_height * 500))
-        minimum_output_dimension=$output_width
-        ((output_height >= minimum_output_dimension)) \
-          || minimum_output_dimension=$output_height
-        card_x_milli=$((minimum_output_dimension * 35))
-        ((card_x_milli >= 20000)) || card_x_milli=20000
-        ((card_x_milli <= 64000)) || card_x_milli=64000
-        horizontal_margin_limit_milli=$((output_width * 200))
-        ((card_x_milli <= horizontal_margin_limit_milli)) \
-          || card_x_milli=$horizontal_margin_limit_milli
-        card_width_milli=$((output_width * 1000 - card_x_milli * 2))
-        edge_margin_milli=$((output_height * 250))
-        gap_milli=$((card_height_milli * 12 / 100))
+        card_width_milli=$((output_width * 1000))
+        edge_margin_milli=$(((output_height * 1000 - card_height_milli) / 2))
+        gap_milli=$((card_height_milli / 10))
         ((gap_milli <= 48000)) || gap_milli=48000
         ((card_width_milli > 0 && card_height_milli > 0)) || return 1
         stride_milli=$((card_height_milli + gap_milli))
 
-        source_x=$((output_x + (card_x_milli + 21000) / 1000))
+        projected_width_milli=$((output_width * card_height_milli / output_height))
+        viewport_origin_x_milli=$(((card_width_milli - projected_width_milli) / 2))
+        if ((viewport_origin_x_milli >= 48000)); then
+          gutter_x_milli=$((viewport_origin_x_milli - 46000))
+        else
+          gutter_x_milli=$((viewport_origin_x_milli + 10000))
+        fi
+        ((gutter_x_milli >= 6000)) || gutter_x_milli=6000
+        ((gutter_x_milli <= card_width_milli - 42000)) \
+          || gutter_x_milli=$((card_width_milli - 42000))
+        gutter_y_milli=8000
+
+        source_x=$((output_x + (gutter_x_milli + 18000) / 1000))
         destination_x=$source_x
-        source_y=$((output_y \
-          + (edge_margin_milli + stride_milli + output_height * 1000) / 2000))
+        source_y=$((output_y + (edge_margin_milli + stride_milli \
+          + gutter_y_milli + 18000) / 1000))
         destination_y=$((output_y \
           + (edge_margin_milli + card_height_milli / 4) / 1000))
         ((source_x >= output_x \
