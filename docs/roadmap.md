@@ -1,14 +1,13 @@
 # Roadmap
 
-Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.80.0 are
+Versions 0.1.0, 1.0.0 through 1.9.0, 1.9.1, and 1.10.0 through 1.81.0 are
 released. The delivered milestones and release criteria below are a historical
 record. Later direction is not a committed release schedule.
 
-Stable 1.80.0 queues immediate horizontal focus across desktop handoffs,
-restores eligible automatic-floating focus after close, and keeps per-output
-handoff input owned by its exact unresolved context. Ambiguous, global, and
-stale cases fail closed. Settings, shortcuts, and logical persistence v4 remain
-compatible.
+Stable 1.81.0 hardens current-row live Overview geometry, defers vertical wheel
+selection through exact context checks, and preserves picture-in-picture
+floating ownership while its public role is temporarily unavailable. Settings,
+shortcuts, and logical persistence v4 remain compatible.
 
 ## Current direction
 
@@ -2706,7 +2705,7 @@ Release criteria (met):
   application-excluded windows during close-focus recovery while rejecting
   ordinary non-normal windows.
 
-### 1.81.0 (in development)
+### 1.81.0 (released)
 
 - Project guarded live frame geometry for eligible tiled windows in the current
   Overview row, with planned geometry as the fallback for stale, tabbed, or

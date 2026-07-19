@@ -1,7 +1,35 @@
 # Migration
 
-The latest stable release is 1.80.0. Use the steps below when changing release
+The latest stable release is 1.81.0. Use the steps below when changing release
 generations, and never combine files from different releases.
+
+## Upgrade from 1.80.0 to 1.81.0
+
+1. Release a helper-owned shortcut profile with the installed helper.
+2. Disable Driftile and both optional effects in System Settings.
+3. Install matching 1.81.0 artifacts, or pin the Nix input to `v1.81.0` and
+   rebuild.
+4. Re-enable Driftile and only the optional effects you use, then reclaim the
+   helper profile if needed.
+
+No shortcut, setting, schema, layout, or persistence migration is required.
+The current Overview row now projects guarded live tiled frames, vertical wheel
+input settles through deferred context checks, and manual horizontal detachment
+is local to one output and workspace. Picture-in-picture windows retain their
+automatic-floating ownership while KWin temporarily withholds the window role.
+The Overview remains an intermediate spatial projection; inactive rows and
+column shells still use captured layout state.
+
+Users of the crash-prone 1.72.0 Overview should upgrade its package together
+with the main extension. The current packaged search runtime does not contain a
+weak-collection query-plan cache.
+
+## Roll back from 1.81.0 to 1.80.0
+
+Release a helper-owned profile, disable Driftile and both optional effects,
+then restore matching verified 1.80.0 artifacts or pin the Nix input to
+`v1.80.0` and rebuild. Logical persistence v4 remains compatible; no option
+deletion or schema migration is required.
 
 ## Upgrade from 1.79.0 to 1.80.0
 
