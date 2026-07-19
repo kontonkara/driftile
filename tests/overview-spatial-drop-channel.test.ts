@@ -119,7 +119,7 @@ describe("overview spatial drop command channel", () => {
     expect(writer).toContain("OverviewRuntime.DriftileOverview");
     expect(writer).toContain("runtime.encodeSpatialDropCommand({");
     expect(writer).toContain('format: "driftile-spatial-drop"');
-    expect(writer).toContain("version: 1");
+    expect(writer).toContain("version: 2");
 
     const encode = writer.indexOf("runtime.encodeSpatialDropCommand({");
     const write = writer.indexOf(

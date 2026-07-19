@@ -151,6 +151,10 @@ Rectangle {
     property var spatialWindowDragSource: null
     property string spatialWindowDragSourceDesktopId: ""
     property int spatialWindowDragSourceWorkspaceIndex: -1
+    property var workspaceGapPreviewSource: null
+    property string workspaceGapPreviewWindowId: ""
+    property int workspaceGapPreviewIndex: -1
+    property var workspaceGapPreviewPlan: null
     readonly property int spatialWindowDragHoverThresholdMilliseconds: 600
     property string spatialWindowDragHoverCurrentDesktopId: ""
     property int spatialWindowDragHoverGeometryEpoch: -1
@@ -473,6 +477,44 @@ Rectangle {
 
         function onWindowRoleChanged() {
             root.resolveSpatialLiveCamera();
+        }
+    }
+
+    Connections {
+        target: root.workspaceGapPreviewSource
+        enabled: target !== null
+        ignoreUnknownSignals: true
+
+        function onCandidateChanged() {
+            root.clearInvalidWorkspaceGapPreview();
+        }
+
+        function onDestroyed() {
+            root.clearWorkspaceGapPreview();
+        }
+
+        function onDragEligibleChanged() {
+            root.clearInvalidWorkspaceGapPreview();
+        }
+
+        function onMinimizedWindowChanged() {
+            root.clearInvalidWorkspaceGapPreview();
+        }
+
+        function onSourceDesktopChanged() {
+            root.clearInvalidWorkspaceGapPreview();
+        }
+
+        function onSourceDesktopIdChanged() {
+            root.clearInvalidWorkspaceGapPreview();
+        }
+
+        function onSourceScreenChanged() {
+            root.clearInvalidWorkspaceGapPreview();
+        }
+
+        function onSpatialDragLifecycleActiveChanged() {
+            root.clearInvalidWorkspaceGapPreview();
         }
     }
 
@@ -894,6 +936,76 @@ Rectangle {
                                                              expectedTargetDesktopId,
                                                              expectedTargetScreen)
                     }
+                }
+            }
+        }
+
+        Repeater {
+            id: workspaceGapDropRepeater
+
+            model: Math.max(0, root.desktopIds.length - 1)
+
+            Item {
+                id: workspaceGapDropSlot
+
+                required property int index
+
+                x: 0
+                y: index * (root.cardHeight + root.cardGap) + root.cardHeight
+                width: spatialCanvas.width
+                height: root.cardGap
+                enabled: root.spatialPointerInputEligible && !root.desktopReorderActive
+                z: 10000
+
+                onEnabledChanged: {
+                    if (!enabled) {
+                        root.releaseWorkspaceGapPreview(index);
+                    }
+                }
+
+                DropArea {
+                    id: workspaceGapDropArea
+
+                    anchors.fill: parent
+                    keys: ["driftile-window"]
+
+                    onEntered: drag => {
+                        drag.accepted = root.claimWorkspaceGapPreview(
+                            workspaceGapDropArea, drag, workspaceGapDropSlot.index);
+                    }
+                    onPositionChanged: drag => {
+                        drag.accepted = root.claimWorkspaceGapPreview(
+                            workspaceGapDropArea, drag, workspaceGapDropSlot.index);
+                    }
+                    onExited: root.releaseWorkspaceGapPreview(workspaceGapDropSlot.index)
+                    onContainsDragChanged: {
+                        if (!containsDrag) {
+                            root.releaseWorkspaceGapPreview(workspaceGapDropSlot.index);
+                        }
+                    }
+                    onDropped: drop => {
+                        const plan = root.planWorkspaceGapDrop(workspaceGapDropArea, drop,
+                                                               workspaceGapDropSlot.index);
+                        const accepted = plan !== null
+                            && root.submitWindowWorkspaceGapDrop(drop.source, plan, root.targetScreen);
+                        drop.action = accepted ? Qt.MoveAction : Qt.IgnoreAction;
+                        drop.accepted = accepted;
+                        root.releaseWorkspaceGapPreview(workspaceGapDropSlot.index);
+                    }
+                }
+
+                Rectangle {
+                    readonly property var plan: root.workspaceGapPreviewIndex === workspaceGapDropSlot.index
+                        && root.workspaceGapPreviewIsExact() ? root.workspaceGapPreviewPlan : null
+
+                    x: root.cardX
+                    y: plan ? plan.lineY - workspaceGapDropSlot.y - height / 2 : 0
+                    width: root.cardWidth
+                    height: Math.max(2, Math.min(6, root.cardGap * 0.18))
+                    visible: plan !== null
+                    color: "#86aee8"
+                    opacity: root.spatialPresentationProgress
+                    radius: height / 2
                 }
             }
         }
@@ -1702,6 +1814,7 @@ Rectangle {
 
     function resetSpatialEdgePanTracking() {
         resetWindowWorkspaceHover();
+        clearWorkspaceGapPreview();
         spatialWindowDragSource = null;
         spatialWindowDragSourceDesktopId = "";
         spatialWindowDragSourceWorkspaceIndex = -1;
@@ -5797,9 +5910,264 @@ Rectangle {
         return false;
     }
 
+    function planWorkspaceGapDrop(dropArea, drag, expectedGapIndex) {
+        try {
+            if (!dropArea || !drag || !Number.isInteger(expectedGapIndex)
+                    || expectedGapIndex < 0 || !workspaceGapDropSourceIsExact(drag.source)
+                    || !Number.isFinite(drag.x) || !Number.isFinite(drag.y)) {
+                return null;
+            }
+
+            const point = dropArea.mapToItem(spatialCanvas, drag.x, drag.y);
+            const plan = point && Number.isFinite(point.y)
+                ? planWorkspaceGapDropAtCanvasY(point.y) : null;
+            return workspaceGapPlanIsExact(plan, expectedGapIndex + 1) ? plan : null;
+        } catch (error) {
+            return null;
+        }
+    }
+
+    function claimWorkspaceGapPreview(dropArea, drag, expectedGapIndex) {
+        const source = drag ? drag.source : null;
+        const plan = planWorkspaceGapDrop(dropArea, drag, expectedGapIndex);
+        if (!workspaceGapPreviewContextIsExact(source, plan, expectedGapIndex)) {
+            releaseWorkspaceGapPreview(expectedGapIndex);
+            return false;
+        }
+
+        workspaceGapPreviewSource = source;
+        workspaceGapPreviewWindowId = source.windowId;
+        workspaceGapPreviewIndex = expectedGapIndex;
+        workspaceGapPreviewPlan = plan;
+        return true;
+    }
+
+    function releaseWorkspaceGapPreview(expectedGapIndex) {
+        if (expectedGapIndex !== undefined && expectedGapIndex !== workspaceGapPreviewIndex) {
+            return;
+        }
+        clearWorkspaceGapPreview();
+    }
+
+    function clearWorkspaceGapPreview() {
+        workspaceGapPreviewSource = null;
+        workspaceGapPreviewWindowId = "";
+        workspaceGapPreviewIndex = -1;
+        workspaceGapPreviewPlan = null;
+    }
+
+    function clearInvalidWorkspaceGapPreview() {
+        if (workspaceGapPreviewSource !== null && !workspaceGapPreviewIsExact()) {
+            clearWorkspaceGapPreview();
+        }
+    }
+
+    function workspaceGapPreviewIsExact() {
+        return workspaceGapPreviewContextIsExact(workspaceGapPreviewSource,
+                                                  workspaceGapPreviewPlan,
+                                                  workspaceGapPreviewIndex)
+            && workspaceGapPreviewSource.windowId === workspaceGapPreviewWindowId;
+    }
+
+    function workspaceGapPreviewContextIsExact(source, plan, expectedGapIndex) {
+        try {
+            if (!spatialPointerInputEligible || desktopReorderActive
+                    || !Number.isInteger(expectedGapIndex) || expectedGapIndex < 0
+                    || !workspaceGapDropSourceIsExact(source)
+                    || !workspaceGapPlanIsExact(plan, expectedGapIndex + 1)) {
+                return false;
+            }
+
+            const effect = sceneEffect;
+            const model = overviewModel;
+            const candidate = source.candidate;
+            const expectedWindowId = source.windowId;
+            const expectedSourceDesktop = source.sourceDesktop;
+            const expectedSourceDesktopId = source.sourceDesktopId;
+            const liveSourceScreen = liveScreenFor(source.sourceScreen);
+            const liveTargetScreen = liveScreenFor(targetScreen);
+            const sourceOutput = projectedOutput(model, liveSourceScreen);
+            const targetOutput = projectedOutput(model, liveTargetScreen);
+            const sourceOutputId = sourceOutput ? String(sourceOutput.outputId) : "";
+            const targetOutputId = targetOutput ? String(targetOutput.outputId) : "";
+            const liveSourceDesktop = liveDesktopFor(expectedSourceDesktop, expectedSourceDesktopId);
+            const expectedAnchorDesktop = desktopForId(plan.anchorDesktopId);
+            const anchorDesktop = liveDesktopFor(expectedAnchorDesktop, plan.anchorDesktopId);
+            const currentActivity = KWin.Workspace.currentActivity;
+            const expectedActivityId = currentActivity === undefined || currentActivity === null ? ""
+                                                                                                  : String(currentActivity);
+            const localSource = liveSourceScreen === liveTargetScreen
+                && source === spatialWindowDragSource
+                && expectedSourceDesktopId === spatialWindowDragSourceDesktopId;
+            const externalSource = liveSourceScreen !== liveTargetScreen
+                && spatialWindowDragSource === null && sourceOutputId !== targetOutputId;
+            if ((!localSource && !externalSource) || !anchorDesktop
+                    || !windowSpatialDropSceneIsExact(effect, model, liveSourceScreen, sourceOutput,
+                                                      sourceOutputId, liveTargetScreen, targetOutput,
+                                                      targetOutputId, liveSourceDesktop,
+                                                      expectedSourceDesktopId, anchorDesktop,
+                                                      plan.anchorDesktopId)) {
+                return false;
+            }
+
+            return windowDesktopDropCandidateIsExact(candidate, expectedWindowId, liveSourceScreen,
+                                                      liveSourceDesktop, expectedSourceDesktopId,
+                                                      expectedActivityId);
+        } catch (error) {
+            return false;
+        }
+    }
+
+    function planWorkspaceGapDropAtRootPoint(point) {
+        try {
+            if (!point || !Number.isFinite(point.x) || !Number.isFinite(point.y)) {
+                return null;
+            }
+
+            const canvasPoint = spatialCanvas.mapFromItem(root, point.x, point.y);
+            return canvasPoint && Number.isFinite(canvasPoint.y)
+                ? planWorkspaceGapDropAtCanvasY(canvasPoint.y) : null;
+        } catch (error) {
+            return null;
+        }
+    }
+
+    function planWorkspaceGapDropAtCanvasY(pointY) {
+        const runtime = OverviewRuntime.DriftileOverview;
+        if (!runtime || typeof runtime.planOverviewSpatialWorkspaceGap !== "function") {
+            return null;
+        }
+
+        try {
+            const plan = runtime.planOverviewSpatialWorkspaceGap({
+                cardGap: cardGap,
+                cardHeight: cardHeight,
+                cardTop: 0,
+                desktopIds: desktopIds,
+                keepEmptyDesktopAboveFirst: emptyDesktopAboveFirst,
+                pointY: pointY
+            });
+            return workspaceGapPlanIsExact(plan) ? plan : null;
+        } catch (error) {
+            return null;
+        }
+    }
+
+    function workspaceGapPlanIsExact(plan, expectedInsertionIndex) {
+        try {
+            if (!plan || !Object.isFrozen(plan) || !Number.isInteger(plan.insertionIndex)
+                    || plan.insertionIndex < 1 || plan.insertionIndex >= desktopIds.length
+                    || expectedInsertionIndex !== undefined
+                    && plan.insertionIndex !== expectedInsertionIndex
+                    || !Number.isFinite(plan.lineY)
+                    || typeof plan.anchorDesktopId !== "string" || plan.anchorDesktopId.length === 0
+                    || typeof plan.adjacentDesktopId !== "string" || plan.adjacentDesktopId.length === 0
+                    || plan.anchorDesktopId === plan.adjacentDesktopId
+                    || (plan.position !== "before" && plan.position !== "after")) {
+                return false;
+            }
+
+            const anchorIndex = desktopIds.indexOf(plan.anchorDesktopId);
+            const adjacentIndex = desktopIds.indexOf(plan.adjacentDesktopId);
+            if (anchorIndex < 0 || adjacentIndex < 0
+                    || desktopIds.lastIndexOf(plan.anchorDesktopId) !== anchorIndex
+                    || desktopIds.lastIndexOf(plan.adjacentDesktopId) !== adjacentIndex
+                    || anchorIndex === desktopIds.length - 1
+                    || emptyDesktopAboveFirst && anchorIndex === 0) {
+                return false;
+            }
+
+            return plan.position === "before"
+                ? adjacentIndex + 1 === anchorIndex && plan.insertionIndex === anchorIndex
+                : anchorIndex + 1 === adjacentIndex && plan.insertionIndex === adjacentIndex;
+        } catch (error) {
+            return false;
+        }
+    }
+
+    function workspaceGapDropSourceIsExact(source) {
+        try {
+            const sourceCard = source ? source.sourceCard : null;
+            return source && sourceCard && source.spatialDragLifecycleActive === true
+                    && source.dragEligible === true && source.minimizedWindow !== true
+                    && typeof sourceCard.crossOutputWindowDropSourceIsExact === "function"
+                    && sourceCard.crossOutputWindowDropSourceIsExact(source);
+        } catch (error) {
+            return false;
+        }
+    }
+
+    function submitWindowWorkspaceGapDrop(source, exactPlan, expectedTargetScreen) {
+        try {
+            const effect = sceneEffect;
+            const model = overviewModel;
+            const candidate = source ? source.candidate : null;
+            const expectedWindowId = source ? source.windowId : "";
+            const expectedSourceDesktop = source ? source.sourceDesktop : null;
+            const expectedSourceDesktopId = source ? source.sourceDesktopId : "";
+            const liveSourceScreen = liveScreenFor(source ? source.sourceScreen : null);
+            const liveTargetScreen = liveScreenFor(expectedTargetScreen);
+            const sourceOutput = projectedOutput(model, liveSourceScreen);
+            const targetOutput = projectedOutput(model, liveTargetScreen);
+            const sourceOutputId = sourceOutput ? String(sourceOutput.outputId) : "";
+            const targetOutputId = targetOutput ? String(targetOutput.outputId) : "";
+            const liveSourceDesktop = liveDesktopFor(expectedSourceDesktop, expectedSourceDesktopId);
+            const expectedAnchorDesktop = exactPlan
+                ? desktopForId(exactPlan.anchorDesktopId) : null;
+            const anchorDesktop = exactPlan
+                ? liveDesktopFor(expectedAnchorDesktop, exactPlan.anchorDesktopId) : null;
+            const currentActivity = KWin.Workspace.currentActivity;
+            const expectedActivityId = currentActivity === undefined || currentActivity === null ? ""
+                                                                                                  : String(currentActivity);
+            const target = canonicalWorkspaceGapDropTarget(exactPlan, expectedActivityId, targetOutputId);
+            if (!workspaceGapDropSourceIsExact(source) || !target || !anchorDesktop
+                    || !windowSpatialDropSceneIsExact(effect, model, liveSourceScreen, sourceOutput,
+                                                      sourceOutputId, liveTargetScreen, targetOutput,
+                                                      targetOutputId, liveSourceDesktop,
+                                                      expectedSourceDesktopId, anchorDesktop,
+                                                      exactPlan.anchorDesktopId)
+                    || !windowDesktopDropCandidateIsExact(candidate, expectedWindowId, liveSourceScreen,
+                                                           liveSourceDesktop, expectedSourceDesktopId,
+                                                           expectedActivityId)
+                    || typeof effect.submitSpatialDropCommand !== "function") {
+                return false;
+            }
+
+            return effect.submitSpatialDropCommand({
+                                                       activityId: expectedActivityId,
+                                                       desktopId: expectedSourceDesktopId,
+                                                       outputId: sourceOutputId,
+                                                       windowId: expectedWindowId
+                                                   }, target) === true;
+        } catch (error) {
+            return false;
+        }
+    }
+
+    function canonicalWorkspaceGapDropTarget(exactPlan, expectedActivityId, expectedOutputId) {
+        if (!workspaceGapPlanIsExact(exactPlan) || expectedActivityId.length === 0
+                || expectedOutputId.length === 0 || outputId !== expectedOutputId) {
+            return null;
+        }
+
+        return {
+            activityId: expectedActivityId,
+            adjacentDesktopId: exactPlan.adjacentDesktopId,
+            anchorDesktopId: exactPlan.anchorDesktopId,
+            kind: "workspace-gap",
+            outputId: expectedOutputId,
+            position: exactPlan.position
+        };
+    }
+
     function handleCrossOutputWindowDrop(globalPosition, source, expectedTargetScreen) {
         const targetHit = crossOutputDropTargetAt(globalPosition, expectedTargetScreen);
         if (!targetHit || !source) {
+            return;
+        }
+
+        if (targetHit.kind === "workspace-gap") {
+            submitWindowWorkspaceGapDrop(source, targetHit.plan, expectedTargetScreen);
             return;
         }
 
@@ -5836,6 +6204,11 @@ Rectangle {
             return null;
         }
 
+        const workspaceGapPlan = planWorkspaceGapDropAtRootPoint(localPosition);
+        if (workspaceGapPlan) {
+            return Object.freeze({ kind: "workspace-gap", plan: workspaceGapPlan });
+        }
+
         let targetHit = null;
         for (let index = 0; index < desktopRepeater.count; index += 1) {
             const candidate = desktopCardAt(index);
@@ -5860,6 +6233,7 @@ Rectangle {
             }
             targetHit = Object.freeze({
                 card: candidate,
+                kind: "desktop-card",
                 localPosition: Object.freeze({
                     x: Number(cardPosition.x),
                     y: Number(cardPosition.y)

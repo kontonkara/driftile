@@ -42645,6 +42645,237 @@ describe("RuntimeController", () => {
     expect(fixture.workspace.currentDesktopForScreen?.(output)).toBe(desktop);
   });
 
+  it("creates one workspace and holds its ownership through an asynchronous spatial drop", () => {
+    const setup = createWorkspaceGapDropRuntimeFixture({ crossOutput: true });
+    const commitCreated = vi.spyOn(
+      DesktopLifecycle.prototype,
+      "commitCreatedDesktop",
+    );
+    const rollbackCreated = vi.spyOn(
+      DesktopLifecycle.prototype,
+      "rollbackCreatedDesktop",
+    );
+    const outputCommit: { value: (() => void) | null } = { value: null };
+
+    try {
+      setup.fixture.setOutputTransferBehavior((_window, output, commit) => {
+        if (output === setup.targetOutput) {
+          outputCommit.value = commit;
+        } else {
+          commit();
+        }
+      });
+
+      expect(
+        setup.controller.executeSpatialDrop(workspaceGapDropCommand(setup)),
+      ).toBe(true);
+      expect(setup.createCount).toBe(1);
+      expect(setup.removeCount).toBe(0);
+      expect(commitCreated).not.toHaveBeenCalled();
+      expect(rollbackCreated).not.toHaveBeenCalled();
+      expect(
+        (
+          setup.controller as unknown as {
+            readonly pendingSpatialOutputTransfer: unknown;
+          }
+        ).pendingSpatialOutputTransfer,
+      ).not.toBeNull();
+
+      const commitOutput = outputCommit.value;
+
+      if (!commitOutput) {
+        throw new Error("workspace-gap output assignment was not captured");
+      }
+
+      commitOutput();
+      flushManualScheduler(setup.scheduler);
+
+      const created = setup.createdDesktop;
+      expect(created).not.toBeNull();
+      expect(setup.desktopIds).toEqual([
+        setup.sourceDesktop.id,
+        created?.id,
+        setup.trailingDesktop.id,
+      ]);
+      expect(setup.dragged.window.output).toBe(setup.targetOutput);
+      expect(setup.dragged.window.desktops).toEqual([created]);
+      expect(
+        testLayoutColumns(
+          setup.controller,
+          setup.sourceOutput,
+          setup.sourceDesktop,
+        ),
+      ).toEqual([{ id: "column:source", windowIds: ["peer"] }]);
+      expect(
+        created
+          ? testLayoutColumns(setup.controller, setup.targetOutput, created)
+          : [],
+      ).toEqual([{ id: "column:dragged", windowIds: ["dragged"] }]);
+      expect(commitCreated).toHaveBeenCalledOnce();
+      expect(rollbackCreated).not.toHaveBeenCalled();
+    } finally {
+      commitCreated.mockRestore();
+      rollbackCreated.mockRestore();
+    }
+  });
+
+  it("compensates an asynchronous workspace-gap drop after desktop topology drift", () => {
+    const setup = createWorkspaceGapDropRuntimeFixture({ crossOutput: true });
+    const sourceBefore = runtimeLayout(setup.controller).snapshot(
+      outputId(setup.sourceOutput.name),
+      desktopId(setup.sourceDesktop.id),
+      FALLBACK_ACTIVITY_ID,
+    );
+    let forwardCommit: (() => void) | null = null;
+
+    setup.fixture.setOutputTransferBehavior((_window, output, commit) => {
+      if (output === setup.targetOutput) {
+        forwardCommit = commit;
+        return;
+      }
+
+      commit();
+    });
+
+    expect(
+      setup.controller.executeSpatialDrop(workspaceGapDropCommand(setup)),
+    ).toBe(true);
+
+    const external = setup.insertExternalDesktop(0, "desktop-external");
+    invokeCapturedCallback(
+      forwardCommit,
+      "workspace-gap forward output transfer",
+    );
+    flushManualScheduler(setup.scheduler);
+
+    expect(setup.desktopIds).toContain(external.id);
+    expect(setup.dragged.window.output).toBe(setup.sourceOutput);
+    expect(setup.dragged.window.desktops).toEqual([setup.sourceDesktop]);
+    expect(
+      runtimeLayout(setup.controller).snapshot(
+        outputId(setup.sourceOutput.name),
+        desktopId(setup.sourceDesktop.id),
+        FALLBACK_ACTIVITY_ID,
+      ),
+    ).toEqual(sourceBefore);
+    expect(setup.controller as unknown).toMatchObject({
+      activeSpatialWorkspaceCreation: null,
+      overviewSpatialDropActivation: null,
+      pendingSpatialOutputTransfer: null,
+      windowTransferOperation: null,
+    });
+  });
+
+  it("rolls back an active workspace-gap reservation before runtime stop", () => {
+    const setup = createWorkspaceGapDropRuntimeFixture({ crossOutput: true });
+    const rollbackCreated = vi.spyOn(
+      DesktopLifecycle.prototype,
+      "rollbackCreatedDesktop",
+    );
+    const lifecycleStop = vi.spyOn(DesktopLifecycle.prototype, "stop");
+
+    setup.fixture.setOutputTransferBehavior((_window, output, commit) => {
+      if (output !== setup.targetOutput) {
+        commit();
+      }
+    });
+
+    try {
+      expect(
+        setup.controller.executeSpatialDrop(workspaceGapDropCommand(setup)),
+      ).toBe(true);
+
+      setup.controller.stop();
+
+      expect(rollbackCreated).toHaveBeenCalledOnce();
+      expect(lifecycleStop).toHaveBeenCalledOnce();
+      expect(rollbackCreated.mock.invocationCallOrder[0]).toBeLessThan(
+        lifecycleStop.mock.invocationCallOrder[0] ?? Number.MAX_SAFE_INTEGER,
+      );
+      expect(setup.removeCount).toBe(1);
+      expect(setup.desktopIds).toEqual([
+        setup.sourceDesktop.id,
+        setup.trailingDesktop.id,
+      ]);
+      expect(setup.controller as unknown).toMatchObject({
+        activeSpatialWorkspaceCreation: null,
+      });
+    } finally {
+      rollbackCreated.mockRestore();
+      lifecycleStop.mockRestore();
+    }
+  });
+
+  it("rolls back the exact empty workspace after a rejected spatial drop", () => {
+    const setup = createWorkspaceGapDropRuntimeFixture();
+    const before = runtimeLayout(setup.controller).snapshot(
+      outputId(setup.sourceOutput.name),
+      desktopId(setup.sourceDesktop.id),
+      FALLBACK_ACTIVITY_ID,
+    );
+    const commitCreated = vi.spyOn(
+      DesktopLifecycle.prototype,
+      "commitCreatedDesktop",
+    );
+    const rollbackCreated = vi.spyOn(
+      DesktopLifecycle.prototype,
+      "rollbackCreatedDesktop",
+    );
+    setup.dragged.setDesktopWriteBehavior(() => undefined);
+
+    try {
+      expect(
+        setup.controller.executeSpatialDrop(workspaceGapDropCommand(setup)),
+      ).toBe(false);
+      expect(setup.createCount).toBe(1);
+      expect(setup.removeCount).toBe(1);
+      expect(setup.desktopIds).toEqual([
+        setup.sourceDesktop.id,
+        setup.trailingDesktop.id,
+      ]);
+      expect(setup.dragged.window.desktops).toEqual([setup.sourceDesktop]);
+      expect(setup.fixture.workspace.activeWindow).toBe(setup.peer.window);
+      expect(
+        setup.fixture.workspace.currentDesktopForScreen?.(setup.sourceOutput),
+      ).toBe(setup.sourceDesktop);
+      expect(
+        runtimeLayout(setup.controller).snapshot(
+          outputId(setup.sourceOutput.name),
+          desktopId(setup.sourceDesktop.id),
+          FALLBACK_ACTIVITY_ID,
+        ),
+      ).toEqual(before);
+      expect(rollbackCreated).toHaveBeenCalledOnce();
+      expect(commitCreated).not.toHaveBeenCalled();
+    } finally {
+      commitCreated.mockRestore();
+      rollbackCreated.mockRestore();
+    }
+  });
+
+  it("rejects a stale workspace-gap pair before creating a desktop", () => {
+    const setup = createWorkspaceGapDropRuntimeFixture();
+    const trackedBefore = captureTrackedWindowState([
+      setup.peer,
+      setup.dragged,
+    ]);
+    const command = workspaceGapDropCommand(setup);
+
+    expect(
+      setup.controller.executeSpatialDrop({
+        ...command,
+        target: { ...command.target, adjacentDesktopId: "stale-desktop" },
+      }),
+    ).toBe(false);
+    expect(setup.createCount).toBe(0);
+    expect(setup.removeCount).toBe(0);
+    expect(setup.desktopIds).toEqual([
+      setup.sourceDesktop.id,
+      setup.trailingDesktop.id,
+    ]);
+    expectTrackedWindowState([setup.peer, setup.dragged], trackedBefore);
+  });
+
   it("reorders the active window at an exact Overview stack target", () => {
     const setup = createSpatialDropRuntimeFixture();
     const activationCount = setup.fixture.activationCount;
@@ -42738,13 +42969,15 @@ describe("RuntimeController", () => {
     },
     {
       mutate: (
-        _setup: SpatialDropRuntimeFixture,
+        setup: SpatialDropRuntimeFixture,
         command: SpatialDropCommand,
       ): SpatialDropCommand => ({
         ...command,
         target: {
-          ...command.target,
+          activityId: String(FALLBACK_ACTIVITY_ID),
+          desktopId: setup.desktop.id,
           kind: "stack-insertion",
+          outputId: setup.output.name,
           position: "after",
           targetWindowId: "stale-window",
         },
@@ -42899,7 +43132,7 @@ describe("RuntimeController", () => {
           position: "after",
           targetWindowId: "target",
         },
-        version: 1,
+        version: 2,
       };
 
       expect(setup.controller.executeSpatialDrop(command)).toBe(true);
@@ -42959,7 +43192,7 @@ describe("RuntimeController", () => {
         position: "after",
         targetWindowId: "stale-window",
       },
-      version: 1,
+      version: 2,
     };
 
     expect(setup.controller.executeSpatialDrop(command)).toBe(false);
@@ -43006,7 +43239,7 @@ describe("RuntimeController", () => {
         kind: "empty-row",
         outputId: setup.targetOutput.name,
       },
-      version: 1,
+      version: 2,
     };
 
     expect(setup.controller.executeSpatialDrop(command)).toBe(true);
@@ -43701,7 +43934,7 @@ describe("RuntimeController", () => {
         kind: "empty-row",
         outputId: setup.targetOutput.name,
       },
-      version: 1,
+      version: 2,
     };
 
     expect(setup.controller.executeSpatialDrop(command)).toBe(true);
@@ -50780,6 +51013,181 @@ interface SpatialDropRuntimeFixture {
   readonly windows: readonly TrackedWindow[];
 }
 
+interface WorkspaceGapDropRuntimeFixture {
+  readonly controller: RuntimeController;
+  readonly createCount: number;
+  readonly createdDesktop: KWinVirtualDesktop | null;
+  readonly desktopIds: readonly string[];
+  readonly dragged: TrackedWindow;
+  readonly fixture: WorkspaceFixture;
+  readonly peer: TrackedWindow;
+  readonly removeCount: number;
+  readonly scheduler: ManualScheduler;
+  readonly sourceDesktop: KWinVirtualDesktop;
+  readonly sourceOutput: KWinOutput;
+  readonly targetOutput: KWinOutput;
+  readonly trailingDesktop: KWinVirtualDesktop;
+  insertExternalDesktop(
+    position: number,
+    desktopId: string,
+  ): KWinVirtualDesktop;
+}
+
+function createWorkspaceGapDropRuntimeFixture(
+  options: { readonly crossOutput?: boolean } = {},
+): WorkspaceGapDropRuntimeFixture {
+  const sourceOutput = createOutput("DP-1", 0);
+  const targetOutput = options.crossOutput
+    ? createOutput("HDMI-A-1", 1000)
+    : sourceOutput;
+  const sourceDesktop = { id: "desktop-source" };
+  const trailingDesktop = { id: "desktop-trailing" };
+  const peer = createTrackedWindow("peer", sourceOutput, sourceDesktop);
+  const dragged = createTrackedWindow("dragged", sourceOutput, sourceDesktop);
+  const fixture = createWorkspace(
+    sourceOutput,
+    sourceDesktop,
+    sourceOutput === targetOutput
+      ? [sourceOutput]
+      : [sourceOutput, targetOutput],
+    [sourceDesktop, trailingDesktop],
+    [peer.window, dragged.window],
+  );
+  const desktopsChanged = new Signal<[]>();
+  let desktops: KWinVirtualDesktop[] = [sourceDesktop, trailingDesktop];
+  let createCount = 0;
+  let createdDesktopId: string | null = null;
+  let removeCount = 0;
+
+  Object.defineProperties(fixture.workspace, {
+    createDesktop: {
+      configurable: true,
+      value: (position: number) => {
+        createCount += 1;
+        const created = { id: `desktop-created-${String(createCount)}` };
+        createdDesktopId = created.id;
+        desktops.splice(position, 0, created);
+        desktopsChanged.emit();
+      },
+    },
+    desktops: {
+      configurable: true,
+      get: () => desktops,
+    },
+    desktopsChanged: {
+      configurable: true,
+      value: desktopsChanged,
+    },
+    removeDesktop: {
+      configurable: true,
+      value: (desktop: KWinVirtualDesktop) => {
+        const index = desktops.indexOf(desktop);
+
+        if (index < 0) {
+          return;
+        }
+
+        removeCount += 1;
+        desktops = desktops.filter((candidate) => candidate !== desktop);
+        desktopsChanged.emit();
+      },
+    },
+  });
+
+  const scheduler = new ManualScheduler();
+  const controller = new RuntimeController(fixture.workspace, {
+    clientAreaOption: 2,
+    gap: 10,
+    schedule: scheduler.schedule,
+    scheduleResume: scheduler.schedule,
+  });
+
+  if (!controller.start()) {
+    throw new Error("workspace-gap runtime fixture did not start");
+  }
+
+  installTestLayout(controller, sourceOutput, sourceDesktop, "column:source", [
+    {
+      id: "column:source",
+      selectedWindowId: "peer",
+      width: { kind: "proportion", value: 0.5 },
+      windowIds: ["peer", "dragged"],
+    },
+  ]);
+  fixture.workspace.activeWindow = peer.window;
+  controller.reconcile();
+
+  if (scheduler.pendingCount > 0) {
+    flushManualScheduler(scheduler);
+  }
+
+  return {
+    controller,
+    get createCount() {
+      return createCount;
+    },
+    get createdDesktop() {
+      return createdDesktopId
+        ? (desktops.find((desktop) => desktop.id === createdDesktopId) ?? null)
+        : null;
+    },
+    get desktopIds() {
+      return desktops.map((desktop) => desktop.id);
+    },
+    dragged,
+    fixture,
+    insertExternalDesktop: (position, desktopId) => {
+      const desktop = { id: desktopId };
+      desktops.splice(
+        Math.min(Math.max(position, 0), desktops.length),
+        0,
+        desktop,
+      );
+      desktopsChanged.emit();
+      return desktop;
+    },
+    peer,
+    get removeCount() {
+      return removeCount;
+    },
+    scheduler,
+    sourceDesktop,
+    sourceOutput,
+    targetOutput,
+    trailingDesktop,
+  };
+}
+
+function workspaceGapDropCommand(
+  setup: WorkspaceGapDropRuntimeFixture,
+): SpatialDropCommand & {
+  readonly target: Extract<
+    SpatialDropCommand["target"],
+    { readonly kind: "workspace-gap" }
+  >;
+} {
+  return {
+    createdAt: 1,
+    format: "driftile-spatial-drop",
+    requestId: 1,
+    source: {
+      activityId: String(FALLBACK_ACTIVITY_ID),
+      desktopId: setup.sourceDesktop.id,
+      outputId: setup.sourceOutput.name,
+      windowId: String(setup.dragged.window.internalId),
+    },
+    target: {
+      activityId: String(FALLBACK_ACTIVITY_ID),
+      adjacentDesktopId: setup.trailingDesktop.id,
+      anchorDesktopId: setup.sourceDesktop.id,
+      kind: "workspace-gap",
+      outputId: setup.targetOutput.name,
+      position: "after",
+    },
+    version: 2,
+  };
+}
+
 function createSpatialDropRuntimeFixture(): SpatialDropRuntimeFixture {
   const output = createOutput("DP-1", 0);
   const desktop = { id: "desktop-1" };
@@ -50862,7 +51270,7 @@ function spatialDropCommand(
       outputId: setup.output.name,
       ...target,
     },
-    version: 1,
+    version: 2,
   };
 }
 
@@ -50896,7 +51304,7 @@ function externalSpatialDropCommand(
       outputId: setup.targetOutput.name,
       ...target,
     },
-    version: 1,
+    version: 2,
   };
 }
 

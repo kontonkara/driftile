@@ -46,7 +46,7 @@ QtObject {
                 requestId,
                 source,
                 target,
-                version: 1
+                version: 2
             });
             if (typeof document !== "string" || document.length === 0) {
                 return failSubmission();

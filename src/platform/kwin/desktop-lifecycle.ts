@@ -1,4 +1,9 @@
-import type { KWinOutput, KWinWindow, KWinWorkspace } from "./api";
+import type {
+  KWinOutput,
+  KWinVirtualDesktop,
+  KWinWindow,
+  KWinWorkspace,
+} from "./api";
 
 export type DesktopReorderDirection = -1 | 1;
 
@@ -20,10 +25,25 @@ export type DesktopLifecycleMutation =
   | { readonly kind: "create"; readonly position: number }
   | { readonly desktopId: string; readonly kind: "remove" };
 
+export interface DesktopCreationResult {
+  readonly afterDesktopIds: readonly string[];
+  readonly beforeDesktopIds: readonly string[];
+  readonly desktop: KWinVirtualDesktop;
+  readonly desktopId: string;
+  readonly position: number;
+}
+
 interface PendingMutation {
   readonly beforeDesktopIds: readonly string[];
+  createdDesktopId: string | null;
   readonly leadingDesktopCleanup: boolean;
   readonly mutation: DesktopLifecycleMutation;
+  readonly reserveCreatedDesktop: boolean;
+}
+
+interface DesktopTopologySnapshot {
+  readonly desktopIds: readonly string[];
+  readonly desktops: readonly KWinVirtualDesktop[];
 }
 
 interface DesktopOrderSnapshot {
@@ -70,15 +90,23 @@ export function planDesktopLifecycle(
       snapshot.desktopIds[snapshot.desktopIds.length - 2];
 
     if (
-      !previousDesktopId ||
-      snapshot.occupiedDesktopIds.has(previousDesktopId) ||
-      snapshot.selectedDesktopIds.has(lastDesktopId) ||
-      !snapshot.ownedDesktopIds.has(lastDesktopId)
+      previousDesktopId &&
+      !snapshot.occupiedDesktopIds.has(previousDesktopId) &&
+      !snapshot.selectedDesktopIds.has(lastDesktopId) &&
+      snapshot.ownedDesktopIds.has(lastDesktopId)
     ) {
-      return null;
+      return { desktopId: lastDesktopId, kind: "remove" };
     }
 
-    return { desktopId: lastDesktopId, kind: "remove" };
+    const removableInteriorDesktopId = firstRemovableOwnedDesktopInRange(
+      snapshot,
+      0,
+      snapshot.desktopIds.length - 2,
+    );
+
+    return removableInteriorDesktopId
+      ? { desktopId: removableInteriorDesktopId, kind: "remove" }
+      : null;
   }
 
   const firstDesktopId = snapshot.desktopIds[0];
@@ -132,17 +160,30 @@ export function planDesktopLifecycle(
     }
   }
 
-  return null;
+  const removableInteriorDesktopId = firstRemovableOwnedDesktopInRange(
+    snapshot,
+    1,
+    snapshot.desktopIds.length - 2,
+  );
+
+  return removableInteriorDesktopId
+    ? { desktopId: removableInteriorDesktopId, kind: "remove" }
+    : null;
 }
 
 export class DesktopLifecycle {
+  private readonly createdDesktopReservations = new Map<
+    string,
+    DesktopCreationResult
+  >();
   private dirty = false;
   private readonly events: DesktopLifecycleEvents;
-  private keepEmptyDesktopAboveFirst: boolean;
+  private keepEmptyDesktopAboveFirstValue: boolean;
   private leadingDesktopCleanupPending = false;
   private mutationCallActive = false;
   private readonly ownedDesktopIds = new Set<string>();
   private pendingMutation: PendingMutation | null = null;
+  private readonly reservedCreatedDesktopIds = new Set<string>();
   private started = false;
   private readonly trackedWindows = new Map<KWinWindow, TrackedWindow>();
   private readonly workspace: KWinWorkspace;
@@ -153,9 +194,13 @@ export class DesktopLifecycle {
     options: DesktopLifecycleOptions = {},
   ) {
     this.events = events;
-    this.keepEmptyDesktopAboveFirst =
+    this.keepEmptyDesktopAboveFirstValue =
       options.keepEmptyDesktopAboveFirst ?? false;
     this.workspace = workspace;
+  }
+
+  get keepEmptyDesktopAboveFirst(): boolean {
+    return this.keepEmptyDesktopAboveFirstValue;
   }
 
   get ownedDesktopCount(): number {
@@ -163,21 +208,28 @@ export class DesktopLifecycle {
   }
 
   get pendingWork(): boolean {
-    return this.dirty && this.pendingMutation === null;
+    return (
+      this.dirty &&
+      this.pendingMutation === null &&
+      this.reservedCreatedDesktopIds.size === 0
+    );
   }
 
   get unsettled(): boolean {
     return (
-      this.dirty || this.pendingMutation !== null || this.mutationCallActive
+      this.dirty ||
+      this.pendingMutation !== null ||
+      this.mutationCallActive ||
+      this.reservedCreatedDesktopIds.size > 0
     );
   }
 
   setKeepEmptyDesktopAboveFirst(enabled: boolean): boolean {
-    if (this.keepEmptyDesktopAboveFirst === enabled) {
+    if (this.keepEmptyDesktopAboveFirstValue === enabled) {
       return false;
     }
 
-    this.keepEmptyDesktopAboveFirst = enabled;
+    this.keepEmptyDesktopAboveFirstValue = enabled;
     this.leadingDesktopCleanupPending = !enabled;
     this.publishChanged();
     return true;
@@ -226,10 +278,241 @@ export class DesktopLifecycle {
     }
 
     this.trackedWindows.clear();
+    this.createdDesktopReservations.clear();
     this.ownedDesktopIds.clear();
     this.pendingMutation = null;
+    this.reservedCreatedDesktopIds.clear();
     this.mutationCallActive = false;
     this.dirty = false;
+  }
+
+  createDesktopAtPosition(
+    position: number,
+    expectedDesktopIds: readonly string[],
+  ): DesktopCreationResult | null {
+    if (
+      !this.started ||
+      this.dirty ||
+      this.pendingMutation ||
+      this.mutationCallActive ||
+      this.reservedCreatedDesktopIds.size > 0 ||
+      typeof this.workspace.createDesktop !== "function" ||
+      typeof this.workspace.removeDesktop !== "function" ||
+      !this.workspace.desktopsChanged ||
+      !Number.isInteger(position)
+    ) {
+      return null;
+    }
+
+    const before = this.desktopTopologySnapshot();
+
+    if (
+      !before ||
+      position < 0 ||
+      position > before.desktopIds.length ||
+      !validDesktopIds(expectedDesktopIds) ||
+      !sameStrings(before.desktopIds, expectedDesktopIds)
+    ) {
+      return null;
+    }
+
+    const confirmation = this.desktopTopologySnapshot();
+
+    if (!confirmation || !sameDesktopTopology(confirmation, before)) {
+      return null;
+    }
+
+    const pending: PendingMutation = {
+      beforeDesktopIds: confirmation.desktopIds,
+      createdDesktopId: null,
+      leadingDesktopCleanup: false,
+      mutation: { kind: "create", position },
+      reserveCreatedDesktop: true,
+    };
+    this.pendingMutation = pending;
+
+    let callFailed = false;
+
+    try {
+      this.mutationCallActive = true;
+      this.workspace.createDesktop(position, "");
+    } catch (error) {
+      callFailed = true;
+      console.warn(
+        `[driftile] intentional desktop creation failed position=${String(position)} error=${String(error)}`,
+      );
+    } finally {
+      this.mutationCallActive = false;
+      this.settleMutationAfterCall(pending);
+    }
+
+    const after = this.desktopTopologySnapshot();
+    const createdDesktop = after
+      ? insertedDesktop(confirmation, after, position)
+      : null;
+
+    if (
+      callFailed ||
+      !after ||
+      !createdDesktop ||
+      pending.createdDesktopId !== createdDesktop.id ||
+      !this.ownedDesktopIds.has(createdDesktop.id) ||
+      !this.reservedCreatedDesktopIds.has(createdDesktop.id)
+    ) {
+      if (pending.createdDesktopId) {
+        this.reservedCreatedDesktopIds.delete(pending.createdDesktopId);
+      }
+
+      if (after && !sameStrings(after.desktopIds, confirmation.desktopIds)) {
+        this.publishChanged();
+      }
+
+      return null;
+    }
+
+    const result = Object.freeze({
+      afterDesktopIds: Object.freeze([...after.desktopIds]),
+      beforeDesktopIds: Object.freeze([...confirmation.desktopIds]),
+      desktop: createdDesktop,
+      desktopId: createdDesktop.id,
+      position,
+    });
+    this.createdDesktopReservations.set(createdDesktop.id, result);
+
+    this.publishChanged();
+
+    return result;
+  }
+
+  commitCreatedDesktop(result: DesktopCreationResult): boolean {
+    if (!this.validateCreatedDesktopReservation(result)) {
+      return false;
+    }
+
+    this.createdDesktopReservations.delete(result.desktopId);
+    this.reservedCreatedDesktopIds.delete(result.desktopId);
+    this.publishChanged();
+    return true;
+  }
+
+  validateCreatedDesktopReservation(result: DesktopCreationResult): boolean {
+    if (!this.ownsCreatedDesktopReservation(result)) {
+      return false;
+    }
+
+    const topology = this.desktopTopologySnapshot();
+
+    if (!topology || !creationMatchesTopology(result, topology)) {
+      this.invalidateCreatedDesktopReservation(result);
+      return false;
+    }
+
+    return true;
+  }
+
+  rollbackCreatedDesktop(result: DesktopCreationResult): boolean {
+    if (
+      !this.started ||
+      this.pendingMutation ||
+      this.mutationCallActive ||
+      typeof this.workspace.removeDesktop !== "function" ||
+      !this.workspace.desktopsChanged ||
+      !this.validateCreatedDesktopReservation(result)
+    ) {
+      return false;
+    }
+
+    const topology = this.desktopTopologySnapshot();
+
+    if (!topology) {
+      return false;
+    }
+
+    const snapshot = this.snapshot();
+
+    if (
+      !snapshot ||
+      !snapshot.removalSafe ||
+      snapshot.occupiedDesktopIds.has(result.desktopId) ||
+      snapshot.selectedDesktopIds.has(result.desktopId)
+    ) {
+      return false;
+    }
+
+    const confirmation = this.desktopTopologySnapshot();
+    const confirmationSnapshot = this.snapshot();
+
+    if (
+      !confirmation ||
+      !creationMatchesTopology(result, confirmation) ||
+      !confirmationSnapshot ||
+      !confirmationSnapshot.removalSafe ||
+      confirmationSnapshot.occupiedDesktopIds.has(result.desktopId) ||
+      confirmationSnapshot.selectedDesktopIds.has(result.desktopId)
+    ) {
+      return false;
+    }
+
+    const pending: PendingMutation = {
+      beforeDesktopIds: confirmation.desktopIds,
+      createdDesktopId: null,
+      leadingDesktopCleanup: false,
+      mutation: { desktopId: result.desktopId, kind: "remove" },
+      reserveCreatedDesktop: false,
+    };
+    this.pendingMutation = pending;
+    let callFailed = false;
+
+    try {
+      this.mutationCallActive = true;
+      this.workspace.removeDesktop(result.desktop);
+    } catch (error) {
+      callFailed = true;
+      console.warn(
+        `[driftile] created desktop rollback failed desktop=${result.desktopId} error=${String(error)}`,
+      );
+    } finally {
+      this.mutationCallActive = false;
+      this.settleMutationAfterCall(pending);
+    }
+
+    const after = this.desktopTopologySnapshot();
+    const rolledBack = Boolean(
+      !callFailed &&
+      after &&
+      sameStrings(after.desktopIds, result.beforeDesktopIds) &&
+      sameDesktopObjectsAfterRemoval(
+        confirmation.desktops,
+        after.desktops,
+        result.position,
+      ),
+    );
+
+    if (!rolledBack) {
+      if (!after || !creationMatchesTopology(result, after)) {
+        this.invalidateCreatedDesktopReservation(result);
+      }
+
+      if (
+        after &&
+        !sameStrings(after.desktopIds, confirmation.desktopIds) &&
+        !this.dirty
+      ) {
+        this.publishChanged();
+      }
+
+      return false;
+    }
+
+    this.createdDesktopReservations.delete(result.desktopId);
+    this.reservedCreatedDesktopIds.delete(result.desktopId);
+    this.ownedDesktopIds.delete(result.desktopId);
+
+    if (!this.dirty) {
+      this.publishChanged();
+    }
+
+    return true;
   }
 
   reconcile(canMutate = true): DesktopLifecycleMutation | null {
@@ -238,6 +521,7 @@ export class DesktopLifecycle {
       !this.dirty ||
       this.pendingMutation ||
       this.mutationCallActive ||
+      this.reservedCreatedDesktopIds.size > 0 ||
       !canMutate ||
       !this.workspace.desktopsChanged
     ) {
@@ -271,12 +555,14 @@ export class DesktopLifecycle {
     const beforeDesktopIds = confirmation.desktopIds;
     const pending = {
       beforeDesktopIds,
+      createdDesktopId: null,
       leadingDesktopCleanup:
-        !this.keepEmptyDesktopAboveFirst &&
+        !this.keepEmptyDesktopAboveFirstValue &&
         this.leadingDesktopCleanupPending &&
         mutation.kind === "remove" &&
         mutation.desktopId === beforeDesktopIds[0],
       mutation,
+      reserveCreatedDesktop: false,
     };
     this.pendingMutation = pending;
     this.dirty = false;
@@ -347,6 +633,7 @@ export class DesktopLifecycle {
       this.dirty ||
       this.pendingMutation ||
       this.mutationCallActive ||
+      this.reservedCreatedDesktopIds.size > 0 ||
       typeof this.workspace.moveDesktop !== "function" ||
       !this.workspace.desktopsChanged
     ) {
@@ -360,7 +647,7 @@ export class DesktopLifecycle {
     }
 
     const sourceIndex = before.desktopIds.indexOf(before.selectedDesktopId);
-    const firstMovableIndex = this.keepEmptyDesktopAboveFirst ? 1 : 0;
+    const firstMovableIndex = this.keepEmptyDesktopAboveFirstValue ? 1 : 0;
     const lastMovableIndex = before.desktopIds.length - 2;
     const targetIndex =
       target.kind === "adjacent"
@@ -377,7 +664,7 @@ export class DesktopLifecycle {
       targetIndex === sourceIndex ||
       !leadingDesktopId ||
       !trailingDesktopId ||
-      (this.keepEmptyDesktopAboveFirst &&
+      (this.keepEmptyDesktopAboveFirstValue &&
         before.occupiedDesktopIds.has(leadingDesktopId)) ||
       before.occupiedDesktopIds.has(trailingDesktopId)
     ) {
@@ -398,7 +685,7 @@ export class DesktopLifecycle {
         confirmation.windowDesktopFingerprint,
         before.windowDesktopFingerprint,
       ) ||
-      (this.keepEmptyDesktopAboveFirst &&
+      (this.keepEmptyDesktopAboveFirstValue &&
         confirmation.occupiedDesktopIds.has(leadingDesktopId)) ||
       confirmation.occupiedDesktopIds.has(trailingDesktopId)
     ) {
@@ -443,7 +730,7 @@ export class DesktopLifecycle {
         after.windowDesktopFingerprint,
         before.windowDesktopFingerprint,
       ) ||
-      (this.keepEmptyDesktopAboveFirst &&
+      (this.keepEmptyDesktopAboveFirstValue &&
         after.occupiedDesktopIds.has(leadingDesktopId)) ||
       after.occupiedDesktopIds.has(trailingDesktopId)
     ) {
@@ -467,12 +754,17 @@ export class DesktopLifecycle {
   }
 
   private readonly handleDesktopsChanged = (): void => {
-    const liveDesktopIds = this.workspace.desktops.map((desktop) => desktop.id);
+    const liveTopology = this.desktopTopologySnapshot();
+    const liveDesktopIds =
+      liveTopology?.desktopIds ??
+      this.workspace.desktops.map((desktop) => desktop.id);
     const liveDesktopIdSet = new Set(liveDesktopIds);
 
     for (const id of this.ownedDesktopIds) {
       if (!liveDesktopIdSet.has(id)) {
         this.ownedDesktopIds.delete(id);
+        this.reservedCreatedDesktopIds.delete(id);
+        this.createdDesktopReservations.delete(id);
       }
     }
 
@@ -491,6 +783,11 @@ export class DesktopLifecycle {
 
         if (createdId) {
           this.ownedDesktopIds.add(createdId);
+          pending.createdDesktopId = createdId;
+
+          if (pending.reserveCreatedDesktop) {
+            this.reservedCreatedDesktopIds.add(createdId);
+          }
         } else {
           mutationFailedClosed = true;
         }
@@ -507,6 +804,8 @@ export class DesktopLifecycle {
 
       this.pendingMutation = null;
     }
+
+    this.invalidateStaleCreatedDesktopReservations(liveTopology);
 
     if (mutationFailedClosed) {
       this.dirty = false;
@@ -575,6 +874,11 @@ export class DesktopLifecycle {
 
           if (createdId) {
             this.ownedDesktopIds.add(createdId);
+            pending.createdDesktopId = createdId;
+
+            if (pending.reserveCreatedDesktop) {
+              this.reservedCreatedDesktopIds.add(createdId);
+            }
           }
         } else if (
           pending.leadingDesktopCleanup &&
@@ -616,7 +920,10 @@ export class DesktopLifecycle {
   private planMutation(
     snapshot: DesktopLifecycleSnapshot,
   ): DesktopLifecycleMutation | null {
-    if (!this.keepEmptyDesktopAboveFirst && this.leadingDesktopCleanupPending) {
+    if (
+      !this.keepEmptyDesktopAboveFirstValue &&
+      this.leadingDesktopCleanupPending
+    ) {
       const cleanup = planLeadingDesktopCleanup(snapshot);
 
       if (cleanup) {
@@ -624,7 +931,57 @@ export class DesktopLifecycle {
       }
     }
 
-    return planDesktopLifecycle(snapshot, this.keepEmptyDesktopAboveFirst);
+    return planDesktopLifecycle(snapshot, this.keepEmptyDesktopAboveFirstValue);
+  }
+
+  private desktopTopologySnapshot(): DesktopTopologySnapshot | null {
+    try {
+      const desktops = [...this.workspace.desktops];
+      const desktopIds = desktops.map((desktop) => desktop.id);
+
+      if (!validDesktopIds(desktopIds)) {
+        return null;
+      }
+
+      return { desktopIds, desktops };
+    } catch (error) {
+      console.warn(
+        `[driftile] desktop topology snapshot failed error=${String(error)}`,
+      );
+      return null;
+    }
+  }
+
+  private invalidateCreatedDesktopReservation(
+    result: DesktopCreationResult,
+  ): void {
+    if (this.createdDesktopReservations.get(result.desktopId) !== result) {
+      return;
+    }
+
+    this.createdDesktopReservations.delete(result.desktopId);
+    this.reservedCreatedDesktopIds.delete(result.desktopId);
+  }
+
+  private invalidateStaleCreatedDesktopReservations(
+    topology: DesktopTopologySnapshot | null,
+  ): void {
+    for (const result of this.createdDesktopReservations.values()) {
+      if (!topology || !creationMatchesTopology(result, topology)) {
+        this.invalidateCreatedDesktopReservation(result);
+      }
+    }
+  }
+
+  private ownsCreatedDesktopReservation(
+    result: DesktopCreationResult,
+  ): boolean {
+    return (
+      this.started &&
+      this.createdDesktopReservations.get(result.desktopId) === result &&
+      this.reservedCreatedDesktopIds.has(result.desktopId) &&
+      this.ownedDesktopIds.has(result.desktopId)
+    );
   }
 
   private publishChanged(): void {
@@ -829,10 +1186,18 @@ export class DesktopLifecycle {
         }
       }
 
+      const removableOwnedDesktopIds = new Set<string>();
+
+      for (const desktopId of this.ownedDesktopIds) {
+        if (!this.reservedCreatedDesktopIds.has(desktopId)) {
+          removableOwnedDesktopIds.add(desktopId);
+        }
+      }
+
       return {
         desktopIds,
         occupiedDesktopIds,
-        ownedDesktopIds: this.ownedDesktopIds,
+        ownedDesktopIds: removableOwnedDesktopIds,
         removalSafe,
         selectedDesktopIds,
       };
@@ -843,6 +1208,18 @@ export class DesktopLifecycle {
       return null;
     }
   }
+}
+
+function creationMatchesTopology(
+  result: DesktopCreationResult,
+  topology: DesktopTopologySnapshot,
+): boolean {
+  return (
+    sameStrings(topology.desktopIds, result.afterDesktopIds) &&
+    topology.desktops[result.position] === result.desktop &&
+    topology.desktopIds[result.position] === result.desktopId &&
+    result.desktop.id === result.desktopId
+  );
 }
 
 function desktopWasRemovedExactly(
@@ -867,6 +1244,38 @@ function desktopWasRemovedExactly(
   );
 }
 
+function insertedDesktop(
+  before: DesktopTopologySnapshot,
+  after: DesktopTopologySnapshot,
+  position: number,
+): KWinVirtualDesktop | null {
+  const createdDesktopId = insertedDesktopId(
+    before.desktopIds,
+    after.desktopIds,
+    position,
+  );
+  const createdDesktop = after.desktops[position];
+
+  if (
+    !createdDesktopId ||
+    !createdDesktop ||
+    createdDesktop.id !== createdDesktopId ||
+    before.desktops.includes(createdDesktop)
+  ) {
+    return null;
+  }
+
+  for (let index = 0; index < before.desktops.length; index += 1) {
+    const afterIndex = index < position ? index : index + 1;
+
+    if (after.desktops[afterIndex] !== before.desktops[index]) {
+      return null;
+    }
+  }
+
+  return createdDesktop;
+}
+
 function firstRemovableOwnedDesktop(
   snapshot: DesktopLifecycleSnapshot,
   desktopIds: readonly string[],
@@ -879,6 +1288,27 @@ function firstRemovableOwnedDesktop(
         !snapshot.selectedDesktopIds.has(desktopId),
     ) ?? null
   );
+}
+
+function firstRemovableOwnedDesktopInRange(
+  snapshot: DesktopLifecycleSnapshot,
+  firstIndex: number,
+  lastIndex: number,
+): string | null {
+  for (let index = firstIndex; index <= lastIndex; index += 1) {
+    const desktopId = snapshot.desktopIds[index];
+
+    if (
+      desktopId &&
+      snapshot.ownedDesktopIds.has(desktopId) &&
+      !snapshot.occupiedDesktopIds.has(desktopId) &&
+      !snapshot.selectedDesktopIds.has(desktopId)
+    ) {
+      return desktopId;
+    }
+  }
+
+  return null;
 }
 
 function insertedDesktopId(
@@ -962,6 +1392,31 @@ function movedString(
   return moved;
 }
 
+function sameDesktopObjectsAfterRemoval(
+  before: readonly KWinVirtualDesktop[],
+  after: readonly KWinVirtualDesktop[],
+  removedIndex: number,
+): boolean {
+  return (
+    after.length === before.length - 1 &&
+    before.every(
+      (desktop, index) =>
+        index === removedIndex ||
+        after[index < removedIndex ? index : index - 1] === desktop,
+    )
+  );
+}
+
+function sameDesktopTopology(
+  left: DesktopTopologySnapshot,
+  right: DesktopTopologySnapshot,
+): boolean {
+  return (
+    sameStrings(left.desktopIds, right.desktopIds) &&
+    left.desktops.every((desktop, index) => right.desktops[index] === desktop)
+  );
+}
+
 function sameStrings(
   left: readonly string[],
   right: readonly string[],
@@ -969,5 +1424,15 @@ function sameStrings(
   return (
     left.length === right.length &&
     left.every((value, index) => value === right[index])
+  );
+}
+
+function validDesktopIds(desktopIds: readonly string[]): boolean {
+  return (
+    desktopIds.length > 0 &&
+    desktopIds.every(
+      (desktopId) => typeof desktopId === "string" && desktopId.length > 0,
+    ) &&
+    new Set(desktopIds).size === desktopIds.length
   );
 }

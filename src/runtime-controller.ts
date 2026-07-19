@@ -209,6 +209,7 @@ import {
 import {
   DesktopLifecycle,
   NUMBERED_DESKTOP_REORDER_LIMIT,
+  type DesktopCreationResult,
   type DesktopReorderDirection,
 } from "./platform/kwin/desktop-lifecycle";
 import {
@@ -593,6 +594,39 @@ type OutputTransferResult = "applied" | "pending" | "rejected";
 interface OverviewSpatialDropActivation {
   settled: boolean;
   readonly settle: (applied: boolean) => void;
+  readonly workspaceCreation: SpatialWorkspaceCreationReservation | null;
+}
+
+type ResolvedSpatialDropTarget = Exclude<
+  SpatialDropCommand["target"],
+  { readonly kind: "workspace-gap" }
+>;
+
+interface ResolvedSpatialDropCommand extends Omit<
+  SpatialDropCommand,
+  "target"
+> {
+  readonly target: ResolvedSpatialDropTarget;
+}
+
+interface SpatialWorkspaceCreationBaseline {
+  readonly originalActiveWindow: KWinWindow | null;
+  readonly originalSourceDesktop: KWinVirtualDesktop;
+  readonly originalTargetDesktop: KWinVirtualDesktop;
+  readonly sourceOutput: KWinOutput;
+  readonly targetOutput: KWinOutput;
+}
+
+interface SpatialWorkspaceCreationReservation {
+  readonly baseline: SpatialWorkspaceCreationBaseline;
+  readonly result: DesktopCreationResult;
+  settled: boolean;
+}
+
+interface SpatialWorkspaceGapPreparation {
+  readonly baseline: SpatialWorkspaceCreationBaseline;
+  readonly desktopIds: readonly string[];
+  readonly insertionPosition: number;
 }
 
 interface OutputTransferTransaction {
@@ -1282,6 +1316,8 @@ export class RuntimeController {
   private stackEditOperation: object | null = null;
   private windowTransferOperation: WindowTransferOperation | null = null;
   private pendingSpatialOutputTransfer: PendingSpatialOutputTransfer | null =
+    null;
+  private activeSpatialWorkspaceCreation: SpatialWorkspaceCreationReservation | null =
     null;
   private stackedNativeStateOperation: StackedNativeStateOperation | null =
     null;
@@ -3297,6 +3333,314 @@ export class RuntimeController {
   }
 
   executeSpatialDrop(command: SpatialDropCommand): boolean {
+    const target = command.target;
+
+    if (target.kind === "workspace-gap") {
+      return this.executeSpatialWorkspaceGapDrop(command, target);
+    }
+
+    return this.executeResolvedSpatialDrop({ ...command, target });
+  }
+
+  private executeSpatialWorkspaceGapDrop(
+    command: SpatialDropCommand,
+    target: Extract<
+      SpatialDropCommand["target"],
+      { readonly kind: "workspace-gap" }
+    >,
+  ): boolean {
+    const preparation = this.prepareSpatialWorkspaceGapDrop(command, target);
+
+    if (!preparation) {
+      return false;
+    }
+
+    const created = this.desktopLifecycle.createDesktopAtPosition(
+      preparation.insertionPosition,
+      preparation.desktopIds,
+    );
+
+    if (!created) {
+      return false;
+    }
+
+    const reservation: SpatialWorkspaceCreationReservation = {
+      baseline: preparation.baseline,
+      result: created,
+      settled: false,
+    };
+    this.activeSpatialWorkspaceCreation = reservation;
+    const resolved: ResolvedSpatialDropCommand = {
+      ...command,
+      target: {
+        activityId: target.activityId,
+        desktopId: created.desktopId,
+        kind: "empty-row",
+        outputId: target.outputId,
+      },
+    };
+    let applied = false;
+
+    try {
+      applied = this.executeResolvedSpatialDrop(resolved, reservation);
+      return applied;
+    } finally {
+      if (!applied && !reservation.settled) {
+        this.settleSpatialWorkspaceCreation(reservation, false);
+      }
+    }
+  }
+
+  private prepareSpatialWorkspaceGapDrop(
+    command: SpatialDropCommand,
+    target: Extract<
+      SpatialDropCommand["target"],
+      { readonly kind: "workspace-gap" }
+    >,
+  ): SpatialWorkspaceGapPreparation | null {
+    try {
+      const sourceId = windowId(command.source.windowId);
+      const sourceWindow = this.observer.source(sourceId);
+      const owner = this.managedWindows.get(sourceId);
+      const sourceContext = owner ? this.contexts.get(owner.contextKey) : null;
+      const observedSource = sourceWindow
+        ? normalizeWindow(sourceWindow)
+        : null;
+      const liveSourceContext = observedSource
+        ? this.resolveManagedContext(observedSource)
+        : null;
+      const sourceOutput = this.uniqueOutputByName(command.source.outputId);
+      const targetOutput = this.uniqueOutputByName(target.outputId);
+      const sourceDesktop = this.uniqueDesktopById(command.source.desktopId);
+      const originalSourceDesktop = sourceOutput
+        ? currentDesktopForOutput(this.workspace, sourceOutput)
+        : null;
+      const originalTargetDesktop = targetOutput
+        ? currentDesktopForOutput(this.workspace, targetOutput)
+        : null;
+
+      if (
+        this.overviewSpatialDropActivation !== null ||
+        this.activeSpatialWorkspaceCreation !== null ||
+        !this.started ||
+        this.hydrationInProgress ||
+        this.initializing ||
+        this.workScheduled ||
+        this.stackEditOperation !== null ||
+        this.windowTransferOperation !== null ||
+        this.stackedNativeStateOperation !== null ||
+        this.interactiveResizeSource !== null ||
+        this.pointerMoveIntent !== null ||
+        this.pointerResizeIntent !== null ||
+        this.pointerResizeSettlement !== null ||
+        this.startupStabilizationToken !== null ||
+        this.hasTopologyBarrier() ||
+        this.desktopLifecycle.unsettled ||
+        typeof this.workspace.createDesktop !== "function" ||
+        typeof this.workspace.removeDesktop !== "function" ||
+        !this.workspace.desktopsChanged ||
+        !sourceWindow ||
+        !owner ||
+        !sourceContext ||
+        !liveSourceContext ||
+        contextKey(liveSourceContext) !== owner.contextKey ||
+        String(sourceContext.activityId) !== command.source.activityId ||
+        String(sourceContext.desktopId) !== command.source.desktopId ||
+        String(sourceContext.outputId) !== command.source.outputId ||
+        target.activityId !== command.source.activityId ||
+        !sourceOutput ||
+        !targetOutput ||
+        !sourceDesktop ||
+        !originalSourceDesktop ||
+        !originalTargetDesktop ||
+        sourceWindow.output?.name !== sourceOutput.name ||
+        sourceWindow.desktops.length !== 1 ||
+        sourceWindow.desktops[0]?.id !== sourceDesktop.id ||
+        this.floatingWindows.has(sourceId) ||
+        this.automaticFloatingWindows.has(sourceId) ||
+        this.automaticallyFloats(sourceWindow) ||
+        this.suspendedWindows.has(sourceId) ||
+        this.requestedSuspensions.has(sourceId) ||
+        !this.toggleGeometrySettled(sourceId) ||
+        !isGeometryWritable(sourceWindow) ||
+        this.hasPendingCapacityState(owner.contextKey) ||
+        this.pendingAdmissionContexts.has(owner.contextKey) ||
+        this.waitingWindowIds.has(owner.contextKey) ||
+        this.waitingWindowContexts.has(sourceId) ||
+        this.dirtyContexts.has(owner.contextKey) ||
+        this.toggleTransitionPending(owner.contextKey) ||
+        this.pendingDefaultColumnWidth !== null ||
+        this.pendingGap !== null ||
+        (targetOutput !== sourceOutput &&
+          typeof this.workspace.currentDesktopForScreen !== "function") ||
+        (typeof this.workspace.currentDesktopForScreen === "function" &&
+          typeof this.workspace.setCurrentDesktopForScreen !== "function")
+      ) {
+        return null;
+      }
+
+      const desktops = [...this.workspace.desktops];
+      const desktopIds = desktops.map((desktop) => desktop.id);
+      const uniqueDesktopIds = new Set(desktopIds);
+      const anchorIndex = desktopIds.indexOf(target.anchorDesktopId);
+      const adjacentIndex = desktopIds.indexOf(target.adjacentDesktopId);
+      const insertionPosition =
+        target.position === "before" ? anchorIndex : anchorIndex + 1;
+      const expectedAdjacentIndex =
+        target.position === "before" ? anchorIndex - 1 : anchorIndex + 1;
+      const firstDesktopProtected =
+        this.desktopLifecycle.keepEmptyDesktopAboveFirst;
+      const lastDesktopIndex = desktopIds.length - 1;
+
+      if (
+        desktopIds.length < (firstDesktopProtected ? 3 : 2) ||
+        uniqueDesktopIds.size !== desktopIds.length ||
+        desktopIds.some((id) => id.length === 0) ||
+        anchorIndex < 0 ||
+        adjacentIndex < 0 ||
+        adjacentIndex !== expectedAdjacentIndex ||
+        insertionPosition <= 0 ||
+        insertionPosition >= desktopIds.length ||
+        anchorIndex === lastDesktopIndex ||
+        (firstDesktopProtected && anchorIndex === 0) ||
+        desktops[anchorIndex]?.id !== target.anchorDesktopId ||
+        desktops[adjacentIndex]?.id !== target.adjacentDesktopId ||
+        !desktops.includes(sourceDesktop) ||
+        !desktops.includes(originalSourceDesktop) ||
+        !desktops.includes(originalTargetDesktop)
+      ) {
+        return null;
+      }
+
+      const sourceBefore = this.layout.snapshot(
+        sourceContext.outputId,
+        sourceContext.desktopId,
+        sourceContext.activityId,
+      );
+      const sourceColumn = sourceBefore.columns.find((column) =>
+        column.windowIds.includes(sourceId),
+      );
+      const activeSourceColumn = sourceBefore.columns.find(
+        (column) => column.id === sourceBefore.activeColumnId,
+      );
+
+      if (!sourceColumn || !activeSourceColumn?.selectedWindowId) {
+        return null;
+      }
+
+      return {
+        baseline: {
+          originalActiveWindow: this.workspace.activeWindow,
+          originalSourceDesktop,
+          originalTargetDesktop,
+          sourceOutput,
+          targetOutput,
+        },
+        desktopIds,
+        insertionPosition,
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  private settleSpatialWorkspaceCreation(
+    reservation: SpatialWorkspaceCreationReservation,
+    applied: boolean,
+  ): void {
+    if (reservation.settled) {
+      return;
+    }
+
+    reservation.settled = true;
+
+    if (this.activeSpatialWorkspaceCreation === reservation) {
+      this.activeSpatialWorkspaceCreation = null;
+    }
+
+    if (applied) {
+      if (!this.desktopLifecycle.commitCreatedDesktop(reservation.result)) {
+        console.warn(
+          `[driftile] created desktop ownership could not be committed desktop=${reservation.result.desktopId}`,
+        );
+      }
+      return;
+    }
+
+    this.restoreSpatialWorkspaceCreationSelection(reservation);
+
+    if (this.desktopLifecycle.rollbackCreatedDesktop(reservation.result)) {
+      return;
+    }
+
+    if (this.desktopLifecycle.commitCreatedDesktop(reservation.result)) {
+      console.warn(
+        `[driftile] created desktop was retained after a rejected spatial drop desktop=${reservation.result.desktopId}`,
+      );
+      return;
+    }
+
+    console.warn(
+      `[driftile] created desktop reservation could not be settled desktop=${reservation.result.desktopId}`,
+    );
+  }
+
+  private settleActiveSpatialWorkspaceCreationForStop(): void {
+    const reservation = this.activeSpatialWorkspaceCreation;
+
+    if (!reservation || reservation.settled) {
+      return;
+    }
+
+    this.settleSpatialWorkspaceCreation(reservation, false);
+
+    const activation = this.overviewSpatialDropActivation;
+    if (activation?.workspaceCreation === reservation) {
+      activation.settled = true;
+      this.overviewSpatialDropActivation = null;
+    }
+  }
+
+  private restoreSpatialWorkspaceCreationSelection(
+    reservation: SpatialWorkspaceCreationReservation,
+  ): void {
+    const { baseline, result } = reservation;
+    const restorations = [
+      {
+        desktop: baseline.originalSourceDesktop,
+        output: baseline.sourceOutput,
+      },
+      {
+        desktop: baseline.originalTargetDesktop,
+        output: baseline.targetOutput,
+      },
+    ];
+    const restoredOutputs = new Set<KWinOutput>();
+
+    for (const restoration of restorations) {
+      if (restoredOutputs.has(restoration.output)) {
+        continue;
+      }
+
+      restoredOutputs.add(restoration.output);
+
+      try {
+        if (
+          currentDesktopForOutput(this.workspace, restoration.output)?.id ===
+          result.desktopId
+        ) {
+          this.switchDesktop(restoration.desktop, restoration.output);
+        }
+      } catch {
+        // Exact desktop rollback below remains fail-closed when selection changed.
+      }
+    }
+  }
+
+  private executeResolvedSpatialDrop(
+    command: ResolvedSpatialDropCommand,
+    workspaceCreation: SpatialWorkspaceCreationReservation | null = null,
+  ): boolean {
     const sourceId = windowId(command.source.windowId);
     const sourceWindow = this.observer.source(sourceId);
     const owner = this.managedWindows.get(sourceId);
@@ -3309,13 +3653,19 @@ export class RuntimeController {
     const targetOutput = this.uniqueOutputByName(command.target.outputId);
     const sourceDesktop = this.uniqueDesktopById(command.source.desktopId);
     const targetDesktop = this.uniqueDesktopById(command.target.desktopId);
-    const originalDesktop = output
-      ? currentDesktopForOutput(this.workspace, output)
-      : null;
-    const originalTargetDesktop = targetOutput
-      ? currentDesktopForOutput(this.workspace, targetOutput)
-      : null;
-    const originalActiveWindow = this.workspace.activeWindow;
+    const originalDesktop = workspaceCreation
+      ? workspaceCreation.baseline.originalSourceDesktop
+      : output
+        ? currentDesktopForOutput(this.workspace, output)
+        : null;
+    const originalTargetDesktop = workspaceCreation
+      ? workspaceCreation.baseline.originalTargetDesktop
+      : targetOutput
+        ? currentDesktopForOutput(this.workspace, targetOutput)
+        : null;
+    const originalActiveWindow = workspaceCreation
+      ? workspaceCreation.baseline.originalActiveWindow
+      : this.workspace.activeWindow;
 
     if (
       this.overviewSpatialDropActivation !== null ||
@@ -3337,6 +3687,9 @@ export class RuntimeController {
       String(sourceContext.desktopId) !== command.source.desktopId ||
       String(sourceContext.outputId) !== command.source.outputId ||
       command.target.activityId !== command.source.activityId ||
+      (workspaceCreation !== null &&
+        (workspaceCreation.baseline.sourceOutput !== output ||
+          workspaceCreation.baseline.targetOutput !== targetOutput)) ||
       !output ||
       !targetOutput ||
       !sourceDesktop ||
@@ -3502,6 +3855,13 @@ export class RuntimeController {
           }
         }
 
+        if (workspaceCreation) {
+          this.settleSpatialWorkspaceCreation(
+            workspaceCreation,
+            settledApplied,
+          );
+        }
+
         if (this.overviewSpatialDropActivation === activation) {
           this.overviewSpatialDropActivation = null;
         }
@@ -3511,6 +3871,7 @@ export class RuntimeController {
           // The command result remains authoritative after post-transaction bookkeeping.
         }
       },
+      workspaceCreation,
     };
     let applied = false;
     this.overviewSpatialDropActivation = activation;
@@ -3575,7 +3936,9 @@ export class RuntimeController {
     return applied;
   }
 
-  private executeActiveSpatialDrop(command: SpatialDropCommand): boolean {
+  private executeActiveSpatialDrop(
+    command: ResolvedSpatialDropCommand,
+  ): boolean {
     if (
       this.pointerMoveIntent !== null ||
       this.pendingDefaultColumnWidth !== null ||
@@ -5049,6 +5412,7 @@ export class RuntimeController {
       this.pendingSpatialOutputTransfer.runtimeStopping = true;
     }
     this.cancelPendingSpatialOutputTransfer("runtime stopped");
+    this.settleActiveSpatialWorkspaceCreationForStop();
 
     try {
       if (!hydrationWasPending) {
@@ -5083,6 +5447,7 @@ export class RuntimeController {
       );
       this.workspace.windowActivated.disconnect(this.handleWindowActivated);
       this.desktopLifecycle.stop();
+      this.activeSpatialWorkspaceCreation = null;
       this.topologyObserver.stop();
       this.observer.stop();
       this.layout = new LayoutEngine();
@@ -15119,7 +15484,7 @@ export class RuntimeController {
     target: DesktopTransferTarget,
     wholeColumn = false,
     follow = true,
-    spatialTarget?: SpatialDropCommand["target"],
+    spatialTarget?: ResolvedSpatialDropTarget,
   ): boolean {
     if (
       this.stackEditOperation ||
@@ -17671,12 +18036,12 @@ export class RuntimeController {
   }
 
   private moveActiveWindowToOutput(
-    target: OutputTransferTarget | SpatialDropCommand["target"],
+    target: OutputTransferTarget | ResolvedSpatialDropTarget,
     wholeColumn = false,
   ): boolean {
     const outputTarget: OutputTransferTarget | null =
       typeof target === "string" ? target : null;
-    const spatialTarget: SpatialDropCommand["target"] | undefined =
+    const spatialTarget: ResolvedSpatialDropTarget | undefined =
       typeof target === "string" ? undefined : target;
 
     if (spatialTarget && wholeColumn) {
@@ -18114,6 +18479,18 @@ export class RuntimeController {
       return;
     }
 
+    if (
+      pending.phase === "forward" &&
+      !this.pendingSpatialWorkspaceCreationIsValid(pending)
+    ) {
+      this.beginPendingSpatialOutputCompensation(
+        pending,
+        "created desktop topology changed during output transfer",
+        false,
+      );
+      return;
+    }
+
     const { command } = pending.completion;
     const outputName = command.activeWindow.output?.name;
 
@@ -18151,6 +18528,15 @@ export class RuntimeController {
       pending.assignmentRequestInProgress ||
       pending.continuing
     ) {
+      return;
+    }
+
+    if (!this.pendingSpatialWorkspaceCreationIsValid(pending)) {
+      this.beginPendingSpatialOutputCompensation(
+        pending,
+        "created desktop topology changed before output transfer continuation",
+        false,
+      );
       return;
     }
 
@@ -18211,6 +18597,19 @@ export class RuntimeController {
 
         pending.probePending = false;
         pending.completedProbes += 1;
+
+        if (
+          pending.phase === "forward" &&
+          !this.pendingSpatialWorkspaceCreationIsValid(pending)
+        ) {
+          this.beginPendingSpatialOutputCompensation(
+            pending,
+            "created desktop topology changed while awaiting output transfer",
+            false,
+          );
+          return;
+        }
+
         const { command } = pending.completion;
         const outputName = command.activeWindow.output?.name;
 
@@ -18401,6 +18800,21 @@ export class RuntimeController {
     }
   }
 
+  private pendingSpatialWorkspaceCreationIsValid(
+    pending: PendingSpatialOutputTransfer,
+  ): boolean {
+    const reservation = pending.activation.workspaceCreation;
+
+    return (
+      reservation === null ||
+      (!reservation.settled &&
+        this.activeSpatialWorkspaceCreation === reservation &&
+        this.desktopLifecycle.validateCreatedDesktopReservation(
+          reservation.result,
+        ))
+    );
+  }
+
   private markPendingSpatialOutputTransferForReconciliation(
     pending: PendingSpatialOutputTransfer,
   ): void {
@@ -18551,6 +18965,15 @@ export class RuntimeController {
     applied: boolean,
   ): void {
     if (this.pendingSpatialOutputTransfer !== pending || pending.settled) {
+      return;
+    }
+
+    if (applied && !this.pendingSpatialWorkspaceCreationIsValid(pending)) {
+      this.beginPendingSpatialOutputCompensation(
+        pending,
+        "created desktop topology changed before output transfer completion",
+        false,
+      );
       return;
     }
 

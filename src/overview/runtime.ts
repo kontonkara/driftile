@@ -120,6 +120,11 @@ export type {
   OverviewSpatialWindowDropPlan,
   OverviewSpatialWindowDropTarget,
 } from "./spatial-window-drop";
+export { planOverviewSpatialWorkspaceGap } from "./spatial-workspace-drop";
+export type {
+  OverviewSpatialWorkspaceGapInput,
+  OverviewSpatialWorkspaceGapPlan,
+} from "./spatial-workspace-drop";
 export { planOverviewSpatialHorizontalEdgePan } from "./spatial-horizontal-edge-pan";
 export type {
   OverviewSpatialHorizontalEdgePanDirection,

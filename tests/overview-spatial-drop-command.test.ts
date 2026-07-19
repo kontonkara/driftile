@@ -31,6 +31,15 @@ const emptyRowTarget = Object.freeze({
   outputId: "output-target",
 }) satisfies SpatialDropTarget;
 
+const workspaceGapTarget = Object.freeze({
+  activityId: "activity-target",
+  adjacentDesktopId: "desktop-adjacent",
+  anchorDesktopId: "desktop-anchor",
+  kind: "workspace-gap",
+  outputId: "output-target",
+  position: "before",
+}) satisfies SpatialDropTarget;
+
 const targets = Object.freeze([
   emptyRowTarget,
   Object.freeze({
@@ -65,6 +74,7 @@ const targets = Object.freeze([
     position: "after",
     targetWindowId: "window-stack-anchor",
   }),
+  workspaceGapTarget,
 ] satisfies readonly SpatialDropTarget[]);
 
 function command(
@@ -94,12 +104,27 @@ describe("spatial drop command codec", () => {
   });
 
   it("uses an existing target window as every anchored drop reference", () => {
-    for (const target of targets.slice(1)) {
+    for (const target of targets.filter(
+      (candidate) => candidate.kind !== "workspace-gap",
+    )) {
+      if (target.kind === "empty-row") {
+        continue;
+      }
       const encoded = encodeSpatialDropCommand(command(target));
 
       expect(encoded).toContain('"targetWindowId"');
       expect(encoded).not.toContain("targetColumnId");
     }
+  });
+
+  it("carries only the bounded adjacent workspace gap relation", () => {
+    const encoded = encodeSpatialDropCommand(command(workspaceGapTarget));
+    const decoded = decodeSpatialDropCommand(encoded);
+
+    expect(decoded?.target).toEqual(workspaceGapTarget);
+    expect(decoded?.target).not.toHaveProperty("desktopId");
+    expect(encoded).not.toContain("desktopIds");
+    expect(encoded).not.toContain("insertionIndex");
   });
 
   it("reuses persistence identifier bounds and keeps documents small", () => {
@@ -130,12 +155,33 @@ describe("spatial drop command codec", () => {
         windowId: identifier,
       },
     });
+    const encodedWorkspaceGap = encodeSpatialDropCommand({
+      ...command({
+        activityId: identifier,
+        adjacentDesktopId: `a${identifier.slice(1)}`,
+        anchorDesktopId: `b${identifier.slice(1)}`,
+        kind: "workspace-gap",
+        outputId: identifier,
+        position: "before",
+      }),
+      source: {
+        activityId: identifier,
+        desktopId: identifier,
+        outputId: identifier,
+        windowId: identifier,
+      },
+    });
 
     expect(encoded).not.toBeNull();
+    expect(encodedWorkspaceGap).not.toBeNull();
     expect(encoded?.length).toBeLessThanOrEqual(
       SPATIAL_DROP_COMMAND_LIMITS.documentCharacters,
     );
+    expect(encodedWorkspaceGap?.length).toBeLessThanOrEqual(
+      SPATIAL_DROP_COMMAND_LIMITS.documentCharacters,
+    );
     expect(decodeSpatialDropCommand(encoded)).not.toBeNull();
+    expect(decodeSpatialDropCommand(encodedWorkspaceGap)).not.toBeNull();
     expect(
       decodeSpatialDropCommand(
         " ".repeat(SPATIAL_DROP_COMMAND_LIMITS.documentCharacters + 1),
@@ -145,7 +191,8 @@ describe("spatial drop command codec", () => {
 
   it.each([
     { ...command(), format: "other" },
-    { ...command(), version: 2 },
+    { ...command(), version: 1 },
+    { ...command(), version: 3 },
     { ...command(), requestId: 0 },
     { ...command(), requestId: 1.5 },
     { ...command(), requestId: Number.MAX_SAFE_INTEGER + 1 },
@@ -193,6 +240,25 @@ describe("spatial drop command codec", () => {
     {
       ...command(),
       target: { ...targets[1], kind: "unknown" },
+    },
+    {
+      ...command(),
+      target: { ...workspaceGapTarget, adjacentDesktopId: "" },
+    },
+    {
+      ...command(),
+      target: {
+        ...workspaceGapTarget,
+        adjacentDesktopId: workspaceGapTarget.anchorDesktopId,
+      },
+    },
+    {
+      ...command(),
+      target: { ...workspaceGapTarget, desktopId: "unsupported" },
+    },
+    {
+      ...command(),
+      target: { ...workspaceGapTarget, position: "inside" },
     },
   ])("rejects malformed or excess encoded input: %#", (value) => {
     expect(encodeSpatialDropCommand(value)).toBeNull();

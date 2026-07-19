@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   encodeSpatialDropCommand,
+  SPATIAL_DROP_COMMAND_VERSION,
   type SpatialDropCommand,
 } from "../src/overview/spatial-drop-command";
 import {
@@ -29,7 +30,7 @@ function command(requestId = 41, createdAt = CREATED_AT): SpatialDropCommand {
       position: "after",
       targetWindowId: "window-b",
     },
-    version: 1,
+    version: SPATIAL_DROP_COMMAND_VERSION,
   };
 }
 

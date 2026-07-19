@@ -1229,6 +1229,104 @@ describe("overview effect package", () => {
     );
   });
 
+  it("previews and submits an exact workspace-gap drop", () => {
+    const gapDelegate = scene.slice(
+      scene.indexOf("id: workspaceGapDropRepeater"),
+      scene.indexOf("id: spatialHorizontalRowInput"),
+    );
+    const planning = scene.slice(
+      scene.indexOf("function planWorkspaceGapDrop("),
+      scene.indexOf("function workspaceGapDropSourceIsExact("),
+    );
+    const submission = scene.slice(
+      scene.indexOf("function submitWindowWorkspaceGapDrop("),
+      scene.indexOf("function handleCrossOutputWindowDrop("),
+    );
+    const crossOutput = scene.slice(
+      scene.indexOf("function handleCrossOutputWindowDrop("),
+      scene.indexOf("function moveWindowAcrossOutputs("),
+    );
+
+    expect(gapDelegate).toContain(
+      "model: Math.max(0, root.desktopIds.length - 1)",
+    );
+    expect(gapDelegate).toContain('keys: ["driftile-window"]');
+    expect(gapDelegate).not.toContain("root.spatialWindowDragSource !== null");
+    expect(gapDelegate).toMatch(
+      /root\.claimWorkspaceGapPreview\(\s*workspaceGapDropArea, drag, workspaceGapDropSlot\.index\)/u,
+    );
+    expect(gapDelegate).toContain(
+      "root.submitWindowWorkspaceGapDrop(drop.source, plan, root.targetScreen)",
+    );
+    expect(gapDelegate).toMatch(
+      /drop\.action = accepted \? Qt\.MoveAction : Qt\.IgnoreAction;[\s\S]*drop\.accepted = accepted;/u,
+    );
+    expect(gapDelegate).toMatch(
+      /readonly property var plan: root\.workspaceGapPreviewIndex === workspaceGapDropSlot\.index[\s\S]*root\.workspaceGapPreviewIsExact\(\)[\s\S]*x: root\.cardX[\s\S]*y: plan \? plan\.lineY - workspaceGapDropSlot\.y - height \/ 2[\s\S]*width: root\.cardWidth[\s\S]*visible: plan !== null/u,
+    );
+    expect(gapDelegate).toContain(
+      "onExited: root.releaseWorkspaceGapPreview(workspaceGapDropSlot.index)",
+    );
+    expect(gapDelegate).toMatch(
+      /onContainsDragChanged:[\s\S]*if \(!containsDrag\) \{\s*root\.releaseWorkspaceGapPreview\(workspaceGapDropSlot\.index\);/u,
+    );
+
+    expect(planning).toContain(
+      'typeof runtime.planOverviewSpatialWorkspaceGap !== "function"',
+    );
+    expect(planning).toContain(
+      "const canvasPoint = spatialCanvas.mapFromItem(root, point.x, point.y);",
+    );
+    expect(planning).toContain(
+      "const externalSource = liveSourceScreen !== liveTargetScreen",
+    );
+    expect(planning).toContain(
+      "spatialWindowDragSource === null && sourceOutputId !== targetOutputId",
+    );
+    expect(planning).toContain("windowSpatialDropSceneIsExact(");
+    expect(planning).toContain("windowDesktopDropCandidateIsExact(");
+    expect(planning).toContain("clearInvalidWorkspaceGapPreview()");
+    for (const field of [
+      "cardGap: cardGap",
+      "cardHeight: cardHeight",
+      "cardTop: 0",
+      "desktopIds: desktopIds",
+      "keepEmptyDesktopAboveFirst: emptyDesktopAboveFirst",
+      "pointY: pointY",
+    ]) {
+      expect(planning).toContain(field);
+    }
+    expect(planning).toContain("Object.isFrozen(plan)");
+    expect(planning).toContain(
+      "adjacentIndex + 1 === anchorIndex && plan.insertionIndex === anchorIndex",
+    );
+    expect(planning).toContain(
+      "anchorIndex + 1 === adjacentIndex && plan.insertionIndex === adjacentIndex",
+    );
+
+    expect(submission).toContain("workspaceGapDropSourceIsExact(source)");
+    expect(submission).toContain("windowSpatialDropSceneIsExact(");
+    expect(submission).toContain("windowDesktopDropCandidateIsExact(");
+    expect(submission).toContain("canonicalWorkspaceGapDropTarget(");
+    expect(submission).toContain('kind: "workspace-gap"');
+    expect(submission).toContain(
+      "adjacentDesktopId: exactPlan.adjacentDesktopId",
+    );
+    expect(submission).toContain("anchorDesktopId: exactPlan.anchorDesktopId");
+    expect(submission).toContain("position: exactPlan.position");
+    expect(submission).toContain("effect.submitSpatialDropCommand({");
+    expect(submission).not.toMatch(
+      /createDesktop|removeDesktop|moveDesktop|candidate\.(?:desktops|output|frameGeometry)\s*=(?!=)|org\.kde\.kwin\.private/u,
+    );
+
+    expect(crossOutput).toMatch(
+      /if \(targetHit\.kind === "workspace-gap"\) \{\s*submitWindowWorkspaceGapDrop\(source, targetHit\.plan, expectedTargetScreen\);\s*return;\s*\}/u,
+    );
+    expect(crossOutput).toContain(
+      "const workspaceGapPlan = planWorkspaceGapDropAtRootPoint(localPosition);",
+    );
+  });
+
   it("moves one exact live window across outputs and compensates partial writes", () => {
     const sourceHandlers = desktopCard.slice(
       desktopCard.indexOf("id: thumbnailDragHandler"),

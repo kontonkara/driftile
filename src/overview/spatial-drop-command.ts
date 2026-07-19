@@ -1,7 +1,7 @@
 import { LAYOUT_PERSISTENCE_LIMITS } from "../core/layout-persistence";
 
 export const SPATIAL_DROP_COMMAND_FORMAT = "driftile-spatial-drop";
-export const SPATIAL_DROP_COMMAND_VERSION = 1;
+export const SPATIAL_DROP_COMMAND_VERSION = 2;
 
 const MAXIMUM_COMMAND_IDENTIFIER_FIELDS = 8;
 const MAXIMUM_JSON_IDENTIFIER_EXPANSION = 6;
@@ -28,30 +28,41 @@ export interface SpatialDropSource {
 
 interface SpatialDropTargetContext {
   readonly activityId: string;
-  readonly desktopId: string;
   readonly outputId: string;
 }
 
-export interface SpatialDropEmptyRowTarget extends SpatialDropTargetContext {
+interface SpatialDropDesktopTargetContext extends SpatialDropTargetContext {
+  readonly desktopId: string;
+}
+
+export interface SpatialDropEmptyRowTarget extends SpatialDropDesktopTargetContext {
   readonly kind: "empty-row";
 }
 
-export interface SpatialDropColumnBoundaryTarget extends SpatialDropTargetContext {
+export interface SpatialDropColumnBoundaryTarget extends SpatialDropDesktopTargetContext {
   readonly kind: "column-boundary";
   readonly position: SpatialDropPosition;
   readonly targetWindowId: string;
 }
 
-export interface SpatialDropStackInsertionTarget extends SpatialDropTargetContext {
+export interface SpatialDropStackInsertionTarget extends SpatialDropDesktopTargetContext {
   readonly kind: "stack-insertion";
   readonly position: SpatialDropPosition;
   readonly targetWindowId: string;
 }
 
+export interface SpatialDropWorkspaceGapTarget extends SpatialDropTargetContext {
+  readonly adjacentDesktopId: string;
+  readonly anchorDesktopId: string;
+  readonly kind: "workspace-gap";
+  readonly position: SpatialDropPosition;
+}
+
 export type SpatialDropTarget =
   | SpatialDropColumnBoundaryTarget
   | SpatialDropEmptyRowTarget
-  | SpatialDropStackInsertionTarget;
+  | SpatialDropStackInsertionTarget
+  | SpatialDropWorkspaceGapTarget;
 
 export interface SpatialDropCommand {
   readonly createdAt: number;
@@ -89,6 +100,14 @@ const ANCHORED_TARGET_KEYS = [
   "outputId",
   "position",
   "targetWindowId",
+] as const;
+const WORKSPACE_GAP_TARGET_KEYS = [
+  "activityId",
+  "adjacentDesktopId",
+  "anchorDesktopId",
+  "kind",
+  "outputId",
+  "position",
 ] as const;
 
 export function encodeSpatialDropCommand(value: unknown): string | null {
@@ -188,6 +207,10 @@ function readTarget(value: unknown): SpatialDropTarget | null {
     const candidate = readExactRecord(value, ANCHORED_TARGET_KEYS);
     return candidate === null ? null : readAnchoredTarget(candidate, kind);
   }
+  if (kind === "workspace-gap") {
+    const candidate = readExactRecord(value, WORKSPACE_GAP_TARGET_KEYS);
+    return candidate === null ? null : readWorkspaceGapTarget(candidate);
+  }
   return null;
 }
 
@@ -233,6 +256,32 @@ function readAnchoredTarget(
     position,
     targetWindowId,
   });
+}
+
+function readWorkspaceGapTarget(
+  candidate: Record<string, unknown>,
+): SpatialDropWorkspaceGapTarget | null {
+  const activityId = candidate["activityId"];
+  const adjacentDesktopId = candidate["adjacentDesktopId"];
+  const anchorDesktopId = candidate["anchorDesktopId"];
+  const outputId = candidate["outputId"];
+  const position = candidate["position"];
+
+  return isIdentifier(activityId) &&
+    isIdentifier(adjacentDesktopId) &&
+    isIdentifier(anchorDesktopId) &&
+    adjacentDesktopId !== anchorDesktopId &&
+    isIdentifier(outputId) &&
+    isPosition(position)
+    ? Object.freeze({
+        activityId,
+        adjacentDesktopId,
+        anchorDesktopId,
+        kind: "workspace-gap",
+        outputId,
+        position,
+      })
+    : null;
 }
 
 function readExactRecord(

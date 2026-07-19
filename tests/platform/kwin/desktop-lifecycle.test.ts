@@ -52,6 +52,8 @@ interface LifecycleFixture {
   selectedDesktop(output: KWinOutput): KWinVirtualDesktop | null;
   select(output: KWinOutput, desktop: KWinVirtualDesktop): void;
   setCreateCommits(enabled: boolean): void;
+  setCreateAvailable(enabled: boolean): void;
+  setCreateIdOverride(desktopId: string | null): void;
   setCreatePermutes(enabled: boolean): void;
   setCreatePositionOverride(position: number | null): void;
   setCreateSignals(enabled: boolean): void;
@@ -59,6 +61,8 @@ interface LifecycleFixture {
   setMoveMode(
     mode: "commit" | "reject" | "throw" | "unavailable" | "wrong",
   ): void;
+  setRemoveMode(mode: "commit" | "reject" | "throw" | "unavailable"): void;
+  replaceDesktopIdentity(position: number): void;
 }
 
 function createLifecycleFixture(
@@ -85,6 +89,7 @@ function createLifecycleFixture(
   let desktops = [...initialDesktops];
   let windows = [...initialWindows];
   let createCommits = true;
+  let createIdOverride: string | null = null;
   let createPermutes = false;
   let createPositionOverride: number | null = null;
   let createSignals = true;
@@ -95,10 +100,49 @@ function createLifecycleFixture(
   let moveMode: "commit" | "reject" | "throw" | "wrong" = "commit";
   const moveRequests: Array<{ desktopId: string; position: number }> = [];
   let removeCount = 0;
+  let removeMode: "commit" | "reject" | "throw" = "commit";
   let nextCreatedId = 1;
   const selected = new Map(
     outputs.map((output) => [output.name, desktops[0] ?? null]),
   );
+  const createDesktop = (position: number): void => {
+    createCount += 1;
+    createRequests.push(position);
+
+    if (!createCommits) {
+      return;
+    }
+
+    if (createPermutes) {
+      const first = desktops[0];
+      const second = desktops[1];
+
+      if (first && second) {
+        desktops.splice(0, 2, second, first);
+      }
+
+      if (createSignals) {
+        desktopsChanged.emit();
+      }
+
+      return;
+    }
+
+    const desktop = {
+      id: createIdOverride ?? `created-${String(nextCreatedId)}`,
+    };
+    nextCreatedId += 1;
+    const targetPosition = createPositionOverride ?? position;
+    desktops.splice(
+      Math.min(Math.max(targetPosition, 0), desktops.length),
+      0,
+      desktop,
+    );
+
+    if (createSignals) {
+      desktopsChanged.emit();
+    }
+  };
   const moveDesktop = (desktop: KWinVirtualDesktop, position: number): void => {
     moveCount += 1;
     moveRequests.push({ desktopId: desktop.id, position });
@@ -137,42 +181,7 @@ function createLifecycleFixture(
     activeScreen: outputs[0] ?? null,
     activeWindow: null,
     clientArea: (_option, output) => output.geometry,
-    createDesktop: (position) => {
-      createCount += 1;
-      createRequests.push(position);
-
-      if (!createCommits) {
-        return;
-      }
-
-      if (createPermutes) {
-        const first = desktops[0];
-        const second = desktops[1];
-
-        if (first && second) {
-          desktops.splice(0, 2, second, first);
-        }
-
-        if (createSignals) {
-          desktopsChanged.emit();
-        }
-
-        return;
-      }
-
-      const desktop = { id: `created-${String(nextCreatedId)}` };
-      nextCreatedId += 1;
-      const targetPosition = createPositionOverride ?? position;
-      desktops.splice(
-        Math.min(Math.max(targetPosition, 0), desktops.length),
-        0,
-        desktop,
-      );
-
-      if (createSignals) {
-        desktopsChanged.emit();
-      }
-    },
+    createDesktop,
     currentDesktop: desktops[0] ?? null,
     currentDesktopChanged,
     currentDesktopForScreen: (output) => selected.get(output.name) ?? null,
@@ -181,6 +190,15 @@ function createLifecycleFixture(
     moveDesktop,
     removeDesktop: (desktop) => {
       removeCount += 1;
+
+      if (removeMode === "reject") {
+        return;
+      }
+
+      if (removeMode === "throw") {
+        throw new Error("injected desktop removal failure");
+      }
+
       desktops = desktops.filter((candidate) => candidate !== desktop);
       desktopsChanged.emit();
     },
@@ -266,6 +284,15 @@ function createLifecycleFixture(
     setCreateCommits: (enabled) => {
       createCommits = enabled;
     },
+    setCreateAvailable: (enabled) => {
+      Object.defineProperty(workspace, "createDesktop", {
+        configurable: true,
+        value: enabled ? createDesktop : undefined,
+      });
+    },
+    setCreateIdOverride: (desktopId) => {
+      createIdOverride = desktopId;
+    },
     setCreatePermutes: (enabled) => {
       createPermutes = enabled;
     },
@@ -287,6 +314,44 @@ function createLifecycleFixture(
       if (mode !== "unavailable") {
         moveMode = mode;
       }
+    },
+    setRemoveMode: (mode) => {
+      Object.defineProperty(workspace, "removeDesktop", {
+        configurable: true,
+        value:
+          mode === "unavailable"
+            ? undefined
+            : (desktop: KWinVirtualDesktop) => {
+                removeCount += 1;
+
+                if (mode === "reject") {
+                  return;
+                }
+
+                if (mode === "throw") {
+                  throw new Error("injected desktop removal failure");
+                }
+
+                desktops = desktops.filter(
+                  (candidate) => candidate !== desktop,
+                );
+                desktopsChanged.emit();
+              },
+      });
+
+      if (mode !== "unavailable") {
+        removeMode = mode;
+      }
+    },
+    replaceDesktopIdentity: (position) => {
+      const desktop = desktops[position];
+
+      if (!desktop) {
+        return;
+      }
+
+      desktops.splice(position, 1, { id: desktop.id });
+      desktopsChanged.emit();
     },
   };
 }
@@ -468,9 +533,327 @@ describe("planDesktopLifecycle", () => {
       ),
     ).toBeNull();
   });
+
+  it("removes empty run-owned interior desktops while preserving boundaries", () => {
+    const snapshot = {
+      desktopIds: ["desktop-1", "owned-gap", "desktop-2", "owned-tail"],
+      occupiedDesktopIds: new Set(["desktop-1", "desktop-2"]),
+      ownedDesktopIds: new Set(["owned-gap", "owned-tail"]),
+      removalSafe: true,
+      selectedDesktopIds: new Set(["desktop-1"]),
+    };
+
+    expect(planDesktopLifecycle(snapshot)).toEqual({
+      desktopId: "owned-gap",
+      kind: "remove",
+    });
+    expect(
+      planDesktopLifecycle(
+        {
+          ...snapshot,
+          desktopIds: [
+            "owned-leading",
+            "desktop-1",
+            "owned-gap",
+            "desktop-2",
+            "owned-tail",
+          ],
+          ownedDesktopIds: new Set([
+            "owned-leading",
+            "owned-gap",
+            "owned-tail",
+          ]),
+        },
+        true,
+      ),
+    ).toEqual({ desktopId: "owned-gap", kind: "remove" });
+  });
 });
 
 describe("DesktopLifecycle", () => {
+  it("exposes the live leading-boundary policy", () => {
+    const fixture = createLifecycleFixture([{ id: "desktop-1" }]);
+
+    expect(fixture.lifecycle.keepEmptyDesktopAboveFirst).toBe(false);
+    fixture.lifecycle.setKeepEmptyDesktopAboveFirst(true);
+    expect(fixture.lifecycle.keepEmptyDesktopAboveFirst).toBe(true);
+  });
+
+  it("creates an exact reserved desktop and retains ownership after commit", () => {
+    const leading = { id: "desktop-1" };
+    const trailing = { id: "desktop-2" };
+    const fixture = createLifecycleFixture([leading, trailing], [], 1, true);
+    fixture.reconcile();
+
+    const result = fixture.lifecycle.createDesktopAtPosition(1, [
+      leading.id,
+      trailing.id,
+    ]);
+
+    expect(result).toEqual({
+      afterDesktopIds: [leading.id, "created-1", trailing.id],
+      beforeDesktopIds: [leading.id, trailing.id],
+      desktop: fixture.desktops[1],
+      desktopId: "created-1",
+      position: 1,
+    });
+    expect(Object.isFrozen(result)).toBe(true);
+    expect(Object.isFrozen(result?.afterDesktopIds)).toBe(true);
+    expect(Object.isFrozen(result?.beforeDesktopIds)).toBe(true);
+    expect(fixture.lifecycle.ownedDesktopCount).toBe(1);
+    expect(fixture.lifecycle.pendingWork).toBe(false);
+    expect(fixture.lifecycle.unsettled).toBe(true);
+
+    fixture.reconcile();
+    expect(fixture.desktops.map((desktop) => desktop.id)).toEqual([
+      leading.id,
+      "created-1",
+      trailing.id,
+    ]);
+    expect(fixture.removeCount).toBe(0);
+
+    if (!result) {
+      throw new Error("missing intentional desktop creation result");
+    }
+
+    expect(
+      fixture.lifecycle.validateCreatedDesktopReservation({ ...result }),
+    ).toBe(false);
+    expect(fixture.lifecycle.validateCreatedDesktopReservation(result)).toBe(
+      true,
+    );
+    expect(fixture.lifecycle.commitCreatedDesktop(result)).toBe(true);
+    expect(fixture.lifecycle.commitCreatedDesktop(result)).toBe(false);
+    expect(fixture.lifecycle.ownedDesktopCount).toBe(1);
+    expect(fixture.lifecycle.pendingWork).toBe(true);
+
+    fixture.reconcile();
+    expect(fixture.desktops).toEqual([leading, trailing]);
+    expect(fixture.removeCount).toBe(1);
+    expect(fixture.lifecycle.ownedDesktopCount).toBe(0);
+  });
+
+  it("removes a committed workspace-gap desktop after it becomes empty", () => {
+    const first = { id: "desktop-1" };
+    const second = { id: "desktop-2" };
+    const trailing = { id: "desktop-3" };
+    const fixture = createLifecycleFixture(
+      [first, second, trailing],
+      [createWindow("window-1", [first]), createWindow("window-2", [second])],
+    );
+    fixture.reconcile();
+    const result = fixture.lifecycle.createDesktopAtPosition(1, [
+      first.id,
+      second.id,
+      trailing.id,
+    ]);
+
+    if (!result) {
+      throw new Error("missing interior desktop creation result");
+    }
+
+    expect(fixture.lifecycle.commitCreatedDesktop(result)).toBe(true);
+    fixture.reconcile();
+    expect(fixture.desktops).toEqual([first, second, trailing]);
+    expect(fixture.removeCount).toBe(1);
+    expect(fixture.lifecycle.ownedDesktopCount).toBe(0);
+  });
+
+  it("rolls back only its exact empty unselected reserved desktop", () => {
+    const first = { id: "desktop-1" };
+    const second = { id: "desktop-2" };
+    const fixture = createLifecycleFixture([first, second]);
+    fixture.reconcile();
+    const result = fixture.lifecycle.createDesktopAtPosition(1, [
+      first.id,
+      second.id,
+    ]);
+
+    if (!result) {
+      throw new Error("missing rollback desktop creation result");
+    }
+
+    expect(fixture.lifecycle.rollbackCreatedDesktop({ ...result })).toBe(false);
+    expect(fixture.removeCount).toBe(0);
+    expect(fixture.lifecycle.rollbackCreatedDesktop(result)).toBe(true);
+    expect(fixture.desktops).toEqual([first, second]);
+    expect(fixture.removeCount).toBe(1);
+    expect(fixture.lifecycle.ownedDesktopCount).toBe(0);
+    expect(fixture.lifecycle.rollbackCreatedDesktop(result)).toBe(false);
+  });
+
+  it.each([
+    {
+      configure: (fixture: LifecycleFixture) => {
+        fixture.setCreateAvailable(false);
+      },
+      name: "unavailable API",
+    },
+    {
+      configure: (fixture: LifecycleFixture) => {
+        fixture.setRemoveMode("unavailable");
+      },
+      name: "unavailable compensation API",
+    },
+    {
+      configure: (fixture: LifecycleFixture) => {
+        fixture.setCreateCommits(false);
+      },
+      name: "rejected request",
+    },
+    {
+      configure: (fixture: LifecycleFixture) => {
+        fixture.setCreatePositionOverride(2);
+      },
+      name: "wrong insertion position",
+    },
+    {
+      configure: (fixture: LifecycleFixture) => {
+        fixture.setCreateIdOverride("desktop-1");
+      },
+      name: "reused desktop identity",
+    },
+    {
+      configure: (fixture: LifecycleFixture) => {
+        fixture.setCreatePermutes(true);
+      },
+      name: "unexpected topology permutation",
+    },
+  ])("fails closed after an $name", ({ configure }) => {
+    const first = { id: "desktop-1" };
+    const second = { id: "desktop-2" };
+    const fixture = createLifecycleFixture([first, second]);
+    fixture.reconcile();
+    configure(fixture);
+
+    expect(
+      fixture.lifecycle.createDesktopAtPosition(1, [first.id, second.id]),
+    ).toBeNull();
+    expect(fixture.lifecycle.ownedDesktopCount).toBe(0);
+  });
+
+  it("rejects stale expected topology before calling KWin", () => {
+    const first = { id: "desktop-1" };
+    const second = { id: "desktop-2" };
+    const fixture = createLifecycleFixture([first, second]);
+    fixture.reconcile();
+
+    expect(
+      fixture.lifecycle.createDesktopAtPosition(1, [second.id, first.id]),
+    ).toBeNull();
+    expect(fixture.createCount).toBe(0);
+    expect(fixture.desktops).toEqual([first, second]);
+  });
+
+  it("settles an exact creation without synchronous signal delivery", () => {
+    const first = { id: "desktop-1" };
+    const second = { id: "desktop-2" };
+    const fixture = createLifecycleFixture([first, second]);
+    fixture.reconcile();
+    fixture.setCreateSignals(false);
+
+    const result = fixture.lifecycle.createDesktopAtPosition(1, [
+      first.id,
+      second.id,
+    ]);
+
+    expect(result?.desktopId).toBe("created-1");
+    expect(fixture.lifecycle.ownedDesktopCount).toBe(1);
+
+    if (!result) {
+      throw new Error("missing queued-signal creation result");
+    }
+
+    expect(fixture.lifecycle.rollbackCreatedDesktop(result)).toBe(true);
+    expect(fixture.desktops).toEqual([first, second]);
+  });
+
+  it("retains a reservation when rollback is rejected and permits an exact retry", () => {
+    const first = { id: "desktop-1" };
+    const second = { id: "desktop-2" };
+    const fixture = createLifecycleFixture([first, second]);
+    fixture.reconcile();
+    const result = fixture.lifecycle.createDesktopAtPosition(1, [
+      first.id,
+      second.id,
+    ]);
+
+    if (!result) {
+      throw new Error("missing rejected rollback creation result");
+    }
+
+    fixture.setRemoveMode("reject");
+    expect(fixture.lifecycle.rollbackCreatedDesktop(result)).toBe(false);
+    expect(fixture.desktops.map((desktop) => desktop.id)).toEqual([
+      first.id,
+      result.desktopId,
+      second.id,
+    ]);
+
+    fixture.setRemoveMode("commit");
+    expect(fixture.lifecycle.rollbackCreatedDesktop(result)).toBe(true);
+    expect(fixture.desktops).toEqual([first, second]);
+  });
+
+  it("never rolls back an occupied, selected, or stale created desktop", () => {
+    const first = { id: "desktop-1" };
+    const second = { id: "desktop-2" };
+
+    const occupiedFixture = createLifecycleFixture([first, second]);
+    occupiedFixture.reconcile();
+    const occupied = occupiedFixture.lifecycle.createDesktopAtPosition(1, [
+      first.id,
+      second.id,
+    ]);
+
+    if (!occupied) {
+      throw new Error("missing occupied rollback creation result");
+    }
+
+    occupiedFixture.addWindow(createWindow("occupied", [occupied.desktop]));
+    expect(occupiedFixture.lifecycle.rollbackCreatedDesktop(occupied)).toBe(
+      false,
+    );
+    expect(occupiedFixture.removeCount).toBe(0);
+    expect(occupiedFixture.lifecycle.commitCreatedDesktop(occupied)).toBe(true);
+
+    const selectedFixture = createLifecycleFixture([first, second]);
+    selectedFixture.reconcile();
+    const selected = selectedFixture.lifecycle.createDesktopAtPosition(1, [
+      first.id,
+      second.id,
+    ]);
+    const output = selectedFixture.outputs[0];
+
+    if (!selected || !output) {
+      throw new Error("missing selected rollback fixture state");
+    }
+
+    selectedFixture.select(output, selected.desktop);
+    expect(selectedFixture.lifecycle.rollbackCreatedDesktop(selected)).toBe(
+      false,
+    );
+    expect(selectedFixture.removeCount).toBe(0);
+
+    const staleFixture = createLifecycleFixture([first, second]);
+    staleFixture.reconcile();
+    const stale = staleFixture.lifecycle.createDesktopAtPosition(1, [
+      first.id,
+      second.id,
+    ]);
+
+    if (!stale) {
+      throw new Error("missing stale rollback creation result");
+    }
+
+    staleFixture.replaceDesktopIdentity(1);
+    expect(
+      staleFixture.lifecycle.validateCreatedDesktopReservation(stale),
+    ).toBe(false);
+    expect(staleFixture.lifecycle.rollbackCreatedDesktop(stale)).toBe(false);
+    expect(staleFixture.removeCount).toBe(0);
+  });
+
   it("creates and later removes only its redundant trailing desktop", () => {
     const desktop = { id: "desktop-1" };
     const window = createWindow("window-1", [desktop]);
