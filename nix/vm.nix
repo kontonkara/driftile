@@ -13761,6 +13761,7 @@ let
         local attempt
         local current=""
         local document
+        local excluded_digest="''${1:-}"
         local previous=""
         local stable_samples=0
 
@@ -13768,6 +13769,13 @@ let
           if document=$(overview_layout_document 2>/dev/null) \
             && current=$(printf '%s' "$document" | sha256sum 2>/dev/null); then
             current="''${current%% *}"
+
+            if [[ -n "$excluded_digest" && "$current" == "$excluded_digest" ]]; then
+              previous=""
+              stable_samples=0
+              sleep 0.1
+              continue
+            fi
 
             if [[ -n "$previous" && "$current" == "$previous" ]]; then
               stable_samples=$((stable_samples + 1))
@@ -14647,7 +14655,7 @@ let
       fi
       verify_targeted_insertion "$xterm_width" \
         || fail_test "The exact Overview drop did not persist the destination stack."
-      overview_layout_after=$(wait_for_stable_layout_digest 2>/dev/null || true)
+      overview_layout_after=$(wait_for_stable_layout_digest "$overview_layout_before" 2>/dev/null || true)
       if [[ -z "$overview_layout_after" \
         || "$overview_layout_after" == "$overview_layout_before" \
         || "$(effect_loaded_state "$overview_plugin_id" 2>/dev/null || true)" != true \
