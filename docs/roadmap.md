@@ -2727,5 +2727,10 @@ Release criteria (met):
   atomic live display plan, with captured geometry as the column-wide fallback.
 - Defer and coalesce discrete horizontal wheel selection without retaining QML
   objects or mutating the camera during input dispatch.
+- Resolve the first equal diagonal wheel event deterministically, preserve one
+  gesture axis owner, and consume cross-axis input without leaking it below the
+  effect.
+- Pan a row horizontally while its window drag remains inside the bounded left
+  or right edge zone, including loaded inactive workspace rows.
 - Keep the optional companion an incremental bridge rather than a second
   authoritative layout or compositor.

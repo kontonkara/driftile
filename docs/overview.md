@@ -87,7 +87,10 @@ Horizontal input is consumed without changing the row during search. Each
 row's session-only viewport is bounded by its projected strip and is preserved
 across live refreshes until the Overview closes. Rapid discrete steps are
 coalesced and applied after input dispatch from scalar, context-checked state;
-reversals cancel the corresponding pending movement.
+reversals cancel the corresponding pending movement. Precise pixel input takes
+precedence over angle input, and the first equal diagonal event chooses the
+vertical axis instead of being dropped; the selected axis then remains owned
+until that gesture ends.
 
 The card under the viewport center remains at the same local position when a
 live window refresh, zoom change, or scene resize rebuilds the projection. A
@@ -103,7 +106,9 @@ Dragging a window or desktop card into the top or bottom edge zone pans toward
 still-hidden workspaces. Panning stops outside the edge zone and at the first
 or last bound. The source card stays loaded, newly visible drop targets load on
 demand, and release reuses the existing exact transfer or reorder validation.
-No wheel or pan action writes Driftile's authoritative layout.
+Dragging a window into the left or right edge of its row similarly reveals
+hidden columns in that row, including inactive workspace rows. No wheel or pan
+action writes Driftile's authoritative layout.
 
 ## Keyboard navigation
 
