@@ -62,13 +62,15 @@ column, while dragging the empty backdrop with a mouse, touchpad, or touchscreen
 pans the stack within its finite vertical bounds. Rows outside a small visible
 range are not instantiated.
 
-While the effect is open, the current desktop row follows the public frame
-geometry of its active ordinary tiled window. Activating another eligible
-tiled window reconnects the row to that source. Manual horizontal scrolling or
-a keyboard reveal detaches the current source until the active source changes
-or a new Overview session starts. Inactive rows remain bounded, session-only
-projections of captured layout state. This current-row bridge is not a complete
-continuous spatial Overview.
+While the effect is open, the current desktop row projects guarded public live
+frames for complete stacked columns and the selected member of a tabbed
+column. Column shells, member guides, tabs, and thumbnails update from one
+bounded snapshot; an incomplete or stale column falls back to its captured
+layout as a unit. The horizontal camera follows the active eligible tiled
+window. Manual horizontal scrolling or a keyboard reveal detaches that source
+until the active source changes or a new Overview session starts. Inactive rows
+remain bounded, session-only projections of captured layout state. This
+current-row bridge is not a complete continuous spatial Overview.
 
 An unmodified mouse-wheel step selects the previous or next desktop without
 closing the Overview and never wraps. High-resolution wheel input retains a
@@ -83,7 +85,9 @@ Precise deltas pan that row without changing the saved layout; discrete steps
 move the Overview selection left or right and reveal the selected column.
 Horizontal input is consumed without changing the row during search. Each
 row's session-only viewport is bounded by its projected strip and is preserved
-across live refreshes until the Overview closes.
+across live refreshes until the Overview closes. Rapid discrete steps are
+coalesced and applied after input dispatch from scalar, context-checked state;
+reversals cancel the corresponding pending movement.
 
 The card under the viewport center remains at the same local position when a
 live window refresh, zoom change, or scene resize rebuilds the projection. A

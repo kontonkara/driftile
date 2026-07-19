@@ -2718,3 +2718,14 @@ Release criteria (met):
   window role is temporarily unavailable.
 - Suppress outgoing desktop motion while the workspace transition owns visual
   presentation.
+
+### 1.82.0 (in development)
+
+- Align current-row column shells and stacked member guides with one complete
+  guarded live-frame snapshot.
+- Project a selected tabbed member, its tabs, guides, and column shell from one
+  atomic live display plan, with captured geometry as the column-wide fallback.
+- Defer and coalesce discrete horizontal wheel selection without retaining QML
+  objects or mutating the camera during input dispatch.
+- Keep the optional companion an incremental bridge rather than a second
+  authoritative layout or compositor.
