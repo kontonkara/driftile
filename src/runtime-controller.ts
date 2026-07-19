@@ -3253,16 +3253,15 @@ export class RuntimeController {
     const liveSourceContext = observedSource
       ? this.resolveManagedContext(observedSource)
       : null;
-    const matchingOutputs = this.workspace.screens.filter(
-      (candidate) => candidate.name === command.source.outputId,
-    );
-    const matchingDesktops = this.workspace.desktops.filter(
-      (candidate) => candidate.id === command.source.desktopId,
-    );
-    const output = matchingOutputs[0];
-    const sourceDesktop = matchingDesktops[0];
+    const output = this.uniqueOutputByName(command.source.outputId);
+    const targetOutput = this.uniqueOutputByName(command.target.outputId);
+    const sourceDesktop = this.uniqueDesktopById(command.source.desktopId);
+    const targetDesktop = this.uniqueDesktopById(command.target.desktopId);
     const originalDesktop = output
       ? currentDesktopForOutput(this.workspace, output)
+      : null;
+    const originalTargetDesktop = targetOutput
+      ? currentDesktopForOutput(this.workspace, targetOutput)
       : null;
     const originalActiveWindow = this.workspace.activeWindow;
 
@@ -3286,12 +3285,20 @@ export class RuntimeController {
       String(sourceContext.desktopId) !== command.source.desktopId ||
       String(sourceContext.outputId) !== command.source.outputId ||
       command.target.activityId !== command.source.activityId ||
-      command.target.outputId !== command.source.outputId ||
-      matchingOutputs.length !== 1 ||
-      matchingDesktops.length !== 1 ||
       !output ||
+      !targetOutput ||
       !sourceDesktop ||
+      !targetDesktop ||
       !originalDesktop ||
+      !originalTargetDesktop ||
+      (targetOutput.name !== output.name &&
+        typeof this.workspace.currentDesktopForScreen !== "function" &&
+        targetDesktop.id !== sourceDesktop.id) ||
+      (typeof this.workspace.currentDesktopForScreen === "function" &&
+        typeof this.workspace.setCurrentDesktopForScreen !== "function" &&
+        (originalDesktop.id !== sourceDesktop.id ||
+          (targetOutput.name !== output.name &&
+            originalTargetDesktop.id !== targetDesktop.id))) ||
       sourceWindow.output?.name !== output.name ||
       sourceWindow.desktops.length !== 1 ||
       sourceWindow.desktops[0]?.id !== sourceDesktop.id ||
@@ -3354,6 +3361,20 @@ export class RuntimeController {
         return false;
       }
 
+      if (
+        targetOutput.name !== output.name &&
+        originalTargetDesktop.id !== targetDesktop.id
+      ) {
+        this.switchDesktop(targetDesktop, targetOutput);
+      }
+      if (
+        targetOutput.name !== output.name &&
+        currentDesktopForOutput(this.workspace, targetOutput)?.id !==
+          targetDesktop.id
+      ) {
+        return false;
+      }
+
       if (this.workspace.activeWindow !== sourceWindow) {
         this.workspace.activeWindow = sourceWindow;
       }
@@ -3365,6 +3386,25 @@ export class RuntimeController {
 
       if (
         applied &&
+        targetOutput.name !== output.name &&
+        originalDesktop.id !== sourceDesktop.id
+      ) {
+        this.recordDesktopSelection(originalDesktop, sourceDesktop, output);
+      }
+      if (
+        applied &&
+        targetOutput.name !== output.name &&
+        originalTargetDesktop.id !== targetDesktop.id
+      ) {
+        this.recordDesktopSelection(
+          originalTargetDesktop,
+          targetDesktop,
+          targetOutput,
+        );
+      }
+      if (
+        applied &&
+        targetOutput.name === output.name &&
         command.target.desktopId === command.source.desktopId &&
         originalDesktop.id !== sourceDesktop.id
       ) {
@@ -3373,21 +3413,61 @@ export class RuntimeController {
     } catch {
       applied = false;
     } finally {
-      try {
-        if (!applied) {
+      if (!applied) {
+        try {
           this.layout.activateWindow(previousSourceWindowId);
+        } catch {
+          // Desktop and focus restoration remain independent of layout recovery.
+        }
 
+        let targetDesktopRestored = targetOutput.name === output.name;
+        if (targetOutput.name !== output.name) {
+          try {
+            if (
+              originalTargetDesktop.id !== targetDesktop.id &&
+              currentDesktopForOutput(this.workspace, targetOutput)?.id ===
+                targetDesktop.id
+            ) {
+              this.switchDesktop(originalTargetDesktop, targetOutput);
+            }
+          } catch {
+            // Continue restoring the source output independently.
+          }
+
+          try {
+            targetDesktopRestored =
+              this.workspace.screens.includes(targetOutput) &&
+              currentDesktopForOutput(this.workspace, targetOutput)?.id ===
+                originalTargetDesktop.id;
+          } catch {
+            targetDesktopRestored = false;
+          }
+        }
+
+        try {
           if (
+            originalDesktop.id !== sourceDesktop.id &&
             currentDesktopForOutput(this.workspace, output)?.id ===
-            sourceDesktop.id
+              sourceDesktop.id
           ) {
             this.switchDesktop(originalDesktop, output);
           }
+        } catch {
+          // Focus restoration below remains fail-closed.
+        }
 
-          if (
+        let sourceDesktopRestored = false;
+        try {
+          sourceDesktopRestored =
+            this.workspace.screens.includes(output) &&
             currentDesktopForOutput(this.workspace, output)?.id ===
-            originalDesktop.id
-          ) {
+              originalDesktop.id;
+        } catch {
+          sourceDesktopRestored = false;
+        }
+
+        if (sourceDesktopRestored && targetDesktopRestored) {
+          try {
             if (originalActiveWindow === null) {
               this.workspace.activeWindow = null;
             } else if (
@@ -3398,10 +3478,10 @@ export class RuntimeController {
             ) {
               this.workspace.activeWindow = originalActiveWindow;
             }
+          } catch {
+            // KWin may reject best-effort focus restoration after state changes.
           }
         }
-      } catch {
-        // KWin may reject best-effort restoration after an external state change.
       }
 
       if (this.overviewSpatialDropActivation === activation) {
@@ -3449,10 +3529,19 @@ export class RuntimeController {
       String(prepared.context.activityId) !== source.activityId ||
       String(prepared.context.desktopId) !== source.desktopId ||
       String(prepared.context.outputId) !== source.outputId ||
-      target.activityId !== source.activityId ||
-      target.outputId !== source.outputId
+      target.activityId !== source.activityId
     ) {
       return false;
+    }
+
+    if (target.outputId !== source.outputId) {
+      const applied = this.moveActiveWindowToOutput(target);
+
+      if (applied) {
+        this.requestLayoutStatePublication();
+      }
+
+      return applied;
     }
 
     if (target.desktopId !== source.desktopId) {
@@ -11623,6 +11712,40 @@ export class RuntimeController {
       : null;
   }
 
+  private uniqueOutputByName(name: string): KWinOutput | null {
+    let match: KWinOutput | null = null;
+
+    for (const candidate of this.workspace.screens) {
+      if (candidate.name !== name) {
+        continue;
+      }
+      if (match) {
+        return null;
+      }
+
+      match = candidate;
+    }
+
+    return match;
+  }
+
+  private uniqueDesktopById(id: string): KWinVirtualDesktop | null {
+    let match: KWinVirtualDesktop | null = null;
+
+    for (const candidate of this.workspace.desktops) {
+      if (candidate.id !== id) {
+        continue;
+      }
+      if (match) {
+        return null;
+      }
+
+      match = candidate;
+    }
+
+    return match;
+  }
+
   private validateOutputBoundaryTarget(
     command: ActiveColumnCommand,
     sourceOutput: KWinOutput | undefined,
@@ -17397,10 +17520,21 @@ export class RuntimeController {
   }
 
   private moveActiveWindowToOutput(
-    target: OutputTransferTarget,
+    target: OutputTransferTarget | SpatialDropCommand["target"],
     wholeColumn = false,
   ): boolean {
-    const floatingResult = this.moveActiveFloatingWindowToOutput(target);
+    const outputTarget: OutputTransferTarget | null =
+      typeof target === "string" ? target : null;
+    const spatialTarget: SpatialDropCommand["target"] | undefined =
+      typeof target === "string" ? undefined : target;
+
+    if (spatialTarget && wholeColumn) {
+      return false;
+    }
+
+    const floatingResult = outputTarget
+      ? this.moveActiveFloatingWindowToOutput(outputTarget)
+      : null;
 
     if (floatingResult !== null) {
       return floatingResult;
@@ -17431,13 +17565,22 @@ export class RuntimeController {
       (candidate) => candidate.name === active.context.outputId,
     );
     const targetOutput = sourceOutput
-      ? this.resolveOutputTransferTarget(active.context.outputId, target)
+      ? spatialTarget
+        ? this.uniqueOutputByName(spatialTarget.outputId)
+        : outputTarget
+          ? this.resolveOutputTransferTarget(
+              active.context.outputId,
+              outputTarget,
+            )
+          : null
       : null;
     const sourceDesktop = sourceOutput
       ? currentDesktopForOutput(this.workspace, sourceOutput)
       : null;
     const targetDesktop = targetOutput
-      ? currentDesktopForOutput(this.workspace, targetOutput)
+      ? spatialTarget
+        ? this.uniqueDesktopById(spatialTarget.desktopId)
+        : currentDesktopForOutput(this.workspace, targetOutput)
       : null;
 
     if (
@@ -17446,7 +17589,13 @@ export class RuntimeController {
       !sourceDesktop ||
       !targetDesktop ||
       sourceOutput.name === targetOutput.name ||
-      sourceDesktop.id !== active.context.desktopId
+      sourceDesktop.id !== active.context.desktopId ||
+      currentDesktopForOutput(this.workspace, targetOutput)?.id !==
+        targetDesktop.id ||
+      (spatialTarget !== undefined &&
+        (spatialTarget.activityId !== String(active.context.activityId) ||
+          spatialTarget.desktopId !== targetDesktop.id ||
+          spatialTarget.outputId !== targetOutput.name))
     ) {
       return false;
     }
@@ -17462,6 +17611,14 @@ export class RuntimeController {
       targetContextKey === active.contextKey ||
       this.hasPendingCapacityState(active.contextKey) ||
       this.hasPendingCapacityState(targetContextKey) ||
+      (spatialTarget !== undefined &&
+        (this.pointerMoveIntent !== null ||
+          this.pendingDefaultColumnWidth !== null ||
+          this.pendingGap !== null ||
+          this.pendingAdmissionContexts.has(active.contextKey) ||
+          this.pendingAdmissionContexts.has(targetContextKey) ||
+          this.dirtyContexts.has(active.contextKey) ||
+          this.dirtyContexts.has(targetContextKey))) ||
       this.waitingWindowIds.has(active.contextKey) ||
       this.waitingWindowIds.has(targetContextKey) ||
       this.toggleTransitionPending(active.contextKey) ||
@@ -17524,20 +17681,54 @@ export class RuntimeController {
       targetBefore,
       wholeColumn ? selection.sourceColumn.id : undefined,
     );
-    const previewValue = wholeColumn
-      ? this.layout.previewColumnTransfer(active.activeId, {
+    let previewValue: ColumnTransferPreview | WindowTransferPreview | null;
+
+    if (wholeColumn) {
+      previewValue = this.layout.previewColumnTransfer(active.activeId, {
+        activityId: targetContext.activityId,
+        columnId: targetColumnId,
+        desktopId: targetContext.desktopId,
+        outputId: targetContext.outputId,
+      });
+    } else if (!spatialTarget || spatialTarget.kind === "empty-row") {
+      previewValue =
+        spatialTarget && targetBefore.columns.length !== 0
+          ? null
+          : this.layout.previewWindowTransfer(active.activeId, {
+              activityId: targetContext.activityId,
+              columnId: targetColumnId,
+              desktopId: targetContext.desktopId,
+              outputId: targetContext.outputId,
+              presentation: this.initialColumnPresentation(active.activeWindow),
+            });
+    } else if (spatialTarget.kind === "stack-insertion") {
+      previewValue = this.layout.previewWindowTransferToWindow(
+        active.activeId,
+        {
           activityId: targetContext.activityId,
-          columnId: targetColumnId,
           desktopId: targetContext.desktopId,
           outputId: targetContext.outputId,
-        })
-      : this.layout.previewWindowTransfer(active.activeId, {
-          activityId: targetContext.activityId,
-          columnId: targetColumnId,
-          desktopId: targetContext.desktopId,
-          outputId: targetContext.outputId,
-          presentation: this.initialColumnPresentation(active.activeWindow),
-        });
+          position: spatialTarget.position,
+          targetWindowId: windowId(spatialTarget.targetWindowId),
+        },
+      );
+    } else {
+      const spatialTargetWindowId = windowId(spatialTarget.targetWindowId);
+      const targetColumn = targetBefore.columns.find((column) =>
+        column.windowIds.includes(spatialTargetWindowId),
+      );
+      previewValue = targetColumn
+        ? this.layout.previewWindowTransferToColumnBoundary(active.activeId, {
+            activityId: targetContext.activityId,
+            columnId: targetColumnId,
+            desktopId: targetContext.desktopId,
+            outputId: targetContext.outputId,
+            position: spatialTarget.position,
+            presentation: this.initialColumnPresentation(active.activeWindow),
+            targetColumnId: targetColumn.id,
+          })
+        : null;
+    }
 
     if (!previewValue) {
       return false;
@@ -19662,8 +19853,13 @@ export class RuntimeController {
     const targetColumn = targetAfter.columns.find((column) =>
       column.windowIds.includes(activeId),
     );
+    const targetColumnIsNew =
+      targetColumn !== undefined &&
+      !targetBefore.columns.some((column) => column.id === targetColumn.id);
     const restore =
-      sourceColumn && (wholeColumn || sourceColumn.windowIds.length === 1)
+      targetColumnIsNew &&
+      sourceColumn &&
+      (wholeColumn || sourceColumn.windowIds.length === 1)
         ? this.columnFullWidthRestoreWidth(sourceContextKey, sourceColumn.id)
         : undefined;
 

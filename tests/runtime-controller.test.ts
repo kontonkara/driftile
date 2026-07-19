@@ -43026,6 +43026,366 @@ describe("RuntimeController", () => {
     ).toEqual([["dragged"]]);
     expect(setup.dragged.window.desktops).toEqual([setup.targetDesktop]);
   });
+
+  it.each([
+    {
+      expectedTargetColumns: [
+        { id: "column:target", windowIds: ["target", "dragged"] },
+      ],
+      kind: "stack-insertion" as const,
+    },
+    {
+      expectedTargetColumns: [
+        { id: "column:target", windowIds: ["target"] },
+        { id: "column:dragged", windowIds: ["dragged"] },
+      ],
+      kind: "column-boundary" as const,
+    },
+  ])(
+    "applies a cross-output $kind at the exact target",
+    ({ expectedTargetColumns, kind }) => {
+      const setup = createExternalPointerDropRuntimeFixture();
+      const publicationCount = setup.published.length;
+
+      expect(
+        setup.controller.executeSpatialDrop(
+          externalSpatialDropCommand(setup, {
+            kind,
+            position: "after",
+            targetWindowId: "target",
+          }),
+        ),
+      ).toBe(true);
+      expect(
+        testLayoutColumns(
+          setup.controller,
+          setup.sourceOutput,
+          setup.sourceDesktop,
+        ),
+      ).toEqual([]);
+      expect(
+        testLayoutColumns(
+          setup.controller,
+          setup.targetOutput,
+          setup.targetDesktop,
+        ),
+      ).toEqual(expectedTargetColumns);
+      expect(setup.dragged.window.output).toBe(setup.targetOutput);
+      expect(setup.dragged.window.desktops).toEqual([setup.targetDesktop]);
+      expect(setup.fixture.workspace.activeWindow).toBe(setup.dragged.window);
+      setup.controller.flushLayoutStatePublication();
+      expect(setup.published).toHaveLength(publicationCount + 1);
+    },
+  );
+
+  it("preserves the target full-width restore when merging an exact stack", () => {
+    const setup = createExternalPointerDropRuntimeFixture();
+    const sourceKey = [
+      setup.sourceOutput.name,
+      setup.sourceDesktop.id,
+      String(FALLBACK_ACTIVITY_ID),
+    ].join("\u0000");
+    const targetKey = [
+      setup.targetOutput.name,
+      setup.targetDesktop.id,
+      String(FALLBACK_ACTIVITY_ID),
+    ].join("\u0000");
+    const state = setup.controller as unknown as {
+      readonly columnFullWidthRestore: Map<
+        string,
+        Map<ReturnType<typeof columnId>, { kind: string; value: number }>
+      >;
+    };
+    state.columnFullWidthRestore.set(
+      sourceKey,
+      new Map([[columnId("column:dragged"), { kind: "fixed", value: 300 }]]),
+    );
+    state.columnFullWidthRestore.set(
+      targetKey,
+      new Map([[columnId("column:target"), { kind: "fixed", value: 360 }]]),
+    );
+
+    expect(
+      setup.controller.executeSpatialDrop(
+        externalSpatialDropCommand(setup, {
+          kind: "stack-insertion",
+          position: "after",
+          targetWindowId: "target",
+        }),
+      ),
+    ).toBe(true);
+    expect(
+      state.columnFullWidthRestore
+        .get(targetKey)
+        ?.get(columnId("column:target")),
+    ).toEqual({ kind: "fixed", value: 360 });
+    expect(state.columnFullWidthRestore.has(sourceKey)).toBe(false);
+  });
+
+  it("rejects a required per-output desktop switch without the setter", () => {
+    const setup = createExternalPointerDropRuntimeFixture({
+      differentDesktop: true,
+      perOutputDesktops: true,
+    });
+    setup.fixture.setCurrentDesktop(setup.sourceOutput, setup.targetDesktop);
+    flushManualScheduler(setup.scheduler);
+    const switchCount = setup.fixture.desktopSwitchCount;
+    Object.defineProperty(
+      setup.fixture.workspace,
+      "setCurrentDesktopForScreen",
+      {
+        configurable: true,
+        value: undefined,
+      },
+    );
+
+    expect(
+      setup.controller.executeSpatialDrop(
+        externalSpatialDropCommand(setup, {
+          kind: "stack-insertion",
+          position: "after",
+          targetWindowId: "target",
+        }),
+      ),
+    ).toBe(false);
+    expect(setup.fixture.desktopSwitchCount).toBe(switchCount);
+    expect(setup.fixture.outputTransferCount).toBe(0);
+    expect(
+      setup.fixture.workspace.currentDesktopForScreen?.(setup.sourceOutput),
+    ).toBe(setup.targetDesktop);
+  });
+
+  it("selects an exact cross-output desktop before applying the drop", () => {
+    const setup = createExternalPointerDropRuntimeFixture({
+      differentDesktop: true,
+      perOutputDesktops: true,
+    });
+    setup.fixture.setCurrentDesktop(setup.targetOutput, setup.sourceDesktop);
+    flushManualScheduler(setup.scheduler);
+    const switchCount = setup.fixture.desktopSwitchCount;
+
+    expect(
+      setup.controller.executeSpatialDrop(
+        externalSpatialDropCommand(setup, {
+          kind: "stack-insertion",
+          position: "after",
+          targetWindowId: "target",
+        }),
+      ),
+    ).toBe(true);
+    expect(setup.fixture.desktopSwitchCount).toBe(switchCount + 1);
+    expect(
+      setup.fixture.workspace.currentDesktopForScreen?.(setup.sourceOutput),
+    ).toBe(setup.sourceDesktop);
+    expect(
+      setup.fixture.workspace.currentDesktopForScreen?.(setup.targetOutput),
+    ).toBe(setup.targetDesktop);
+    expect(setup.dragged.window.output).toBe(setup.targetOutput);
+    expect(setup.dragged.window.desktops).toEqual([setup.targetDesktop]);
+  });
+
+  it("moves a window into an exact empty cross-output row", () => {
+    const setup = createEmptyExternalPointerDropRuntimeFixture();
+    const command: SpatialDropCommand = {
+      createdAt: 1,
+      format: "driftile-spatial-drop",
+      requestId: 1,
+      source: {
+        activityId: String(FALLBACK_ACTIVITY_ID),
+        desktopId: setup.sourceDesktop.id,
+        outputId: setup.sourceOutput.name,
+        windowId: "dragged",
+      },
+      target: {
+        activityId: String(FALLBACK_ACTIVITY_ID),
+        desktopId: setup.targetDesktop.id,
+        kind: "empty-row",
+        outputId: setup.targetOutput.name,
+      },
+      version: 1,
+    };
+
+    expect(setup.controller.executeSpatialDrop(command)).toBe(true);
+    expect(
+      testLayoutColumns(
+        setup.controller,
+        setup.sourceOutput,
+        setup.sourceDesktop,
+      ),
+    ).toEqual([]);
+    expect(
+      testLayoutColumns(
+        setup.controller,
+        setup.targetOutput,
+        setup.targetDesktop,
+      ).map((column) => column.windowIds),
+    ).toEqual([["dragged"]]);
+    expect(setup.dragged.window.output).toBe(setup.targetOutput);
+  });
+
+  it("rejects a settled minimized cross-output target without transfer writes", () => {
+    const setup = createExternalPointerDropRuntimeFixture();
+    const sourceBefore = runtimeLayout(setup.controller).snapshot(
+      outputId(setup.sourceOutput.name),
+      desktopId(setup.sourceDesktop.id),
+      FALLBACK_ACTIVITY_ID,
+    );
+    const targetBefore = runtimeLayout(setup.controller).snapshot(
+      outputId(setup.targetOutput.name),
+      desktopId(setup.targetDesktop.id),
+      FALLBACK_ACTIVITY_ID,
+    );
+
+    setWindowState("minimized", setup.target, true);
+    flushManualScheduler(setup.scheduler);
+    expect(
+      (
+        setup.controller as unknown as {
+          readonly suspendedWindows: ReadonlySet<WindowId>;
+        }
+      ).suspendedWindows.has(windowId("target")),
+    ).toBe(true);
+
+    expect(
+      setup.controller.executeSpatialDrop(
+        externalSpatialDropCommand(setup, {
+          kind: "stack-insertion",
+          position: "after",
+          targetWindowId: "target",
+        }),
+      ),
+    ).toBe(false);
+    expect(setup.fixture.outputTransferCount).toBe(0);
+    expect(
+      runtimeLayout(setup.controller).snapshot(
+        outputId(setup.sourceOutput.name),
+        desktopId(setup.sourceDesktop.id),
+        FALLBACK_ACTIVITY_ID,
+      ),
+    ).toEqual(sourceBefore);
+    expect(
+      runtimeLayout(setup.controller).snapshot(
+        outputId(setup.targetOutput.name),
+        desktopId(setup.targetDesktop.id),
+        FALLBACK_ACTIVITY_ID,
+      ),
+    ).toEqual(targetBefore);
+  });
+
+  it("rolls back output, focus, and layouts after an exact transfer rejection", () => {
+    const setup = createExternalPointerDropRuntimeFixture({
+      differentDesktop: true,
+      perOutputDesktops: true,
+    });
+    setup.fixture.setCurrentDesktop(setup.targetOutput, setup.sourceDesktop);
+    flushManualScheduler(setup.scheduler);
+    setup.fixture.workspace.activeWindow = null;
+    setup.controller.reconcile();
+    const switchCount = setup.fixture.desktopSwitchCount;
+    const sourceBefore = runtimeLayout(setup.controller).snapshot(
+      outputId(setup.sourceOutput.name),
+      desktopId(setup.sourceDesktop.id),
+      FALLBACK_ACTIVITY_ID,
+    );
+    const targetBefore = runtimeLayout(setup.controller).snapshot(
+      outputId(setup.targetOutput.name),
+      desktopId(setup.targetDesktop.id),
+      FALLBACK_ACTIVITY_ID,
+    );
+    const framesBefore = [
+      { ...setup.dragged.window.frameGeometry },
+      { ...setup.target.window.frameGeometry },
+    ];
+
+    setup.fixture.setOutputTransferBehavior((_window, output, commit) => {
+      commit();
+
+      if (output === setup.targetOutput) {
+        throw new Error("exact output transfer rejected");
+      }
+    });
+
+    expect(
+      setup.controller.executeSpatialDrop(
+        externalSpatialDropCommand(setup, {
+          kind: "stack-insertion",
+          position: "after",
+          targetWindowId: "target",
+        }),
+      ),
+    ).toBe(false);
+    expect(setup.fixture.outputTransferCount).toBe(2);
+    expect(setup.fixture.desktopSwitchCount).toBe(switchCount + 2);
+    expect(setup.dragged.window.output).toBe(setup.sourceOutput);
+    expect(setup.dragged.window.desktops).toEqual([setup.sourceDesktop]);
+    expect(setup.fixture.workspace.activeWindow).toBeNull();
+    expect(
+      setup.fixture.workspace.currentDesktopForScreen?.(setup.sourceOutput),
+    ).toBe(setup.sourceDesktop);
+    expect(
+      setup.fixture.workspace.currentDesktopForScreen?.(setup.targetOutput),
+    ).toBe(setup.sourceDesktop);
+    expect([
+      setup.dragged.window.frameGeometry,
+      setup.target.window.frameGeometry,
+    ]).toEqual(framesBefore);
+    expect(
+      runtimeLayout(setup.controller).snapshot(
+        outputId(setup.sourceOutput.name),
+        desktopId(setup.sourceDesktop.id),
+        FALLBACK_ACTIVITY_ID,
+      ),
+    ).toEqual(sourceBefore);
+    expect(
+      runtimeLayout(setup.controller).snapshot(
+        outputId(setup.targetOutput.name),
+        desktopId(setup.targetDesktop.id),
+        FALLBACK_ACTIVITY_ID,
+      ),
+    ).toEqual(targetBefore);
+  });
+
+  it("restores the source desktop when target desktop rollback throws", () => {
+    const setup = createExternalPointerDropRuntimeFixture({
+      differentDesktop: true,
+      perOutputDesktops: true,
+    });
+    setup.fixture.setCurrentDesktop(setup.sourceOutput, setup.targetDesktop);
+    setup.fixture.setCurrentDesktop(setup.targetOutput, setup.sourceDesktop);
+    flushManualScheduler(setup.scheduler);
+    setup.fixture.setDesktopSwitchBehavior((desktop, output, commit) => {
+      if (output === setup.targetOutput && desktop === setup.sourceDesktop) {
+        throw new Error("target desktop restore rejected");
+      }
+
+      commit();
+    });
+    setup.fixture.setOutputTransferBehavior((_window, output, commit) => {
+      commit();
+
+      if (output === setup.targetOutput) {
+        throw new Error("exact output transfer rejected");
+      }
+    });
+
+    expect(
+      setup.controller.executeSpatialDrop(
+        externalSpatialDropCommand(setup, {
+          kind: "stack-insertion",
+          position: "after",
+          targetWindowId: "target",
+        }),
+      ),
+    ).toBe(false);
+    expect(
+      setup.fixture.workspace.currentDesktopForScreen?.(setup.sourceOutput),
+    ).toBe(setup.targetDesktop);
+    expect(
+      setup.fixture.workspace.currentDesktopForScreen?.(setup.targetOutput),
+    ).toBe(setup.targetDesktop);
+    expect(setup.dragged.window.output).toBe(setup.sourceOutput);
+    expect(setup.fixture.outputTransferCount).toBe(2);
+  });
 });
 
 describe("RuntimeController desktop transfers", () => {
@@ -50001,6 +50361,40 @@ function spatialDropCommand(
       activityId: String(FALLBACK_ACTIVITY_ID),
       desktopId: setup.desktop.id,
       outputId: setup.output.name,
+      ...target,
+    },
+    version: 1,
+  };
+}
+
+function externalSpatialDropCommand(
+  setup: ExternalPointerDropRuntimeFixture,
+  target:
+    | {
+        readonly kind: "column-boundary";
+        readonly position: "after" | "before";
+        readonly targetWindowId: string;
+      }
+    | {
+        readonly kind: "stack-insertion";
+        readonly position: "after" | "before";
+        readonly targetWindowId: string;
+      },
+): SpatialDropCommand {
+  return {
+    createdAt: 1,
+    format: "driftile-spatial-drop",
+    requestId: 1,
+    source: {
+      activityId: String(FALLBACK_ACTIVITY_ID),
+      desktopId: setup.sourceDesktop.id,
+      outputId: setup.sourceOutput.name,
+      windowId: String(setup.dragged.window.internalId),
+    },
+    target: {
+      activityId: String(FALLBACK_ACTIVITY_ID),
+      desktopId: setup.targetDesktop.id,
+      outputId: setup.targetOutput.name,
       ...target,
     },
     version: 1,
