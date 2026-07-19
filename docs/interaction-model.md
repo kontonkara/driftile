@@ -151,6 +151,12 @@ and desktop membership separately. A partial result is compensated only while
 the captured source remains exact; stale or ambiguous state closes the overview
 without another write.
 
+An eligible tiled thumbnail can also be dropped on the insertion line between
+two workspace rows. Driftile creates one virtual desktop at that exact global
+position, reuses the guarded empty-row transfer, and retains the desktop only
+after the window move succeeds. A rejected transfer restores the captured
+selection, focus, and layout before removing the still-empty created desktop.
+
 ## Delivery contract
 
 | Area                 | Required behavior                                                                                   | Target    |

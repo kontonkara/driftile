@@ -11,6 +11,9 @@ starts after a long press.
 Overview remains under active development. Settings, shortcuts, and logical
 persistence v4 remain compatible.
 
+The current unreleased batch adds guarded workspace creation between Overview
+rows and an optional native effect for global wheel navigation and movement.
+
 ## Current direction
 
 The optional Overview is a continuous spatial projection over the normal
@@ -237,8 +240,9 @@ policy as the explicit center action, in the same transaction. Unsafe center
 previews retain minimal reveal; other focus paths and live setting changes do
 not move the layout.
 
-Global wheel input remains deferred because KWin 6.7 has no public script axis
-API. This milestone does not add a private input path.
+At this historical milestone, global wheel input remained deferred because the
+script API exposed no axis shortcut registration. The later native companion
+uses the public effect API instead of a private input path.
 
 Version `1.1.0-rc.1` validated the final runtime before stable promotion
 without behavior changes.

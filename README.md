@@ -12,10 +12,13 @@ to KDE Plasma while KWin remains the compositor and window manager.
 - Retained layouts per output, virtual desktop, and activity.
 - Keyboard and pointer control for focus, movement, resizing, drag-and-drop,
   and transfers between outputs and desktops.
+- Optional native wheel control for column focus, column movement, and desktop
+  navigation without replacing KWin.
 - Full-width columns, floating windows, native fullscreen and maximize, and
   stable minimized-window slots.
 - An optional spatial Overview with continuous workspace rows, projected
-  window geometry, two-axis navigation, and guarded drag-and-drop.
+  window geometry, two-axis navigation, guarded drag-and-drop, and workspace
+  creation between rows.
 - Configurable gaps, sizing presets, application rules, borders, overview,
   transitions, shortcuts, and layout restoration. An optional native KDE
   shortcut editor is available separately.
@@ -41,7 +44,7 @@ kpackagetool6 --type=KWin/Script --install ./driftile-*.kwinscript
 
 Enable **Driftile** in **System Settings > Window Management > KWin Scripts**.
 The [installation guide](docs/installation.md) also covers upgrades, removal,
-shortcuts, and the optional Overview and transition effects.
+shortcuts, and the optional Overview, transition, and wheel effects.
 
 ## Configuration
 

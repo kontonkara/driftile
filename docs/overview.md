@@ -99,6 +99,12 @@ placement restores the prior output, desktop, focus, and layout state. Dragging
 the compact workspace number marker reorders eligible desktops. The protected
 final empty desktop is never reordered or crossed.
 
+Dropping an eligible tiled window on the insertion line between two workspace
+rows creates one virtual desktop at that exact position and moves the window
+onto it. The operation works on the same output or across outputs, keeps the
+Overview open after success, and removes the newly created desktop again if the
+transfer is rejected while the captured state is still safe to restore.
+
 Adding, removing, or reordering virtual desktops refreshes an active Overview
 in place. Activity and output topology changes still close a stale scene
 instead of applying input to uncertain targets.

@@ -74,6 +74,20 @@ scales the selected duration. The effect also provides easing and small-resize
 threshold controls. It changes only presentation and remains disabled by
 default.
 
+### Optional wheel control
+
+Global modifier-and-wheel shortcuts require the compiled **Driftile Wheel
+Control** effect. It uses KWin's public axis-shortcut API and delegates to the
+actions registered by the main Driftile script. Install both components, then
+enable **Driftile Wheel Control** under **System Settings > Window Management >
+Desktop Effects**.
+
+The plugin must be built against the same KWin and Qt stack used by the target
+system. Distribution packages should build `native/wheel-control` with CMake,
+Ninja, ECM, KWin 6.7 or newer development files, KF6 CoreAddons, and Qt 6.7 or
+newer. Rebuild it after a KWin ABI upgrade. Nix users can use the package and
+module option documented below.
+
 ## Configure shortcuts
 
 Driftile works without the companion helper. The 1.85.0 helper claims the
@@ -290,7 +304,11 @@ The flake exposes packages and installation modules for `x86_64-linux` and
 
 ```nix
 inputs.driftile.url = "github:kontonkara/driftile/v1.85.0";
+inputs.driftile.inputs.nixpkgs.follows = "nixpkgs";
 ```
+
+Following the system `nixpkgs` input is especially important for the compiled
+wheel effect because its KWin ABI must match the running compositor.
 
 ### NixOS
 
@@ -327,10 +345,12 @@ Optional companions remain separate and disabled unless requested:
 programs.driftile.overview.enable = true;
 programs.driftile.transitions.enable = true;
 programs.driftile.shortcutEditor.enable = true;
+programs.driftile.wheelControl.enable = true;
 ```
 
 The modules install packages but do not enable KWin effects. Enable **Driftile
-Overview** or **Driftile Transitions** in **Desktop Effects** after rebuilding.
+Overview**, **Driftile Transitions**, or **Driftile Wheel Control** in **Desktop
+Effects** after rebuilding.
 Home Manager can also own the main settings and nullable companion settings:
 
 ```nix

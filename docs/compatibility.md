@@ -21,18 +21,24 @@
   API on Wayland and X11. It is installed and enabled independently from the
   layout script and requires a compositor backend on which KWin reports
   scripted effects as supported.
+- The optional wheel-control effect uses KWin's public native effect API on
+  Wayland and X11. Its binary is tied to the KWin/Qt ABI it was built against
+  and must be rebuilt after an incompatible KWin upgrade.
 
 ## Installation portability
 
 The main archive and optional overview and transition companions are standard
 KWin KPackages and are not tied to a specific Linux distribution. Install them
-with `kpackagetool6` on a compatible Plasma desktop. The optional shortcut
-helper requires Node.js 22 or newer, `busctl`, and `flock`.
+with `kpackagetool6` on a compatible Plasma desktop. The optional native wheel
+effect is built locally or by the distribution against its KWin development
+files. The optional shortcut helper requires Node.js 22 or newer, `busctl`, and
+`flock`.
 
-The Nix flake provides separate main, overview, and transition packages plus
-NixOS and Home Manager modules for `x86_64-linux` and `aarch64-linux`. Other
-distributions use the same KPackage archives and portable installation
-procedure.
+The Nix flake provides separate main, overview, transition, wheel-control, and
+shortcut-editor packages plus NixOS and Home Manager modules for
+`x86_64-linux` and `aarch64-linux`. Other distributions use the KPackage
+archives and build the optional native companions against their installed KDE
+stack.
 
 ## Window and geometry limits
 

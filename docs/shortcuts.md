@@ -44,6 +44,25 @@ contextual width reset, and reverse height preset cycling are registered
 without default keys.
 Assign them in **System Settings > Keyboard > Shortcuts** if needed.
 
+## Optional wheel controls
+
+The separately installed **Driftile Wheel Control** effect adds global wheel
+bindings without changing the keyboard profile:
+
+| Input                           | Action                                  |
+| ------------------------------- | --------------------------------------- |
+| `Meta+Wheel Up/Down`            | Focus previous or next desktop          |
+| `Meta+Ctrl+Wheel Up/Down`       | Move column to previous or next desktop |
+| `Meta+Wheel Left/Right`         | Focus column left or right              |
+| `Meta+Ctrl+Wheel Left/Right`    | Move column left or right               |
+| `Meta+Shift+Wheel Up/Down`      | Focus column left or right              |
+| `Meta+Ctrl+Shift+Wheel Up/Down` | Move column left or right               |
+
+The vertical desktop paths suppress repeated same-direction ticks for 150
+milliseconds while allowing an immediate reversal. The horizontal column paths
+remain immediate. The effect requires the main Driftile script and can be
+disabled independently under **Desktop Effects**.
+
 ## Editing shortcuts
 
 The optional native **Driftile Shortcuts** editor shows the active extension's
