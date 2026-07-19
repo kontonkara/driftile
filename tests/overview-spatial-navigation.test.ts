@@ -39,6 +39,22 @@ const horizontalDragLifecycle = scene.slice(
   scene.indexOf("function beginSpatialHorizontalViewportDrag("),
   scene.indexOf("function spatialViewportOverlayContainsPoint("),
 );
+const presentationEligibility = scene.slice(
+  scene.indexOf("readonly property string spatialPresentationPhase:"),
+  scene.indexOf("readonly property bool spatialHorizontalRowDragActive:"),
+);
+const keyboardInput = scene.slice(
+  scene.indexOf("Keys.onPressed:"),
+  scene.indexOf("Component.onCompleted:"),
+);
+const presentationLifecycle = scene.slice(
+  scene.indexOf("function handleSpatialPresentationPhaseChanged("),
+  scene.indexOf("function resetOverviewSession("),
+);
+const wheelRouting = scene.slice(
+  scene.indexOf("function routeOverviewWheel("),
+  scene.indexOf("function releaseOverviewWheelAxisIfIdle("),
+);
 
 describe("spatial overview navigation geometry", () => {
   it("preserves default clipping while the spatial scene opts into offscreen targets", () => {
@@ -139,9 +155,58 @@ describe("spatial overview navigation geometry", () => {
     );
   });
 
+  it("accepts spatial input on the first visible opening frame", () => {
+    expect(presentationEligibility).toMatch(
+      /readonly property bool spatialPresentationVisible:[\s\S]*sceneEffect\.active === true[\s\S]*spatialPresentationProgress > 0[\s\S]*spatialPresentationPhase === "opening"[\s\S]*spatialPresentationPhase === "open"[\s\S]*spatialPresentationPhase === "closing"/u,
+    );
+    expect(presentationEligibility).toMatch(
+      /readonly property bool spatialPresentationInteractive:[\s\S]*spatialPresentationVisible[\s\S]*spatialPresentationPhase === "opening" \|\| spatialPresentationPhase === "open"/u,
+    );
+    expect(presentationEligibility).toMatch(
+      /readonly property bool spatialPresentationSettled:[\s\S]*spatialPresentationPhase === "open"[\s\S]*spatialPresentationProgress >= 1/u,
+    );
+    expect(presentationEligibility).toContain(
+      "readonly property bool spatialKeyboardInputEligible: spatialPresentationInteractive",
+    );
+    expect(presentationEligibility).toMatch(
+      /readonly property bool spatialPointerInputEligible:[\s\S]*spatialPresentationInteractive && !keyboardHelpVisible/u,
+    );
+    expect(scene).toContain("enabled: spatialPresentationInteractive");
+    expect(scene).toContain("focus: spatialKeyboardInputEligible");
+    expect(scene).toMatch(
+      /onSpatialKeyboardInputEligibleChanged:[\s\S]*if \(spatialKeyboardInputEligible\) \{\s*forceActiveFocus\(\);/u,
+    );
+    expect(scene).toContain(
+      "spatialVisualContentYDeferred = animateVisual === true && spatialPresentationSettled;",
+    );
+  });
+
+  it("relinquishes event ownership before the closing presentation", () => {
+    const eligibilityGuard = keyboardInput.indexOf(
+      "if (!spatialKeyboardInputEligible)",
+    );
+    expect(eligibilityGuard).toBeGreaterThanOrEqual(0);
+    expect(keyboardInput).toContain("event.accepted = false;");
+    expect(eligibilityGuard).toBeLessThan(
+      keyboardInput.indexOf("const modifiers = event.modifiers"),
+    );
+    expect(presentationLifecycle).toMatch(
+      /spatialPresentationPhase === "closing"[\s\S]*cancelKeyboardBoundaryNavigation\(\);[\s\S]*resetOverviewWheelState\(\);[\s\S]*resetDesktopReorder\(\);[\s\S]*resetSpatialEdgePanTracking\(\);[\s\S]*clearSpatialHorizontalViewportDrag\(\);/u,
+    );
+    expect(wheelRouting).toContain("!spatialPointerInputEligible");
+    expect(wheelRouting).not.toContain("event.accepted = false;");
+    expect(scene).toContain("enabled: root.spatialPointerInputEligible");
+    expect(`${presentationEligibility}\n${keyboardInput}`).not.toMatch(
+      /\b(?:WeakSet|WeakMap|Timer)\b/u,
+    );
+  });
+
   it("admits thumbnails only for bounded interactive row drags", () => {
-    expect(horizontalRowHitTest).toContain("!spatialPresentationInteractive");
-    expect(horizontalRowHitTest).toContain("keyboardHelpVisible");
+    expect(horizontalRowHitTest).toContain("!spatialPointerInputEligible");
+    expect(horizontalRowHitTest).not.toContain("keyboardHelpVisible");
+    expect(horizontalRowHitTest).not.toContain(
+      "!spatialPresentationInteractive",
+    );
     expect(horizontalRowHitTest).toContain("desktopReorderActive");
     expect(horizontalRowHitTest).toContain("spatialWindowDragSource !== null");
     expect(horizontalRowHitTest).toContain("spatialViewportDragHandler.active");

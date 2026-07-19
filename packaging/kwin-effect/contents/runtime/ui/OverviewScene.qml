@@ -8,7 +8,7 @@ Rectangle {
     color: "transparent"
     clip: true
     enabled: spatialPresentationInteractive
-    focus: true
+    focus: spatialKeyboardInputEligible
 
     readonly property var sceneEffect: KWin.SceneView.effect
     readonly property var targetScreen: KWin.SceneView.screen
@@ -113,8 +113,19 @@ Rectangle {
     readonly property real spatialPresentationProgress: sceneEffect
         && Number.isFinite(sceneEffect.presentationProgress)
         ? Math.max(0, Math.min(1, sceneEffect.presentationProgress)) : 1
+    readonly property bool spatialPresentationVisible: sceneEffect
+        && sceneEffect.active === true && spatialPresentationProgress > 0
+        && (spatialPresentationPhase === "opening" || spatialPresentationPhase === "open"
+            || spatialPresentationPhase === "closing")
     readonly property bool spatialPresentationInteractive:
-        spatialPresentationPhase === "open" && spatialPresentationProgress >= 1
+        spatialPresentationVisible
+        && (spatialPresentationPhase === "opening" || spatialPresentationPhase === "open")
+    readonly property bool spatialPresentationSettled:
+        spatialPresentationInteractive && spatialPresentationPhase === "open"
+        && spatialPresentationProgress >= 1
+    readonly property bool spatialKeyboardInputEligible: spatialPresentationInteractive
+    readonly property bool spatialPointerInputEligible:
+        spatialPresentationInteractive && !keyboardHelpVisible
     readonly property bool spatialHorizontalRowDragActive: spatialHorizontalRowDragHandler.active
     property int spatialPresentationWorkspaceIndex: -1
     property var spatialHorizontalDesktopIds: []
@@ -183,6 +194,11 @@ Rectangle {
     property string desktopReorderSourceId: ""
     property int desktopReorderSourceIndex: -1
 
+    onSpatialKeyboardInputEligibleChanged: {
+        if (spatialKeyboardInputEligible) {
+            forceActiveFocus();
+        }
+    }
     onKeyboardSelectionIdChanged: {
         const target = keyboardSelectionViewportTarget;
         keyboardSelectionViewportTarget = null;
@@ -238,6 +254,11 @@ Rectangle {
     }
 
     Keys.onPressed: event => {
+        if (!spatialKeyboardInputEligible) {
+            event.accepted = false;
+            return;
+        }
+
         const modifiers = event.modifiers & ~Qt.KeypadModifier;
         const forbiddenModifiers = Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier;
         const controlOnly = modifiers === Qt.ControlModifier;
@@ -573,7 +594,7 @@ Rectangle {
         id: spatialVerticalWheelHandler
 
         target: null
-        enabled: !root.keyboardHelpVisible
+        enabled: root.spatialPointerInputEligible
         acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
         acceptedModifiers: Qt.NoModifier
         blocking: false
@@ -587,7 +608,7 @@ Rectangle {
         id: spatialHorizontalWheelHandler
 
         target: null
-        enabled: !root.keyboardHelpVisible
+        enabled: root.spatialPointerInputEligible
         acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
         acceptedModifiers: Qt.NoModifier
         blocking: false
@@ -601,7 +622,7 @@ Rectangle {
         id: spatialShiftHorizontalWheelHandler
 
         target: null
-        enabled: !root.keyboardHelpVisible
+        enabled: root.spatialPointerInputEligible
         acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
         acceptedModifiers: Qt.ShiftModifier
         blocking: false
@@ -618,8 +639,8 @@ Rectangle {
         property real panStartContentY: 0
 
         anchors.fill: parent
-        enabled: root.sceneEffect && root.sceneEffect.active === true
-                 && !root.keyboardHelpVisible && !root.desktopReorderActive
+        enabled: root.spatialPointerInputEligible && !root.keyboardHelpVisible
+                 && !root.desktopReorderActive
                  && !spatialHorizontalRowDragHandler.active
                  && root.overviewSpatialLayout.contentHeight > root.height
         containmentMask: QtObject {
@@ -673,8 +694,8 @@ Rectangle {
         property int panWorkspaceIndex: -1
 
         anchors.fill: parent
-        enabled: root.sceneEffect && root.sceneEffect.active === true
-                 && !root.keyboardHelpVisible && !root.desktopReorderActive
+        enabled: root.spatialPointerInputEligible && !root.keyboardHelpVisible
+                 && !root.desktopReorderActive
                  && !spatialHorizontalRowDragHandler.active
         containmentMask: QtObject {
             function contains(point: point) : bool {
@@ -879,9 +900,8 @@ Rectangle {
         id: spatialHorizontalRowInput
 
         anchors.fill: parent
-        enabled: root.spatialPresentationInteractive && root.sceneEffect
-                 && root.sceneEffect.active === true && !root.keyboardHelpVisible
-                 && !root.desktopReorderActive && root.spatialWindowDragSource === null
+        enabled: root.spatialPointerInputEligible && !root.desktopReorderActive
+                 && root.spatialWindowDragSource === null
                  && !spatialViewportDragHandler.active
                  && !spatialHorizontalViewportDragHandler.active
         z: 9000
@@ -1708,7 +1728,7 @@ Rectangle {
             return;
         }
 
-        if (spatialPresentationInteractive) {
+        if (spatialKeyboardInputEligible) {
             forceActiveFocus();
         }
     }
@@ -2852,7 +2872,7 @@ Rectangle {
 
         const start = spatialVisualContentY;
         spatialVerticalCameraAnimation.stop();
-        spatialVisualContentYDeferred = animateVisual === true && spatialPresentationInteractive;
+        spatialVisualContentYDeferred = animateVisual === true && spatialPresentationSettled;
         if (spatialContentY !== plan.contentY) {
             spatialContentY = plan.contentY;
         }
@@ -2860,7 +2880,7 @@ Rectangle {
 
         const distance = Math.abs(plan.contentY - start);
         const stride = Math.max(1, cardHeight + cardGap);
-        const animateBoundedDistance = animateVisual === true && spatialPresentationInteractive
+        const animateBoundedDistance = animateVisual === true && spatialPresentationSettled
             && distance > 0.000001 && distance <= stride * 4;
         if (animateBoundedDistance) {
             spatialVerticalCameraAnimation.from = start;
@@ -3282,7 +3302,7 @@ Rectangle {
     function spatialViewportBackdropContains(point) {
         if (!point || !Number.isFinite(point.x) || !Number.isFinite(point.y)
                 || point.x < 0 || point.y < 0 || point.x >= width || point.y >= height
-                || keyboardHelpVisible || desktopReorderActive
+                || !spatialPointerInputEligible || desktopReorderActive
                 || spatialViewportOverlayContainsPoint(keyboardHelpHint, point)
                 || spatialViewportOverlayContainsPoint(searchOverlay, point)
                 || spatialViewportOverlayContainsPoint(outputIdentityLoader, point)) {
@@ -3310,7 +3330,8 @@ Rectangle {
     function spatialHorizontalViewportBackdropContains(point) {
         if (!point || !Number.isFinite(point.x) || !Number.isFinite(point.y)
                 || point.x < 0 || point.y < 0 || point.x >= width || point.y >= height
-                || keyboardHelpVisible || desktopReorderActive || spatialWindowDragSource !== null
+                || !spatialPointerInputEligible || desktopReorderActive
+                || spatialWindowDragSource !== null
                 || spatialViewportOverlayContainsPoint(keyboardHelpHint, point)
                 || spatialViewportOverlayContainsPoint(searchOverlay, point)
                 || spatialViewportOverlayContainsPoint(outputIdentityLoader, point)) {
@@ -3346,7 +3367,7 @@ Rectangle {
     function spatialHorizontalViewportRowContains(point) {
         if (!point || !Number.isFinite(point.x) || !Number.isFinite(point.y)
                 || point.x < 0 || point.y < 0 || point.x >= width || point.y >= height
-                || !spatialPresentationInteractive || keyboardHelpVisible || desktopReorderActive
+                || !spatialPointerInputEligible || desktopReorderActive
                 || spatialWindowDragSource !== null || spatialViewportDragHandler.active
                 || spatialHorizontalViewportDragHandler.active
                 || spatialViewportOverlayContainsPoint(keyboardHelpHint, point)
@@ -3377,7 +3398,7 @@ Rectangle {
         const pointAccepted = includeWindows === true
             ? spatialHorizontalViewportRowContains(point)
             : includeWindows === false && spatialHorizontalViewportBackdropContains(point);
-        if (!spatialPresentationInteractive || !spatialWheelPresentationIsExact() || !pointAccepted) {
+        if (!spatialPointerInputEligible || !spatialWheelPresentationIsExact() || !pointAccepted) {
             return false;
         }
 
@@ -3977,6 +3998,7 @@ Rectangle {
     function keyboardBoundaryNavigationContextIsExact(request) {
         try {
             if (!request || request.requestId !== keyboardBoundaryNavigationRequestId
+                    || !spatialKeyboardInputEligible
                     || (request.direction !== "first" && request.direction !== "last")
                     || request.effect !== sceneEffect || !request.effect
                     || request.effect.active !== true || request.effect.overviewModel !== request.model
@@ -4057,7 +4079,13 @@ Rectangle {
     }
 
     function routeOverviewWheel(event, point, handlerAxis) {
-        if (!event || (handlerAxis !== "horizontal" && handlerAxis !== "vertical")
+        if (!event) {
+            return false;
+        }
+        if (!spatialPointerInputEligible) {
+            return false;
+        }
+        if ((handlerAxis !== "horizontal" && handlerAxis !== "vertical")
                 || !event.pixelDelta || !event.angleDelta
                 || !Number.isFinite(event.pixelDelta.x) || !Number.isFinite(event.pixelDelta.y)
                 || !Number.isFinite(event.angleDelta.x) || !Number.isFinite(event.angleDelta.y)) {
@@ -4125,7 +4153,13 @@ Rectangle {
     }
 
     function routeOverviewShiftHorizontalWheel(event, point) {
-        if (!event || event.modifiers !== Qt.ShiftModifier
+        if (!event) {
+            return false;
+        }
+        if (!spatialPointerInputEligible) {
+            return false;
+        }
+        if (event.modifiers !== Qt.ShiftModifier
                 || !event.pixelDelta || !event.angleDelta
                 || !Number.isFinite(event.pixelDelta.y) || !Number.isFinite(event.angleDelta.y)) {
             return false;
@@ -5013,7 +5047,8 @@ Rectangle {
             const liveDesktop = currentDesktop;
             const expectedDesktopId = liveDesktop && liveDesktop.id !== undefined && liveDesktop.id !== null
                 ? String(liveDesktop.id) : "";
-            return effect && effect.active === true && effect.overviewModel === model
+            return spatialPointerInputEligible && effect && effect.active === true
+                && effect.overviewModel === model
                 && model && targetScreen && outputId.length > 0
                 && expectedDesktopId.length > 0 && spatialLayoutIsValid(overviewSpatialLayout)
                 && currentWorkspaceIndex >= 0 && currentWorkspaceIndex < desktopIds.length
