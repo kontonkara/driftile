@@ -26,6 +26,13 @@ To run only the deterministic budgets documented in
 [Performance](performance.md), use `npm run performance:check`. The same tests
 are already part of `check`.
 
+Focused Overview contracts cover raw-document cache preflight, deferred cache
+materialization, asynchronous Desktop surfaces, exit-thumbnail readiness, and
+physical direction for precise vertical, native horizontal, and
+`Shift`-remapped wheel paths. Transition coverage verifies that activation of a
+visible exact target settles its visibility handoff before unrelated hidden
+geometry can consume it.
+
 ## Isolated KWin smoke test
 
 With Nix:

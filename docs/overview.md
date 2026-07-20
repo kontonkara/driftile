@@ -27,11 +27,11 @@ Each instantiated visible-range row shows KWin's public Desktop surface for its
 exact output, virtual desktop, and current activity inside the projected output
 area. The surface stays behind window thumbnails and every input layer. Missing
 or inexact identity, or an unavailable surface, leaves a solid dark fallback
-visible. A ready surface fades in over 90 ms above that fallback; losing its
-exact context unloads it immediately. Surface admission is independent from
-card admission, so a search- or drag-retained off-screen card does not create a
-Desktop surface. KWin's Desktop selection excludes panels, docks, and
-notifications.
+visible. Surface construction is asynchronous. A ready surface fades in over
+90 ms above that fallback; losing its exact context unloads it immediately.
+Surface admission is independent from card admission, so a search- or
+drag-retained off-screen card does not create a Desktop surface. KWin's Desktop
+selection excludes panels, docks, and notifications.
 
 Surface residency keeps the last exact bounded range through a transiently
 invalid scene geometry. During panning, animated camera movement, zoom, and live
@@ -82,7 +82,10 @@ again from the configured value.
 When the persisted layout is unchanged and the projection-relevant live
 snapshot is equivalent, a later opening can reuse the last accepted projection
 synchronously and show Overview immediately. The reuse still creates a fresh
-session wrapper. A changed layout or live projection identity takes the
+session wrapper. A definite raw-document miss is rejected before the live
+projection snapshot is built. After a newly validated projection is accepted,
+the active scene becomes available before its guarded deep cache copy runs on a
+later event-loop turn. A changed layout or live projection identity takes the
 existing validation path of two matching reads 325 ms apart, while malformed
 state fails closed and is never replaced with a stale projection.
 
@@ -97,7 +100,9 @@ Discrete vertical navigation moves a bounded camera smoothly between workspace
 rows. Precise wheel or touchpad input moves the camera directly, without being
 converted into delayed steps. Precise horizontal input similarly pans only the
 row under the pointer. Holding `Shift` maps a conventional vertical wheel to
-horizontal row movement.
+horizontal row movement. Vertical, native horizontal, and `Shift`-remapped
+precise input all normalize KWin's system-inversion flag, so their physical
+direction stays consistent when natural scrolling is enabled.
 
 With an ordinary vertical wheel, scrolling down selects the next desktop and
 scrolling up selects the previous desktop, without wrapping. The physical
@@ -186,12 +191,15 @@ minimized-state write. It includes the target identity, desktop, output, exact
 Overview rectangle, target frame, and session cameras and zoom. The visible
 scene then stays frozen while a public `KWin.WindowThumbnail` on only the target
 output morphs from the Overview rectangle to the target frame; workspace rows
-and chrome fade without a live reflow. Desktop selection and a minimized,
-deleted, stale, or topology-invalid window use a safe monochrome or row-scale
-fallback instead. Input remains locked throughout the close. Reopening an
-interrupted close discards the stale target and restores the captured session
-cameras and zoom. This handoff adds no private API, geometry write, persistence,
-or auxiliary timer.
+and chrome fade without a live reflow. During the close, the source surface
+stays opaque while an eligible asynchronous thumbnail is pending. A ready
+Loader promotes the thumbnail, a Loader error uses the safe monochrome path,
+and completion before either result closes from the still-opaque source rather
+than exposing an empty layer. Desktop selection and a minimized, deleted,
+stale, or topology-invalid window use a row-scale fallback instead. Input
+remains locked throughout the close. Reopening an interrupted close discards
+the stale target and restores the captured session cameras and zoom. This
+handoff adds no private API, geometry write, persistence, or auxiliary timer.
 
 Only the selected member of a tabbed column is a target in the spatial plane.
 Unselected tabbed members and minimized windows do not receive synthetic

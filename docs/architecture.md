@@ -87,7 +87,10 @@ Events travel from KWin through the bridge into the runtime. Commands and result
 - Reads the opaque layout snapshot twice before accepting a changed current v2
   catalog. A one-entry cache can reuse only an exact synchronous raw-state hit
   with an equivalent canonical projection snapshot; it returns a fresh frozen
-  top-level model view over a detached, deeply frozen graph.
+  top-level model view over a detached, deeply frozen graph. Raw-document
+  preflight avoids building a live projection snapshot on a definite miss. A
+  newly validated model is admitted before a guarded deep cache copy runs on a
+  later event-loop turn.
 - Projects snapshot zero for the current activity into a baseline-free,
   immutable view model after exact live output, desktop, activity, and window
   validation.
@@ -107,8 +110,8 @@ Events travel from KWin through the bridge into the runtime. Commands and result
 - Reloads only instantiated Desktop surfaces selected by that immutable
   generation. Each card owns its reload revision and token, so an unrelated
   later event cannot strand a targeted card on its solid fallback. A surface is
-  presented only at `Loader.Ready` and fades in over 90 ms above the solid
-  fallback. Context loss unloads it immediately.
+  constructed asynchronously, presented only at `Loader.Ready`, and faded in
+  over 90 ms above the solid fallback. Context loss unloads it immediately.
 - Commits one contiguous Desktop-surface residency range per exact session,
   output, activity, and desktop topology. The last exact range survives
   transient invalid scene geometry. Panning, animated camera movement, zoom,
@@ -150,7 +153,10 @@ Events travel from KWin through the bridge into the runtime. Commands and result
   writes. Exact session, topology, output, desktop, window, and frame ownership
   promotes a public target-output `KWin.WindowThumbnail`; minimized, removed,
   stale, desktop-only, or topology-invalid targets retain geometry-free
-  fallback state.
+  fallback state. Thumbnail construction is asynchronous; during the close its
+  source row stays opaque while loading, `Loader.Ready` promotes the thumbnail,
+  and a Loader error selects the monochrome fallback. If close completion wins
+  the race, the effect leaves from the still-opaque source.
 - Freezes the visible workspace index and cameras while that handoff owns the
   close, blocks scene input, and defers model replacement. Reopening cancels the
   promoted target before restoring the captured vertical and per-desktop
@@ -191,8 +197,9 @@ Events travel from KWin through the bridge into the runtime. Commands and result
 - Settles ordinary opening immediately, keeps interactive presentation progress
   gesture-driven, and retains the animated close path. Discrete vertical wheel
   input normalizes KWin's system-inversion flag so physical down maps to the
-  next workspace row and physical up maps to the previous row, while precise
-  input remains continuous.
+  next workspace row and physical up maps to the previous row. Precise vertical,
+  native horizontal, and `Shift`-remapped pixel input applies the same physical
+  normalization while remaining continuous.
 - Re-reads the public desktop order synchronously when KWin reports a changed
   desktop list, then coalesces the persisted-model refresh without exposing
   stale workspace order to later pointer or gesture input.
@@ -245,8 +252,10 @@ Events travel from KWin through the bridge into the runtime. Commands and result
   configuration reload, or deletion discards pending work.
 - Records the active window at workspace-effect completion as a handoff anchor,
   then leases the first different same-context focus target until that exact
-  target is visible or animating. Duplicate anchor activation, transient null
-  focus, and anchor deletion cannot consume the target lease.
+  target is visible or animating. Activation of the visible exact target also
+  settles its lease after any deferred motion is replayed, so later hidden
+  geometry cannot inherit stale continuity. Duplicate anchor activation,
+  transient null focus, and anchor deletion cannot consume the target lease.
 - Retargets eligible size and one bounded absolute-position/translation pair
   with the configured Plasma-scaled duration, preserving KWin's interpolated
   value through rapid commands and negative-coordinate crossings. Every logical

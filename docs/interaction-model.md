@@ -94,8 +94,10 @@ When the optional transition effect is enabled, deferred window geometry motion
 resumes after the desktop effect releases presentation. An incoming window that
 is still reported hidden receives one same-context successor transition after
 the initial animation completes while the later focus handoff settles.
-Visibility or a desktop or activity change discards that one-shot continuity
-before use.
+Activating the visible exact target settles that handoff after its deferred
+motion is replayed, so unrelated later hidden geometry cannot inherit it.
+Visibility or a desktop or activity change otherwise discards that one-shot
+continuity before use.
 
 ## Floating windows and native states
 
