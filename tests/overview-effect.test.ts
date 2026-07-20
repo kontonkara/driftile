@@ -1090,19 +1090,22 @@ describe("overview effect package", () => {
       ),
     ).toHaveLength(1);
     expect(scene).toMatch(
-      /readonly property var overviewSpatialVisibleRangePlan: planSpatialVisibleRange\(\)[\s\S]*readonly property var overviewSpatialVisibleRange:\s*spatialVisibleRangeIsValid\(overviewSpatialVisibleRangePlan\)\s*\? overviewSpatialVisibleRangePlan : allDesktopCardsRange\(\)/u,
+      /readonly property var overviewSpatialVisibleRangePlan: planSpatialVisibleRange\(\)[\s\S]*readonly property var overviewSpatialVisibleRange:\s*spatialVisibleRangeIsValid\(overviewSpatialVisibleRangePlan\)\s*\? overviewSpatialVisibleRangePlan : fallbackSpatialVisibleRange\(\)/u,
     );
     expect(surfaceLoadPolicy).toContain(
-      "spatialVisibleRangeIsValid(overviewSpatialVisibleRangePlan)",
+      "desktopSurfaceResidencyContextMatchesCurrent()",
+    );
+    expect(surfaceLoadPolicy).toContain(
+      "spatialVisibleRangeIsValid(desktopSurfaceResidencyRange)",
     );
     expect(surfaceLoadPolicy).toContain(
       "String(expectedDesktop.id) !== expectedDesktopId",
     );
     expect(surfaceLoadPolicy).toContain(
-      "index >= overviewSpatialVisibleRangePlan.firstIndex",
+      "index >= desktopSurfaceResidencyRange.firstIndex",
     );
     expect(surfaceLoadPolicy).toContain(
-      "index <= overviewSpatialVisibleRangePlan.lastIndex",
+      "index <= desktopSurfaceResidencyRange.lastIndex",
     );
     expect(surfaceLoadPolicy).not.toMatch(
       /searchQuery|spatialPresentationPhase|desktopReorderActive|spatialWindowDragSource|desktopSurfaceLifecycleEvent|desktopSurfaceReloadRevision|desktopSurfaceReady/u,
@@ -4507,8 +4510,8 @@ describe("overview effect package", () => {
     expect(scene).toContain(
       "readonly property bool spatialHorizontalRowDragActive: spatialHorizontalRowDragHandler.active",
     );
-    expect(scene).toContain(
-      "enabled: !root.keyboardHelpVisible && !root.spatialHorizontalRowDragActive",
+    expect(scene).toMatch(
+      /enabled: interactionEligible && !root\.keyboardHelpVisible\s*&& !root\.spatialHorizontalRowDragActive/u,
     );
     expect(scene).not.toContain("root.spatialHorizontalRowDragHandler");
 
