@@ -225,6 +225,7 @@ class DriftileTransitionsEffect {
     }
 
     const visibilityLeaseUsed = this.visibilityLeasedWindows.has(window);
+    this.continuityLeasedWindows.delete(window);
     this.animateWindowTransition(window, previousGeometry, newGeometry);
     this.consumeVisibilityLease(window, visibilityLeaseUsed);
     this.settleVisibilityHandoff(window);
@@ -283,7 +284,9 @@ class DriftileTransitionsEffect {
   onWindowVisibilityOpportunity(window) {
     if (window) {
       this.visibilityLeasedWindows.delete(window);
-      this.continuityLeasedWindows.delete(window);
+      if (window.visible || !this.isWindowInCurrentVisibilityContext(window)) {
+        this.continuityLeasedWindows.delete(window);
+      }
     }
     this.rememberVisibilityLease(window);
     if (this.deferredWindows.has(window)) {
@@ -428,6 +431,7 @@ class DriftileTransitionsEffect {
     const visibilityLeaseUsed = this.visibilityLeasedWindows.has(window);
     delete window[DEFERRED_PROPERTY];
     this.deferredWindows.delete(window);
+    this.continuityLeasedWindows.delete(window);
     this.animateWindowTransition(window, oldGeometry, newGeometry);
     this.consumeVisibilityLease(window, visibilityLeaseUsed);
     this.settleVisibilityHandoff(window);
@@ -438,7 +442,8 @@ class DriftileTransitionsEffect {
       this.isWindowInCurrentVisibilityContext(window) &&
       (window.visible ||
         effects.activeWindow === window ||
-        this.visibilityLeasedWindows.has(window))
+        this.visibilityLeasedWindows.has(window) ||
+        this.continuityLeasedWindows.has(window))
     );
   }
 
@@ -520,9 +525,12 @@ class DriftileTransitionsEffect {
     if (remainingAnimations > 0) {
       state[ACTIVE_ANIMATION_COUNT] = remainingAnimations;
     } else {
+      // KWin reports animation completion synchronously, but an incoming
+      // desktop window can remain non-visible until the later focus handoff
+      // settles. Its next hidden geometry transition consumes the continuity
+      // lease; visibility or context signals release it without consumption.
       delete window[ANIMATION_PROPERTY];
       this.activeAnimationWindows.delete(window);
-      this.continuityLeasedWindows.delete(window);
     }
   }
 

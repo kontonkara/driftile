@@ -1036,6 +1036,113 @@ describe("transition effect package", () => {
     expect(harness.cancelledAnimations).toEqual([1, 2]);
   });
 
+  it("keeps hidden desktop handoff motion after synchronous completion and a focus switch", () => {
+    const activeWindow = createWindow({ visible: false });
+    const focusTarget = createWindow({
+      geometry: { x: 340, y: 30, width: 300, height: 200 },
+      visible: false,
+    });
+    const harness = createHarness({ window: activeWindow });
+    harness.effects.windowAdded.emit(focusTarget);
+    harness.effects.activeWindow = activeWindow;
+    harness.setFullScreenEffectActive(true);
+
+    changeGeometry(activeWindow, {
+      x: 60,
+      y: 70,
+      width: 500,
+      height: 300,
+    });
+    changeGeometry(focusTarget, {
+      x: 460,
+      y: 70,
+      width: 500,
+      height: 300,
+    });
+    harness.setFullScreenEffectActive(false);
+
+    expect(harness.animationRequests.map(({ window }) => window)).toEqual([
+      activeWindow,
+    ]);
+    expect(harness.activeAnimationIds()).toEqual([1, 2]);
+
+    harness.finishAnimations(activeWindow);
+
+    expect(harness.activeAnimationIds()).toEqual([]);
+    expect("driftileTransitionAnimation" in activeWindow).toBe(false);
+
+    harness.effects.activeWindow = focusTarget;
+    harness.effects.windowActivated.emit(focusTarget);
+
+    expect(harness.animationRequests.map(({ window }) => window)).toEqual([
+      activeWindow,
+      focusTarget,
+    ]);
+    expect(harness.activeAnimationIds()).toEqual([3, 4]);
+
+    changeGeometry(activeWindow, {
+      x: 80,
+      y: 90,
+      width: 520,
+      height: 320,
+    });
+    changeGeometry(focusTarget, {
+      x: 480,
+      y: 90,
+      width: 520,
+      height: 320,
+    });
+
+    expect(harness.animationRequests.map(({ window }) => window)).toEqual([
+      activeWindow,
+      focusTarget,
+      activeWindow,
+    ]);
+    expect(harness.animationRequests[2]).toMatchObject({
+      animations: [
+        {
+          type: "size",
+          from: { value1: 500, value2: 300 },
+          to: { value1: 520, value2: 320 },
+        },
+        {
+          type: "position",
+          from: { value1: 310, value2: 220 },
+          to: { value1: 340, value2: 250 },
+        },
+      ],
+      window: activeWindow,
+    });
+    expect(harness.retargetCalls).toEqual([
+      {
+        animationId: 3,
+        target: { value1: 520, value2: 320 },
+        duration: 180,
+      },
+      {
+        animationId: 4,
+        target: { value1: 740, value2: 250 },
+        duration: 180,
+      },
+    ]);
+    expect(harness.activeAnimationIds()).toEqual([3, 4, 5, 6]);
+    expect(harness.cancelledAnimations).toHaveLength(0);
+
+    harness.finishAnimations(activeWindow);
+    activeWindow.visible = true;
+    activeWindow.windowHiddenChanged.emit(activeWindow);
+    activeWindow.visible = false;
+    activeWindow.windowHiddenChanged.emit(activeWindow);
+    changeGeometry(activeWindow, {
+      x: 100,
+      y: 110,
+      width: 540,
+      height: 340,
+    });
+
+    expect(harness.animationRequests).toHaveLength(3);
+  });
+
   it("touches only tracked animation windows when effect ownership changes", () => {
     const harness = createHarness();
     const secondWindow = createWindow({
@@ -1686,8 +1793,20 @@ describe("transition effect package", () => {
       width: 520,
       height: 320,
     });
-    expect(afterReleaseHarness.animationRequests).toHaveLength(1);
+    expect(afterReleaseHarness.animationRequests).toHaveLength(2);
+    expect(afterReleaseHarness.animationRequests[1]?.window).toBe(
+      afterReleaseHarness.window,
+    );
     expect(afterReleaseHarness.retargetCalls).toHaveLength(0);
+
+    afterReleaseHarness.finishAnimations(afterReleaseHarness.window);
+    changeGeometry(afterReleaseHarness.window, {
+      x: 100,
+      y: 110,
+      width: 540,
+      height: 340,
+    });
+    expect(afterReleaseHarness.animationRequests).toHaveLength(2);
   });
 
   it("replays deferred geometry on a later visible geometry opportunity", () => {
