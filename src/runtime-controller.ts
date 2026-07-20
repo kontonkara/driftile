@@ -252,6 +252,17 @@ const MAX_POINTER_EXTERNAL_CONTEXT_PROBES = 20;
 const MAX_POINTER_COLUMN_DROP_SETTLEMENT_PROBES = 20;
 const MAX_POINTER_RESIZE_COMPENSATION_PROBES = 40;
 const MAX_POINTER_RESIZE_SETTLEMENT_PROBES = 20;
+const FOCUS_OWNING_SHELL_IDENTITIES: ReadonlySet<string> = new Set([
+  "krunner",
+  "org.kde.krunner",
+  "plasmashell",
+  "org.kde.plasmashell",
+]);
+const FOCUS_OWNING_SHELL_IDENTITY_FIELDS = [
+  "desktopFileName",
+  "resourceClass",
+  "resourceName",
+] as const;
 const DEFAULT_COLUMN_WIDTH: ColumnWidth = {
   kind: "proportion",
   value: DEFAULT_COLUMN_WIDTH_PERCENT / 100,
@@ -9225,6 +9236,10 @@ export class RuntimeController {
     };
     this.pendingWindowRemovalFocusRecovery = recovery;
 
+    if (!this.pendingWindowRemovalFocusRecoveryIsCurrent(recovery)) {
+      return;
+    }
+
     if (settledTargetId !== null) {
       return;
     }
@@ -9259,6 +9274,10 @@ export class RuntimeController {
     try {
       this.schedule(recover);
     } catch {
+      if (!this.pendingWindowRemovalFocusRecoveryIsCurrent(recovery)) {
+        return;
+      }
+
       this.recoverWindowRemovalFocus(id, focus, recovery);
 
       if (this.pendingWindowRemovalFocusRecovery === recovery) {
@@ -9275,7 +9294,8 @@ export class RuntimeController {
       !this.started ||
       this.runGeneration !== recovery.generation ||
       this.topologyRevision !== recovery.topologyRevision ||
-      !this.windowRemovalFocusContextIsVisible(recovery.focus)
+      !this.windowRemovalFocusContextIsVisible(recovery.focus) ||
+      this.activeWindowOwnsShellFocus(recovery.removedId)
     ) {
       if (this.pendingWindowRemovalFocusRecovery === recovery) {
         this.pendingWindowRemovalFocusRecovery = null;
@@ -9285,6 +9305,41 @@ export class RuntimeController {
     }
 
     return true;
+  }
+
+  private activeWindowOwnsShellFocus(removedId: WindowId): boolean {
+    let active: KWinWindow | null;
+
+    try {
+      active = this.workspace.activeWindow;
+
+      if (
+        !active ||
+        String(active.internalId) === String(removedId) ||
+        active.desktopWindow
+      ) {
+        return false;
+      }
+    } catch {
+      return false;
+    }
+
+    for (const field of FOCUS_OWNING_SHELL_IDENTITY_FIELDS) {
+      try {
+        const identity = active[field];
+
+        if (
+          typeof identity === "string" &&
+          FOCUS_OWNING_SHELL_IDENTITIES.has(identity)
+        ) {
+          return true;
+        }
+      } catch {
+        continue;
+      }
+    }
+
+    return false;
   }
 
   private cancelInvalidWindowRemovalFocusRecovery(): void {
