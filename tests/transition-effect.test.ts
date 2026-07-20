@@ -1700,6 +1700,296 @@ describe("transition effect package", () => {
     expect(harness.cancelledAnimations).toHaveLength(0);
   });
 
+  it("restores immediate focus motion after KWin's desktop-change order", () => {
+    const harness = createHarness();
+    const destination = createWindow({
+      geometry: { x: 340, y: 30, width: 300, height: 200 },
+    });
+    const laterTarget = createWindow({
+      geometry: { x: 660, y: 30, width: 300, height: 200 },
+      visible: false,
+    });
+    harness.effects.windowAdded.emit(destination);
+    harness.effects.windowAdded.emit(laterTarget);
+    harness.effects.activeWindow = harness.window;
+    harness.window.onCurrentDesktop = false;
+    harness.effects.desktopChanged.emit(null, null, null, null);
+    harness.setFullScreenEffectActive(true);
+
+    changeGeometry(destination, {
+      x: 460,
+      y: 70,
+      width: 500,
+      height: 300,
+    });
+    harness.setFullScreenEffectActive(false);
+
+    harness.effects.activeWindow = destination;
+    harness.effects.windowActivated.emit(destination);
+
+    changeGeometry(destination, {
+      x: 480,
+      y: 90,
+      width: 520,
+      height: 320,
+    });
+    changeGeometry(laterTarget, {
+      x: 780,
+      y: 70,
+      width: 500,
+      height: 300,
+    });
+    harness.effects.activeWindow = laterTarget;
+    harness.effects.windowActivated.emit(laterTarget);
+
+    expect(harness.animationRequests.map(({ window }) => window)).toEqual([
+      destination,
+      laterTarget,
+    ]);
+    expect(harness.animationRequests[1]).toMatchObject({
+      window: laterTarget,
+      animations: [
+        {
+          type: "size",
+          from: { value1: 300, value2: 200 },
+          to: { value1: 500, value2: 300 },
+        },
+        {
+          type: "position",
+          from: { value1: 810, value2: 130 },
+          to: { value1: 1030, value2: 220 },
+        },
+      ],
+    });
+    expect("driftileDeferredTransition" in laterTarget).toBe(false);
+    expect(harness.retargetCalls.map(({ animationId }) => animationId)).toEqual(
+      [1, 2],
+    );
+    expect(harness.activeAnimationIds()).toEqual([1, 2, 3, 4]);
+    expect(harness.cancelledAnimations).toHaveLength(0);
+
+    const unrelated = createWindow({
+      geometry: { x: 1000, y: 30, width: 300, height: 200 },
+      visible: false,
+    });
+    harness.effects.windowAdded.emit(unrelated);
+    changeGeometry(unrelated, {
+      x: 1120,
+      y: 70,
+      width: 500,
+      height: 300,
+    });
+    harness.effects.activeWindow = unrelated;
+    harness.effects.windowActivated.emit(unrelated);
+
+    expect(harness.animationRequests).toHaveLength(2);
+    expect("driftileDeferredTransition" in unrelated).toBe(false);
+  });
+
+  it("expires a replay continuation that finishes before activation", () => {
+    const harness = createHarness();
+    const destination = createWindow({
+      geometry: { x: 340, y: 30, width: 300, height: 200 },
+    });
+    const unrelated = createWindow({
+      geometry: { x: 660, y: 30, width: 300, height: 200 },
+      visible: false,
+    });
+    harness.effects.windowAdded.emit(destination);
+    harness.effects.windowAdded.emit(unrelated);
+    harness.effects.activeWindow = harness.window;
+    harness.window.onCurrentDesktop = false;
+    harness.setFullScreenEffectActive(true);
+
+    changeGeometry(destination, {
+      x: 460,
+      y: 70,
+      width: 500,
+      height: 300,
+    });
+    harness.setFullScreenEffectActive(false);
+    expect(harness.animationRequests.map(({ window }) => window)).toEqual([
+      destination,
+    ]);
+
+    harness.finishAnimations(destination);
+    changeGeometry(unrelated, {
+      x: 780,
+      y: 70,
+      width: 500,
+      height: 300,
+    });
+    harness.effects.activeWindow = unrelated;
+    harness.effects.windowActivated.emit(unrelated);
+
+    expect(harness.animationRequests).toHaveLength(1);
+    expect("driftileDeferredTransition" in unrelated).toBe(false);
+    expect(harness.activeAnimationIds()).toHaveLength(0);
+  });
+
+  it.each(["deleted", "ineligible", "minimized"] as const)(
+    "expires a replay continuation when its only candidate becomes %s",
+    (terminalState) => {
+      const harness = createHarness();
+      const destination = createWindow({
+        geometry: { x: 340, y: 30, width: 300, height: 200 },
+      });
+      const unrelated = createWindow({
+        geometry: { x: 660, y: 30, width: 300, height: 200 },
+        visible: false,
+      });
+      harness.effects.windowAdded.emit(destination);
+      harness.effects.windowAdded.emit(unrelated);
+      harness.effects.activeWindow = harness.window;
+      harness.window.onCurrentDesktop = false;
+      harness.setFullScreenEffectActive(true);
+
+      changeGeometry(destination, {
+        x: 460,
+        y: 70,
+        width: 500,
+        height: 300,
+      });
+      harness.setFullScreenEffectActive(false);
+      expect(harness.animationRequests.map(({ window }) => window)).toEqual([
+        destination,
+      ]);
+
+      if (terminalState === "deleted") {
+        harness.effects.windowDeleted.emit(destination);
+      } else if (terminalState === "minimized") {
+        destination.minimized = true;
+        destination.visible = false;
+        destination.windowHiddenChanged.emit(destination);
+      } else {
+        destination.move = true;
+        changeGeometry(destination, {
+          x: 480,
+          y: 90,
+          width: 520,
+          height: 320,
+        });
+      }
+
+      changeGeometry(unrelated, {
+        x: 780,
+        y: 70,
+        width: 500,
+        height: 300,
+      });
+      harness.effects.activeWindow = unrelated;
+      harness.effects.windowActivated.emit(unrelated);
+
+      expect(harness.animationRequests).toHaveLength(1);
+      expect("driftileDeferredTransition" in unrelated).toBe(false);
+      if (terminalState !== "minimized") {
+        expect(harness.activeAnimationIds()).toHaveLength(0);
+      }
+    },
+  );
+
+  it("releases a hidden replay candidate's continuity lease on expiry", () => {
+    const harness = createHarness();
+    const leaseTarget = createWindow({
+      geometry: { x: 340, y: 30, width: 300, height: 200 },
+    });
+    const destination = createWindow({
+      geometry: { x: 660, y: 30, width: 300, height: 200 },
+      visible: false,
+    });
+    harness.effects.windowAdded.emit(leaseTarget);
+    harness.effects.windowAdded.emit(destination);
+    harness.effects.activeWindow = harness.window;
+    harness.window.onCurrentDesktop = false;
+    harness.setFullScreenEffectActive(true);
+
+    changeGeometry(destination, {
+      x: 780,
+      y: 70,
+      width: 500,
+      height: 300,
+    });
+    harness.effects.activeWindow = leaseTarget;
+    harness.effects.windowActivated.emit(leaseTarget);
+    harness.effects.activeWindow = harness.window;
+    harness.setFullScreenEffectActive(false);
+
+    expect(harness.animationRequests.map(({ window }) => window)).toEqual([
+      destination,
+    ]);
+    harness.finishAnimations(destination);
+
+    changeGeometry(destination, {
+      x: 800,
+      y: 90,
+      width: 520,
+      height: 320,
+    });
+
+    expect(harness.animationRequests).toHaveLength(1);
+    expect("driftileDeferredTransition" in destination).toBe(false);
+    expect(harness.activeAnimationIds()).toHaveLength(0);
+  });
+
+  it("keeps a replay continuation while another candidate can activate", () => {
+    const harness = createHarness();
+    const firstCandidate = createWindow({
+      geometry: { x: 340, y: 30, width: 300, height: 200 },
+    });
+    const secondCandidate = createWindow({
+      geometry: { x: 660, y: 30, width: 300, height: 200 },
+    });
+    const immediateTarget = createWindow({
+      geometry: { x: 980, y: 30, width: 300, height: 200 },
+      visible: false,
+    });
+    harness.effects.windowAdded.emit(firstCandidate);
+    harness.effects.windowAdded.emit(secondCandidate);
+    harness.effects.windowAdded.emit(immediateTarget);
+    harness.effects.activeWindow = harness.window;
+    harness.window.onCurrentDesktop = false;
+    harness.setFullScreenEffectActive(true);
+
+    changeGeometry(firstCandidate, {
+      x: 460,
+      y: 70,
+      width: 500,
+      height: 300,
+    });
+    changeGeometry(secondCandidate, {
+      x: 780,
+      y: 70,
+      width: 500,
+      height: 300,
+    });
+    harness.setFullScreenEffectActive(false);
+
+    expect(harness.animationRequests.map(({ window }) => window)).toEqual([
+      firstCandidate,
+      secondCandidate,
+    ]);
+    harness.finishAnimations(firstCandidate);
+    harness.effects.activeWindow = secondCandidate;
+    harness.effects.windowActivated.emit(secondCandidate);
+
+    changeGeometry(immediateTarget, {
+      x: 1100,
+      y: 70,
+      width: 500,
+      height: 300,
+    });
+    harness.effects.activeWindow = immediateTarget;
+    harness.effects.windowActivated.emit(immediateTarget);
+
+    expect(harness.animationRequests.map(({ window }) => window)).toEqual([
+      firstCandidate,
+      secondCandidate,
+      immediateTarget,
+    ]);
+    expect("driftileDeferredTransition" in immediateTarget).toBe(false);
+    expect(harness.cancelledAnimations).toHaveLength(0);
+  });
+
   it("replays a rapid focus handoff before desktop visibility settles", () => {
     const harness = createHarness({
       window: createWindow({ visible: false }),

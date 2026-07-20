@@ -48,6 +48,8 @@ class DriftileTransitionsEffect {
     this.visibilityHandoffPending = false;
     this.visibilityHandoffAnchor = null;
     this.visibilityHandoffTarget = null;
+    this.visibilityHandoffReplayCandidates = new Set();
+    this.visibilityHandoffContinuationAvailable = false;
 
     effect.configChanged.connect(this.loadConfig.bind(this));
     if (effect.animationEnded) {
@@ -159,6 +161,7 @@ class DriftileTransitionsEffect {
     if (this.visibilityHandoffTarget === window) {
       this.visibilityHandoffTarget = null;
     }
+    this.discardVisibilityHandoffReplayCandidate(window);
     delete window[MANAGED_PROPERTY];
     const index = this.managedWindows.indexOf(window);
     if (index >= 0) {
@@ -250,9 +253,15 @@ class DriftileTransitionsEffect {
       return;
     }
 
+    const visibilityHandoffAnchor = effects.activeWindow;
     this.visibilityHandoffPending = this.duration > 0;
-    this.visibilityHandoffAnchor = effects.activeWindow;
+    this.visibilityHandoffAnchor = visibilityHandoffAnchor;
     this.visibilityHandoffTarget = null;
+    this.clearVisibilityHandoffReplayCandidates();
+    this.visibilityHandoffContinuationAvailable =
+      this.visibilityHandoffPending &&
+      (!visibilityHandoffAnchor ||
+        !this.isWindowInCurrentVisibilityContext(visibilityHandoffAnchor));
     this.replayDeferredTransitions();
   }
 
@@ -289,6 +298,13 @@ class DriftileTransitionsEffect {
         this.continuityLeasedWindows.delete(window);
       }
     }
+    if (
+      this.visibilityHandoffReplayCandidates.has(window) &&
+      (!this.isDeferredTransitionEligible(window) ||
+        !this.isWindowInCurrentVisibilityContext(window))
+    ) {
+      this.discardVisibilityHandoffReplayCandidate(window);
+    }
     this.rememberVisibilityLease(window);
     if (this.deferredWindows.has(window)) {
       this.replayDeferredTransition(window);
@@ -313,6 +329,18 @@ class DriftileTransitionsEffect {
       (window.visible || this.hasActiveWindowAnimation(window)) &&
       this.isWindowInCurrentVisibilityContext(window)
     ) {
+      if (
+        this.visibilityHandoffContinuationAvailable &&
+        this.visibilityHandoffReplayCandidates.has(window)
+      ) {
+        this.visibilityLeasedWindows.delete(this.visibilityHandoffAnchor);
+        this.visibilityLeasedWindows.delete(this.visibilityHandoffTarget);
+        this.clearVisibilityHandoffReplayCandidates();
+        this.visibilityHandoffContinuationAvailable = false;
+        this.visibilityHandoffAnchor = window;
+        this.visibilityHandoffTarget = null;
+        return;
+      }
       this.clearVisibilityHandoff();
     }
   }
@@ -340,6 +368,30 @@ class DriftileTransitionsEffect {
     this.visibilityHandoffPending = false;
     this.visibilityHandoffAnchor = null;
     this.visibilityHandoffTarget = null;
+    this.clearVisibilityHandoffReplayCandidates();
+    this.visibilityHandoffContinuationAvailable = false;
+  }
+
+  discardVisibilityHandoffReplayCandidate(window) {
+    if (!this.visibilityHandoffReplayCandidates.delete(window)) {
+      return;
+    }
+    this.visibilityLeasedWindows.delete(window);
+    this.continuityLeasedWindows.delete(window);
+    if (
+      this.visibilityHandoffContinuationAvailable &&
+      this.visibilityHandoffReplayCandidates.size === 0
+    ) {
+      this.clearVisibilityHandoff();
+    }
+  }
+
+  clearVisibilityHandoffReplayCandidates() {
+    for (const window of this.visibilityHandoffReplayCandidates) {
+      this.visibilityLeasedWindows.delete(window);
+      this.continuityLeasedWindows.delete(window);
+    }
+    this.visibilityHandoffReplayCandidates.clear();
   }
 
   deferWindowTransition(window, oldGeometry) {
@@ -429,11 +481,19 @@ class DriftileTransitionsEffect {
       return;
     }
 
+    const continuesVisibilityHandoff =
+      this.visibilityHandoffPending &&
+      this.visibilityHandoffContinuationAvailable &&
+      this.visibilityHandoffTarget === null &&
+      window !== this.visibilityHandoffAnchor;
     const visibilityLeaseUsed = this.visibilityLeasedWindows.has(window);
     delete window[DEFERRED_PROPERTY];
     this.deferredWindows.delete(window);
     this.continuityLeasedWindows.delete(window);
     this.animateWindowTransition(window, oldGeometry, newGeometry);
+    if (continuesVisibilityHandoff && this.hasActiveWindowAnimation(window)) {
+      this.visibilityHandoffReplayCandidates.add(window);
+    }
     this.consumeVisibilityLease(window, visibilityLeaseUsed);
     this.settleVisibilityHandoff(window);
   }
@@ -507,18 +567,28 @@ class DriftileTransitionsEffect {
         this.continuityLeasedWindows.delete(window);
       }
     }
+    for (const window of this.visibilityHandoffReplayCandidates) {
+      if (
+        !this.isDeferredTransitionEligible(window) ||
+        !this.isWindowInCurrentVisibilityContext(window)
+      ) {
+        this.discardVisibilityHandoffReplayCandidate(window);
+      }
+    }
   }
 
   onAnimationEnded(window) {
     const state = window && window[ANIMATION_PROPERTY];
     if (!this.activeAnimationWindows.has(window)) {
       this.continuityLeasedWindows.delete(window);
+      this.discardVisibilityHandoffReplayCandidate(window);
       return;
     }
     if (!state || typeof state !== "object" || Array.isArray(state)) {
       delete window[ANIMATION_PROPERTY];
       this.activeAnimationWindows.delete(window);
       this.continuityLeasedWindows.delete(window);
+      this.discardVisibilityHandoffReplayCandidate(window);
       return;
     }
 
@@ -532,6 +602,7 @@ class DriftileTransitionsEffect {
       // lease; visibility or context signals release it without consumption.
       delete window[ANIMATION_PROPERTY];
       this.activeAnimationWindows.delete(window);
+      this.discardVisibilityHandoffReplayCandidate(window);
     }
   }
 
@@ -1086,6 +1157,7 @@ class DriftileTransitionsEffect {
     this.deferredWindows.delete(window);
     this.visibilityLeasedWindows.delete(window);
     this.continuityLeasedWindows.delete(window);
+    this.discardVisibilityHandoffReplayCandidate(window);
   }
 }
 
