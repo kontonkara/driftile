@@ -13208,6 +13208,72 @@ describe("RuntimeController", () => {
     ).toEqual(layoutBefore);
   });
 
+  it("promotes a manually floating drag when the picture-in-picture role arrives", () => {
+    const windowRoleChanged = new Signal<[]>();
+    const setup = createManualFloatingPointerDropRuntimeFixture({
+      draggedOverrides: {
+        windowRole: "",
+        windowRoleChanged,
+      },
+    });
+    const layoutBefore = runtimeLayout(setup.controller).snapshot(
+      outputId(setup.output.name),
+      desktopId(setup.desktop.id),
+      FALLBACK_ACTIVITY_ID,
+    );
+    const targetBefore = captureTrackedWindowState([setup.target]);
+    const draggedWrites = setup.dragged.writeCount;
+    const movedFrame = {
+      ...setup.dragged.window.frameGeometry,
+      x: 520,
+      y: 390,
+    };
+
+    expect(setup.controller.floatingCount).toBe(1);
+    expect(setup.controller.automaticFloatingCount).toBe(0);
+
+    Object.defineProperty(setup.dragged.window, "move", {
+      configurable: true,
+      value: true,
+    });
+    setup.dragged.moveResizedChanged.emit();
+    setup.dragged.interactiveMoveResizeStarted.emit();
+    setup.dragged.setFrameGeometry(movedFrame);
+    Object.defineProperty(setup.dragged.window, "windowRole", {
+      configurable: true,
+      value: "Toolkit:PictureInPicture",
+    });
+    windowRoleChanged.emit();
+
+    expect(setup.controller.floatingCount).toBe(0);
+    expect(setup.controller.automaticFloatingCount).toBe(1);
+
+    Object.defineProperty(setup.dragged.window, "move", {
+      configurable: true,
+      value: false,
+    });
+    setup.dragged.moveResizedChanged.emit();
+    setup.dragged.interactiveMoveResizeFinished.emit();
+    flushManualScheduler(setup.resumeScheduler);
+    flushManualScheduler(setup.workScheduler);
+
+    expect(setup.previews).toEqual([]);
+    expect(setup.hiddenPreviewCount).toBe(0);
+    expect(setup.controller.managedCount).toBe(1);
+    expect(setup.controller.floatingCount).toBe(0);
+    expect(setup.controller.automaticFloatingCount).toBe(1);
+    expect(setup.dragged.window.frameGeometry).toEqual(movedFrame);
+    expect(setup.dragged.writeCount).toBe(draggedWrites);
+    expectTrackedWindowState([setup.target], targetBefore);
+    expect(
+      runtimeLayout(setup.controller).snapshot(
+        outputId(setup.output.name),
+        desktopId(setup.desktop.id),
+        FALLBACK_ACTIVITY_ID,
+      ),
+    ).toEqual(layoutBefore);
+  });
+
   it("keeps matching applications outside layout ownership and persistence", () => {
     const output = createOutput("DP-1", 0);
     const desktop = { id: "desktop-1" };
@@ -37290,17 +37356,28 @@ describe("RuntimeController", () => {
     {
       cursor: { x: 220, y: 190 },
       dropTarget: "exact window" as const,
-      expectedPreview: { height: 120, width: 420, x: 10, y: 130 },
     },
     {
       cursor: { x: 440, y: 130 },
       dropTarget: "empty gutter" as const,
-      expectedPreview: { height: 240, width: 570, x: 430, y: 10 },
     },
   ])(
-    "previews and tiles a manually floating window at an $dropTarget after resume",
-    ({ cursor, dropTarget, expectedPreview }) => {
+    "keeps a manually floating window native over an $dropTarget",
+    ({ cursor }) => {
       const setup = createManualFloatingPointerDropRuntimeFixture();
+      const layoutBefore = runtimeLayout(setup.controller).snapshot(
+        outputId(setup.output.name),
+        desktopId(setup.desktop.id),
+        FALLBACK_ACTIVITY_ID,
+      );
+      const targetBefore = captureTrackedWindowState([setup.target]);
+      const draggedWrites = setup.dragged.writeCount;
+      const publicationCount = setup.published.length;
+      const movedFrame = {
+        ...setup.dragged.window.frameGeometry,
+        x: cursor.x - setup.dragged.window.frameGeometry.width / 2,
+        y: cursor.y - setup.dragged.window.frameGeometry.height / 2,
+      };
 
       Object.defineProperty(setup.dragged.window, "move", {
         configurable: true,
@@ -37308,15 +37385,11 @@ describe("RuntimeController", () => {
       });
       setup.dragged.moveResizedChanged.emit();
       setup.dragged.interactiveMoveResizeStarted.emit();
-      setup.dragged.setFrameGeometry({
-        ...setup.dragged.window.frameGeometry,
-        x: cursor.x - setup.dragged.window.frameGeometry.width / 2,
-        y: cursor.y - setup.dragged.window.frameGeometry.height / 2,
-      });
+      setup.dragged.setFrameGeometry(movedFrame);
       setup.fixture.setCursorPosition(cursor.x, cursor.y);
       flushManualScheduler(setup.workScheduler);
 
-      expect(setup.previews).toEqual([expectedPreview]);
+      expect(setup.previews).toEqual([]);
 
       Object.defineProperty(setup.dragged.window, "move", {
         configurable: true,
@@ -37325,7 +37398,7 @@ describe("RuntimeController", () => {
       setup.dragged.moveResizedChanged.emit();
       setup.dragged.interactiveMoveResizeFinished.emit();
 
-      expect(setup.hiddenPreviewCount).toBe(1);
+      expect(setup.hiddenPreviewCount).toBe(0);
       expect(setup.controller.floatingCount).toBe(1);
       expect(
         testLayoutColumns(setup.controller, setup.output, setup.desktop),
@@ -37339,51 +37412,25 @@ describe("RuntimeController", () => {
       expect(setup.workScheduler.pendingCount).toBeGreaterThan(0);
       flushManualScheduler(setup.workScheduler);
 
-      const snapshot = runtimeLayout(setup.controller).snapshot(
-        outputId(setup.output.name),
-        desktopId(setup.desktop.id),
-        FALLBACK_ACTIVITY_ID,
-      );
-
-      expect(setup.controller.floatingCount).toBe(0);
+      expect(setup.controller.floatingCount).toBe(1);
       expect(
-        runtimeFloatingWindows(setup.controller).has(windowId("dragged")),
-      ).toBe(false);
+        runtimeFloatingWindows(setup.controller).get(windowId("dragged")),
+      ).toMatchObject({
+        expectedFrame: movedFrame,
+        restoreBaseline: { frame: movedFrame },
+      });
       expect(setup.fixture.workspace.activeWindow).toBe(setup.dragged.window);
-
-      if (dropTarget === "exact window") {
-        const targetColumn = snapshot.columns[0];
-
-        expect(snapshot.columns).toHaveLength(1);
-        expect(targetColumn).toMatchObject({
-          id: "column:target",
-          presentation: "stacked",
-          selectedWindowId: "dragged",
-          width: { kind: "fixed", value: 420 },
-          windowIds: ["target", "dragged"],
-        });
-        expect(targetColumn && columnWindowHeights(targetColumn)).toEqual([
-          { clientHeight: 240, kind: "fixed" },
-          { kind: "auto", weight: 1 },
-        ]);
-      } else {
-        const insertedColumn = snapshot.columns[1];
-
-        expect(snapshot.columns.map((column) => column.windowIds)).toEqual([
-          [windowId("target")],
-          [windowId("dragged")],
-        ]);
-        expect(insertedColumn).toMatchObject({
-          id: "column:dragged",
-          presentation: "tabbed",
-          selectedWindowId: "dragged",
-          width: { kind: "fixed", value: 260 },
-          windowIds: ["dragged"],
-        });
-        expect(insertedColumn && columnWindowHeights(insertedColumn)).toEqual([
-          { kind: "auto", weight: 1 },
-        ]);
-      }
+      expect(setup.dragged.window.frameGeometry).toEqual(movedFrame);
+      expect(setup.dragged.writeCount).toBe(draggedWrites);
+      expect(setup.published.length).toBeGreaterThan(publicationCount);
+      expectTrackedWindowState([setup.target], targetBefore);
+      expect(
+        runtimeLayout(setup.controller).snapshot(
+          outputId(setup.output.name),
+          desktopId(setup.desktop.id),
+          FALLBACK_ACTIVITY_ID,
+        ),
+      ).toEqual(layoutBefore);
     },
   );
 
@@ -52005,12 +52052,17 @@ interface ManualFloatingPointerDropRuntimeFixture {
   readonly hiddenPreviewCount: number;
   readonly output: KWinOutput;
   readonly previews: readonly KWinWindow["frameGeometry"][];
+  readonly published: readonly string[];
   readonly resumeScheduler: ManualScheduler;
+  readonly target: TrackedWindow;
   readonly workScheduler: ManualScheduler;
 }
 
 function createManualFloatingPointerDropRuntimeFixture(
-  options: { readonly externalDestination?: boolean } = {},
+  options: {
+    readonly draggedOverrides?: Partial<KWinWindow>;
+    readonly externalDestination?: boolean;
+  } = {},
 ): ManualFloatingPointerDropRuntimeFixture {
   const output = createOutput("DP-1", 0);
   const externalOutput = options.externalDestination
@@ -52021,7 +52073,12 @@ function createManualFloatingPointerDropRuntimeFixture(
   const externalTarget = externalOutput
     ? createTrackedWindow("external-target", externalOutput, desktop)
     : null;
-  const dragged = createTrackedWindow("dragged", output, desktop);
+  const dragged = createTrackedWindow(
+    "dragged",
+    output,
+    desktop,
+    options.draggedOverrides,
+  );
   const fixture = createWorkspace(
     output,
     desktop,
@@ -52036,6 +52093,7 @@ function createManualFloatingPointerDropRuntimeFixture(
   const workScheduler = new ManualScheduler();
   const resumeScheduler = new ManualScheduler();
   const previews: KWinWindow["frameGeometry"][] = [];
+  const published: string[] = [];
   let hiddenPreviewCount = 0;
   const controller = new RuntimeController(fixture.workspace, {
     clientAreaOption: 2,
@@ -52043,6 +52101,7 @@ function createManualFloatingPointerDropRuntimeFixture(
     hidePointerDropPreview: () => {
       hiddenPreviewCount += 1;
     },
+    onLayoutStateChanged: (document) => published.push(document),
     schedule: workScheduler.schedule,
     scheduleResume: resumeScheduler.schedule,
     showPointerDropPreview: (frame) => previews.push({ ...frame }),
@@ -52132,7 +52191,9 @@ function createManualFloatingPointerDropRuntimeFixture(
     },
     output,
     previews,
+    published,
     resumeScheduler,
+    target,
     workScheduler,
   };
 }
