@@ -59,10 +59,12 @@ back to Driftile.
 
 ## Motion and input
 
-Opening zooms continuously from the active workspace into the spatial plane.
-Closing reverses the same presentation, including a close requested before the
-opening motion has finished. A manually panned current row returns to its live
-camera during the close zoom; reopening mid-transition reverses that return.
+Ordinary opening settles immediately into the spatial plane, avoiding an
+intermediate full-size projection and its added latency. Interactive gestures
+continue to drive presentation progress directly and settle on completion.
+Closing remains animated. A manually panned current row returns to its live
+camera during the close motion; reopening during that motion settles the plane
+again.
 
 Discrete vertical navigation moves a bounded camera smoothly between workspace
 rows. Precise wheel or touchpad input moves the camera directly, without being
@@ -70,10 +72,16 @@ converted into delayed steps. Precise horizontal input similarly pans only the
 row under the pointer. Holding `Shift` maps a conventional vertical wheel to
 horizontal row movement.
 
-An ordinary vertical wheel selects the previous or next desktop without
-wrapping. Horizontal discrete input selects and reveals the previous or next
-column. Rapid discrete input is coalesced, while a direction reversal cancels
-pending movement in the old direction.
+With an ordinary vertical wheel, scrolling down selects the next desktop and
+scrolling up selects the previous desktop, without wrapping. The physical
+direction remains the same when natural scrolling is enabled. Horizontal
+discrete input selects and reveals the previous or next column. Rapid discrete
+input is coalesced, while a direction reversal cancels pending movement in the
+old direction.
+
+Adding, removing, or reordering desktops updates the visible workspace order
+from KWin's public desktop-list signal before later pointer or gesture input is
+accepted.
 
 Dragging empty space pans the workspace plane vertically. Dragging empty space
 inside a row pans that row horizontally within its finite bounds. Window and

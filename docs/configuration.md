@@ -84,6 +84,13 @@ geometry. Manual move or resize, fullscreen windows, Plasma shell surfaces,
 popups, transient dialogs, and other non-movable windows remain outside the
 effect.
 
+Geometry motion deferred during a KWin desktop transition resumes when that
+effect releases presentation. If an incoming window remains reported hidden
+while the focus handoff settles, same-context continuity admits its next
+position or size transition after the initial animation completes. That
+one-shot allowance is also discarded if KWin first reports the window visible
+or moves it to another desktop or activity.
+
 `WindowClassExclusions`, `WindowCaptionExclusions`, and
 `WindowRoleExclusions` each accept at most 128 exact, case-sensitive KWin
 values, one per line and at most 255 UTF-8 bytes each. Use KWin's debug console
@@ -666,9 +673,9 @@ window snapshots the policy when Driftile first tracks it, including while it
 waits behind a KWin-owned state. An exact application initial-layout rule takes
 precedence. Tiling exclusions and automatic floating roles such as dialogs,
 transients, fixed-size windows, and picture-in-picture windows take priority.
-Picture-in-picture ownership survives a temporarily unavailable window role
-and ends only after KWin publishes a different explicit role or removes the
-window.
+Picture-in-picture ownership survives a temporarily unavailable window role or
+another role observed during an interactive drag. Once confirmed, it lasts for
+that window's lifetime and is cleared only when KWin removes the window.
 
 The normal **Toggle floating** action can tile a window that started manually
 floating. Its application-specific initial column width applies at that point.

@@ -70,6 +70,11 @@ list. Moving a column or window into it turns it into a regular desktop and
 creates a new empty tail. An optional leading empty desktop works the same way.
 Desktop reordering never moves or crosses either protected boundary.
 
+As that dynamic list changes, Driftile keeps KWin's public virtual-desktop grid
+in one column. Plasma's normal desktop-switching effect therefore follows the
+same vertical workspace order instead of moving newly added desktops
+horizontally.
+
 Default desktop and output transfer shortcuts move the complete active tiled
 column. With an eligible floating window active, the same shortcuts move only
 that window. Separate unbound actions are available for single-window transfers
@@ -84,6 +89,13 @@ Immediately after a desktop handoff, a short burst of horizontal focus input is
 replayed in order once the destination context becomes active. A newer desktop,
 activity, output topology, or window-context change discards stale input instead
 of redirecting it to another context.
+
+When the optional transition effect is enabled, deferred window geometry motion
+resumes after the desktop effect releases presentation. An incoming window that
+is still reported hidden receives one same-context successor transition after
+the initial animation completes while the later focus handoff settles.
+Visibility or a desktop or activity change discards that one-shot continuity
+before use.
 
 ## Floating windows and native states
 
@@ -101,6 +113,11 @@ frame after an output transfer.
 Automatically floating popups, utilities, transient windows, and configured
 tiling exclusions are not manually floating windows. They stay under KWin
 ownership and do not enter tiled or manual-floating commands.
+
+Once a window is confirmed as picture-in-picture, that automatic-floating
+ownership lasts for the lifetime of the window. Temporary role changes during
+an interactive drag do not admit it into the tiled layout; Driftile leaves its
+frame under KWin ownership.
 
 If a member of a multi-window column enters native fullscreen or maximize,
 Driftile extracts it into a singleton column immediately to the right. Leaving
@@ -185,8 +202,14 @@ its geometry.
 
 Vertical input moves between workspace rows, while horizontal input pans or
 selects within a row. Precise wheel or touchpad input drives the camera
-directly; discrete input selects workspaces or columns. Empty-space dragging
-pans the plane, and a right-button drag pans the row under the pointer.
+directly; a discrete vertical wheel selects the next row when scrolling down
+and the previous row when scrolling up, independent of the system's natural
+scrolling inversion. Horizontal discrete input selects columns. Empty-space
+dragging pans the plane, and a right-button drag pans the row under the pointer.
+
+Ordinary Overview opening settles directly into the spatial plane, avoiding an
+intermediate full-size projection. Closing remains animated, while interactive
+gestures continue to drive presentation progress directly.
 
 A one-finger touchscreen drag can start across the visible Overview canvas,
 outside controls and overlays, when the vertical camera or touched row has

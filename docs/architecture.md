@@ -22,6 +22,10 @@ Events travel from KWin through the bridge into the runtime. Commands and result
   content-addressed directory.
 - Passes the KWin workspace object to the runtime.
 - Hosts QML-only shortcut handlers.
+- Synchronizes KWin's public `Workspace.desktopGridHeight` property with the
+  exact desktop count at startup and after desktop or layout changes, keeping
+  the desktop grid in one vertical column without polling or a replacement
+  switching effect.
 - Sends bounded tab-selection text to Plasma's asynchronous OSD service when
   enabled; it creates no KWin-managed surface and does not intercept input.
 - Keeps both optional touchpad gesture Loaders inactive by default. An accepted
@@ -139,6 +143,14 @@ Events travel from KWin through the bridge into the runtime. Commands and result
   and camera context; horizontal updates also retain the exact row and desktop
   context. A mismatch cancels without a layout or persistence write. The
   gesture adds no polling or private API.
+- Settles ordinary opening immediately, keeps interactive presentation progress
+  gesture-driven, and retains the animated close path. Discrete vertical wheel
+  input normalizes KWin's system-inversion flag so physical down maps to the
+  next workspace row and physical up maps to the previous row, while precise
+  input remains continuous.
+- Re-reads the public desktop order synchronously when KWin reports a changed
+  desktop list, then coalesces the persisted-model refresh without exposing
+  stale workspace order to later pointer or gesture input.
 - Shows one compact `Type to search · F1 help` control only after the scene has
   settled and while search and help are both closed. Its hover state signals
   clickability, and click or touch opens the existing keyboard reference. The
@@ -711,7 +723,12 @@ inspected safely within the codec bound.
   transaction with decorated constraints and partial reachability. Reset
   remains tiled-only.
 - Leave dialogs, modal or transient windows, non-resizable normal windows, and fixed-size normal windows outside layout ownership. Commands that require layout ownership are no-ops when one is active; desktop or output transfer may move one relation-free floating window.
-- If a managed window gains an automatic-floating role, remove its slot without writing a stale restore frame or disturbing unrelated order, widths, or viewport state. Re-admit it through normal admission after the role clears.
+- If a managed window gains an automatic-floating role, remove its slot without
+  writing a stale restore frame or disturbing unrelated order, widths, or
+  viewport state. Re-admit ordinary automatic-floating windows through normal
+  admission after their role clears. Once an exact live window is confirmed as
+  picture-in-picture, retain KWin ownership through role churn and interactive
+  movement for that window's lifetime; removal clears the identity.
 - Allow horizontal overflow and viewport scrolling when KWin reports one output.
 - Queue a candidate window unmanaged if it would introduce overflow with multiple outputs, then retry it when that context gains capacity.
 - When a topology change invalidates existing multi-output capacity, park whole writable columns with a reachable anchor inside the work area and release them to the waiting queue. Preserve the active column when possible; choose the farthest non-active column first and the rightmost on a tie.
