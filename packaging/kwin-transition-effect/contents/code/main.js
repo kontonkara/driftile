@@ -279,6 +279,7 @@ class DriftileTransitionsEffect {
       this.replayDeferredTransition(window);
     }
     this.replayDeferredTransitions(window);
+    this.settleVisibilityHandoff(window);
   }
 
   onWindowVisibilityOpportunity(window) {

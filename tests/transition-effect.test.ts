@@ -1660,6 +1660,46 @@ describe("transition effect package", () => {
     expect(harness.cancelledAnimations).toHaveLength(0);
   });
 
+  it("settles a visible focus target after its geometry changes", () => {
+    const harness = createHarness();
+    const target = createWindow({
+      geometry: { x: 340, y: 30, width: 300, height: 200 },
+    });
+    const unrelated = createWindow({
+      geometry: { x: 660, y: 30, width: 300, height: 200 },
+      visible: false,
+    });
+    harness.effects.windowAdded.emit(target);
+    harness.effects.windowAdded.emit(unrelated);
+    harness.effects.activeWindow = harness.window;
+    harness.setFullScreenEffectActive(true);
+    harness.setFullScreenEffectActive(false);
+
+    changeGeometry(target, {
+      x: 460,
+      y: 70,
+      width: 500,
+      height: 300,
+    });
+    harness.effects.activeWindow = target;
+    harness.effects.windowActivated.emit(target);
+
+    changeGeometry(unrelated, {
+      x: 780,
+      y: 70,
+      width: 500,
+      height: 300,
+    });
+    harness.effects.activeWindow = unrelated;
+    harness.effects.windowActivated.emit(unrelated);
+
+    expect(harness.animationRequests.map(({ window }) => window)).toEqual([
+      target,
+    ]);
+    expect("driftileDeferredTransition" in unrelated).toBe(false);
+    expect(harness.cancelledAnimations).toHaveLength(0);
+  });
+
   it("replays a rapid focus handoff before desktop visibility settles", () => {
     const harness = createHarness({
       window: createWindow({ visible: false }),
