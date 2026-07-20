@@ -97,8 +97,10 @@ Events travel from KWin through the bridge into the runtime. Commands and result
   revalidates the exact active effect, model, live screen, projected output,
   desktop, window, and activity; off-desktop hidden state is allowed only at
   this stage.
-- Accepts a non-current number-gutter click only after revalidating the active
-  effect, exact live screen, projected output, and direct desktop object and ID.
+- Accepts a workspace marker or empty-surface activation only after revalidating
+  the active effect, exact live screen, projected output, and direct desktop
+  object and ID. An exact current target closes without a desktop write; an
+  exact non-current target requires confirmed selection.
 - Starts a number-gutter drag only from an exact live desktop object. Pointer
   updates compute one insertion slot in constant time while cards stay fixed.
   The last shared desktop is never a source or crossed target.
@@ -113,8 +115,10 @@ Events travel from KWin through the bridge into the runtime. Commands and result
   hides rather than truncating or guessing invalid state.
 - Selects a non-current card through public `KWin.SceneView.currentDesktop`, or
   the guarded single-output `KWin.Workspace.currentDesktop` fallback, and
-  requires an exact confirmation. Thumbnail activation then revalidates the
-  same window including visible state, requests the exact
+  requires an exact confirmation. Selecting the exact current card instead
+  closes without either desktop write. Thumbnail activation, including a short
+  touchscreen tap, then revalidates the same window including visible state,
+  requests the exact
   `KWin.Workspace.activeWindow`, and confirms focus.
 - Writes only `KWin.Workspace.activeWindow`, one exact window `desktops` list,
   public

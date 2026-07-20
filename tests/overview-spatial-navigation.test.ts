@@ -63,6 +63,10 @@ const keyboardActivation = scene.slice(
   scene.indexOf("function activateKeyboardSelection("),
   scene.indexOf("function closeKeyboardSelection("),
 );
+const initialSelection = scene.slice(
+  scene.indexOf("function preferredInitialNavigationTarget("),
+  scene.indexOf("function navigationTargetPrecedes("),
+);
 
 describe("spatial overview navigation geometry", () => {
   it("preserves default clipping while the spatial scene opts into offscreen targets", () => {
@@ -134,6 +138,38 @@ describe("spatial overview navigation geometry", () => {
       /if \(target\.kind === "desktop"\) \{\s*selectDesktop\(target\.candidate, target\.desktopId, target\.screen\);/u,
     );
     expect(`${numberGutter}\n${collection}\n${keyboardActivation}`).not.toMatch(
+      /org\.kde\.kwin\.private|\bTimer\s*\{|setInterval|setTimeout|\.setValue\s*\(|KWin\.(?:SceneView|Workspace)\.[A-Za-z0-9_]+\s*=(?!=)/u,
+    );
+  });
+
+  it("prefers current actionable targets before the visual fallback", () => {
+    expect(initialSelection).toContain(
+      'const activeDesktopId = currentDesktop ? String(currentDesktop.id) : ""',
+    );
+    expect(initialSelection).toContain("let firstActive = null");
+    expect(initialSelection).toContain("let firstCurrentDesktop = null");
+    expect(initialSelection).toContain("let currentDesktopMarker = null");
+    expect(initialSelection).toContain("let firstVisual = null");
+    expect(initialSelection).toMatch(
+      /if \(target\.kind === "window" && target\.candidate === activeWindow\) \{\s*if \(target\.desktopId === activeDesktopId\) \{\s*return target;/u,
+    );
+    expect(initialSelection).toMatch(
+      /target\.kind === "window" && target\.desktopId === activeDesktopId\s*&& \(!firstCurrentDesktop \|\| navigationTargetPrecedes\(target, firstCurrentDesktop\)\)/u,
+    );
+    expect(initialSelection).toMatch(
+      /target\.kind === "desktop" && target\.desktopId === activeDesktopId\s*&& \(!currentDesktopMarker \|\| navigationTargetPrecedes\(target, currentDesktopMarker\)\)/u,
+    );
+    expect(initialSelection).toContain(
+      "return firstActive || firstCurrentDesktop || currentDesktopMarker || firstVisual",
+    );
+    expect(initialSelection.indexOf("firstCurrentDesktop")).toBeLessThan(
+      initialSelection.indexOf("currentDesktopMarker"),
+    );
+    expect(initialSelection.indexOf("currentDesktopMarker")).toBeLessThan(
+      initialSelection.indexOf("firstVisual"),
+    );
+    expect(collection).toContain("if (searchQuery.trim().length === 0)");
+    expect(`${initialSelection}\n${collection}`).not.toMatch(
       /org\.kde\.kwin\.private|\bTimer\s*\{|setInterval|setTimeout|\.setValue\s*\(|KWin\.(?:SceneView|Workspace)\.[A-Za-z0-9_]+\s*=(?!=)/u,
     );
   });

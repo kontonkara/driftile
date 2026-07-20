@@ -1057,6 +1057,10 @@ describe("overview effect package", () => {
       desktopCard.indexOf("id: thumbnailShell"),
       desktopCard.indexOf("id: minimizedPlaceholderShell"),
     );
+    const thumbnailTouchTap = thumbnail.slice(
+      thumbnail.indexOf("id: thumbnailTouchHoldHandler"),
+      thumbnail.indexOf("id: thumbnailTouchDragHandler"),
+    );
 
     expect(numberGutter).toContain("acceptedButtons: Qt.LeftButton");
     expect(thumbnail).toContain("acceptedButtons: Qt.LeftButton");
@@ -1075,6 +1079,24 @@ describe("overview effect package", () => {
       "card.windowTapped(model.window, windowPresentation.windowId, card.desktop,",
     );
     expect(thumbnail).toContain("card.desktopId, card.screen)");
+    expect(thumbnailTouchTap).toContain(
+      "acceptedDevices: PointerDevice.TouchScreen",
+    );
+    expect(thumbnailTouchTap).toContain(
+      "gesturePolicy: TapHandler.DragThreshold",
+    );
+    expect(thumbnailTouchTap).toContain(
+      "enabled: thumbnailShell.visible && card.desktop && card.screen",
+    );
+    expect(thumbnailTouchTap).not.toMatch(
+      /enabled:[^\n]*windowPresentation\.dragEligible/u,
+    );
+    expect(thumbnailTouchTap).toMatch(
+      /onTapped: point => \{[\s\S]*card\.closeButtonContainsPoint\(thumbnailCloseButton, thumbnailShell,[\s\S]*point\.position[\s\S]*return;[\s\S]*card\.windowTapped\(model\.window, windowPresentation\.windowId, card\.desktop,[\s\S]*card\.desktopId, card\.screen\)/u,
+    );
+    expect(thumbnailTouchTap).not.toMatch(
+      /desktopTapped|windowCloseRequested|org\.kde\.kwin\.private|\b(?:MouseArea|Timer)\s*\{|setInterval|setTimeout|\.setValue\s*\(|KWin\.(?:SceneView|Workspace)\.[A-Za-z0-9_]+\s*=(?!=)/u,
+    );
     expect(scene).toMatch(
       /onWindowTapped:\s*\(candidate,\s*expectedWindowId,\s*expectedDesktop,\s*expectedDesktopId,\s*expectedScreen\)\s*=>\s*root\.focusWindow\(candidate,\s*expectedWindowId,\s*expectedDesktop,\s*expectedDesktopId,\s*expectedScreen\)/u,
     );
@@ -2367,6 +2389,14 @@ describe("overview effect package", () => {
       desktopCard.indexOf("function planMinimizedPlaceholderFrame("),
       desktopCard.indexOf("function boundedWindowCaption("),
     );
+    const placeholderTapStart = placeholder.indexOf(
+      "acceptedButtons: Qt.LeftButton",
+      placeholder.indexOf("id: minimizedPlaceholderHoverHandler"),
+    );
+    const placeholderTap = placeholder.slice(
+      placeholderTapStart,
+      placeholder.indexOf("TapHandler {", placeholderTapStart),
+    );
 
     expect(overviewRuntimeIndex).toContain(
       'export { planOverviewMinimizedPlaceholder } from "./minimized-placeholder";',
@@ -2438,6 +2468,14 @@ describe("overview effect package", () => {
     expect(placeholder).toContain(
       "enabled: minimizedPlaceholderShell.visible && minimizedPlaceholderShell.activationEligible",
     );
+    expect(placeholderTap).toContain(
+      "acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad | PointerDevice.TouchScreen",
+    );
+    expect(placeholderTap).toContain("gesturePolicy: TapHandler.DragThreshold");
+    expect(placeholderTap).toContain("&& card.desktop && card.screen");
+    expect(placeholderTap).toMatch(
+      /onTapped: point => \{\s*if \(card\.closeButtonContainsPoint\(minimizedPlaceholderCloseButton,\s*minimizedPlaceholderShell, point\.position\)\) \{\s*return;\s*\}\s*card\.windowTapped\(model\.window, windowPresentation\.windowId, card\.desktop,\s*card\.desktopId, card\.screen\);/u,
+    );
     expect(placeholder).toContain(
       "card.windowTapped(model.window, windowPresentation.windowId, card.desktop,",
     );
@@ -2446,6 +2484,9 @@ describe("overview effect package", () => {
     );
     expect(placeholder).toContain(
       "card.windowCloseRequested(windowPresentation.candidate,",
+    );
+    expect(placeholderTap).not.toMatch(
+      /desktopTapped|windowCloseRequested|org\.kde\.kwin\.private|\b(?:DragHandler|MouseArea|Timer)\s*\{|setInterval|setTimeout|\.setValue\s*\(|KWin\.(?:SceneView|Workspace)\.[A-Za-z0-9_]+\s*=(?!=)/u,
     );
     expect(`${planner}\n${placeholder}`).not.toMatch(
       /\b(?:Timer|Behavior|Animation|DragHandler|ShortcutHandler)\s*\{|\bsequence\s*:|org\.kde\.kwin\.private|\.setValue\s*\(|KWin\.(?:SceneView|Workspace)\.[A-Za-z0-9_]+\s*=(?!=)/u,
@@ -3081,8 +3122,12 @@ describe("overview effect package", () => {
     );
     expect(navigation).toContain("target.candidate === activeWindow");
     expect(navigation).toContain("target.desktopId === activeDesktopId");
+    expect(navigation).toContain("let currentDesktopMarker = null");
+    expect(navigation).toMatch(
+      /target\.kind === "desktop" && target\.desktopId === activeDesktopId\s*&& \(!currentDesktopMarker \|\| navigationTargetPrecedes\(target, currentDesktopMarker\)\)/u,
+    );
     expect(navigation).toContain(
-      "return firstActive || firstCurrentDesktop || firstVisual",
+      "return firstActive || firstCurrentDesktop || currentDesktopMarker || firstVisual",
     );
     expect(navigation).toContain(
       "navigationTargetPrecedes(target, firstVisual)",
@@ -4047,6 +4092,12 @@ describe("overview effect package", () => {
     );
     expect(initialSelection).toContain(
       'target.kind === "window" && target.desktopId === activeDesktopId',
+    );
+    expect(initialSelection).toContain(
+      'target.kind === "desktop" && target.desktopId === activeDesktopId',
+    );
+    expect(initialSelection).toContain(
+      "return firstActive || firstCurrentDesktop || currentDesktopMarker || firstVisual",
     );
   });
 

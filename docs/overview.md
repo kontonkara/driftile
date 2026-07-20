@@ -107,10 +107,16 @@ number marker selects an exact non-current workspace. The same action on the
 current workspace closes Overview without a desktop write. Moving beyond the
 tap threshold yields to the existing pan or drag owner, and workspace-surface
 taps stay disabled while search is active. A left click still activates a
-visible window. Dragging a visible window can transfer it to another desktop or
-output after the source and destination are revalidated. Holding the dragged
-window over another workspace activates that workspace after a bounded dwell
-while keeping the drag active. On the same output, releasing over a window half
+visible window. A short touchscreen tap uses the same guarded activation path,
+including desktop selection for an exact off-desktop window and restoration of
+an actionable minimized placeholder. Holding an eligible thumbnail before
+moving remains the touchscreen drag gesture; early movement cancels the tap,
+and a long press never also activates the window. A touch over a visible close
+region does not fall through to activation or drag. Dragging a visible window
+can transfer it to another desktop or output after the source and destination
+are revalidated. Holding the dragged window over another workspace activates
+that workspace after a bounded dwell while keeping the drag active. On the same
+output, releasing over a window half
 inserts into that stack, releasing at a column boundary keeps a separate column,
 and an empty row accepts a new column. The same exact targets work across
 outputs for tiled windows; floating and non-exact sources retain Plasma's

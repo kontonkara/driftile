@@ -512,12 +512,15 @@ Driftile must integrate with, not duplicate:
   window after confirmed desktop selection. Pre-selection rejection leaves the
   effect open; any later failure keeps the selected desktop, closes the stale
   effect, and performs no rollback.
-- An overview gutter click may select only an exact live non-current desktop for
-  its screen. Only confirmed selection closes the effect; a current, invalid,
-  stale, raced, or rejected request leaves it open.
+- An overview marker or empty-surface activation may target only an exact live
+  desktop for its screen. The exact current desktop closes without a desktop
+  write. A non-current target closes only after confirmed selection; an invalid,
+  stale, raced, or rejected request leaves the effect open.
 - Overview keyboard navigation selects only actionable targets with a visible
-  intersection and never wraps. Keyboard activation uses the same guarded path
-  as pointer activation.
+  intersection and never wraps. If the current desktop has no actionable
+  window, its marker precedes unrelated visual targets. Keyboard and short
+  touchscreen activation use the same guarded path as pointer activation;
+  touchscreen long press remains reserved for an eligible window drag.
 - Reordering moves one whole active column left, right, first, or last inside its context without changing focus or widths.
 - Column-width resizing changes one whole active column, translates client limits to decorated frame bounds, respects every member's width constraints, and preserves focus and grouping.
 - A newly admitted or explicitly resized width that reaches a hard minimum or maximum is stored at that fixed logical-pixel boundary, so work-area changes cannot scale it past the same constraint.

@@ -196,6 +196,13 @@ marker selects an exact non-current workspace and closes Overview on the
 current one. Movement beyond the tap threshold remains a pan or drag, and
 workspace-surface taps are disabled during search.
 
+A short touchscreen tap on a visible window follows the same exact activation
+path as a click, including an exact desktop switch or minimized-window restore.
+Holding an eligible thumbnail before moving remains the touchscreen drag
+gesture. Movement before the hold cancels the tap, a long press never also
+activates the window, and the visible close region cannot fall through to
+activation or drag.
+
 A visible window can be dragged to another workspace or output, into an exact
 stack position, or into a separate-column gutter. Dropping an eligible tiled
 window on the insertion line between two workspace rows creates a desktop at

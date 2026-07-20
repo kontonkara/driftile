@@ -5587,6 +5587,7 @@ Rectangle {
         const activeDesktopId = currentDesktop ? String(currentDesktop.id) : "";
         let firstActive = null;
         let firstCurrentDesktop = null;
+        let currentDesktopMarker = null;
         let firstVisual = null;
 
         for (const target of targets) {
@@ -5602,12 +5603,16 @@ Rectangle {
                     && (!firstCurrentDesktop || navigationTargetPrecedes(target, firstCurrentDesktop))) {
                 firstCurrentDesktop = target;
             }
+            if (target.kind === "desktop" && target.desktopId === activeDesktopId
+                    && (!currentDesktopMarker || navigationTargetPrecedes(target, currentDesktopMarker))) {
+                currentDesktopMarker = target;
+            }
             if (!firstVisual || navigationTargetPrecedes(target, firstVisual)) {
                 firstVisual = target;
             }
         }
 
-        return firstActive || firstCurrentDesktop || firstVisual;
+        return firstActive || firstCurrentDesktop || currentDesktopMarker || firstVisual;
     }
 
     function navigationTargetPrecedes(candidate, current) {

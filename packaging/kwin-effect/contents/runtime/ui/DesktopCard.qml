@@ -799,7 +799,7 @@ Item {
                         acceptedDevices: PointerDevice.TouchScreen
                         acceptedModifiers: Qt.NoModifier
                         gesturePolicy: TapHandler.DragThreshold
-                        enabled: thumbnailShell.visible && windowPresentation.dragEligible
+                        enabled: thumbnailShell.visible && card.desktop && card.screen
 
                         onPressedChanged: {
                             if (pressed || (point.state === EventPoint.Released
@@ -807,9 +807,18 @@ Item {
                                 windowPresentation.touchSpatialDragArmed = false;
                             }
                         }
-                        onLongPressed: {
+                        onTapped: point => {
                             if (card.closeButtonContainsPoint(thumbnailCloseButton, thumbnailShell,
-                                                              point.pressPosition)) {
+                                                              point.position)) {
+                                return;
+                            }
+                            card.windowTapped(model.window, windowPresentation.windowId, card.desktop,
+                                              card.desktopId, card.screen);
+                        }
+                        onLongPressed: {
+                            if (!windowPresentation.dragEligible
+                                    || card.closeButtonContainsPoint(thumbnailCloseButton, thumbnailShell,
+                                                                     point.pressPosition)) {
                                 return;
                             }
                             windowPresentation.touchSpatialDragArmed = true;
@@ -1070,7 +1079,8 @@ Item {
 
                     TapHandler {
                         acceptedButtons: Qt.LeftButton
-                        acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
+                        acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad | PointerDevice.TouchScreen
+                        gesturePolicy: TapHandler.DragThreshold
                         enabled: minimizedPlaceholderShell.visible && minimizedPlaceholderShell.activationEligible
                                  && card.desktop && card.screen
                         onTapped: point => {

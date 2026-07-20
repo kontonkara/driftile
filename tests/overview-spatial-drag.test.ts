@@ -153,7 +153,7 @@ describe("spatial overview window drag lifecycle", () => {
     }
   });
 
-  it("arms touchscreen window movement only after a long press", () => {
+  it("shares one touchscreen tap and long-press owner without widening drag eligibility", () => {
     expect(presentation).toContain(
       "property bool touchSpatialDragArmed: false",
     );
@@ -163,7 +163,21 @@ describe("spatial overview window drag lifecycle", () => {
     expect(thumbnailTouchHold).toContain(
       "gesturePolicy: TapHandler.DragThreshold",
     );
+    expect(thumbnailTouchHold).toContain(
+      "enabled: thumbnailShell.visible && card.desktop && card.screen",
+    );
+    expect(thumbnailTouchHold).not.toMatch(
+      /enabled:[^\n]*windowPresentation\.dragEligible/u,
+    );
+    expect(thumbnailTouchHold.match(/onTapped:/gu)).toHaveLength(1);
+    expect(thumbnailTouchHold.match(/onLongPressed:/gu)).toHaveLength(1);
+    expect(thumbnailTouchHold).toMatch(
+      /onTapped: point => \{\s*if \(card\.closeButtonContainsPoint\(thumbnailCloseButton, thumbnailShell,\s*point\.position\)\) \{\s*return;\s*\}\s*card\.windowTapped\(model\.window, windowPresentation\.windowId, card\.desktop,\s*card\.desktopId, card\.screen\);\s*\}/u,
+    );
     expect(thumbnailTouchHold).toContain("onLongPressed:");
+    expect(thumbnailTouchHold).toMatch(
+      /onLongPressed: \{\s*if \(!windowPresentation\.dragEligible\s*\|\| card\.closeButtonContainsPoint\(thumbnailCloseButton, thumbnailShell,\s*point\.pressPosition\)\) \{\s*return;\s*\}\s*windowPresentation\.touchSpatialDragArmed = true;/u,
+    );
     expect(thumbnailTouchHold).toContain(
       "windowPresentation.touchSpatialDragArmed = true",
     );
@@ -173,6 +187,9 @@ describe("spatial overview window drag lifecycle", () => {
     expect(thumbnailTouchHold).toContain("point.pressPosition");
     expect(thumbnailTouchDrag).toContain(
       "acceptedDevices: PointerDevice.TouchScreen",
+    );
+    expect(thumbnailTouchDrag).toContain(
+      "enabled: thumbnailShell.visible && windowPresentation.dragEligible",
     );
     expect(thumbnailTouchDrag).toContain(
       "dragThreshold: windowPresentation.touchSpatialDragArmed ? 0 : 32767",
@@ -188,6 +205,12 @@ describe("spatial overview window drag lifecycle", () => {
     );
     expect(thumbnailTouchDrag).toContain(
       "thumbnailTouchDragHandler.cancelSpatialDrag()",
+    );
+    expect(
+      thumbnailTouchDrag.match(/touchSpatialDragArmed = false/gu),
+    ).toHaveLength(2);
+    expect(`${thumbnailTouchHold}\n${thumbnailTouchDrag}`).not.toMatch(
+      /desktopTapped|org\.kde\.kwin\.private|\b(?:MouseArea|Timer)\s*\{|setInterval|setTimeout|\.setValue\s*\(|KWin\.(?:SceneView|Workspace)\.[A-Za-z0-9_]+\s*=(?!=)/u,
     );
     expect(thumbnailDrag).not.toContain("PointerDevice.TouchScreen");
   });
