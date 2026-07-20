@@ -1,0 +1,82 @@
+import { readFileSync } from "node:fs";
+import { describe, expect, it } from "vitest";
+
+const effectRoot = new URL("../packaging/kwin-effect/", import.meta.url);
+const controller = readFileSync(
+  new URL("contents/runtime/ui/main.qml", effectRoot),
+  "utf8",
+);
+const reader = readFileSync(
+  new URL("contents/runtime/ui/LayoutStateReader.qml", effectRoot),
+  "utf8",
+);
+
+describe("overview activation controller", () => {
+  it("reuses only an exact synchronous persisted-state and live-snapshot hit", () => {
+    const activation = controller.slice(
+      controller.indexOf("function activate()"),
+      controller.indexOf("function deactivate()"),
+    );
+
+    expect(controller).toContain(
+      "readonly property var overviewActivationCache: createActivationCache()",
+    );
+    expect(activation).toMatch(
+      /const synchronousDocument = layoutStateReader\.readSample\(\);[\s\S]*const synchronousLiveSnapshot = liveSnapshot\(\);[\s\S]*lookupActivationCache\(synchronousDocument,[\s\S]*synchronousLiveSnapshot\)/u,
+    );
+    expect(activation).toMatch(
+      /if \(cachedModel\) \{\s*acceptActivationModel\(attemptId, cachedModel\);\s*return;\s*\}\s*layoutStateReader\.sample\(attemptId\);/u,
+    );
+    expect(activation.indexOf("layoutStateReader.readSample()")).toBeLessThan(
+      activation.indexOf("lookupActivationCache("),
+    );
+    expect(activation.indexOf("lookupActivationCache(")).toBeLessThan(
+      activation.indexOf("layoutStateReader.sample(attemptId)"),
+    );
+  });
+
+  it("keeps changed state on the existing two-sample confirmation path", () => {
+    const sample = reader.slice(
+      reader.indexOf("function sample(requestId)"),
+      reader.indexOf("function cancel()"),
+    );
+
+    expect(reader).toContain("readonly property int sampleInterval: 325");
+    expect(sample).toContain("const synchronousSample = readSample();");
+    expect(sample).toContain("synchronousSample === stableSample");
+    expect(sample).toContain("firstSample = synchronousSample;");
+    expect(sample).toContain("secondSampleTimer.start();");
+    expect(reader).toMatch(
+      /const secondSample = root\.readSample\(\);[\s\S]*root\.firstSample === secondSample[\s\S]*root\.ready\(completedRequestId, secondSample\)/u,
+    );
+  });
+
+  it("stores only a validated projection built from the same live snapshot", () => {
+    const acceptance = controller.slice(
+      controller.indexOf("function acceptLayoutState("),
+      controller.indexOf("function acceptActivationModel("),
+    );
+    const refresh = controller.slice(
+      controller.indexOf("function acceptLiveModelRefresh("),
+      controller.indexOf("function rejectLiveModelRefresh("),
+    );
+
+    for (const path of [acceptance, refresh]) {
+      expect(path).toMatch(
+        /const snapshot = liveSnapshot\(\);\s*const result = runtime\.loadOverviewModel\(document, snapshot\);/u,
+      );
+      expect(path).toMatch(
+        /result\.ok !== true \|\| !result\.value[\s\S]*storeActivationCache\(document, snapshot, result\.value\)/u,
+      );
+    }
+    expect(controller).toMatch(
+      /function lookupActivationCache\(document, snapshot\)[\s\S]*result\.ok === true && result\.value/u,
+    );
+    expect(controller).toMatch(
+      /function storeActivationCache\(document, snapshot, model\)[\s\S]*result\.ok === true && result\.value/u,
+    );
+    expect(`${controller}\n${reader}`).not.toMatch(
+      /org\.kde\.kwin\.private|setInterval|setTimeout/u,
+    );
+  });
+});

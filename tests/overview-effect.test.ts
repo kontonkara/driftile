@@ -47,6 +47,10 @@ const scene = readFileSync(
   new URL("contents/runtime/ui/OverviewScene.qml", effectRoot),
   "utf8",
 );
+const exitHandoff = readFileSync(
+  new URL("contents/runtime/ui/OverviewExitHandoff.qml", effectRoot),
+  "utf8",
+);
 const desktopCard = readFileSync(
   new URL("contents/runtime/ui/DesktopCard.qml", effectRoot),
   "utf8",
@@ -88,6 +92,7 @@ const qmlSources = [
   zoomHud,
   reader,
   scene,
+  exitHandoff,
   desktopCard,
   windowApplicationIcon,
   outputIdentityBadge,
@@ -518,7 +523,7 @@ describe("overview effect package", () => {
 
   it("keeps a fixed scene-effect proxy over the cache-busted controller", () => {
     expect(createHash("sha256").update(main, "utf8").digest("hex")).toBe(
-      "2c0a73370a3c5bc0cb9c8e00af42f4f69bf53238db0da0ead27ef6d3f2226a82",
+      "fcd875de3dabddfcd905728b027e935980feef4f326c2089aeb9ccc9e4f09154",
     );
     expect(main).toContain("KWin.SceneEffect {");
     expect(main).toContain("Date.now().toString(36)");
@@ -697,10 +702,10 @@ describe("overview effect package", () => {
     );
     expect(accept).toContain("attemptId !== pendingActivationAttemptId");
     expect(accept).toMatch(
-      /if \(plasmaOverviewIsActive\(\)\) \{\s*cancelPendingActivation\(attemptId\);\s*return;\s*\}[\s\S]*runtime\.loadOverviewModel\([\s\S]*if \(plasmaOverviewIsActive\(\)\) \{\s*cancelPendingActivation\(attemptId\);\s*return;\s*\}[\s\S]*overviewModel = result\.value;/u,
+      /if \(plasmaOverviewIsActive\(\)\) \{\s*cancelPendingActivation\(attemptId\);\s*return;\s*\}[\s\S]*runtime\.loadOverviewModel\(document, snapshot\)[\s\S]*if \(plasmaOverviewIsActive\(\)\) \{\s*cancelPendingActivation\(attemptId\);\s*return;\s*\}[\s\S]*storeActivationCache\(document, snapshot, result\.value\)[\s\S]*acceptActivationModel\(attemptId, model \? model : result\.value\)/u,
     );
     expect(accept).toMatch(
-      /pendingActivationAttemptId = 0;[\s\S]*overviewModel = result\.value;[\s\S]*loading = false;[\s\S]*active = true;/u,
+      /function acceptActivationModel\(attemptId, model\)[\s\S]*pendingActivationAttemptId = 0;[\s\S]*overviewModel = model;[\s\S]*loading = false;[\s\S]*active = true;/u,
     );
     expect(reject).toContain("attemptId !== pendingActivationAttemptId");
     expect(reject).toMatch(
@@ -1284,7 +1289,7 @@ describe("overview effect package", () => {
     );
     expect(focusHandler).toContain("const activeDesktop = currentDesktop;");
     expect(focusHandler).toMatch(
-      /if \(activeDesktop !== liveDesktop \|\| String\(activeDesktop\.id\) !== expectedDesktopId\) \{\s*if \(!requestDesktopSelection\([\s\S]*?\)\) \{\s*return false;\s*\}\s*desktopSelectionConfirmed = true;\s*\}/u,
+      /if \(activeDesktop !== liveDesktop \|\| String\(activeDesktop\.id\) !== expectedDesktopId\) \{\s*if \(!requestDesktopSelection\([\s\S]*?true\)\) \{\s*cancelSpatialExitHandoff\(\);\s*return false;\s*\}\s*desktopSelectionConfirmed = true;\s*\}/u,
     );
     expect(focusHandler).toContain("const selectedDesktop = currentDesktop;");
     expect(focusHandler).toContain("selectedDesktop === liveDesktop");
@@ -1359,7 +1364,7 @@ describe("overview effect package", () => {
     ).toHaveLength(1);
     expect(focusHandler.match(/effect\.deactivate\(\)/gu)).toHaveLength(1);
     expect(focusHandler).toMatch(
-      /if \(focusConfirmed \|\| \(!expectedMinimized && desktopSelectionConfirmed\)\) \{\s*effect\.deactivate\(\);\s*return true;\s*\}\s*return false;/u,
+      /if \(focusConfirmed \|\| \(!expectedMinimized && desktopSelectionConfirmed\)\) \{\s*if \(!settleSpatialExitHandoff\(candidate, exitToken\)\) \{\s*cancelSpatialExitHandoff\(\);\s*return false;\s*\}\s*effect\.deactivate\(\);\s*return true;\s*\}\s*cancelSpatialExitHandoff\(\);\s*return false;/u,
     );
 
     const minimizedSnapshot = focusHandler.indexOf(
@@ -4087,8 +4092,8 @@ describe("overview effect package", () => {
     expect(scene).toMatch(
       /function setSpatialHorizontalViewportOffsetForBounds[\s\S]*spatialHorizontalViewportOffsets\[index\] === normalizedOffset[\s\S]*return true;[\s\S]*spatialHorizontalViewportOffsets\[index\] = normalizedOffset;\s*advanceSpatialHorizontalViewportRevision\(\);/u,
     );
-    expect(scene).toContain(
-      "function onWindowActivated() {\n            root.resolveSpatialLiveCamera();",
+    expect(scene).toMatch(
+      /function onWindowActivated\(\) \{\s*if \(!root\.spatialExitHandoffActive\) \{\s*root\.resolveSpatialLiveCamera\(\);/u,
     );
     expect(scene).not.toContain("onClientAreaChanged");
     expect(scene).toContain(
@@ -4906,7 +4911,7 @@ describe("overview effect package", () => {
       /KWin\.(?:SceneView|Workspace)\.[A-Za-z0-9_]+\s*=(?!=)|candidate\.[A-Za-z0-9_]+\s*=(?!=)|\bTimer\s*\{|\.setValue\s*\(/u,
     );
     expect(controller).toMatch(
-      /function onWindowRemoved\(window\) \{\s*controller\.queueDesktopSurfaceLifecycleEvent\(window\);\s*controller\.requestLiveModelRefresh\(\);/u,
+      /function onWindowRemoved\(window\) \{\s*controller\.handleOverviewExitWindowRemoved\(window\);\s*controller\.queueDesktopSurfaceLifecycleEvent\(window\);\s*controller\.requestLiveModelRefresh\(\);/u,
     );
   });
 
@@ -5310,7 +5315,7 @@ describe("overview effect package", () => {
       "return selectedDesktop === liveDesktop && String(selectedDesktop.id) === expectedDesktopId;",
     );
     expect(selector).toMatch(
-      /if \(activeDesktop === liveDesktop && String\(activeDesktop\.id\) === expectedDesktopId\) \{\s*effect\.deactivate\(\);\s*return true;/u,
+      /if \(activeDesktop === liveDesktop && String\(activeDesktop\.id\) === expectedDesktopId\) \{\s*if \(!settleSpatialExitHandoff\(null, exitToken\)\) \{[\s\S]*effect\.deactivate\(\);\s*return true;/u,
     );
     expect(selector.match(/effect\.deactivate\(\)/gu)).toHaveLength(2);
     expect(desktopRequest).not.toContain("deactivate()");
@@ -5353,7 +5358,7 @@ describe("overview effect package", () => {
     expect(postWriteRead).toBeGreaterThan(fallbackWrite);
     expect(confirmation).toBeGreaterThan(postWriteRead);
     expect(selector).toMatch(
-      /if \(!requestDesktopSelection\([\s\S]*?\)\) \{\s*return false;\s*\}\s*effect\.deactivate\(\);\s*return true;/u,
+      /if \(!requestDesktopSelection\([\s\S]*?true\)\) \{\s*cancelSpatialExitHandoff\(\);\s*return false;\s*\}\s*if \(!settleSpatialExitHandoff\(null, exitToken\)\) \{[\s\S]*effect\.deactivate\(\);\s*return true;/u,
     );
     expect(deactivate).toBeGreaterThan(
       selector.indexOf("requestDesktopSelection("),
@@ -5529,7 +5534,7 @@ describe("overview effect package", () => {
     expect(controller).toContain('import "../code/main.js" as OverviewRuntime');
     expect(controller).toContain("OverviewRuntime.DriftileOverview");
     expect(controller).toContain(
-      "runtime.loadOverviewModel(document, liveSnapshot())",
+      "runtime.loadOverviewModel(document, snapshot)",
     );
     expect(controller).toContain("activityIds,");
     expect(controller).toContain("currentActivityId,");

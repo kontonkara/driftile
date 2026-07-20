@@ -31,10 +31,10 @@ describe("overview live model refresh", () => {
       /function onWindowAdded\(window\) \{\s*controller\.queueDesktopSurfaceLifecycleEvent\(window\);\s*controller\.requestLiveModelRefresh\(\);/u,
     );
     expect(lifecycle).toMatch(
-      /function onWindowRemoved\(window\) \{\s*controller\.queueDesktopSurfaceLifecycleEvent\(window\);\s*controller\.requestLiveModelRefresh\(\);/u,
+      /function onWindowRemoved\(window\) \{\s*controller\.handleOverviewExitWindowRemoved\(window\);\s*controller\.queueDesktopSurfaceLifecycleEvent\(window\);\s*controller\.requestLiveModelRefresh\(\);/u,
     );
     expect(lifecycle).toMatch(
-      /function onDesktopsChanged\(\) \{\s*controller\.invalidateOverviewZoomGestureContext\(\);\s*controller\.requestLiveModelRefresh\(\);/u,
+      /function onDesktopsChanged\(\) \{\s*controller\.advanceOverviewTopologyGeneration\(\);\s*controller\.invalidateOverviewExitHandoff\("topology"\);\s*controller\.invalidateOverviewZoomGestureContext\(\);\s*controller\.requestLiveModelRefresh\(\);/u,
     );
     expect(request).toMatch(
       /if \(!active \|\| loading \|\| activeSessionId <= 0 \|\| !overviewModel\) \{\s*return;/u,
@@ -386,12 +386,10 @@ describe("overview live model refresh", () => {
       "onPublicationDetected: controller.requestLiveModelRefresh()",
     );
     expect(accept.match(/liveModelRefreshIsExact\(/gu)).toHaveLength(2);
-    expect(accept).toContain(
-      "runtime.loadOverviewModel(document, liveSnapshot())",
-    );
+    expect(accept).toContain("runtime.loadOverviewModel(document, snapshot)");
     expect(accept).toContain("controller.rejectLiveModelRefresh(attemptId)");
     expect(accept.indexOf("clearPendingLiveModelRefresh();")).toBeLessThan(
-      accept.indexOf("overviewModel = result.value;"),
+      accept.indexOf("overviewModel = model ? model : result.value;"),
     );
     expect(exact).toMatch(
       /attemptId === pendingLiveRefreshAttemptId[\s\S]*sessionId === pendingLiveRefreshSessionId[\s\S]*activeSessionId === sessionId[\s\S]*overviewModel === expectedModel[\s\S]*pendingLiveRefreshModel === expectedModel/u,
@@ -476,7 +474,7 @@ describe("overview live model refresh", () => {
     );
 
     expect(workspaceLifecycle).toMatch(
-      /function onDesktopsChanged\(\) \{\s*root\.handleDesktopTopologyChanged\(\);/u,
+      /function onDesktopsChanged\(\) \{\s*if \(root\.spatialExitHandoffActive\) \{[\s\S]*root\.handleDesktopTopologyChanged\(\);/u,
     );
     for (const signal of [
       "onCurrentActivityChanged",
@@ -485,7 +483,7 @@ describe("overview live model refresh", () => {
     ]) {
       expect(workspaceLifecycle).toMatch(
         new RegExp(
-          `function ${signal}\\(\\) \\{\\s*root\\.closeStaleOverview\\(\\);`,
+          `function ${signal}\\(\\) \\{[\\s\\S]*?root\\.closeStaleOverview\\(\\);`,
           "u",
         ),
       );
@@ -519,7 +517,7 @@ describe("overview live model refresh", () => {
       /function onWindowRemoved\(window\)[\s\S]*requestLiveModelRefresh|function onWindowRemoved\(window\)[\s\S]*closeStaleOverview/u,
     );
     expect(scene).toMatch(
-      /onOverviewModelChanged: \{\s*root\.cancelSpatialZoomTransaction\(\);\s*root\.discardSpatialZoomTransaction\(\);\s*root\.refreshOverviewSpatialSession\(true\);\s*root\.synchronizeSpatialZoomInputState\(\);\s*\}/u,
+      /onOverviewModelChanged: \{\s*if \(spatialExitHandoffActive\) \{\s*root\.invalidateSpatialExitHandoff\("stale"\);\s*return;\s*\}\s*root\.cancelSpatialZoomTransaction\(\);\s*root\.discardSpatialZoomTransaction\(\);\s*root\.refreshOverviewSpatialSession\(true\);\s*root\.synchronizeSpatialZoomInputState\(\);\s*\}/u,
     );
     expect(scene).toMatch(
       /function refreshOverviewSpatialSession\(preserveViewport, animateViewport = false\)[\s\S]*Qt\.callLater\(root\.repairKeyboardSelection\);/u,

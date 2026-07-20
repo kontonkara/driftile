@@ -167,7 +167,7 @@ describe("overview session zoom controller", () => {
       /function overviewZoomModelReplacementIsBlocked\(\)[\s\S]*overviewZoomGestureDirection !== ""[\s\S]*overviewZoomLocalOwnerSessionId > 0[\s\S]*state\.eligible === false/u,
     );
     expect(controller).toMatch(
-      /function acceptLiveModelRefresh\(attemptId, document\)[\s\S]*overviewZoomModelReplacementIsBlocked\(\)[\s\S]*deferOverviewZoomLiveRefresh\(\);[\s\S]*overviewModel = result\.value;/u,
+      /function acceptLiveModelRefresh\(attemptId, document\)[\s\S]*overviewZoomModelReplacementIsBlocked\(\)[\s\S]*deferOverviewZoomLiveRefresh\(\);[\s\S]*storeActivationCache\(document, snapshot, result\.value\)[\s\S]*overviewModel = model \? model : result\.value;/u,
     );
     expect(controller).toMatch(
       /function scheduleDeferredOverviewZoomLiveRefresh\(\)[\s\S]*Qt\.callLater[\s\S]*controller\.requestLiveModelRefresh\(\);/u,
