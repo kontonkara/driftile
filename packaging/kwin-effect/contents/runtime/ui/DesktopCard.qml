@@ -427,18 +427,9 @@ Item {
                 readonly property var liveGeometryPlan: card.spatialLiveColumnPlan(index)
                 readonly property var frame: card.columnShellFrame(index, liveGeometryPlan)
                 readonly property string selectedWindowId: card.selectedWindowIdForColumn(modelData)
-                readonly property var selectedPresentation: {
-                    const revision = card.columnDragEligibilityRevision;
-                    return revision >= 0 && !card.columnDragEligibilityRefreshPending
-                        ? card.presentationForWindowId(selectedWindowId) : null;
-                }
+                property var selectedPresentation: null
                 readonly property var candidate: selectedPresentation ? selectedPresentation.candidate : null
-                readonly property bool dragEligible: {
-                    const revision = card.columnDragEligibilityRevision;
-                    const presentation = selectedPresentation;
-                    return revision >= 0 && !card.columnDragEligibilityRefreshPending
-                        && presentation !== null && card.columnDragHandleIsEligible(columnShell);
-                }
+                property bool dragEligible: false
                 readonly property var sourceCard: card
                 readonly property var sourceContext: card.context
                 readonly property var sourceDesktop: card.desktop
@@ -468,6 +459,25 @@ Item {
                 Component.onDestruction: {
                     cancelColumnDrag();
                     card.releaseColumnPointerHover(columnShell);
+                }
+                onIndexChanged: card.scheduleColumnDragEligibilityRefresh()
+                onModelDataChanged: card.scheduleColumnDragEligibilityRefresh()
+                onSelectedWindowIdChanged: card.scheduleColumnDragEligibilityRefresh()
+
+                function invalidateColumnDragEligibility() {
+                    selectedPresentation = null;
+                    dragEligible = false;
+                }
+
+                function refreshColumnDragEligibility() {
+                    if (card.columnDragEligibilityRefreshPending) {
+                        invalidateColumnDragEligibility();
+                        return false;
+                    }
+                    selectedPresentation = card.presentationForWindowId(selectedWindowId);
+                    dragEligible = selectedPresentation !== null
+                        && card.columnDragHandleIsEligible(columnShell);
+                    return dragEligible;
                 }
 
                 function storeColumnDragHotSpot(scenePosition) {
@@ -732,6 +742,7 @@ Item {
             onTriggered: {
                 card.columnDragEligibilityRefreshPending = false;
                 card.advanceColumnDragEligibilityRevision();
+                card.refreshColumnDragEligibilityDelegates();
             }
         }
 
@@ -1788,22 +1799,26 @@ Item {
 
     onCurrentChanged: card.navigationTargetsChanged()
     onContextChanged: {
+        card.scheduleColumnDragEligibilityRefresh();
         card.clearInvalidWindowDropHover();
         card.clearInvalidColumnDropHover();
         card.cancelInvalidActiveColumnSpatialDrag();
     }
     onDesktopChanged: {
+        card.scheduleColumnDragEligibilityRefresh();
         card.clearWindowDropHover();
         card.clearColumnDropHover();
         card.cancelActiveColumnSpatialDrag();
     }
     onDesktopIdChanged: {
+        card.scheduleColumnDragEligibilityRefresh();
         card.clearWindowDropHover();
         card.clearColumnDropHover();
         card.cancelActiveColumnSpatialDrag();
     }
     onDesktopSurfaceLifecycleEventChanged: card.scheduleDesktopSurfaceReload()
     onEnabledChanged: {
+        card.scheduleColumnDragEligibilityRefresh();
         if (!enabled) {
             card.clearWindowDropHover();
             card.clearColumnDropHover();
@@ -1811,11 +1826,13 @@ Item {
         }
     }
     onScreenChanged: {
+        card.scheduleColumnDragEligibilityRefresh();
         card.clearWindowDropHover();
         card.clearColumnDropHover();
         card.cancelActiveColumnSpatialDrag();
     }
     onOutputIdChanged: {
+        card.scheduleColumnDragEligibilityRefresh();
         card.clearInvalidWindowDropHover();
         card.clearInvalidColumnDropHover();
         card.cancelInvalidActiveColumnSpatialDrag();
@@ -1826,6 +1843,7 @@ Item {
         card.cancelInvalidActiveColumnSpatialDrag();
     }
     onTiledPresentationsChanged: {
+        card.scheduleColumnDragEligibilityRefresh();
         card.clearInvalidWindowDropHover();
         card.clearInvalidColumnDropHover();
         card.cancelInvalidActiveColumnSpatialDrag();
@@ -1851,6 +1869,7 @@ Item {
         card.cancelInvalidActiveColumnSpatialDrag();
     }
     onSearchQueryChanged: {
+        card.scheduleColumnDragEligibilityRefresh();
         card.navigationTargetsChanged();
         if (searchQuery.trim().length > 0) {
             card.clearWindowDropHover();
@@ -1858,6 +1877,9 @@ Item {
             card.cancelActiveColumnSpatialDrag();
         }
     }
+    onColumnsChanged: card.scheduleColumnDragEligibilityRefresh()
+    onInteractionEligibleChanged: card.scheduleColumnDragEligibilityRefresh()
+    onOverviewActivityIdChanged: card.scheduleColumnDragEligibilityRefresh()
 
     Component.onDestruction: {
         card.clearWindowDropHover();
@@ -2283,8 +2305,38 @@ Item {
         return columnDragEligibilityRevision;
     }
 
+    function invalidateColumnDragEligibilityDelegates() {
+        if (!Number.isInteger(columnRepeater.count) || columnRepeater.count < 0
+                || columnRepeater.count > 131072) {
+            return false;
+        }
+        for (let index = 0; index < columnRepeater.count; index += 1) {
+            const source = columnRepeater.itemAt(index);
+            if (source && typeof source.invalidateColumnDragEligibility === "function") {
+                source.invalidateColumnDragEligibility();
+            }
+        }
+        return true;
+    }
+
+    function refreshColumnDragEligibilityDelegates() {
+        if (columnDragEligibilityRefreshPending
+                || !Number.isInteger(columnRepeater.count) || columnRepeater.count < 0
+                || columnRepeater.count > 131072) {
+            return false;
+        }
+        for (let index = 0; index < columnRepeater.count; index += 1) {
+            const source = columnRepeater.itemAt(index);
+            if (source && typeof source.refreshColumnDragEligibility === "function") {
+                source.refreshColumnDragEligibility();
+            }
+        }
+        return true;
+    }
+
     function scheduleColumnDragEligibilityRefresh() {
         columnDragEligibilityRefreshPending = true;
+        invalidateColumnDragEligibilityDelegates();
         columnDragEligibilityRefreshTimer.restart();
     }
 

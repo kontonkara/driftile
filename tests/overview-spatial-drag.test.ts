@@ -142,6 +142,10 @@ const columnPointerDrag = desktopCard.slice(
   desktopCard.indexOf("id: columnDragHandler"),
   desktopCard.indexOf("id: windowRepeater"),
 );
+const columnEligibilityPublication = desktopCard.slice(
+  desktopCard.indexOf("function invalidateColumnDragEligibility()"),
+  desktopCard.indexOf("function storeColumnDragHotSpot("),
+);
 const columnDropArea = desktopCard.slice(
   desktopCard.indexOf("id: columnDropArea"),
   desktopCard.indexOf("onCurrentChanged:"),
@@ -149,6 +153,10 @@ const columnDropArea = desktopCard.slice(
 const columnLifecycle = desktopCard.slice(
   desktopCard.indexOf("function selectedWindowIdForColumn("),
   desktopCard.indexOf("function beginWindowSpatialDrag("),
+);
+const columnEligibilityScheduler = desktopCard.slice(
+  desktopCard.indexOf("function invalidateColumnDragEligibilityDelegates()"),
+  desktopCard.indexOf("function presentationForWindowId("),
 );
 const columnPlanner = desktopCard.slice(
   desktopCard.indexOf("function buildColumnDropPlannerSnapshot("),
@@ -859,14 +867,25 @@ describe("spatial overview column drag lifecycle", () => {
     expect(desktopCard).toContain(
       "property bool columnDragEligibilityRefreshPending: false",
     );
-    expect(columnShell).toMatch(
-      /readonly property var selectedPresentation:\s*\{\s*const revision = card\.columnDragEligibilityRevision;\s*return revision >= 0 && !card\.columnDragEligibilityRefreshPending\s*\? card\.presentationForWindowId\(selectedWindowId\) : null;\s*\}/u,
+    expect(columnShell).toContain("property var selectedPresentation: null");
+    expect(columnShell).toContain("property bool dragEligible: false");
+    expect(columnEligibilityPublication).toMatch(
+      /function invalidateColumnDragEligibility\(\) \{\s*selectedPresentation = null;\s*dragEligible = false;\s*\}/u,
     );
-    expect(columnShell).toMatch(
-      /readonly property bool dragEligible:\s*\{\s*const revision = card\.columnDragEligibilityRevision;\s*const presentation = selectedPresentation;\s*return revision >= 0 && !card\.columnDragEligibilityRefreshPending\s*&& presentation !== null && card\.columnDragHandleIsEligible\(columnShell\);\s*\}/u,
+    expect(columnEligibilityPublication).toMatch(
+      /function refreshColumnDragEligibility\(\) \{\s*if \(card\.columnDragEligibilityRefreshPending\) \{\s*invalidateColumnDragEligibility\(\);\s*return false;\s*\}\s*selectedPresentation = card\.presentationForWindowId\(selectedWindowId\);\s*dragEligible = selectedPresentation !== null\s*&& card\.columnDragHandleIsEligible\(columnShell\);\s*return dragEligible;\s*\}/u,
+    );
+    expect(
+      columnEligibilityPublication.indexOf(
+        "selectedPresentation = card.presentationForWindowId(selectedWindowId);",
+      ),
+    ).toBeLessThan(
+      columnEligibilityPublication.indexOf(
+        "card.columnDragHandleIsEligible(columnShell)",
+      ),
     );
     expect(desktopCard).toMatch(
-      /Timer \{\s*id: columnDragEligibilityRefreshTimer\s*interval: 0\s*repeat: false\s*onTriggered: \{\s*card\.columnDragEligibilityRefreshPending = false;\s*card\.advanceColumnDragEligibilityRevision\(\);\s*\}\s*\}/u,
+      /Timer \{\s*id: columnDragEligibilityRefreshTimer\s*interval: 0\s*repeat: false\s*onTriggered: \{\s*card\.columnDragEligibilityRefreshPending = false;\s*card\.advanceColumnDragEligibilityRevision\(\);\s*card\.refreshColumnDragEligibilityDelegates\(\);\s*\}\s*\}/u,
     );
     for (const change of ["onItemAdded", "onItemRemoved"]) {
       const start = windowRepeaterLifecycle.indexOf(change);
@@ -885,10 +904,43 @@ describe("spatial overview column drag lifecycle", () => {
       /function advanceColumnDragEligibilityRevision\(\) \{\s*columnDragEligibilityRevision = columnDragEligibilityRevision >= 2147483646\s*\? 0 : columnDragEligibilityRevision \+ 1;\s*return columnDragEligibilityRevision;\s*\}/u,
     );
     expect(columnLifecycle).toMatch(
-      /function scheduleColumnDragEligibilityRefresh\(\) \{\s*columnDragEligibilityRefreshPending = true;\s*columnDragEligibilityRefreshTimer\.restart\(\);\s*\}/u,
+      /function invalidateColumnDragEligibilityDelegates\(\) \{\s*if \(!Number\.isInteger\(columnRepeater\.count\) \|\| columnRepeater\.count < 0\s*\|\| columnRepeater\.count > 131072\) \{\s*return false;\s*\}\s*for \(let index = 0; index < columnRepeater\.count; index \+= 1\) \{\s*const source = columnRepeater\.itemAt\(index\);\s*if \(source && typeof source\.invalidateColumnDragEligibility === "function"\) \{\s*source\.invalidateColumnDragEligibility\(\);\s*\}\s*\}\s*return true;\s*\}/u,
     );
-    expect(`${windowRepeaterLifecycle}\n${presentation}`).not.toContain(
-      "Qt.callLater",
+    expect(columnLifecycle).toMatch(
+      /function refreshColumnDragEligibilityDelegates\(\) \{\s*if \(columnDragEligibilityRefreshPending\s*\|\| !Number\.isInteger\(columnRepeater\.count\) \|\| columnRepeater\.count < 0\s*\|\| columnRepeater\.count > 131072\) \{\s*return false;\s*\}\s*for \(let index = 0; index < columnRepeater\.count; index \+= 1\) \{\s*const source = columnRepeater\.itemAt\(index\);\s*if \(source && typeof source\.refreshColumnDragEligibility === "function"\) \{\s*source\.refreshColumnDragEligibility\(\);\s*\}\s*\}\s*return true;\s*\}/u,
+    );
+    expect(columnLifecycle).toMatch(
+      /function scheduleColumnDragEligibilityRefresh\(\) \{\s*columnDragEligibilityRefreshPending = true;\s*invalidateColumnDragEligibilityDelegates\(\);\s*columnDragEligibilityRefreshTimer\.restart\(\);\s*\}/u,
+    );
+    expect(
+      columnEligibilityScheduler.indexOf(
+        "invalidateColumnDragEligibilityDelegates();",
+      ),
+    ).toBeLessThan(
+      columnEligibilityScheduler.indexOf(
+        "columnDragEligibilityRefreshTimer.restart();",
+      ),
+    );
+    expect(
+      `${windowRepeaterLifecycle}\n${presentation}\n${columnEligibilityPublication}\n${columnEligibilityScheduler}`,
+    ).not.toContain("Qt.callLater");
+    for (const delegateTraversal of [
+      "invalidateColumnDragEligibilityDelegates",
+      "refreshColumnDragEligibilityDelegates",
+    ]) {
+      const start = columnEligibilityScheduler.indexOf(
+        `function ${delegateTraversal}()`,
+      );
+      expect(start).toBeGreaterThanOrEqual(0);
+      const traversal = columnEligibilityScheduler.slice(start, start + 760);
+      expect(traversal).toContain("columnRepeater.count > 131072");
+      expect(traversal).toContain(
+        "for (let index = 0; index < columnRepeater.count; index += 1)",
+      );
+      expect(traversal).toContain("columnRepeater.itemAt(index)");
+    }
+    expect(columnEligibilityScheduler).not.toMatch(
+      /while\s*\(|for\s*\(\s*;;/u,
     );
     expect(columnLifecycle).toMatch(
       /function presentationForWindowId\(expectedWindowId\)[\s\S]*expectedWindowId\.length === 0[\s\S]*windowRepeater\.count > 131072[\s\S]*return null;/u,
