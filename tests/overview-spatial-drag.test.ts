@@ -836,6 +836,9 @@ describe("spatial overview column drag lifecycle", () => {
     expect(columnShell).toContain(
       "readonly property string selectedWindowId: card.selectedWindowIdForColumn(modelData)",
     );
+    expect(columnShell).toMatch(
+      /readonly property bool dragHandleAvailable:\s*\{[\s\S]*indexedListHasBoundedLength\(column\.members, 1, 256\)[\s\S]*column\.members\[selectedMemberIndex\]\.windowId === selectedWindowId;/u,
+    );
     expect(columnShell).toContain('readonly property string scope: "column"');
     expect(columnShell).toContain("Drag.source: columnShell");
     expect(columnShell).toContain('Drag.keys: ["driftile-column"]');
@@ -847,7 +850,7 @@ describe("spatial overview column drag lifecycle", () => {
     expect(columnGrip).toContain("x: visibleLeft + (visibleWidth - width) / 2");
     expect(columnGrip).toContain("width: Math.min(56, visibleWidth)");
     expect(columnGrip).toContain(
-      "visible: columnShell.dragEligible && visibleWidth >= 12",
+      "visible: columnShell.dragHandleAvailable && visibleWidth >= 12",
     );
     expect(columnGrip).toContain("height: 26");
     expect(columnGrip).toContain("anchors.topMargin: 5");
@@ -960,6 +963,9 @@ describe("spatial overview column drag lifecycle", () => {
     expect(columnLifecycle).toMatch(
       /function columnDragHandleIsEligible\(source\)[\s\S]*indexedListHasBoundedLength\(column\.members, 1, 256\)[\s\S]*windowSnapshotCanDrag\(selectedPresentation\)[\s\S]*columnDragMemberSnapshotsAreEligible\(column, source\.index\)[\s\S]*windowDropTargetIsExact\(\);/u,
     );
+    expect(columnLifecycle).toMatch(
+      /function refreshColumnDragEligibilityAtPointer\(source\) \{[\s\S]*source\.dragHandleAvailable !== true[\s\S]*columnDragEligibilityRefreshPending[\s\S]*source\.refreshColumnDragEligibility\(\);[\s\S]*source\.dragEligible === true && columnDragHandleIsEligible\(source\);/u,
+    );
   });
 
   it("starts mouse and touchscreen drags only after exact frozen ownership exists", () => {
@@ -985,7 +991,7 @@ describe("spatial overview column drag lifecycle", () => {
       /onHoveredChanged:[\s\S]*if \(hovered\)[\s\S]*card\.claimColumnPointerHover\(columnShell\);[\s\S]*card\.releaseColumnPointerHover\(columnShell\);/u,
     );
     expect(columnLifecycle).toMatch(
-      /function claimColumnPointerHover\(source\)[\s\S]*source\.sourceCard !== card[\s\S]*source\.dragEligible !== true[\s\S]*columnPointerHoverSource = source;/u,
+      /function claimColumnPointerHover\(source\)[\s\S]*source\.sourceCard !== card[\s\S]*!refreshColumnDragEligibilityAtPointer\(source\)[\s\S]*columnPointerHoverSource = source;/u,
     );
     expect(columnLifecycle).toMatch(
       /function releaseColumnPointerHover\(source\)[\s\S]*columnPointerHoverSource === source[\s\S]*columnPointerHoverSource = null;/u,
@@ -1007,7 +1013,7 @@ describe("spatial overview column drag lifecycle", () => {
       /onPressedChanged:[\s\S]*if \(pressed\)[\s\S]*card\.claimColumnPointerPress\(columnShell\);[\s\S]*point\.state === EventPoint\.Released[\s\S]*card\.releaseColumnPointerPress\(columnShell\);/u,
     );
     expect(columnLifecycle).toMatch(
-      /function claimColumnPointerPress\(source\)[\s\S]*source\.sourceCard !== card[\s\S]*source\.dragEligible !== true[\s\S]*columnPointerPressSource = source;/u,
+      /function claimColumnPointerPress\(source\)[\s\S]*source\.sourceCard !== card[\s\S]*!refreshColumnDragEligibilityAtPointer\(source\)[\s\S]*columnPointerPressSource = source;/u,
     );
     expect(columnLifecycle).toMatch(
       /function releaseColumnPointerPress\(source\)[\s\S]*columnPointerPressSource === source[\s\S]*columnPointerPressSource = null;/u,
@@ -1019,6 +1025,9 @@ describe("spatial overview column drag lifecycle", () => {
       /onPressedChanged:[\s\S]*if \(pressed\)[\s\S]*columnShell\.touchColumnDragArmed = false;[\s\S]*card\.claimColumnPointerPress\(columnShell\);[\s\S]*point\.state === EventPoint\.Released[\s\S]*!columnTouchDragHandler\.active[\s\S]*card\.releaseColumnPointerPress\(columnShell\);/u,
     );
     expect(columnTouchHold).toContain("onLongPressed:");
+    expect(columnTouchHold).toContain(
+      "card.refreshColumnDragEligibilityAtPointer(columnShell)",
+    );
     expect(columnTouchHold).toContain(
       "columnShell.touchColumnDragArmed = true",
     );
@@ -1047,6 +1056,9 @@ describe("spatial overview column drag lifecycle", () => {
     }
     expect(columnPointerDrag).toContain(
       "acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad",
+    );
+    expect(columnLifecycle).toMatch(
+      /function beginColumnSpatialDrag\(source, scenePosition\)[\s\S]*!refreshColumnDragEligibilityAtPointer\(source\)[\s\S]*const snapshot = captureColumnDragSnapshot\(source\);/u,
     );
     expect(columnLifecycle).toMatch(
       /source\.columnDragSnapshot = snapshot;\s*source\.columnSpatialDragLifecycleActive = true;\s*columnDragActiveSource = source;\s*columnSpatialDragStarted/u,

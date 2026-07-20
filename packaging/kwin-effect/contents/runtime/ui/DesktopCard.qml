@@ -427,6 +427,16 @@ Item {
                 readonly property var liveGeometryPlan: card.spatialLiveColumnPlan(index)
                 readonly property var frame: card.columnShellFrame(index, liveGeometryPlan)
                 readonly property string selectedWindowId: card.selectedWindowIdForColumn(modelData)
+                readonly property bool dragHandleAvailable: {
+                    const column = modelData;
+                    const selectedMemberIndex = column ? column.selectedMemberIndex : -1;
+                    return column && card.indexedListHasBoundedLength(column.members, 1, 256)
+                        && (column.presentation === "stacked" || column.presentation === "tabbed")
+                        && Number.isInteger(selectedMemberIndex) && selectedMemberIndex >= 0
+                        && selectedMemberIndex < column.members.length
+                        && typeof selectedWindowId === "string" && selectedWindowId.length > 0
+                        && column.members[selectedMemberIndex].windowId === selectedWindowId;
+                }
                 property var selectedPresentation: null
                 readonly property var candidate: selectedPresentation ? selectedPresentation.candidate : null
                 property bool dragEligible: false
@@ -530,7 +540,7 @@ Item {
                     x: visibleLeft + (visibleWidth - width) / 2
                     width: Math.min(56, visibleWidth)
                     height: 26
-                    visible: columnShell.dragEligible && visibleWidth >= 12
+                    visible: columnShell.dragHandleAvailable && visibleWidth >= 12
                     enabled: visible && (!card.spatialDirectDragBlocked
                                           || card.columnDragActiveSource === columnShell)
                     z: 1
@@ -551,7 +561,7 @@ Item {
                         id: columnPointerHoverHandler
 
                         acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
-                        enabled: columnGrabHandle.enabled && columnShell.dragEligible
+                        enabled: columnGrabHandle.enabled
                         cursorShape: Qt.SizeAllCursor
 
                         onHoveredChanged: {
@@ -571,7 +581,7 @@ Item {
                         acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
                         acceptedModifiers: Qt.NoModifier
                         gesturePolicy: TapHandler.ReleaseWithinBounds
-                        enabled: columnGrabHandle.enabled && columnShell.dragEligible
+                        enabled: columnGrabHandle.enabled
                         grabPermissions: PointerHandler.ApprovesTakeOverByHandlersOfDifferentType
                                          | PointerHandler.ApprovesCancellation
 
@@ -607,7 +617,7 @@ Item {
                             }
                         }
                         onLongPressed: {
-                            if (columnShell.dragEligible) {
+                            if (card.refreshColumnDragEligibilityAtPointer(columnShell)) {
                                 columnShell.touchColumnDragArmed = true;
                             }
                         }
@@ -621,7 +631,7 @@ Item {
                         acceptedDevices: PointerDevice.TouchScreen
                         acceptedModifiers: Qt.NoModifier
                         dragThreshold: columnShell.touchColumnDragArmed ? 0 : 32767
-                        enabled: columnGrabHandle.enabled && columnShell.dragEligible
+                        enabled: columnGrabHandle.enabled
                         grabPermissions: PointerHandler.CanTakeOverFromHandlersOfSameType
                                          | PointerHandler.CanTakeOverFromHandlersOfDifferentType
                                          | PointerHandler.CanTakeOverFromItems
@@ -669,7 +679,7 @@ Item {
                         acceptedButtons: Qt.LeftButton
                         acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
                         acceptedModifiers: Qt.NoModifier
-                        enabled: columnGrabHandle.enabled && columnShell.dragEligible
+                        enabled: columnGrabHandle.enabled
                         grabPermissions: PointerHandler.CanTakeOverFromHandlersOfSameType
                                          | PointerHandler.CanTakeOverFromHandlersOfDifferentType
                                          | PointerHandler.CanTakeOverFromItems
@@ -2415,7 +2425,8 @@ Item {
 
     function claimColumnPointerPress(source) {
         try {
-            if (!source || source.sourceCard !== card || source.dragEligible !== true
+            if (!source || source.sourceCard !== card
+                    || !refreshColumnDragEligibilityAtPointer(source)
                     || (columnPointerPressSource !== null && columnPointerPressSource !== source)) {
                 return false;
             }
@@ -2428,7 +2439,8 @@ Item {
 
     function claimColumnPointerHover(source) {
         try {
-            if (!source || source.sourceCard !== card || source.dragEligible !== true
+            if (!source || source.sourceCard !== card
+                    || !refreshColumnDragEligibilityAtPointer(source)
                     || (columnPointerHoverSource !== null && columnPointerHoverSource !== source)) {
                 return false;
             }
@@ -2482,6 +2494,20 @@ Item {
                     && windowSnapshotCanDrag(selectedPresentation)
                     && columnDragMemberSnapshotsAreEligible(column, source.index)
                     && windowDropTargetIsExact();
+        } catch (error) {
+            return false;
+        }
+    }
+
+    function refreshColumnDragEligibilityAtPointer(source) {
+        try {
+            if (!source || source.sourceCard !== card || source.dragHandleAvailable !== true
+                    || columnDragEligibilityRefreshPending
+                    || typeof source.refreshColumnDragEligibility !== "function") {
+                return false;
+            }
+            source.refreshColumnDragEligibility();
+            return source.dragEligible === true && columnDragHandleIsEligible(source);
         } catch (error) {
             return false;
         }
@@ -2750,7 +2776,8 @@ Item {
     function beginColumnSpatialDrag(source, scenePosition) {
         try {
             if (!source || source.columnSpatialDragLifecycleActive === true
-                    || !spatialDragScenePointIsFinite(scenePosition)) {
+                    || !spatialDragScenePointIsFinite(scenePosition)
+                    || !refreshColumnDragEligibilityAtPointer(source)) {
                 return;
             }
             const snapshot = captureColumnDragSnapshot(source);
