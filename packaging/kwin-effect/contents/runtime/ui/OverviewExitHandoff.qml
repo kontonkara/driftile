@@ -32,9 +32,6 @@ Item {
     readonly property bool liveThumbnailReady: liveThumbnailEligible
         && exitThumbnailLoader.status === Loader.Ready
         && objectAvailable(exitThumbnailLoader.item)
-    readonly property bool liveThumbnailPending: liveThumbnailEligible
-        && exitThumbnailLoader.status !== Loader.Ready
-        && exitThumbnailLoader.status !== Loader.Error
     readonly property string fallbackReason: plannedFallbackReason()
     readonly property string visualMode: liveThumbnailReady
         ? "thumbnail" : exactWindowCandidate ? "monochrome" : "row-fallback"
@@ -44,11 +41,9 @@ Item {
     readonly property rect animatedRect: interpolatedRect(safeSourceRect, localTargetRect,
                                                           easedProgress)
     readonly property real chromeOpacity: 1 - boundedUnit(boundedProgress / 0.45)
-    readonly property real surfaceOpacity: liveThumbnailPending
-        ? 1 : 1 - easedProgress
+    readonly property real surfaceOpacity: 1 - easedProgress
     readonly property real windowOverlayOpacity:
-        liveThumbnailPending ? 0
-        : 1 - boundedUnit((boundedProgress - 0.84) / 0.16)
+        1 - boundedUnit((boundedProgress - 0.84) / 0.16)
     readonly property real rowFallbackOpacity: surfaceOpacity
     readonly property real rowFallbackScale: 1 - 0.06 * easedProgress
     property bool completionReported: false

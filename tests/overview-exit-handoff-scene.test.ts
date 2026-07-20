@@ -76,9 +76,7 @@ describe("overview exit handoff scene", () => {
     expect(handoff).toMatch(
       /readonly property bool liveThumbnailReady: liveThumbnailEligible[\s\S]*exitThumbnailLoader\.status === Loader\.Ready[\s\S]*objectAvailable\(exitThumbnailLoader\.item\)/u,
     );
-    expect(handoff).toMatch(
-      /readonly property bool liveThumbnailPending: liveThumbnailEligible[\s\S]*exitThumbnailLoader\.status !== Loader\.Ready[\s\S]*exitThumbnailLoader\.status !== Loader\.Error/u,
-    );
+    expect(handoff).not.toContain("liveThumbnailPending");
     expect(handoff).toContain(
       "readonly property rect localTargetRect: rectForOutput(targetRect, targetOutputGeometry)",
     );
@@ -181,11 +179,13 @@ describe("overview exit handoff scene", () => {
       "readonly property real chromeOpacity: 1 - boundedUnit(boundedProgress / 0.45)",
     );
     expect(handoff).toContain(
-      "readonly property real surfaceOpacity: liveThumbnailPending",
+      "readonly property real surfaceOpacity: 1 - easedProgress",
     );
-    expect(handoff).toContain("? 1 : 1 - easedProgress");
     expect(handoff).toMatch(
-      /readonly property real windowOverlayOpacity:\s*liveThumbnailPending \? 0\s*: 1 - boundedUnit/u,
+      /readonly property real windowOverlayOpacity:\s*1 - boundedUnit/u,
+    );
+    expect(handoff).not.toMatch(
+      /(?:surfaceOpacity|windowOverlayOpacity):\s*liveThumbnailPending/u,
     );
   });
 

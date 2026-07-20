@@ -71,6 +71,25 @@ const hoverRouting = overviewScene.slice(
   overviewScene.indexOf("function beginWindowWorkspaceHover("),
   overviewScene.indexOf("function windowSpatialDragSourceIsExact("),
 );
+const sceneDragLifecycle = overviewScene.slice(
+  overviewScene.indexOf("function beginWindowSpatialEdgePan("),
+  overviewScene.indexOf("function beginWindowWorkspaceHover("),
+);
+const sceneDragVisual = overviewScene.slice(
+  overviewScene.indexOf("id: spatialWindowDragVisual"),
+  overviewScene.indexOf("OverviewExitHandoff {"),
+);
+const sceneDragVisualLifecycle = overviewScene.slice(
+  overviewScene.indexOf("function captureSpatialWindowDragVisual("),
+  overviewScene.indexOf("function handleSpatialPresentationPhaseChanged("),
+);
+const spatialCanvas = overviewScene.slice(
+  overviewScene.indexOf("id: spatialCanvas"),
+  overviewScene.indexOf(
+    "Repeater {",
+    overviewScene.indexOf("id: spatialCanvas"),
+  ),
+);
 
 describe("spatial overview window drag lifecycle", () => {
   it("declares one deduplicated source lifecycle for exact thumbnails", () => {
@@ -151,6 +170,83 @@ describe("spatial overview window drag lifecycle", () => {
         /storeSpatialDragHotSpot\((?:point\.)?scenePosition\)[\s\S]*?Drag\.drop\(\)/u,
       );
     }
+  });
+
+  it("keeps one visible window proxy under the initial grab point across cards", () => {
+    expect(thumbnailSurface).toContain(
+      "property point spatialDragHotSpot: Qt.point(0, 0)",
+    );
+    for (const drag of [thumbnailDrag, thumbnailTouchDrag]) {
+      expect(drag).toMatch(
+        /storeSpatialDragHotSpot\(point\.scenePosition\)[\s\S]*?Drag\.active = true/u,
+      );
+      expect(drag).toContain("target: null");
+    }
+    expect(presentation).toContain(
+      "opacity: thumbnailShell.Drag.active ? 0.2 : 1",
+    );
+    expect(sceneDragVisual).toContain("Loader {");
+    expect(sceneDragVisual).toContain('color: "#e61b2432"');
+    expect(sceneDragVisual.indexOf('color: "#e61b2432"')).toBeLessThan(
+      sceneDragVisual.indexOf("Loader {"),
+    );
+    expect(sceneDragVisual).toContain(
+      "active: spatialWindowDragVisual.plan !== null",
+    );
+    expect(sceneDragVisual).toContain("asynchronous: false");
+    expect(sceneDragVisual).toContain("KWin.WindowThumbnail {");
+    expect(sceneDragVisual).toContain(
+      'wId: spatialWindowDragVisual.plan ? spatialWindowDragVisual.plan.windowId : ""',
+    );
+    expect(sceneDragVisual).toContain(
+      "x: root.spatialEdgePanPointerX - (plan ? plan.hotSpotX : 0)",
+    );
+    expect(sceneDragVisual).toContain(
+      "y: root.spatialEdgePanPointerY - (plan ? plan.hotSpotY : 0)",
+    );
+    expect(sceneDragVisual).toContain(
+      "visible: root.spatialWindowDragVisualIsExact()",
+    );
+    expect(sceneDragVisual).toContain("enabled: false");
+  });
+
+  it("captures, advances, and clears the drag proxy without a move-time scan", () => {
+    expect(sceneDragLifecycle).toMatch(
+      /storeSpatialEdgePanScenePoint\(sceneX, sceneY\)[\s\S]*?spatialWindowDragSource = source;[\s\S]*?captureSpatialWindowDragVisual\(source\);/u,
+    );
+    expect(sceneDragLifecycle).toMatch(
+      /function updateWindowSpatialEdgePan\([\s\S]*?storeSpatialEdgePanScenePoint\(sceneX, sceneY\);/u,
+    );
+    expect(sceneDragVisualLifecycle).toContain(
+      "const target = source ? source.thumbnailTarget : null;",
+    );
+    expect(sceneDragVisualLifecycle).toContain(
+      "const hotSpot = target ? target.spatialDragHotSpot : null;",
+    );
+    expect(sceneDragVisualLifecycle).toContain(
+      "const visualFrame = target.mapToItem(root, 0, 0, target.width, target.height);",
+    );
+    expect(sceneDragVisualLifecycle).toContain(
+      "const mappedHotSpot = target.mapToItem(root, hotSpot.x, hotSpot.y);",
+    );
+    expect(sceneDragVisualLifecycle).toContain(
+      "spatialWindowDragVisualPlan = Object.freeze({",
+    );
+    expect(sceneDragVisualLifecycle).toMatch(
+      /function resetSpatialEdgePanTracking\(\) \{[\s\S]*?clearSpatialWindowDragVisual\(\);[\s\S]*?clearSpatialEdgePanScenePoint\(\);/u,
+    );
+    expect(`${sceneDragLifecycle}\n${sceneDragVisualLifecycle}`).not.toMatch(
+      /KWin\.Workspace\.(?:stackingOrder|windows)|\b(?:Timer|MouseArea)\s*\{|planOverviewSpatialRowGeometry/u,
+    );
+  });
+
+  it("fades the spatial canvas with presentation progress outside exit handoff", () => {
+    expect(spatialCanvas).toMatch(
+      /opacity: root\.spatialExitHandoffActive\s*\? overviewExitHandoffOverlay\.surfaceOpacity : root\.spatialPresentationProgress/u,
+    );
+    expect(spatialCanvas).not.toMatch(
+      /overviewExitHandoffOverlay\.surfaceOpacity\s*:\s*1/u,
+    );
   });
 
   it("shares one touchscreen tap and long-press owner without widening drag eligibility", () => {
@@ -329,22 +425,23 @@ describe("spatial overview window drag lifecycle", () => {
     );
   });
 
-  it("renders a bounded preview from the cached exact drop target", () => {
+  it("solves the final bounded window frame from the cached exact drop target", () => {
     expect(dropArea).toContain(
       "readonly property var spatialPreview: validTarget",
     );
     expect(dropArea).toContain(
-      "card.planWindowDropPreview(card.windowDropHoverTarget, card.windowDropHoverSnapshot)",
+      "card.planWindowDropPreview(card.windowDropHoverSource,",
     );
     expect(dropArea).toContain("id: spatialWindowDropPreviewSurface");
     expect(dropArea).toContain("id: spatialWindowDropPreviewMarker");
+    expect(dropArea).toMatch(/anchors\.fill: parent\s*clip: true/u);
     expect(dropArea).toContain('plan.kind === "empty-row"');
     expect(dropArea).toContain('plan.kind === "stack-insertion"');
     expect(dropPlanner).toContain("const previewFrames = Object.create(null)");
     expect(dropPlanner).toContain("Object.freeze(previewFrames)");
     expect(dropPlanner).toContain("previewFrames,");
     expect(dropPlanner).toContain(
-      "function planWindowDropPreview(target, snapshot)",
+      "function planWindowDropPreview(source, target, snapshot)",
     );
     expect(dropPlanner).toContain(
       "windowDropPlannerTargetIsExact(target, snapshot)",
@@ -352,14 +449,57 @@ describe("spatial overview window drag lifecycle", () => {
     expect(dropPlanner).toContain(
       "function windowDropPreviewFrameIsBounded(frame, snapshot)",
     );
+    expect(dropPlanner).toContain("runtime.planOverviewSpatialRowGeometry({");
+    expect(dropPlanner.match(/planOverviewSpatialRowGeometry/gu)).toHaveLength(
+      2,
+    );
+    expect(dropPlanner).toContain(
+      "buildWindowDropStackPreviewColumns(sourceState, target, columns, sameContext)",
+    );
+    expect(dropPlanner).toContain(
+      "buildWindowDropBoundaryPreviewColumns(sourceState, target, columns, sameContext)",
+    );
+    expect(dropPlanner).toContain(
+      "columns.push(windowDropPreviewSingletonColumn(sourceState))",
+    );
+    expect(dropPlanner).toContain(
+      "height: sourceFrame.height * projectionScale",
+    );
+    expect(dropPlanner).toContain("width: sourceFrame.width * projectionScale");
+    expect(dropPlanner).toContain(
+      "x: viewportOriginX + (sourceFrame.x - plan.camera.base) * projectionScale",
+    );
+    expect(dropPlanner).not.toContain("sourceFrame.x - logicalViewportOffset");
+    expect(dropPlanner).toContain("Object.isFrozen(plan.camera)");
+    expect(dropPlanner).toContain("plan.camera.minimum > plan.camera.base");
+    expect(dropPlanner).toContain("plan.camera.base > plan.camera.maximum");
     expect(dropPlanner).toContain(
       "frame.x + frame.width <= snapshot.cardWidth",
     );
     expect(dropPlanner).toContain(
       "frame.y + frame.height <= snapshot.cardHeight",
     );
+    expect(dropPlanner).not.toMatch(
+      /\bhalfHeight\b|\bsurfaceWidth\b|Math\.min\(28|\bminimumExtent\b/u,
+    );
     expect(`${dropArea}\n${dropPlanner}`).not.toMatch(
       /\b(?:Behavior|NumberAnimation|Timer)\b|\.setValue\s*\(/u,
+    );
+  });
+
+  it("reuses the cached target and only resolves a new frame when its zone changes", () => {
+    const hoverMove = hoverLifecycle.slice(
+      hoverLifecycle.indexOf("function moveWindowDropHoverToPositions("),
+      hoverLifecycle.indexOf("function rejectWindowDropHover("),
+    );
+    expect(hoverMove).toContain(
+      "const target = hitWindowDropPlannerSnapshot(windowDropHoverSnapshot, localPosition);",
+    );
+    expect(hoverMove).toMatch(
+      /if \(windowDropHoverTarget !== target\) \{\s*windowDropHoverTarget = target;\s*\}/u,
+    );
+    expect(hoverMove).not.toMatch(
+      /buildWindowDropPlannerSnapshot|planWindowDropPreview|planOverviewSpatialRowGeometry/u,
     );
   });
 
@@ -388,9 +528,23 @@ describe("spatial overview window drag lifecycle", () => {
   });
 
   it("keeps exact layout targets exclusive to current tiled sources", () => {
+    expect(presentation).toContain(
+      "card.windowDropSourceTiledPresentationIsExact(windowPresentation)",
+    );
     expect(hoverLifecycle).toContain(
       "function windowDropSourceTiledPresentationIsExact(source)",
     );
+    expect(hoverLifecycle).toContain(
+      'typeof sourceCard.ownedWindowDropTiledPresentationIsExact === "function"',
+    );
+    expect(hoverLifecycle).toContain(
+      "sourceCard.ownedWindowDropTiledPresentationIsExact(source)",
+    );
+    expect(hoverLifecycle).toContain(
+      "function ownedWindowDropTiledPresentationIsExact(source)",
+    );
+    expect(hoverLifecycle).toContain("source.sourceCard === card");
+    expect(hoverLifecycle).toContain("source.sourceCard.context === context");
     expect(hoverLifecycle).toContain("tiledPresentations[windowId] === tiled");
     expect(hoverLifecycle).toContain("tiled.selected === true");
     expect(hoverLifecycle).toContain("frame.floating === false");
@@ -399,6 +553,45 @@ describe("spatial overview window drag lifecycle", () => {
         /windowDropSourceTiledPresentationIsExact\(source\)/gu,
       ),
     ).toHaveLength(3);
+
+    const routedValidation = hoverLifecycle.slice(
+      hoverLifecycle.indexOf(
+        "function windowDropSourceTiledPresentationIsExact(source)",
+      ),
+      hoverLifecycle.indexOf(
+        "function ownedWindowDropTiledPresentationIsExact(source)",
+      ),
+    );
+    expect(routedValidation).not.toContain("tiledPresentations[windowId]");
+    expect(routedValidation).not.toContain("source.sourceCard === card");
+    expect(routedValidation).not.toContain("KWin.Workspace.activeWindow");
+  });
+
+  it("supplies height bounds only for columns whose solver state needs them", () => {
+    expect(dropPlanner).toMatch(
+      /for \(const column of columns\) \{\s*if \(!windowDropPreviewColumnUsesExplicitHeights\(column\)\) \{\s*continue;\s*\}\s*for \(const member of column\.members\)/u,
+    );
+    expect(dropPlanner).not.toContain(
+      "const needsBounds = columns.some(column => windowDropPreviewColumnUsesExplicitHeights(column))",
+    );
+  });
+
+  it("rejects singleton boundary no-ops and retains a multi-member self anchor", () => {
+    expect(dropPlanner).toContain(
+      "originalSourceColumnIndex = sourceLocation.columnIndex",
+    );
+    expect(dropPlanner).toMatch(
+      /if \(movedColumn && insertionIndex === originalSourceColumnIndex\) \{\s*return null;\s*\}/u,
+    );
+    expect(dropPlanner).toMatch(
+      /if \(target\.targetWindowId === sourceState\.windowId\) \{\s*retainedSourceAnchorIndex = sourceLocation\.columnIndex;\s*\}/u,
+    );
+    expect(dropPlanner).toContain(
+      "let targetColumnIndex = retainedSourceAnchorIndex",
+    );
+    expect(dropPlanner).toContain(
+      "Presentation is geometry-neutral for this one-member preview; runtime policy owns the commit value.",
+    );
   });
 
   it("resolves one exact destination target while the source lifecycle is live", () => {

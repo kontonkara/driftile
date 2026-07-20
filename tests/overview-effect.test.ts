@@ -567,8 +567,9 @@ describe("overview effect package", () => {
       /presentationAnimation\.duration = Math\.max\(1, Math\.round\(220 \* distance\)\)/u,
     );
     expect(controller).toMatch(
-      /if \(phase === "opening" \|\| distance <= 0\.000001\) \{\s*presentationProgress = target;\s*completePresentationTransition\(token, sessionId, phase, target\);\s*return true;\s*\}[\s\S]*presentationAnimation\.duration = Math\.max\(1, Math\.round\(220 \* distance\)\);\s*presentationAnimation\.start\(\);/u,
+      /if \(distance <= 0\.000001\) \{\s*presentationProgress = target;\s*completePresentationTransition\(token, sessionId, phase, target\);\s*return true;\s*\}[\s\S]*presentationAnimation\.duration = Math\.max\(1, Math\.round\(220 \* distance\)\);\s*presentationAnimation\.start\(\);/u,
     );
+    expect(controller).not.toContain('phase === "opening" || distance');
     expect(controller).toMatch(
       /completePresentationTransition[\s\S]*token !== pendingPresentationTransitionToken[\s\S]*sessionId !== activeSessionId/u,
     );
@@ -594,7 +595,7 @@ describe("overview effect package", () => {
     expect(reader.match(/settings\.value\("layout-v1", ""\)/gu)).toHaveLength(
       1,
     );
-    expect(reader).toContain("readonly property int sampleInterval: 325");
+    expect(reader).toContain("readonly property int sampleInterval: 120");
     expect(reader).toContain("property int requestId: 0");
     expect(reader).toContain('property string stableSample: ""');
     expect(reader).toContain("signal ready(int requestId, string document)");

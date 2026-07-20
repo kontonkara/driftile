@@ -52,7 +52,7 @@ describe("overview activation controller", () => {
       reader.indexOf("function cancel()"),
     );
 
-    expect(reader).toContain("readonly property int sampleInterval: 325");
+    expect(reader).toContain("readonly property int sampleInterval: 120");
     expect(sample).toContain("const synchronousSample = readSample();");
     expect(sample).toContain("synchronousSample === stableSample");
     expect(sample).toContain("firstSample = synchronousSample;");

@@ -272,6 +272,7 @@ Rectangle {
     property var spatialWindowDragSource: null
     property string spatialWindowDragSourceDesktopId: ""
     property int spatialWindowDragSourceWorkspaceIndex: -1
+    property var spatialWindowDragVisualPlan: null
     property var workspaceGapPreviewSource: null
     property string workspaceGapPreviewWindowId: ""
     property int workspaceGapPreviewIndex: -1
@@ -742,6 +743,34 @@ Rectangle {
     }
 
     Connections {
+        target: root.spatialWindowDragSource
+        enabled: target !== null
+        ignoreUnknownSignals: true
+
+        function onDestroyed() {
+            root.resetSpatialEdgePanTracking();
+        }
+
+        function onDragEligibleChanged() {
+            if (target && target.dragEligible !== true) {
+                root.resetSpatialEdgePanTracking();
+            }
+        }
+
+        function onMinimizedWindowChanged() {
+            if (target && target.minimizedWindow === true) {
+                root.resetSpatialEdgePanTracking();
+            }
+        }
+
+        function onSpatialDragLifecycleActiveChanged() {
+            if (target && target.spatialDragLifecycleActive !== true) {
+                root.resetSpatialEdgePanTracking();
+            }
+        }
+    }
+
+    Connections {
         target: root.spatialLiveCameraProbeWindow
         enabled: target !== null && target !== root.spatialLiveCameraWindow
         ignoreUnknownSignals: true
@@ -1141,7 +1170,8 @@ Rectangle {
         y: root.cardTop + presentationOffsetY
         width: root.width
         height: Math.max(0, root.desktopIds.length * (root.cardHeight + root.cardGap) - root.cardGap)
-        opacity: root.spatialExitHandoffActive ? overviewExitHandoffOverlay.surfaceOpacity : 1
+        opacity: root.spatialExitHandoffActive
+            ? overviewExitHandoffOverlay.surfaceOpacity : root.spatialPresentationProgress
         transform: Scale {
             origin.x: spatialCanvas.width / 2
             origin.y: spatialCanvas.presentationWorkspaceIndex * (root.cardHeight + root.cardGap)
@@ -1211,6 +1241,8 @@ Rectangle {
                         keyboardSelectionId: root.keyboardSelectionId
                         liveGeometryEnabled: current && !root.spatialLiveGeometryIsManuallyDetached(
                                                  root.outputId, desktopCardLoader.modelData)
+                        overviewAlwaysCenterSingleColumn: root.overviewAlwaysCenterSingleColumn
+                        overviewGap: root.overviewGap
                         outputId: root.outputId
                         outputName: root.outputName
                         presentationProgress: root.spatialPresentationProgress
@@ -1369,6 +1401,47 @@ Rectangle {
                     radius: height / 2
                 }
             }
+        }
+    }
+
+    Item {
+        id: spatialWindowDragVisual
+
+        readonly property var plan: root.spatialWindowDragVisualPlan
+
+        x: root.spatialEdgePanPointerX - (plan ? plan.hotSpotX : 0)
+        y: root.spatialEdgePanPointerY - (plan ? plan.hotSpotY : 0)
+        width: plan ? plan.width : 0
+        height: plan ? plan.height : 0
+        visible: root.spatialWindowDragVisualIsExact()
+        enabled: false
+        clip: true
+        opacity: root.spatialPresentationProgress
+        z: 23000
+
+        Rectangle {
+            anchors.fill: parent
+            color: "#e61b2432"
+        }
+
+        Loader {
+            anchors.fill: parent
+            active: spatialWindowDragVisual.plan !== null
+            asynchronous: false
+
+            sourceComponent: Component {
+                KWin.WindowThumbnail {
+                    wId: spatialWindowDragVisual.plan ? spatialWindowDragVisual.plan.windowId : ""
+                }
+            }
+        }
+
+        Rectangle {
+            anchors.fill: parent
+            color: "#12000000"
+            border.width: 2
+            border.color: "#f2d7e8ff"
+            radius: 4
         }
     }
 
@@ -2228,6 +2301,7 @@ Rectangle {
         spatialWindowDragSource = source;
         spatialWindowDragSourceDesktopId = expectedDesktopId;
         spatialWindowDragSourceWorkspaceIndex = workspaceIndex;
+        captureSpatialWindowDragVisual(source);
     }
 
     function updateWindowSpatialEdgePan(source, expectedDesktopId, sceneX, sceneY) {
@@ -2523,9 +2597,79 @@ Rectangle {
         spatialEdgePanPointerY = Number.NaN;
     }
 
+    function captureSpatialWindowDragVisual(source) {
+        clearSpatialWindowDragVisual();
+        try {
+            const target = source ? source.thumbnailTarget : null;
+            const hotSpot = target ? target.spatialDragHotSpot : null;
+            if (!target || !hotSpot || typeof source.windowId !== "string"
+                    || source.windowId.length === 0 || !Number.isFinite(target.width)
+                    || !Number.isFinite(target.height) || target.width <= 0 || target.height <= 0
+                    || !Number.isFinite(hotSpot.x) || !Number.isFinite(hotSpot.y)) {
+                return false;
+            }
+
+            const visualFrame = target.mapToItem(root, 0, 0, target.width, target.height);
+            const mappedHotSpot = target.mapToItem(root, hotSpot.x, hotSpot.y);
+            if (!visualFrame || !mappedHotSpot
+                    || !Number.isFinite(visualFrame.x) || !Number.isFinite(visualFrame.y)
+                    || !Number.isFinite(visualFrame.width) || !Number.isFinite(visualFrame.height)
+                    || !Number.isFinite(mappedHotSpot.x) || !Number.isFinite(mappedHotSpot.y)) {
+                return false;
+            }
+
+            const visualWidth = visualFrame.width;
+            const visualHeight = visualFrame.height;
+            const visualHotSpotX = mappedHotSpot.x - visualFrame.x;
+            const visualHotSpotY = mappedHotSpot.y - visualFrame.y;
+            if (!Number.isFinite(visualWidth) || visualWidth <= 0
+                    || !Number.isFinite(visualHeight) || visualHeight <= 0
+                    || !Number.isFinite(visualHotSpotX) || !Number.isFinite(visualHotSpotY)) {
+                return false;
+            }
+
+            spatialWindowDragVisualPlan = Object.freeze({
+                height: visualHeight,
+                hotSpotX: visualHotSpotX,
+                hotSpotY: visualHotSpotY,
+                width: visualWidth,
+                windowId: source.windowId
+            });
+            return true;
+        } catch (error) {
+            clearSpatialWindowDragVisual();
+            return false;
+        }
+    }
+
+    function clearSpatialWindowDragVisual() {
+        spatialWindowDragVisualPlan = null;
+    }
+
+    function spatialWindowDragVisualIsExact() {
+        try {
+            const plan = spatialWindowDragVisualPlan;
+            return spatialWindowDragSource !== null
+                && spatialWindowDragSource.dragEligible === true
+                && spatialWindowDragSource.minimizedWindow !== true
+                && spatialWindowDragSource.spatialDragLifecycleActive === true
+                && plan && Object.isFrozen(plan)
+                && spatialWindowDragSource.windowId === plan.windowId
+                && plan.windowId.length > 0
+                && Number.isFinite(spatialEdgePanPointerX)
+                && Number.isFinite(spatialEdgePanPointerY)
+                && Number.isFinite(plan.width) && plan.width > 0
+                && Number.isFinite(plan.height) && plan.height > 0
+                && Number.isFinite(plan.hotSpotX) && Number.isFinite(plan.hotSpotY);
+        } catch (error) {
+            return false;
+        }
+    }
+
     function resetSpatialEdgePanTracking() {
         resetWindowWorkspaceHover();
         clearWorkspaceGapPreview();
+        clearSpatialWindowDragVisual();
         spatialWindowDragSource = null;
         spatialWindowDragSourceDesktopId = "";
         spatialWindowDragSourceWorkspaceIndex = -1;

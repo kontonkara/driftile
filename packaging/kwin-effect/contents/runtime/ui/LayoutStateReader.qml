@@ -6,7 +6,7 @@ import QtQml.Models
 QtObject {
     id: root
 
-    readonly property int sampleInterval: 325
+    readonly property int sampleInterval: 120
     property bool sampling: false
     property string firstSample: ""
     property string stableSample: ""

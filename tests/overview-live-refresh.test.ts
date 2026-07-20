@@ -52,7 +52,7 @@ describe("overview live model refresh", () => {
       /overviewModel = null|active = false|loading = true|\bTimer\s*\{|setInterval|setTimeout/u,
     );
 
-    expect(reader).toContain("readonly property int sampleInterval: 325");
+    expect(reader).toContain("readonly property int sampleInterval: 120");
     expect(reader.match(/\bTimer\s*\{/gu)).toHaveLength(1);
     expect(reader).toMatch(/interval: root\.sampleInterval\s*repeat: false/u);
     expect(reader).toMatch(
