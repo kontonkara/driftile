@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { LAYOUT_PERSISTENCE_LIMITS } from "../../src/core/layout-persistence";
 import {
@@ -25,6 +26,22 @@ const baseAxisInput = Object.freeze({
   pixelDeltaX: 0,
   pixelDeltaY: 0,
 });
+
+const overviewScene = readFileSync(
+  new URL(
+    "../../packaging/kwin-effect/contents/runtime/ui/OverviewScene.qml",
+    import.meta.url,
+  ),
+  "utf8",
+);
+
+function sceneSourceBetween(start: string, end: string): string {
+  const startIndex = overviewScene.indexOf(start);
+  const endIndex = overviewScene.indexOf(end, startIndex + start.length);
+  expect(startIndex).toBeGreaterThanOrEqual(0);
+  expect(endIndex).toBeGreaterThan(startIndex);
+  return overviewScene.slice(startIndex, endIndex);
+}
 
 describe("planOverviewSpatialWheelAxis", () => {
   it("uses precise input exclusively when both input modes are present", () => {
@@ -201,6 +218,137 @@ describe("normalizeOverviewPhysicalWheelPixelDelta", () => {
       Object.is(normalizeOverviewPhysicalWheelPixelDelta(0, false), -0),
     ).toBe(false);
   });
+});
+
+describe("OverviewScene physical wheel routing", () => {
+  it("arbitrates gesture axes from untouched event deltas", () => {
+    const route = sceneSourceBetween(
+      "function routeOverviewWheel(event, point, handlerAxis)",
+      "function spatialWheelAxisPlanIsValid(plan, expectedAxisOwner)",
+    );
+
+    expect(route).toContain("angleDeltaX: event.angleDelta.x");
+    expect(route).toContain("angleDeltaY: event.angleDelta.y");
+    expect(route).toContain("pixelDeltaX: event.pixelDelta.x");
+    expect(route).toContain("pixelDeltaY: event.pixelDelta.y");
+  });
+
+  it("normalizes precise vertical input without changing discrete direction", () => {
+    const route = sceneSourceBetween(
+      "function handleOverviewWheel(event)",
+      "function handleOverviewHorizontalWheel(event, point)",
+    );
+
+    expect(route).toContain(
+      "runtime.normalizeOverviewPhysicalWheelAngleDelta(",
+    );
+    expect(route).toContain(
+      "runtime.normalizeOverviewPhysicalWheelPixelDelta(",
+    );
+    expect(route).toContain("event.inverted === true");
+    expect(route).toContain(
+      "const pixelDeltaY = physicalPixelDeltaY === 0 ? 0 : -physicalPixelDeltaY;",
+    );
+    expect(route).toContain(
+      "handleSpatialViewportWheel(angleDeltaY, pixelDeltaY)",
+    );
+  });
+
+  it("normalizes native and Shift-remapped horizontal input centrally", () => {
+    const shiftRoute = sceneSourceBetween(
+      "function routeOverviewShiftHorizontalWheel(event, point)",
+      "function releaseOverviewWheelAxisIfIdle()",
+    );
+    const nativeRoute = sceneSourceBetween(
+      "function handleOverviewHorizontalWheel(event, point)",
+      "function handleOverviewHorizontalWheelInput(event, point, angleDeltaX, pixelDeltaX)",
+    );
+    const inputRoute = sceneSourceBetween(
+      "function handleOverviewHorizontalWheelInput(event, point, angleDeltaX, pixelDeltaX)",
+      "function spatialWorkspaceIndexAtPoint(point)",
+    );
+
+    expect(shiftRoute).toContain("const pixelDeltaX = event.pixelDelta.y;");
+    expect(shiftRoute).toContain("const angleDeltaX = event.angleDelta.y;");
+    expect(shiftRoute).toContain(
+      "handleOverviewHorizontalWheelInput(event, point, angleDeltaX, pixelDeltaX)",
+    );
+    expect(nativeRoute).toContain("event.angleDelta.x, event.pixelDelta.x");
+    expect(inputRoute).toContain(
+      "runtime.normalizeOverviewPhysicalWheelAngleDelta(",
+    );
+    expect(inputRoute).toContain(
+      "runtime.normalizeOverviewPhysicalWheelPixelDelta(",
+    );
+    expect(inputRoute).toContain("event.inverted === true");
+    expect(inputRoute).toContain(
+      "angleDeltaX = physicalAngleDeltaX === 0 ? 0 : -physicalAngleDeltaX;",
+    );
+    expect(inputRoute).toContain(
+      "pixelDeltaX = physicalPixelDeltaX === 0 ? 0 : -physicalPixelDeltaX;",
+    );
+  });
+
+  it.each([
+    ["vertical down", "vertical", -120, -24, false, 120, -24],
+    ["vertical down, inverted", "vertical", 120, 24, true, 120, -24],
+    ["vertical up", "vertical", 120, 24, false, -120, 24],
+    ["vertical up, inverted", "vertical", -120, -24, true, -120, 24],
+    ["native horizontal right", "horizontal", -120, -24, false, -120, -24],
+    [
+      "native horizontal right, inverted",
+      "horizontal",
+      120,
+      24,
+      true,
+      -120,
+      -24,
+    ],
+    ["native horizontal left", "horizontal", 120, 24, false, 120, 24],
+    [
+      "native horizontal left, inverted",
+      "horizontal",
+      -120,
+      -24,
+      true,
+      120,
+      24,
+    ],
+    ["Shift-horizontal down", "horizontal", -120, -24, false, -120, -24],
+    ["Shift-horizontal down, inverted", "horizontal", 120, 24, true, -120, -24],
+    ["Shift-horizontal up", "horizontal", 120, 24, false, 120, 24],
+    ["Shift-horizontal up, inverted", "horizontal", -120, -24, true, 120, 24],
+  ] as const)(
+    "maps %s to the canonical physical direction",
+    (
+      _kind,
+      axis,
+      rawAngle,
+      rawPixel,
+      inverted,
+      expectedAngle,
+      expectedPixel,
+    ) => {
+      const physicalAngle = normalizeOverviewPhysicalWheelAngleDelta(
+        rawAngle,
+        inverted,
+      );
+      const physicalPixel = normalizeOverviewPhysicalWheelPixelDelta(
+        rawPixel,
+        inverted,
+      );
+      expect(physicalAngle).not.toBeNull();
+      expect(physicalPixel).not.toBeNull();
+
+      const angle = axis === "vertical" ? physicalAngle : -(physicalAngle ?? 0);
+      const pixel = -(physicalPixel ?? 0);
+
+      expect({ angle, pixel }).toEqual({
+        angle: expectedAngle,
+        pixel: expectedPixel,
+      });
+    },
+  );
 });
 
 describe("planOverviewSpatialWheel", () => {

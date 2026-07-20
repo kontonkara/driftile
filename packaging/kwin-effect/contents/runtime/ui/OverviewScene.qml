@@ -6011,16 +6011,21 @@ Rectangle {
                 return false;
             }
 
-            const pixelDeltaY = event.pixelDelta.y;
+            const rawPixelDeltaY = event.pixelDelta.y;
             const runtime = OverviewRuntime.DriftileOverview;
-            if (!runtime || typeof runtime.normalizeOverviewPhysicalWheelAngleDelta !== "function") {
+            if (!runtime
+                    || typeof runtime.normalizeOverviewPhysicalWheelAngleDelta !== "function"
+                    || typeof runtime.normalizeOverviewPhysicalWheelPixelDelta !== "function") {
                 return false;
             }
             const angleDeltaY = runtime.normalizeOverviewPhysicalWheelAngleDelta(
                 event.angleDelta.y, event.inverted === true);
-            if (!Number.isSafeInteger(angleDeltaY)) {
+            const physicalPixelDeltaY = runtime.normalizeOverviewPhysicalWheelPixelDelta(
+                rawPixelDeltaY, event.inverted === true);
+            if (!Number.isSafeInteger(angleDeltaY) || !Number.isFinite(physicalPixelDeltaY)) {
                 return false;
             }
+            const pixelDeltaY = physicalPixelDeltaY === 0 ? 0 : -physicalPixelDeltaY;
             if (pixelDeltaY === 0 && angleDeltaY === 0) {
                 return false;
             }
@@ -6074,6 +6079,22 @@ Rectangle {
                     || (pixelDeltaX === 0 && angleDeltaX === 0)) {
                 return false;
             }
+
+            const runtime = OverviewRuntime.DriftileOverview;
+            if (!runtime
+                    || typeof runtime.normalizeOverviewPhysicalWheelAngleDelta !== "function"
+                    || typeof runtime.normalizeOverviewPhysicalWheelPixelDelta !== "function") {
+                return false;
+            }
+            const physicalAngleDeltaX = runtime.normalizeOverviewPhysicalWheelAngleDelta(
+                angleDeltaX, event.inverted === true);
+            const physicalPixelDeltaX = runtime.normalizeOverviewPhysicalWheelPixelDelta(
+                pixelDeltaX, event.inverted === true);
+            if (!Number.isSafeInteger(physicalAngleDeltaX) || !Number.isFinite(physicalPixelDeltaX)) {
+                return false;
+            }
+            angleDeltaX = physicalAngleDeltaX === 0 ? 0 : -physicalAngleDeltaX;
+            pixelDeltaX = physicalPixelDeltaX === 0 ? 0 : -physicalPixelDeltaX;
             if (pixelDeltaX !== 0) {
                 cancelOverviewHorizontalWheelSelectionRequest();
             }
