@@ -84,8 +84,10 @@ Events travel from KWin through the bridge into the runtime. Commands and result
 ### Overview companion
 
 - Ships as a separate, disabled-by-default `KWin/Effect` package.
-- Reads the opaque layout snapshot twice on activation and accepts only one
-  unchanged, current v2 catalog.
+- Reads the opaque layout snapshot twice before accepting a changed current v2
+  catalog. A one-entry cache can reuse only an exact synchronous raw-state hit
+  with an equivalent canonical projection snapshot; it returns a fresh frozen
+  top-level model view over a detached, deeply frozen graph.
 - Projects snapshot zero for the current activity into a baseline-free,
   immutable view model after exact live output, desktop, activity, and window
   validation.
@@ -134,6 +136,15 @@ Events travel from KWin through the bridge into the runtime. Commands and result
   revalidates the exact active effect, model, live screen, projected output,
   desktop, window, and activity; off-desktop hidden state is allowed only at
   this stage.
+- Captures one immutable exit handoff before desktop, minimized-state, or focus
+  writes. Exact session, topology, output, desktop, window, and frame ownership
+  promotes a public target-output `KWin.WindowThumbnail`; minimized, removed,
+  stale, desktop-only, or topology-invalid targets retain geometry-free
+  fallback state.
+- Freezes the visible workspace index and cameras while that handoff owns the
+  close, blocks scene input, and defers model replacement. Reopening cancels the
+  promoted target before restoring the captured vertical and per-desktop
+  horizontal cameras; session zoom remains controller-owned and unchanged.
 - Accepts a workspace marker or empty-surface activation only after revalidating
   the active effect, exact live screen, projected output, and direct desktop
   object and ID. An exact current target closes without a desktop write; an

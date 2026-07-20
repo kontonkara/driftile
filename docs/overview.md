@@ -66,6 +66,13 @@ again from the configured value.
 
 ## Motion and input
 
+When the persisted layout is unchanged and the projection-relevant live
+snapshot is equivalent, a later opening can reuse the last accepted projection
+synchronously and show Overview immediately. The reuse still creates a fresh
+session wrapper. A changed layout or live projection identity takes the
+existing validation path of two matching reads 325 ms apart, while malformed
+state fails closed and is never replaced with a stale projection.
+
 Ordinary opening settles immediately into the spatial plane, avoiding an
 intermediate full-size projection and its added latency. Interactive gestures
 continue to drive presentation progress directly and settle on completion.
@@ -160,6 +167,18 @@ asynchronous selection repair has not run, these keys first establish the same
 preferred selection synchronously, then activate it exactly once through the
 existing guarded path. `Delete` requests closure of a selected closeable window.
 `Escape` clears a non-empty search first and otherwise closes the effect.
+
+Window activation captures an immutable handoff before any desktop, focus, or
+minimized-state write. It includes the target identity, desktop, output, exact
+Overview rectangle, target frame, and session cameras and zoom. The visible
+scene then stays frozen while a public `KWin.WindowThumbnail` on only the target
+output morphs from the Overview rectangle to the target frame; workspace rows
+and chrome fade without a live reflow. Desktop selection and a minimized,
+deleted, stale, or topology-invalid window use a safe monochrome or row-scale
+fallback instead. Input remains locked throughout the close. Reopening an
+interrupted close discards the stale target and restores the captured session
+cameras and zoom. This handoff adds no private API, geometry write, persistence,
+or auxiliary timer.
 
 Only the selected member of a tabbed column is a target in the spatial plane.
 Unselected tabbed members and minimized windows do not receive synthetic

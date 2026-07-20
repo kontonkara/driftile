@@ -235,6 +235,12 @@ intermediate full-size projection. Closing remains animated, while interactive
 gestures continue to drive presentation progress directly. Reopening during
 that close motion keeps the current session zoom.
 
+An unchanged persisted layout with an equivalent projection-relevant live
+snapshot can reuse the last accepted projection synchronously, so a warm
+Overview opens immediately with a fresh session wrapper. Changed identity stays
+on the existing fail-closed path of two matching reads 325 ms apart, and
+malformed input never revives a stale projection.
+
 A one-finger touchscreen drag can start across the visible Overview canvas,
 outside controls and overlays, when the vertical camera or touched row has
 range. A clear dominant direction latches for that gesture: vertical movement
@@ -262,6 +268,16 @@ existing guarded path. Activating the current marker closes Overview without a
 desktop write. Typing filters windows by title, application, desktop, output,
 or state. `F1` opens the compact keyboard and search reference. The hint and
 repair add no persistence, layout write, or private API.
+
+Activating a window captures an immutable pre-write handoff with its target,
+desktop, output, exact Overview rectangle, target frame, and session cameras and
+zoom. The scene remains frozen while a public `KWin.WindowThumbnail` morphs on
+only the target output and the rows and chrome fade without live reflow.
+Desktop selection and minimized, deleted, stale, or topology-invalid targets
+use a safe monochrome or row-scale close instead. Input stays locked during the
+close; reopening an interrupted close clears the stale target and restores the
+session cameras and zoom. The handoff adds no private API, geometry write,
+persistence, or auxiliary timer.
 
 A short mouse, touchpad, or touchscreen tap on empty row space or its workspace
 marker selects an exact non-current workspace and closes Overview on the
