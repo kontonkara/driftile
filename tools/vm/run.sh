@@ -77,6 +77,8 @@ owned_qemu_exit_status=0
 owned_qemu_pid=""
 owned_qemu_process_active=false
 owned_qemu_start_time=""
+overview_zoom_node_executable=""
+overview_zoom_socat_executable=""
 status_monitor_pid=""
 
 # shellcheck disable=SC2329
@@ -108,6 +110,27 @@ cleanup() {
 
 run_host_busctl() {
   nix develop .#integration -c busctl --user "$@"
+}
+
+resolve_overview_zoom_node_executable() {
+  local executable
+
+  executable=$(nix develop -c bash -c 'command -v node') || return 1
+  [[ "$executable" == /* \
+    && "$executable" != *$'\n'* \
+    && -x "$executable" ]] || return 1
+  printf '%s' "$executable"
+}
+
+resolve_overview_zoom_socat_executable() {
+  local executable
+
+  executable=$(nix develop .#integration -c bash -c 'command -v socat') \
+    || return 1
+  [[ "$executable" == /* \
+    && "$executable" != *$'\n'* \
+    && -x "$executable" ]] || return 1
+  printf '%s' "$executable"
 }
 
 prepare_host_window() {
@@ -402,12 +425,12 @@ monitor_guest() {
       && -f "$overview_wheel_controls_ready_file" ]]; then
       if ! send_physical_overview_wheel_controls \
         "$overview_wheel_controls_ready_file"; then
-        printf 'Could not send the physical overview vertical and horizontal wheel controls.\n' >&2
+        printf 'Could not verify the physical overview zoom, vertical, and horizontal controls.\n' >&2
         finish_full_vm_monitor || true
         return 1
       fi
 
-      printf 'The VM received the physical overview vertical and horizontal wheel controls.\n'
+      printf 'The VM received the physical overview zoom, vertical, and horizontal controls.\n'
       : > "$overview_wheel_controls_sent_file"
       overview_wheel_controls_sent=true
     fi
@@ -492,9 +515,9 @@ monitor_guest() {
       fi
 
       if [[ "$(<"$focus_file")" == true ]]; then
-        printf 'The VM verified physical shortcut and pointer routing, global wheel controls, physical Meta+Q close-window handling, desktop switching and reordering, same-output cross-desktop pointer adoption, minimized-slot navigation, column reordering, horizontal extraction, consume and expel past minimized peers, native fullscreen and maximize, stacked fullscreen and maximize extraction past minimized peers, borderless ownership, numbered dynamic desktops, whole-column desktop transfer past a minimized member, floating desktop transfers, output transfers, floating-layer navigation, focus, stack editing, pointer reinsertion and horizontal pointer-resize adoption, live touchpad-navigation settings, physical overview keyboard plus vertical- and horizontal-wheel navigation, advanced column view, column and window sizing, scrolling, mixed Konsole, Firefox, KDE Calculator, XWayland xterm, and fixed-size XWayland fixtures, plus repeated real-application lifecycles.\n'
+        printf 'The VM verified physical shortcut and pointer routing, global wheel controls, physical Meta+Q close-window handling, desktop switching and reordering, same-output cross-desktop pointer adoption, minimized-slot navigation, column reordering, horizontal extraction, consume and expel past minimized peers, native fullscreen and maximize, stacked fullscreen and maximize extraction past minimized peers, borderless ownership, numbered dynamic desktops, whole-column desktop transfer past a minimized member, floating desktop transfers, output transfers, floating-layer navigation, focus, stack editing, pointer reinsertion and horizontal pointer-resize adoption, live touchpad-navigation settings, physical overview keyboard, session zoom, and vertical- and horizontal-wheel navigation, advanced column view, column and window sizing, scrolling, mixed Konsole, Firefox, KDE Calculator, XWayland xterm, and fixed-size XWayland fixtures, plus repeated real-application lifecycles.\n'
       else
-        printf 'The VM failed to verify physical shortcut or pointer routing, global wheel controls, physical Meta+Q close-window handling, desktop switching or reordering, same-output cross-desktop pointer adoption, minimized-slot navigation, column reordering, horizontal extraction, consume or expel past minimized peers, native fullscreen or maximize, stacked fullscreen or maximize extraction past minimized peers, borderless ownership, numbered dynamic desktops, whole-column desktop transfer past a minimized member, floating desktop transfers, output transfers, floating-layer navigation, focus, stack editing, pointer reinsertion or horizontal pointer-resize adoption, live touchpad-navigation settings, physical overview keyboard or vertical- and horizontal-wheel navigation, advanced column view, column or window sizing, scrolling, mixed primary application fixtures, or the repeated real-application lifecycle pool.\n' >&2
+        printf 'The VM failed to verify physical shortcut or pointer routing, global wheel controls, physical Meta+Q close-window handling, desktop switching or reordering, same-output cross-desktop pointer adoption, minimized-slot navigation, column reordering, horizontal extraction, consume or expel past minimized peers, native fullscreen or maximize, stacked fullscreen or maximize extraction past minimized peers, borderless ownership, numbered dynamic desktops, whole-column desktop transfer past a minimized member, floating desktop transfers, output transfers, floating-layer navigation, focus, stack editing, pointer reinsertion or horizontal pointer-resize adoption, live touchpad-navigation settings, physical overview keyboard, session zoom, or vertical- and horizontal-wheel navigation, advanced column view, column or window sizing, scrolling, mixed primary application fixtures, or the repeated real-application lifecycle pool.\n' >&2
         failed=true
 
         if [[ -f "$diagnostics_file" ]]; then
@@ -711,14 +734,35 @@ send_qmp_commands() {
   validate_qmp_response "$#" "$response"
 }
 
+read_qmp_command_return() {
+  local attempt
+  local file_descriptor=$1
+  local line
+
+  for ((attempt = 0; attempt < 20; attempt += 1)); do
+    IFS= read -r -t 2 -u "$file_descriptor" line || return 1
+    if [[ "$line" == *'"error"'* ]]; then
+      printf 'QMP rejected an Overview transition command: %s\n' \
+        "$line" >&2
+      return 1
+    fi
+    [[ "$line" == *'"return"'* ]] && return 0
+  done
+
+  return 1
+}
+
 absolute_pointer_available() {
   local capabilities='{"execute":"qmp_capabilities"}'
+  local current_then_absolute='[{][^{}]*"current"[[:space:]]*:[[:space:]]*true[^{}]*"absolute"[[:space:]]*:[[:space:]]*true[^{}]*[}]'
   local query='{"execute":"query-mice"}'
   local response
+  local absolute_then_current='[{][^{}]*"absolute"[[:space:]]*:[[:space:]]*true[^{}]*"current"[[:space:]]*:[[:space:]]*true[^{}]*[}]'
 
   response=$(qmp_command_response "$capabilities" "$query") || return 1
   validate_qmp_response 2 "$response" || return 1
-  [[ "$response" =~ \"absolute\"[[:space:]]*:[[:space:]]*true ]]
+  [[ "$response" =~ $current_then_absolute \
+    || "$response" =~ $absolute_then_current ]]
 }
 
 absolute_pointer_coordinate() {
@@ -745,6 +789,85 @@ send_absolute_pointer_position() {
   ((x >= 0 && x <= 32767 && y >= 0 && y <= 32767)) || return 1
   input="{\"execute\":\"input-send-event\",\"arguments\":{\"events\":[{\"type\":\"abs\",\"data\":{\"axis\":\"x\",\"value\":$x}},{\"type\":\"abs\",\"data\":{\"axis\":\"y\",\"value\":$y}}]}}"
   send_qmp_commands "$capabilities" "$input"
+}
+
+capture_qmp_screendump() {
+  local capabilities='{"execute":"qmp_capabilities"}'
+  local output_file=$1
+  local screendump
+
+  [[ "$output_file" == "$temporary_directory"/* \
+    && "$output_file" =~ ^[-./_[:alnum:]]+$ ]] || return 1
+  rm -f -- "$output_file"
+  screendump="{\"execute\":\"screendump\",\"arguments\":{\"filename\":\"$output_file\"}}"
+  send_qmp_commands "$capabilities" "$screendump" || return 1
+  [[ -s "$output_file" ]]
+}
+
+capture_interrupted_overview_close() {
+  local capabilities='{"execute":"qmp_capabilities"}'
+  local close_input='{"execute":"input-send-event","arguments":{"events":[{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"meta_l"}}},{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"o"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"o"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"meta_l"}}}]}}'
+  local close_render_delay_seconds=0.14
+  local image_file=$1
+  local qmp_pid
+  local qmp_read_descriptor
+  local qmp_write_descriptor
+  local result=0
+  local screendump
+
+  [[ "$image_file" == "$temporary_directory"/* \
+    && "$image_file" =~ ^[-./_[:alnum:]]+$ \
+    && -x "$overview_zoom_socat_executable" ]] || return 1
+  rm -f -- "$image_file"
+  screendump="{\"execute\":\"screendump\",\"arguments\":{\"filename\":\"$image_file\"}}"
+
+  if ! coproc OVERVIEW_ZOOM_QMP {
+    "$overview_zoom_socat_executable" \
+      -t 2 \
+      - \
+      "UNIX-CONNECT:$qmp_socket"
+  }; then
+    return 1
+  fi
+  qmp_pid=$OVERVIEW_ZOOM_QMP_PID
+  qmp_read_descriptor=${OVERVIEW_ZOOM_QMP[0]}
+  qmp_write_descriptor=${OVERVIEW_ZOOM_QMP[1]}
+
+  IFS= read -r -t 2 -u "$qmp_read_descriptor" _ || result=1
+  if ((result == 0)); then
+    printf '%s\n' "$capabilities" >&"$qmp_write_descriptor" \
+      || result=1
+  fi
+  if ((result == 0)); then
+    read_qmp_command_return "$qmp_read_descriptor" || result=1
+  fi
+  if ((result == 0)); then
+    printf '%s\n' "$close_input" >&"$qmp_write_descriptor" \
+      || result=1
+  fi
+  if ((result == 0)); then
+    read_qmp_command_return "$qmp_read_descriptor" || result=1
+  fi
+  if ((result == 0)); then
+    sleep "$close_render_delay_seconds"
+    printf '%s\n' "$screendump" >&"$qmp_write_descriptor" \
+      || result=1
+  fi
+  if ((result == 0)); then
+    read_qmp_command_return "$qmp_read_descriptor" || result=1
+  fi
+  if ((result == 0)); then
+    printf '%s\n' "$close_input" >&"$qmp_write_descriptor" \
+      || result=1
+  fi
+  if ((result == 0)); then
+    read_qmp_command_return "$qmp_read_descriptor" || result=1
+  fi
+
+  exec {qmp_write_descriptor}>&- || true
+  exec {qmp_read_descriptor}<&- || true
+  wait "$qmp_pid" || result=1
+  ((result == 0)) && [[ -s "$image_file" ]]
 }
 
 wait_for_guest_exchange_file() {
@@ -865,22 +988,42 @@ send_physical_wheel_control() {
 send_physical_overview_wheel_controls() {
   local absolute_x
   local absolute_y
+  local anchor_baseline_duplicate_image
+  local anchor_baseline_image
+  local anchor_wheel_in_image
+  local anchor_wheel_reset_image
+  local baseline_image
+  local baseline_duplicate_image
   local capabilities='{"execute":"qmp_capabilities"}'
+  local configured_reset_image
+  local continuity_closing_image
+  local continuity_image
+  local continuity_seed_image
   local coordinate_file=$1
   local exchange_directory
   local extra
   local horizontal_wheel_input='{"execute":"input-send-event","arguments":{"events":[{"type":"btn","data":{"down":true,"button":"wheel-right"}},{"type":"btn","data":{"down":false,"button":"wheel-right"}}]}}'
+  local key_in_image
+  local key_reset_image
   local marker_prefix
+  local off_center_absolute_y
+  local off_center_y
   local output_height
   local output_width
   local output_x
   local output_y
+  local probe_report
   local shift_down_input='{"execute":"input-send-event","arguments":{"events":[{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"shift"}}}]}}'
   local shift_up_input='{"execute":"input-send-event","arguments":{"events":[{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"shift"}}}]}}'
   local shifted_wheel_input='{"execute":"input-send-event","arguments":{"events":[{"type":"btn","data":{"down":true,"button":"wheel-down"}},{"type":"btn","data":{"down":false,"button":"wheel-down"}}]}}'
   local settle_seconds=0.05
+  local fresh_open_image
+  local fresh_seed_image
   local vertical_wheel_down_input='{"execute":"input-send-event","arguments":{"events":[{"type":"btn","data":{"down":true,"button":"wheel-down"}},{"type":"btn","data":{"down":false,"button":"wheel-down"}}]}}'
   local vertical_wheel_up_input='{"execute":"input-send-event","arguments":{"events":[{"type":"btn","data":{"down":true,"button":"wheel-up"}},{"type":"btn","data":{"down":false,"button":"wheel-up"}}]}}'
+  local wheel_in_image
+  local wheel_in_duplicate_image
+  local wheel_reset_image
   local x
   local y
 
@@ -903,6 +1046,88 @@ send_physical_overview_wheel_controls() {
   sleep 0.1
 
   exchange_directory=$(dirname -- "$coordinate_file") || return 1
+  baseline_image="$exchange_directory/driftile-overview-zoom-baseline.ppm"
+  baseline_duplicate_image="$exchange_directory/driftile-overview-zoom-baseline-duplicate.ppm"
+  wheel_in_image="$exchange_directory/driftile-overview-zoom-wheel-in.ppm"
+  wheel_in_duplicate_image="$exchange_directory/driftile-overview-zoom-wheel-in-duplicate.ppm"
+  wheel_reset_image="$exchange_directory/driftile-overview-zoom-wheel-reset.ppm"
+  anchor_baseline_image="$exchange_directory/driftile-overview-zoom-anchor-baseline.ppm"
+  anchor_baseline_duplicate_image="$exchange_directory/driftile-overview-zoom-anchor-baseline-duplicate.ppm"
+  anchor_wheel_in_image="$exchange_directory/driftile-overview-zoom-anchor-wheel-in.ppm"
+  anchor_wheel_reset_image="$exchange_directory/driftile-overview-zoom-anchor-wheel-reset.ppm"
+  key_in_image="$exchange_directory/driftile-overview-zoom-key-in.ppm"
+  key_reset_image="$exchange_directory/driftile-overview-zoom-key-reset.ppm"
+  continuity_seed_image="$exchange_directory/driftile-overview-zoom-continuity-seed.ppm"
+  continuity_closing_image="$exchange_directory/driftile-overview-zoom-continuity-closing.ppm"
+  continuity_image="$exchange_directory/driftile-overview-zoom-continuity.ppm"
+  configured_reset_image="$exchange_directory/driftile-overview-zoom-configured-reset.ppm"
+  fresh_seed_image="$exchange_directory/driftile-overview-zoom-fresh-seed.ppm"
+  fresh_open_image="$exchange_directory/driftile-overview-zoom-fresh-open.ppm"
+
+  capture_qmp_screendump "$baseline_image" || return 1
+  capture_qmp_screendump "$baseline_duplicate_image" || return 1
+  send_physical_overview_zoom_phase wheel-in "$wheel_in_image" || return 1
+  capture_qmp_screendump "$wheel_in_duplicate_image" || return 1
+  send_physical_overview_zoom_phase wheel-reset "$wheel_reset_image" || return 1
+
+  off_center_y=$((output_y + 3 * output_height / 4))
+  off_center_absolute_y=$(absolute_pointer_coordinate \
+    "$off_center_y" "$output_y" "$output_height") || return 1
+  send_absolute_pointer_position "$absolute_x" "$off_center_absolute_y" \
+    || return 1
+  sleep 0.1
+  capture_qmp_screendump "$anchor_baseline_image" || return 1
+  capture_qmp_screendump "$anchor_baseline_duplicate_image" || return 1
+  send_physical_overview_zoom_phase \
+    anchor-wheel-in \
+    "$anchor_wheel_in_image" || return 1
+  send_physical_overview_zoom_phase \
+    anchor-wheel-reset \
+    "$anchor_wheel_reset_image" || return 1
+
+  send_absolute_pointer_position "$absolute_x" "$absolute_y" || return 1
+  sleep 0.1
+  send_physical_overview_zoom_phase key-in "$key_in_image" || return 1
+  send_physical_overview_zoom_phase key-reset "$key_reset_image" || return 1
+  send_physical_overview_zoom_phase \
+    continuity-seed \
+    "$continuity_seed_image" || return 1
+  send_physical_overview_zoom_continuity_phase \
+    "$continuity_closing_image" \
+    "$continuity_image" || return 1
+  send_physical_overview_zoom_phase \
+    configured-reset \
+    "$configured_reset_image" || return 1
+  send_physical_overview_zoom_phase fresh-seed "$fresh_seed_image" || return 1
+  send_physical_overview_zoom_phase fresh-close "" || return 1
+  send_physical_overview_zoom_phase fresh-open "$fresh_open_image" || return 1
+
+  [[ -x "$overview_zoom_node_executable" ]] || return 1
+  if ! probe_report=$("$overview_zoom_node_executable" \
+    "$root_directory/tools/vm/overview-zoom-visual-probe.mjs" \
+    "$baseline_image" \
+    "$baseline_duplicate_image" \
+    "$wheel_in_image" \
+    "$wheel_in_duplicate_image" \
+    "$wheel_reset_image" \
+    "$anchor_baseline_image" \
+    "$anchor_baseline_duplicate_image" \
+    "$anchor_wheel_in_image" \
+    "$anchor_wheel_reset_image" \
+    "$key_in_image" \
+    "$key_reset_image" \
+    "$continuity_seed_image" \
+    "$continuity_closing_image" \
+    "$continuity_image" \
+    "$configured_reset_image" \
+    "$fresh_seed_image" \
+    "$fresh_open_image"); then
+    printf 'Overview zoom visual probe metrics: %s\n' \
+      "${probe_report:-unavailable}" >&2
+    return 1
+  fi
+  printf 'Overview zoom visual probe: %s\n' "$probe_report"
+
   marker_prefix="$exchange_directory/driftile-overview-vertical-wheel"
 
   send_qmp_commands "$capabilities" "$vertical_wheel_down_input" || return 1
@@ -954,6 +1179,105 @@ send_physical_overview_wheel_controls() {
     send_qmp_commands "$capabilities" "$shift_up_input" >/dev/null 2>&1 || true
     return 1
   fi
+}
+
+send_physical_overview_zoom_phase() {
+  local capabilities='{"execute":"qmp_capabilities"}'
+  local control_down_input='{"execute":"input-send-event","arguments":{"events":[{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"ctrl"}}}]}}'
+  local control_up_input='{"execute":"input-send-event","arguments":{"events":[{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"ctrl"}}}]}}'
+  local image_file=$2
+  local input
+  local input_sent=false
+  local marker_prefix
+  local phase=$1
+
+  case "$phase" in
+    wheel-in|anchor-wheel-in)
+      input='{"execute":"input-send-event","arguments":{"events":[{"type":"btn","data":{"down":true,"button":"wheel-up"}},{"type":"btn","data":{"down":false,"button":"wheel-up"}}]}}'
+      ;;
+    wheel-reset|anchor-wheel-reset)
+      input='{"execute":"input-send-event","arguments":{"events":[{"type":"btn","data":{"down":true,"button":"wheel-down"}},{"type":"btn","data":{"down":false,"button":"wheel-down"}}]}}'
+      ;;
+    key-in|continuity-seed|fresh-seed)
+      input='{"execute":"input-send-event","arguments":{"events":[{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"ctrl"}}},{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"shift"}}},{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"equal"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"equal"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"shift"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"ctrl"}}}]}}'
+      ;;
+    key-reset)
+      input='{"execute":"input-send-event","arguments":{"events":[{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"ctrl"}}},{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"minus"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"minus"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"ctrl"}}}]}}'
+      ;;
+    configured-reset)
+      input='{"execute":"input-send-event","arguments":{"events":[{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"ctrl"}}},{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"0"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"0"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"ctrl"}}}]}}'
+      ;;
+    fresh-close|fresh-open)
+      input='{"execute":"input-send-event","arguments":{"events":[{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"meta_l"}}},{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"o"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"o"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"meta_l"}}}]}}'
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+
+  if [[ "$phase" == wheel-in \
+    || "$phase" == wheel-reset \
+    || "$phase" == anchor-wheel-in \
+    || "$phase" == anchor-wheel-reset ]]; then
+    send_qmp_commands "$capabilities" "$control_down_input" || return 1
+    sleep 0.05
+    if ! send_qmp_commands "$capabilities" "$input"; then
+      send_qmp_commands "$capabilities" "$control_up_input" \
+        >/dev/null 2>&1 || true
+      return 1
+    fi
+    sleep 0.05
+    if ! send_qmp_commands "$capabilities" "$control_up_input"; then
+      send_qmp_commands "$capabilities" "$control_up_input" \
+        >/dev/null 2>&1 || true
+      return 1
+    fi
+    input_sent=true
+  fi
+  if [[ "$input_sent" == false ]]; then
+    send_qmp_commands "$capabilities" "$input" || return 1
+  fi
+  if [[ -z "$image_file" ]]; then
+    marker_prefix="$temporary_directory/xchg/driftile-overview-zoom"
+  else
+    marker_prefix="$(dirname -- "$image_file")/driftile-overview-zoom"
+  fi
+  : > "$marker_prefix-$phase-sent"
+  if ! wait_for_guest_exchange_file "$marker_prefix-$phase-verified"; then
+    if [[ -f "$marker_prefix-$phase-observed" ]]; then
+      printf 'The guest rejected physical Overview zoom phase %s: %s\n' \
+        "$phase" \
+        "$(<"$marker_prefix-$phase-observed")" >&2
+    else
+      printf 'The guest did not verify physical Overview zoom phase: %s.\n' \
+        "$phase" >&2
+    fi
+    return 1
+  fi
+  if [[ -n "$image_file" ]]; then
+    capture_qmp_screendump "$image_file" || return 1
+  fi
+}
+
+send_physical_overview_zoom_continuity_phase() {
+  local closing_image=$1
+  local final_image=$2
+  local marker_prefix
+
+  capture_interrupted_overview_close "$closing_image" || return 1
+  marker_prefix="$(dirname -- "$final_image")/driftile-overview-zoom"
+  : > "$marker_prefix-continuity-sent"
+  if ! wait_for_guest_exchange_file "$marker_prefix-continuity-verified"; then
+    if [[ -f "$marker_prefix-continuity-observed" ]]; then
+      printf 'The guest rejected physical Overview zoom phase continuity: %s\n' \
+        "$(<"$marker_prefix-continuity-observed")" >&2
+    else
+      printf 'The guest did not verify physical Overview zoom phase: continuity.\n' \
+        >&2
+    fi
+    return 1
+  fi
+  capture_qmp_screendump "$final_image"
 }
 
 send_two_head_pointer_probe() {
@@ -1105,21 +1429,35 @@ send_two_head_pointer_drag() {
 }
 
 send_cross_desktop_pointer_hold() {
+  local armed_file
+  local attempt
   local coordinate_file=$1
+  local edge_ready_file="${coordinate_file%-hold-ready}-edge-ready"
+  local edge_rejected_file="${coordinate_file%-hold-ready}-edge-rejected"
   local edge_absolute_x=""
   local edge_absolute_y=""
   local edge_x=""
   local edge_y=""
   local extra=""
+  local intermediate_absolute_x=""
+  local intermediate_absolute_y=""
+  local intermediate_x=""
+  local intermediate_y=""
+  local moving_file="${coordinate_file%-hold-ready}-moving"
   local output_height=""
   local output_width=""
   local output_x=""
   local output_y=""
+  local positioned_file
   local result=0
+  local semantic_rejected=false
   local source_absolute_x=""
   local source_absolute_y=""
   local source_x=""
   local source_y=""
+
+  armed_file="${coordinate_file%-hold-ready}-armed"
+  positioned_file="${coordinate_file%-hold-ready}-positioned"
 
   if ! IFS=' ' read -r \
     source_x \
@@ -1146,23 +1484,96 @@ send_cross_desktop_pointer_hold() {
       "$edge_x" "$output_x" "$output_width") || result=1
     edge_absolute_y=$(absolute_pointer_coordinate \
       "$edge_y" "$output_y" "$output_height") || result=1
+    intermediate_x=$(((3 * source_x + edge_x) / 4))
+    intermediate_y=$(((3 * source_y + edge_y) / 4))
+    intermediate_absolute_x=$(absolute_pointer_coordinate \
+      "$intermediate_x" "$output_x" "$output_width") || result=1
+    intermediate_absolute_y=$(absolute_pointer_coordinate \
+      "$intermediate_y" "$output_y" "$output_height") || result=1
   fi
   if ((result == 0)) && ! absolute_pointer_available; then
     result=1
   fi
 
   set_physical_pointer_drag_state false || result=1
+  rm -f -- \
+    "$armed_file" \
+    "$edge_ready_file" \
+    "$edge_rejected_file" \
+    "$moving_file" \
+    "$positioned_file"
   if ((result == 0)) \
     && ! send_absolute_pointer_position \
       "$source_absolute_x" "$source_absolute_y"; then
     result=1
   fi
-  if ((result == 0)) && ! set_physical_pointer_drag_state true; then
-    result=1
+  sleep 0.2
+  if ((result == 0)); then
+    : > "$positioned_file" || result=1
+  fi
+  if ((result == 0)); then
+    for ((attempt = 0; attempt < 200; attempt += 1)); do
+      if [[ -f "$armed_file" ]]; then
+        break
+      fi
+      if [[ -f "$edge_rejected_file" ]]; then
+        semantic_rejected=true
+        break
+      fi
+      sleep 0.1
+    done
+
+    if [[ ! -f "$armed_file" && "$semantic_rejected" == false ]]; then
+      result=1
+    fi
   fi
   if ((result == 0)) \
+    && [[ "$semantic_rejected" == false ]] \
+    && ! set_physical_meta_key_state true; then
+    result=1
+  fi
+  sleep 0.2
+  if ((result == 0)) \
+    && [[ "$semantic_rejected" == false ]] \
+    && ! set_physical_left_button_state true; then
+    result=1
+  fi
+  sleep 0.2
+  if ((result == 0)) \
+    && [[ "$semantic_rejected" == false ]] \
+    && ! send_absolute_pointer_position \
+      "$intermediate_absolute_x" "$intermediate_absolute_y"; then
+    result=1
+  fi
+  sleep 0.2
+  if ((result == 0)) && [[ "$semantic_rejected" == false ]]; then
+    : > "$moving_file" || result=1
+  fi
+  if ((result == 0)) && [[ "$semantic_rejected" == false ]]; then
+    for ((attempt = 0; attempt < 200; attempt += 1)); do
+      if [[ -f "$edge_ready_file" ]]; then
+        break
+      fi
+      if [[ -f "$edge_rejected_file" ]]; then
+        semantic_rejected=true
+        break
+      fi
+      sleep 0.1
+    done
+
+    if ((result == 0)) \
+      && [[ ! -f "$edge_ready_file" ]] \
+      && [[ "$semantic_rejected" == false ]]; then
+      result=1
+    fi
+  fi
+  if ((result == 0)) \
+    && [[ "$semantic_rejected" == false ]] \
     && ! send_absolute_pointer_position "$edge_absolute_x" "$edge_absolute_y"; then
     result=1
+  fi
+  if ((result == 0)) && [[ "$semantic_rejected" == true ]]; then
+    set_physical_pointer_drag_state false || result=1
   fi
 
   if ((result != 0)); then
@@ -1173,14 +1584,12 @@ send_cross_desktop_pointer_hold() {
 }
 
 send_cross_desktop_pointer_release() {
-  local capabilities='{"execute":"qmp_capabilities"}'
   local coordinate_file=$1
   local extra=""
   local output_height=""
   local output_width=""
   local output_x=""
   local output_y=""
-  local release_input=""
   local result=0
   local target_absolute_x=""
   local target_absolute_y=""
@@ -1211,11 +1620,18 @@ send_cross_desktop_pointer_release() {
     result=1
   fi
   if ((result == 0)); then
-    release_input="{\"execute\":\"input-send-event\",\"arguments\":{\"events\":[{\"type\":\"abs\",\"data\":{\"axis\":\"x\",\"value\":$target_absolute_x}},{\"type\":\"abs\",\"data\":{\"axis\":\"y\",\"value\":$target_absolute_y}},{\"type\":\"btn\",\"data\":{\"down\":false,\"button\":\"left\"}},{\"type\":\"key\",\"data\":{\"down\":false,\"key\":{\"type\":\"qcode\",\"data\":\"meta_l\"}}}]}}"
-    send_qmp_commands "$capabilities" "$release_input" || result=1
+    send_absolute_pointer_position \
+      "$target_absolute_x" "$target_absolute_y" \
+      || result=1
+  fi
+  sleep 0.1
+  if ((result == 0)); then
+    set_physical_pointer_drag_state false || result=1
   fi
 
-  set_physical_pointer_drag_state false || result=1
+  if ((result != 0)); then
+    set_physical_pointer_drag_state false >/dev/null 2>&1 || true
+  fi
   return "$result"
 }
 
@@ -1881,6 +2297,20 @@ if [[ "$vm_visibility" == visible \
 fi
 
 cd -- "$root_directory"
+if [[ "$vm_mode" == full ]]; then
+  overview_zoom_node_executable=$(resolve_overview_zoom_node_executable) || {
+    printf 'Could not resolve the Overview zoom visual-probe Node executable.\n' \
+      >&2
+    exit 1
+  }
+  overview_zoom_socat_executable=$(resolve_overview_zoom_socat_executable) || {
+    printf 'Could not resolve the Overview zoom transition-probe socat executable.\n' \
+      >&2
+    exit 1
+  }
+fi
+readonly overview_zoom_node_executable
+readonly overview_zoom_socat_executable
 nixos-rebuild build-vm --flake ".#$flake_configuration"
 
 if [[ "$vm_visibility" == visible ]] && ! prepare_host_window; then

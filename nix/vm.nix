@@ -7,6 +7,10 @@
 let
   pluginId = "io.github.kontonkara.driftile";
   wheelControlPluginId = "driftile_wheel_control";
+  overviewZoom = {
+    config = "0.43";
+    milli = 430;
+  };
   activityMembershipProbe = ../tools/vm/activity-membership-probe.js;
   twoHeadGpu = builtins.toJSON {
     driver = "virtio-gpu-pci";
@@ -28,29 +32,39 @@ let
   floatingNavigationProbe = ../tools/vm/floating-navigation-probe.js;
   interactiveResizeStateProbe = pkgs.writeText "driftile-vm-interactive-resize-state.js" ''
     var window = workspace.activeWindow;
+    var publishedStates = {};
 
     if (window === null || window === undefined) {
       throw new Error("the interactive-resize probe requires an active window");
     }
 
-    var frame = window.frameGeometry;
-    var shortcutName = [
-      "driftile_vm_pointer_state",
-      String(window.move),
-      String(window.resize),
-      String(Math.round(frame.x)),
-      String(Math.round(frame.y)),
-      String(Math.round(frame.width)),
-      String(Math.round(frame.height)),
-      String(window.active),
-    ].join("_");
+    function publishState() {
+      var frame = window.frameGeometry;
+      var shortcutName = [
+        "driftile_vm_pointer_state",
+        String(window.move),
+        String(window.resize),
+        String(Math.round(frame.x)),
+        String(Math.round(frame.y)),
+        String(Math.round(frame.width)),
+        String(Math.round(frame.height)),
+        String(window.active),
+      ].join("_");
 
-    registerShortcut(
-      shortcutName,
-      "Driftile VM interactive resize state",
-      "",
-      function () {},
-    );
+      if (publishedStates[shortcutName]) {
+        return;
+      }
+      publishedStates[shortcutName] = true;
+      registerShortcut(
+        shortcutName,
+        "Driftile VM interactive resize state",
+        "",
+        function () {},
+      );
+    }
+
+    window.moveResizedChanged.connect(publishState);
+    publishState();
   '';
   firefoxPage = pkgs.writeText "driftile-vm-firefox.html" ''
     <!doctype html>
@@ -293,11 +307,17 @@ let
 
       capture_interactive_resize_state() {
         local attempt
+        local expected_mode=''${1:-any}
         local load_result
         local probe_state=""
         local script_id
         local shortcuts
         local unload_result
+
+        case "$expected_mode" in
+          any | move | resize) ;;
+          *) return 1 ;;
+        esac
 
         busctl --user call \
           org.kde.KWin \
@@ -343,7 +363,20 @@ let
             org.kde.kglobalaccel.Component \
             shortcutNames 2>/dev/null) || true
 
-          if [[ "$shortcuts" =~ driftile_vm_pointer_state_(true|false)_(true|false)_(-?[0-9]+)_(-?[0-9]+)_([0-9]+)_([0-9]+)_(true|false) ]]; then
+          if [[ "$expected_mode" == move \
+            && "$shortcuts" =~ driftile_vm_pointer_state_true_false_(-?[0-9]+)_(-?[0-9]+)_([0-9]+)_([0-9]+)_(true|false) ]]; then
+            probe_state="true,false,''${BASH_REMATCH[1]},''${BASH_REMATCH[2]},''${BASH_REMATCH[3]},''${BASH_REMATCH[4]},''${BASH_REMATCH[5]}"
+            break
+          fi
+
+          if [[ "$expected_mode" == resize \
+            && "$shortcuts" =~ driftile_vm_pointer_state_false_true_(-?[0-9]+)_(-?[0-9]+)_([0-9]+)_([0-9]+)_(true|false) ]]; then
+            probe_state="false,true,''${BASH_REMATCH[1]},''${BASH_REMATCH[2]},''${BASH_REMATCH[3]},''${BASH_REMATCH[4]},''${BASH_REMATCH[5]}"
+            break
+          fi
+
+          if [[ "$expected_mode" == any \
+            && "$shortcuts" =~ driftile_vm_pointer_state_(true|false)_(true|false)_(-?[0-9]+)_(-?[0-9]+)_([0-9]+)_([0-9]+)_(true|false) ]]; then
             probe_state="''${BASH_REMATCH[1]},''${BASH_REMATCH[2]},''${BASH_REMATCH[3]},''${BASH_REMATCH[4]},''${BASH_REMATCH[5]},''${BASH_REMATCH[6]},''${BASH_REMATCH[7]}"
             break
           fi
@@ -2520,6 +2553,54 @@ let
           previous=$current
 
           if ((stable_samples >= 2)); then
+            printf '%s' "$current"
+            return 0
+          fi
+
+          sleep 0.1
+        done
+
+        return 1
+      }
+
+      capture_stable_named_frame_set() {
+        local attempt
+        local current=""
+        local frame
+        local previous=""
+        local query
+        local required_samples=$1
+        local stable_samples=0
+        shift
+
+        [[ "$required_samples" =~ ^[1-9][0-9]*$ && $# -gt 0 ]] \
+          || return 1
+
+        for ((attempt = 0; attempt < 200; attempt += 1)); do
+          current=""
+
+          for query in "$@"; do
+            frame=$(window_frame_contains "$query" 2>/dev/null || true)
+            if ! frame_is_valid "$frame"; then
+              current=""
+              break
+            fi
+            if [[ -n "$current" ]]; then
+              current+="|"
+            fi
+            current+="$frame"
+          done
+
+          if [[ -n "$current" && "$current" == "$previous" ]]; then
+            stable_samples=$((stable_samples + 1))
+          elif [[ -n "$current" ]]; then
+            stable_samples=1
+          else
+            stable_samples=0
+          fi
+
+          previous=$current
+          if ((stable_samples >= required_samples)); then
             printf '%s' "$current"
             return 0
           fi
@@ -5224,9 +5305,11 @@ let
           "the active overview survived a real current-row tiled frame change"
 
         if ! kwin_overview_wheel_process_id=$(kwin_process_id) \
-          || ! request_physical_overview_wheel_controls "$output_frame"; then
+          || ! request_physical_overview_wheel_controls \
+            "$output_frame" \
+            "$kwin_overview_wheel_process_id"; then
           overview_checkpoint_failure \
-            "the physical vertical and horizontal wheel controls were not delivered to the multi-column overview"
+            "the physical zoom plus vertical and horizontal wheel controls were not delivered to the multi-column overview"
           return 1
         fi
         sleep 0.3
@@ -9491,6 +9574,7 @@ let
         local output_y
         local pointer_x
         local pointer_y
+        local process_id=$2
         local ready_file=/tmp/shared/driftile-overview-wheel-controls-ready
         local sent_file=/tmp/shared/driftile-overview-wheel-controls-sent
         local temporary_file="$ready_file.tmp"
@@ -9498,7 +9582,10 @@ let
         local up_observed_file=/tmp/shared/driftile-overview-vertical-wheel-up-observed
         local up_verified_file=/tmp/shared/driftile-overview-vertical-wheel-up-verified
 
-        frame_is_valid "$output_frame" || return 1
+        if ! frame_is_valid "$output_frame" \
+          || [[ ! "$process_id" =~ ^[1-9][0-9]*$ ]]; then
+          return 1
+        fi
         IFS=, read -r \
           output_x \
           output_y \
@@ -9517,7 +9604,43 @@ let
           "$temporary_file" \
           "$up_sent_file" \
           "$up_observed_file" \
-          "$up_verified_file"
+          "$up_verified_file" \
+          /tmp/shared/driftile-overview-zoom-wheel-in-sent \
+          /tmp/shared/driftile-overview-zoom-wheel-in-verified \
+          /tmp/shared/driftile-overview-zoom-wheel-in-observed \
+          /tmp/shared/driftile-overview-zoom-wheel-reset-sent \
+          /tmp/shared/driftile-overview-zoom-wheel-reset-verified \
+          /tmp/shared/driftile-overview-zoom-wheel-reset-observed \
+          /tmp/shared/driftile-overview-zoom-anchor-wheel-in-sent \
+          /tmp/shared/driftile-overview-zoom-anchor-wheel-in-verified \
+          /tmp/shared/driftile-overview-zoom-anchor-wheel-in-observed \
+          /tmp/shared/driftile-overview-zoom-anchor-wheel-reset-sent \
+          /tmp/shared/driftile-overview-zoom-anchor-wheel-reset-verified \
+          /tmp/shared/driftile-overview-zoom-anchor-wheel-reset-observed \
+          /tmp/shared/driftile-overview-zoom-key-in-sent \
+          /tmp/shared/driftile-overview-zoom-key-in-verified \
+          /tmp/shared/driftile-overview-zoom-key-in-observed \
+          /tmp/shared/driftile-overview-zoom-key-reset-sent \
+          /tmp/shared/driftile-overview-zoom-key-reset-verified \
+          /tmp/shared/driftile-overview-zoom-key-reset-observed \
+          /tmp/shared/driftile-overview-zoom-continuity-seed-sent \
+          /tmp/shared/driftile-overview-zoom-continuity-seed-verified \
+          /tmp/shared/driftile-overview-zoom-continuity-seed-observed \
+          /tmp/shared/driftile-overview-zoom-continuity-sent \
+          /tmp/shared/driftile-overview-zoom-continuity-verified \
+          /tmp/shared/driftile-overview-zoom-continuity-observed \
+          /tmp/shared/driftile-overview-zoom-configured-reset-sent \
+          /tmp/shared/driftile-overview-zoom-configured-reset-verified \
+          /tmp/shared/driftile-overview-zoom-configured-reset-observed \
+          /tmp/shared/driftile-overview-zoom-fresh-seed-sent \
+          /tmp/shared/driftile-overview-zoom-fresh-seed-verified \
+          /tmp/shared/driftile-overview-zoom-fresh-seed-observed \
+          /tmp/shared/driftile-overview-zoom-fresh-close-sent \
+          /tmp/shared/driftile-overview-zoom-fresh-close-verified \
+          /tmp/shared/driftile-overview-zoom-fresh-close-observed \
+          /tmp/shared/driftile-overview-zoom-fresh-open-sent \
+          /tmp/shared/driftile-overview-zoom-fresh-open-verified \
+          /tmp/shared/driftile-overview-zoom-fresh-open-observed
         printf '%s %s %s %s %s %s\n' \
           "$pointer_x" \
           "$pointer_y" \
@@ -9527,6 +9650,31 @@ let
           "$output_height" \
           > "$temporary_file"
         mv "$temporary_file" "$ready_file"
+
+        verify_physical_overview_zoom_phase wheel-in true "$process_id" \
+          || return 1
+        verify_physical_overview_zoom_phase wheel-reset true "$process_id" \
+          || return 1
+        verify_physical_overview_zoom_phase anchor-wheel-in true "$process_id" \
+          || return 1
+        verify_physical_overview_zoom_phase anchor-wheel-reset true "$process_id" \
+          || return 1
+        verify_physical_overview_zoom_phase key-in true "$process_id" \
+          || return 1
+        verify_physical_overview_zoom_phase key-reset true "$process_id" \
+          || return 1
+        verify_physical_overview_zoom_phase continuity-seed true "$process_id" \
+          || return 1
+        verify_physical_overview_zoom_phase continuity true "$process_id" \
+          || return 1
+        verify_physical_overview_zoom_phase configured-reset true "$process_id" \
+          || return 1
+        verify_physical_overview_zoom_phase fresh-seed true "$process_id" \
+          || return 1
+        verify_physical_overview_zoom_phase fresh-close false "$process_id" \
+          || return 1
+        verify_physical_overview_zoom_phase fresh-open true "$process_id" \
+          || return 1
 
         wait_for_physical_wheel_control_file "$down_sent_file" \
           || return 1
@@ -9558,6 +9706,41 @@ let
         done
 
         return 1
+      }
+
+      verify_physical_overview_zoom_phase() {
+        local expected_active=$2
+        local observed_file="/tmp/shared/driftile-overview-zoom-$1-observed"
+        local phase=$1
+        local process_id=$3
+        local sent_file="/tmp/shared/driftile-overview-zoom-$phase-sent"
+        local verified_file="/tmp/shared/driftile-overview-zoom-$phase-verified"
+
+        wait_for_physical_wheel_control_file "$sent_file" \
+          || return 1
+        wait_for_effect_active_state "$overview_plugin_id" "$expected_active" \
+          || return 1
+        if [[ "$expected_active" == true ]]; then
+          sleep 0.3
+        fi
+
+        printf 'phase=%s expected-active=%s actual-active=%s expected-desktop=%s actual-desktop=%s process=%s\n' \
+          "$phase" \
+          "$expected_active" \
+          "$(effect_active_state "$overview_plugin_id" 2>/dev/null || printf unavailable)" \
+          "$primary_desktop_id" \
+          "$(current_desktop_id 2>/dev/null || printf unavailable)" \
+          "$(kwin_process_id 2>/dev/null || printf unavailable)" \
+          > "$observed_file"
+
+        if [[ "$(effect_active_state "$overview_plugin_id" 2>/dev/null || true)" != "$expected_active" ]] \
+          || ! wait_for_current_desktop "$primary_desktop_id" \
+          || ! kwin_process_is_unchanged "$process_id" \
+          || ! overview_component_errors_after "$journal_cursor"; then
+          return 1
+        fi
+
+        : > "$verified_file"
       }
 
       request_physical_pointer_drag() {
@@ -9633,6 +9816,7 @@ let
         local stride_milli
         local temporary_file="$ready_file.tmp"
         local viewport_origin_x_milli
+        local zoom_milli=${toString overviewZoom.milli}
 
         frame_is_valid "$output_frame" || return 1
         [[ "$desktop_count" =~ ^[0-9]+$ ]] || return 1
@@ -9644,7 +9828,7 @@ let
           output_height \
           <<< "$output_frame"
 
-        card_height_milli=$((output_height * 500))
+        card_height_milli=$((output_height * zoom_milli))
         card_width_milli=$((output_width * 1000))
         edge_margin_milli=$(((output_height * 1000 - card_height_milli) / 2))
         gap_milli=$((card_height_milli / 10))
@@ -9722,7 +9906,7 @@ let
         local source_y_milli
         local temporary_file="$ready_file.tmp"
         local viewport_origin_x_milli
-        local zoom_milli=500
+        local zoom_milli=${toString overviewZoom.milli}
 
         frame_is_valid "$source_frame" || return 1
         frame_is_valid "$output_frame" || return 1
@@ -9882,7 +10066,7 @@ let
           capture_stable_window_frame_contains "$active_title" 2>/dev/null \
             || true
         )
-        interactive_state=$(capture_interactive_resize_state 2>/dev/null || true)
+        interactive_state=$(capture_interactive_resize_state resize 2>/dev/null || true)
         printf -v "$live_frame_variable" '%s' "$live_frame"
         printf -v "$interactive_state_variable" '%s' "$interactive_state"
         : > "$release_ready_file"
@@ -9915,8 +10099,13 @@ let
 
       clear_physical_cross_desktop_pointer_handshake() {
         rm -f \
+          /tmp/shared/driftile-cross-desktop-pointer-armed \
+          /tmp/shared/driftile-cross-desktop-pointer-edge-ready \
+          /tmp/shared/driftile-cross-desktop-pointer-edge-rejected \
           /tmp/shared/driftile-cross-desktop-pointer-hold-ready \
           /tmp/shared/driftile-cross-desktop-pointer-held \
+          /tmp/shared/driftile-cross-desktop-pointer-moving \
+          /tmp/shared/driftile-cross-desktop-pointer-positioned \
           /tmp/shared/driftile-cross-desktop-pointer-release-ready \
           /tmp/shared/driftile-cross-desktop-pointer-released \
           /tmp/shared/driftile-cross-desktop-pointer-hold-ready.tmp \
@@ -9924,23 +10113,55 @@ let
       }
 
       request_physical_cross_desktop_pointer_hold() {
+        local armed_file=/tmp/shared/driftile-cross-desktop-pointer-armed
         local attempt
+        local current_source_frame=""
         local edge_x=$3
         local edge_y=$4
+        local edge_ready_file=/tmp/shared/driftile-cross-desktop-pointer-edge-ready
+        local edge_rejected_file=/tmp/shared/driftile-cross-desktop-pointer-edge-rejected
         local held_file=/tmp/shared/driftile-cross-desktop-pointer-held
+        local interactive_state=""
+        local interactive_state_variable=$7
+        local moving_file=/tmp/shared/driftile-cross-desktop-pointer-moving
         local output_frame=$5
         local output_height
         local output_width
         local output_x
         local output_y
+        local pointer_location=""
+        local pointer_location_variable=$8
+        local positioned_file=/tmp/shared/driftile-cross-desktop-pointer-positioned
         local ready_file=/tmp/shared/driftile-cross-desktop-pointer-hold-ready
         local ready_exposed_variable=$6
         local source_x=$1
         local source_y=$2
+        local source_desktop_id=''${11}
+        local source_frame=''${10}
+        local source_frame_height
+        local source_frame_width
+        local source_frame_x
+        local source_frame_y
+        local source_title=$9
         local temporary_file="$ready_file.tmp"
 
         printf -v "$ready_exposed_variable" '%s' false || return 1
+        printf -v "$interactive_state_variable" '%s' "" || return 1
+        printf -v "$pointer_location_variable" '%s' "" || return 1
         frame_is_valid "$output_frame" || return 1
+        frame_is_valid "$source_frame" || return 1
+        [[ -n "$source_desktop_id" && -n "$source_title" ]] || return 1
+        IFS=, read -r \
+          source_frame_x \
+          source_frame_y \
+          source_frame_width \
+          source_frame_height \
+          <<< "$source_frame"
+        ((source_x > source_frame_x \
+          && source_x < source_frame_x + source_frame_width - 1 \
+          && source_y > source_frame_y \
+          && source_y < source_frame_y + source_frame_height - 1)) \
+          || return 1
         IFS=, read -r \
           output_x \
           output_y \
@@ -9962,11 +10183,79 @@ let
         printf -v "$ready_exposed_variable" '%s' true || return 1
 
         for ((attempt = 0; attempt < 200; attempt += 1)); do
-          [[ -f "$held_file" ]] && return 0
+          [[ -f "$positioned_file" ]] && break
           sleep 0.1
         done
+        [[ -f "$positioned_file" ]] || return 1
 
-        return 1
+        current_source_frame=$(
+          capture_stable_window_frame_contains "$source_title" 2>/dev/null \
+            || true
+        )
+        pointer_location=$(kdotool getmouselocation 2>/dev/null || true)
+        printf -v "$pointer_location_variable" '%s' "$pointer_location"
+        if [[ "$current_source_frame" != "$source_frame" \
+          || "$(current_desktop_id 2>/dev/null || true)" \
+            != "$source_desktop_id" ]] \
+          || ! window_is_active "$source_title" \
+          || ! window_is_on_desktop "$source_title" "$source_desktop_id" \
+          || [[ ! "$pointer_location" \
+            =~ ^x:([0-9]+)[[:space:]]y:([0-9]+)[[:space:]] ]] \
+          || ((BASH_REMATCH[1] < source_x - 2 \
+            || BASH_REMATCH[1] > source_x + 2 \
+            || BASH_REMATCH[2] < source_y - 2 \
+            || BASH_REMATCH[2] > source_y + 2)); then
+          : > "$edge_rejected_file" || return 1
+
+          for ((attempt = 0; attempt < 200; attempt += 1)); do
+            [[ -f "$held_file" ]] && break
+            sleep 0.1
+          done
+          [[ -f "$held_file" ]] || return 1
+
+          pointer_location=$(kdotool getmouselocation 2>/dev/null || true)
+          printf -v "$pointer_location_variable" '%s' "$pointer_location"
+          return 1
+        fi
+
+        : > "$armed_file" || return 1
+
+        for ((attempt = 0; attempt < 200; attempt += 1)); do
+          [[ -f "$moving_file" ]] && break
+          sleep 0.1
+        done
+        [[ -f "$moving_file" ]] || return 1
+
+        interactive_state=$(capture_interactive_resize_state move 2>/dev/null || true)
+        printf -v "$interactive_state_variable" '%s' "$interactive_state"
+
+        if [[ ! "$interactive_state" \
+          =~ ^true,false,-?[0-9]+,-?[0-9]+,[0-9]+,[0-9]+,true$ ]]; then
+          : > "$edge_rejected_file" || return 1
+
+          for ((attempt = 0; attempt < 200; attempt += 1)); do
+            [[ -f "$held_file" ]] && break
+            sleep 0.1
+          done
+          [[ -f "$held_file" ]] || return 1
+
+          pointer_location=$(kdotool getmouselocation 2>/dev/null || true)
+          printf -v "$pointer_location_variable" '%s' "$pointer_location"
+          return 1
+        fi
+
+        : > "$edge_ready_file" || return 1
+
+        for ((attempt = 0; attempt < 200; attempt += 1)); do
+          [[ -f "$held_file" ]] && break
+          sleep 0.1
+        done
+        [[ -f "$held_file" ]] || return 1
+
+        pointer_location=$(kdotool getmouselocation 2>/dev/null || true)
+        printf -v "$pointer_location_variable" '%s' "$pointer_location"
+
+        return 0
       }
 
       request_physical_cross_desktop_pointer_release() {
@@ -12606,6 +12895,9 @@ let
         local hidden_second=""
         local hidden_third=""
         local hold_delivered=false
+        local hold_interactive_state=""
+        local hold_interactive_verified=false
+        local hold_pointer_location=""
         local hold_ready_exposed=false
         local hold_requested=false
         local output_frame=""
@@ -12621,6 +12913,7 @@ let
         local setup_verified=false
         local source_x=0
         local source_y=0
+        local stable_frame_set=""
         local target_frame=""
         local target_height=0
         local target_pid=""
@@ -12664,18 +12957,21 @@ let
           && wait_for_window_desktop "$firefox_title" "$primary_desktop_id" \
           && activate_window "$firefox_title" \
           && wait_for_active "$firefox_title" \
-          && capture_stable_frames; then
-          hidden_first=$stable_first_frame
-          hidden_second=$stable_second_frame
-          hidden_third=$stable_third_frame
-          hidden_primary_xterm_frame=$(
-            capture_stable_window_frame_contains "$primary_xterm_title" \
-              || true
-          )
-          firefox_frame=$(
-            capture_stable_window_frame_contains "$firefox_title" \
-              || true
-          )
+          && sleep 1 \
+          && stable_frame_set=$(capture_stable_named_frame_set \
+            2 \
+            "$title_a" \
+            "$title_b" \
+            "$title_c" \
+            "$primary_xterm_title" \
+            "$firefox_title"); then
+          IFS='|' read -r \
+            hidden_first \
+            hidden_second \
+            hidden_third \
+            hidden_primary_xterm_frame \
+            firefox_frame \
+            <<< "$stable_frame_set"
           output_frame=$(single_enabled_output_frame 2>/dev/null || true)
 
           if frame_is_valid "$hidden_primary_xterm_frame" \
@@ -12718,8 +13014,18 @@ let
             "$edge_x" \
             "$edge_y" \
             "$output_frame" \
-            hold_ready_exposed; then
+            hold_ready_exposed \
+            hold_interactive_state \
+            hold_pointer_location \
+            "$firefox_title" \
+            "$firefox_frame" \
+            "$primary_desktop_id"; then
             hold_delivered=true
+
+            if [[ "$hold_interactive_state" \
+              =~ ^true,false,-?[0-9]+,-?[0-9]+,[0-9]+,[0-9]+,true$ ]]; then
+              hold_interactive_verified=true
+            fi
           fi
 
           if [[ -f \
@@ -12728,7 +13034,8 @@ let
           fi
         fi
 
-        if [[ "$hold_delivered" == true ]]; then
+        if [[ "$hold_delivered" == true \
+          && "$hold_interactive_verified" == true ]]; then
           if wait_for_cross_desktop_pointer_destination \
             "$firefox_title" \
             "$target_title" \
@@ -12814,8 +13121,8 @@ let
             || "$hold_delivered" == true ) \
           && "$destination_release_delivered" == false ]]; then
           if request_physical_cross_desktop_pointer_release \
-            "$edge_x" \
-            "$edge_y" \
+            "$source_x" \
+            "$source_y" \
             "$output_frame"; then
             cleanup_release_delivered=true
           else
@@ -12875,6 +13182,11 @@ let
           printf 'hold requested: %s\n' "$hold_requested"
           printf 'hold ready exposed: %s\n' "$hold_ready_exposed"
           printf 'hold delivered: %s\n' "$hold_delivered"
+          printf 'hold interactive verified: %s\n' \
+            "$hold_interactive_verified"
+          printf 'hold move,resize,x,y,width,height,active: %s\n' \
+            "$hold_interactive_state"
+          printf 'hold pointer location: %s\n' "$hold_pointer_location"
           printf 'destination release delivered: %s\n' \
             "$destination_release_delivered"
           printf 'cleanup release delivered: %s\n' \
@@ -14849,7 +15161,7 @@ let
         local source_window_width
         local source_window_x
         local source_window_y
-        local zoom_milli=500
+        local zoom_milli=${toString overviewZoom.milli}
 
         frame_is_valid "$source_window_frame" || return 1
         frame_is_valid "$source_output_frame" || return 1
@@ -15162,14 +15474,19 @@ let
     '';
   };
   kwinConfig = pkgs.writeText "driftile-vm-kwinrc" ''
-    ${if driftileVmTwoHead then "" else ''
-      [Desktops]
-      Rows=1
+    ${
+      if driftileVmTwoHead then
+        ""
+      else
+        ''
+          [Desktops]
+          Rows=1
 
-      [Windows]
-      ElectricBorderPushbackPixels=0
-      ElectricBorders=2
-    ''}
+          [Windows]
+          ElectricBorderPushbackPixels=0
+          ElectricBorders=2
+        ''
+    }
 
     [MouseBindings]
     CommandAll1=Move
@@ -15179,6 +15496,9 @@ let
     [Plugins]
     ${pluginId}Enabled=true
     ${wheelControlPluginId}Enabled=true
+
+    [Effect-io.github.kontonkara.driftile.overview]
+    OverviewZoom=${overviewZoom.config}
 
     [Script-${pluginId}]
     ApplicationBorderlessExclusions=
