@@ -30,6 +30,7 @@ const expectedRuntimeEntries = [
   "ui/OverviewSpatialDropReceiver.qml",
   "ui/TouchpadNavigation.qml",
   "ui/TouchpadWorkspaceNavigation.qml",
+  "ui/VerticalDesktopGrid.qml",
   "ui/main.qml",
 ];
 const expectedOverviewPackageEntries = [

@@ -27,6 +27,9 @@ QtObject {
         location: StandardPaths.writableLocation(StandardPaths.GenericConfigLocation) + "/driftile-layout-state.ini"
     }
 
+    readonly property VerticalDesktopGrid verticalDesktopGrid: VerticalDesktopGrid {
+    }
+
     readonly property OverviewSpatialDropReceiver overviewSpatialDropReceiver: OverviewSpatialDropReceiver {
         applyCommand: Runtime.DriftileRuntime.applyOverviewSpatialDrop
     }
@@ -1465,6 +1468,7 @@ QtObject {
                                     root.showDropPreview,
                                     root.hideDropPreview,
                                     root.showTabIndicator);
+        root.verticalDesktopGrid.synchronizeRows();
         root.refreshTouchpadNavigationHandlers(true);
     }
     Component.onDestruction: {
