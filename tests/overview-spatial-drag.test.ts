@@ -155,7 +155,9 @@ const columnLifecycle = desktopCard.slice(
   desktopCard.indexOf("function beginWindowSpatialDrag("),
 );
 const columnEligibilityScheduler = desktopCard.slice(
-  desktopCard.indexOf("function invalidateColumnDragEligibilityDelegates()"),
+  desktopCard.indexOf(
+    "function exactActiveColumnDragSourceForEligibilityRefresh()",
+  ),
   desktopCard.indexOf("function presentationForWindowId("),
 );
 const columnPlanner = desktopCard.slice(
@@ -907,17 +909,17 @@ describe("spatial overview column drag lifecycle", () => {
       /function advanceColumnDragEligibilityRevision\(\) \{\s*columnDragEligibilityRevision = columnDragEligibilityRevision >= 2147483646\s*\? 0 : columnDragEligibilityRevision \+ 1;\s*return columnDragEligibilityRevision;\s*\}/u,
     );
     expect(columnLifecycle).toMatch(
-      /function invalidateColumnDragEligibilityDelegates\(\) \{\s*if \(!Number\.isInteger\(columnRepeater\.count\) \|\| columnRepeater\.count < 0\s*\|\| columnRepeater\.count > 131072\) \{\s*return false;\s*\}\s*for \(let index = 0; index < columnRepeater\.count; index \+= 1\) \{\s*const source = columnRepeater\.itemAt\(index\);\s*if \(source && typeof source\.invalidateColumnDragEligibility === "function"\) \{\s*source\.invalidateColumnDragEligibility\(\);\s*\}\s*\}\s*return true;\s*\}/u,
+      /function invalidateColumnDragEligibilityDelegates\(preservedSource\) \{\s*if \(!Number\.isInteger\(columnRepeater\.count\) \|\| columnRepeater\.count < 0\s*\|\| columnRepeater\.count > 131072\) \{\s*return false;\s*\}\s*for \(let index = 0; index < columnRepeater\.count; index \+= 1\) \{\s*const source = columnRepeater\.itemAt\(index\);\s*if \(source === preservedSource\) \{\s*continue;\s*\}\s*if \(source && typeof source\.invalidateColumnDragEligibility === "function"\) \{\s*source\.invalidateColumnDragEligibility\(\);\s*\}\s*\}\s*return true;\s*\}/u,
     );
     expect(columnLifecycle).toMatch(
       /function refreshColumnDragEligibilityDelegates\(\) \{\s*if \(columnDragEligibilityRefreshPending\s*\|\| !Number\.isInteger\(columnRepeater\.count\) \|\| columnRepeater\.count < 0\s*\|\| columnRepeater\.count > 131072\) \{\s*return false;\s*\}\s*for \(let index = 0; index < columnRepeater\.count; index \+= 1\) \{\s*const source = columnRepeater\.itemAt\(index\);\s*if \(source && typeof source\.refreshColumnDragEligibility === "function"\) \{\s*source\.refreshColumnDragEligibility\(\);\s*\}\s*\}\s*return true;\s*\}/u,
     );
     expect(columnLifecycle).toMatch(
-      /function scheduleColumnDragEligibilityRefresh\(\) \{\s*columnDragEligibilityRefreshPending = true;\s*invalidateColumnDragEligibilityDelegates\(\);\s*columnDragEligibilityRefreshTimer\.restart\(\);\s*\}/u,
+      /function scheduleColumnDragEligibilityRefresh\(\) \{\s*const preservedSource = exactActiveColumnDragSourceForEligibilityRefresh\(\);\s*columnDragEligibilityRefreshPending = true;\s*invalidateColumnDragEligibilityDelegates\(preservedSource\);\s*columnDragEligibilityRefreshTimer\.restart\(\);\s*\}/u,
     );
     expect(
       columnEligibilityScheduler.indexOf(
-        "invalidateColumnDragEligibilityDelegates();",
+        "invalidateColumnDragEligibilityDelegates(preservedSource);",
       ),
     ).toBeLessThan(
       columnEligibilityScheduler.indexOf(
@@ -932,7 +934,7 @@ describe("spatial overview column drag lifecycle", () => {
       "refreshColumnDragEligibilityDelegates",
     ]) {
       const start = columnEligibilityScheduler.indexOf(
-        `function ${delegateTraversal}()`,
+        `function ${delegateTraversal}(`,
       );
       expect(start).toBeGreaterThanOrEqual(0);
       const traversal = columnEligibilityScheduler.slice(start, start + 760);
@@ -942,9 +944,7 @@ describe("spatial overview column drag lifecycle", () => {
       );
       expect(traversal).toContain("columnRepeater.itemAt(index)");
     }
-    expect(columnEligibilityScheduler).not.toMatch(
-      /while\s*\(|for\s*\(\s*;;/u,
-    );
+    expect(columnEligibilityScheduler).not.toMatch(/while\s*\(|for\s*\(\s*;;/u);
     expect(columnLifecycle).toMatch(
       /function presentationForWindowId\(expectedWindowId\)[\s\S]*expectedWindowId\.length === 0[\s\S]*windowRepeater\.count > 131072[\s\S]*return null;/u,
     );
@@ -1112,6 +1112,41 @@ describe("spatial overview column drag lifecycle", () => {
     );
     expect(columnLifecycle).toMatch(
       /function cancelInvalidActiveColumnSpatialDrag\(\)[\s\S]*const hoveredSource = columnPointerHoverSource;[\s\S]*hoveredSource !== null && !columnDragHandleIsEligible\(hoveredSource\)[\s\S]*columnPointerHoverSource = null;/u,
+    );
+  });
+
+  it("preserves only an exact active column source across eligibility republishing", () => {
+    const activeSourceValidation = columnEligibilityScheduler.slice(
+      columnEligibilityScheduler.indexOf(
+        "function exactActiveColumnDragSourceForEligibilityRefresh()",
+      ),
+      columnEligibilityScheduler.indexOf(
+        "function invalidateColumnDragEligibilityDelegates(",
+      ),
+    );
+    const delegateInvalidation = columnEligibilityScheduler.slice(
+      columnEligibilityScheduler.indexOf(
+        "function invalidateColumnDragEligibilityDelegates(",
+      ),
+      columnEligibilityScheduler.indexOf(
+        "function refreshColumnDragEligibilityDelegates(",
+      ),
+    );
+    const refreshScheduling = columnEligibilityScheduler.slice(
+      columnEligibilityScheduler.indexOf(
+        "function scheduleColumnDragEligibilityRefresh()",
+      ),
+      columnEligibilityScheduler.indexOf("function presentationForWindowId("),
+    );
+
+    expect(activeSourceValidation).toMatch(
+      /function exactActiveColumnDragSourceForEligibilityRefresh\(\) \{\s*const source = columnDragActiveSource;\s*if \(source === null\) \{\s*return null;\s*\}\s*if \(!ownedColumnDropSnapshotIsExact\(source\)\s*\|\| !columnDragHandleIsEligible\(source\)\) \{\s*cancelColumnSpatialDragSource\(source\);\s*return null;\s*\}\s*return source;\s*\}/u,
+    );
+    expect(delegateInvalidation).toMatch(
+      /function invalidateColumnDragEligibilityDelegates\(preservedSource\)[\s\S]*const source = columnRepeater\.itemAt\(index\);\s*if \(source === preservedSource\) \{\s*continue;\s*\}\s*if \(source && typeof source\.invalidateColumnDragEligibility === "function"\) \{\s*source\.invalidateColumnDragEligibility\(\);\s*\}/u,
+    );
+    expect(refreshScheduling).toMatch(
+      /const preservedSource = exactActiveColumnDragSourceForEligibilityRefresh\(\);\s*columnDragEligibilityRefreshPending = true;\s*invalidateColumnDragEligibilityDelegates\(preservedSource\);\s*columnDragEligibilityRefreshTimer\.restart\(\);/u,
     );
   });
 

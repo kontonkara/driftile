@@ -2315,13 +2315,29 @@ Item {
         return columnDragEligibilityRevision;
     }
 
-    function invalidateColumnDragEligibilityDelegates() {
+    function exactActiveColumnDragSourceForEligibilityRefresh() {
+        const source = columnDragActiveSource;
+        if (source === null) {
+            return null;
+        }
+        if (!ownedColumnDropSnapshotIsExact(source)
+                || !columnDragHandleIsEligible(source)) {
+            cancelColumnSpatialDragSource(source);
+            return null;
+        }
+        return source;
+    }
+
+    function invalidateColumnDragEligibilityDelegates(preservedSource) {
         if (!Number.isInteger(columnRepeater.count) || columnRepeater.count < 0
                 || columnRepeater.count > 131072) {
             return false;
         }
         for (let index = 0; index < columnRepeater.count; index += 1) {
             const source = columnRepeater.itemAt(index);
+            if (source === preservedSource) {
+                continue;
+            }
             if (source && typeof source.invalidateColumnDragEligibility === "function") {
                 source.invalidateColumnDragEligibility();
             }
@@ -2345,8 +2361,9 @@ Item {
     }
 
     function scheduleColumnDragEligibilityRefresh() {
+        const preservedSource = exactActiveColumnDragSourceForEligibilityRefresh();
         columnDragEligibilityRefreshPending = true;
-        invalidateColumnDragEligibilityDelegates();
+        invalidateColumnDragEligibilityDelegates(preservedSource);
         columnDragEligibilityRefreshTimer.restart();
     }
 
