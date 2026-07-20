@@ -413,6 +413,81 @@ let
         kdotool getactivewindow getwindowname 2>/dev/null
       }
 
+      active_window_classname() {
+        kdotool getactivewindow getwindowclassname 2>/dev/null
+      }
+
+      active_window_is_krunner() {
+        local classname
+
+        classname=$(active_window_classname) || return 1
+        [[ "$classname" == krunner || "$classname" == org.kde.krunner ]]
+      }
+
+      wait_for_active_krunner() {
+        local attempt
+        local stable_samples=0
+
+        for ((attempt = 0; attempt < 100; attempt += 1)); do
+          if active_window_is_krunner; then
+            stable_samples=$((stable_samples + 1))
+
+            if ((stable_samples >= 5)); then
+              return 0
+            fi
+          else
+            stable_samples=0
+          fi
+
+          sleep 0.1
+        done
+
+        return 1
+      }
+
+      display_krunner() {
+        busctl --user call \
+          org.kde.krunner \
+          /App \
+          org.kde.krunner.App \
+          display \
+          >/dev/null
+      }
+
+      display_krunner_after_physical_close() {
+        local active_caption
+        local attempt
+        local query=$2
+        local sent_file="/tmp/shared/driftile-key-test-$1-sent"
+        local shortcut_sent=false
+
+        for ((attempt = 0; attempt < 1000; attempt += 1)); do
+          if [[ -f "$sent_file" ]]; then
+            shortcut_sent=true
+          fi
+
+          if [[ "$shortcut_sent" == true ]] \
+            && active_caption=$(active_window_caption) \
+            && [[ "$active_caption" != *"$query"* ]]; then
+            display_krunner
+            return
+          fi
+
+          sleep 0.01
+        done
+
+        return 1
+      }
+
+      toggle_krunner_display() {
+        busctl --user call \
+          org.kde.krunner \
+          /App \
+          org.kde.krunner.App \
+          toggleDisplay \
+          >/dev/null
+      }
+
       window_is_active() {
         local active_title
         local title=$1
@@ -5076,7 +5151,7 @@ let
           printf 'expected KWin process: %s\n' \
             "''${kwin_overview_wheel_process_id:-unavailable}"
           printf 'KWin process: %s\n' "$kwin_id"
-          printf 'pre-Escape active window: %s\n' \
+          printf 'pre-close active window: %s\n' \
             "''${overview_wheel_active_caption:-unavailable}"
           printf 'active window: %s\n' "$active_caption"
         } >> /tmp/shared/driftile-focus-diagnostics
@@ -5329,9 +5404,9 @@ let
           active_window_caption 2>/dev/null || printf unavailable
         )
 
-        if ! request_physical_shortcut overview-escape; then
+        if ! invoke_shortcut "$overview_shortcut"; then
           overview_checkpoint_failure \
-            "physical Escape was not delivered to the overview wheel checkpoint"
+            "the overview toggle was not delivered to the wheel checkpoint"
           return 1
         fi
 
@@ -5339,10 +5414,10 @@ let
           if ! kwin_process_is_unchanged \
               "$kwin_overview_wheel_process_id"; then
             overview_checkpoint_failure \
-              "the KWin process changed while waiting for physical Escape to close the overview wheel checkpoint"
+              "the KWin process changed while waiting for the overview toggle to close the wheel checkpoint"
           else
             overview_checkpoint_failure \
-              "physical Escape did not close the overview wheel checkpoint"
+              "the overview toggle did not close the wheel checkpoint"
           fi
           return 1
         fi
@@ -5363,7 +5438,7 @@ let
               "the KWin process changed while restoring focus after the overview wheel checkpoint"
           else
             overview_checkpoint_failure \
-              "physical Escape closed the overview wheel checkpoint but did not restore the expected active window"
+              "the overview toggle closed the wheel checkpoint but did not restore the expected active window"
           fi
           return 1
         fi
@@ -6527,6 +6602,7 @@ let
         local baseline_first=$3
         local baseline_second=$4
         local baseline_third=$5
+        local krunner_request_pid
         local pid=$2
         local query=$1
 
@@ -6539,9 +6615,26 @@ let
           return 1
         fi
 
+        rm -f \
+          /tmp/shared/driftile-key-test-close-window-ready \
+          /tmp/shared/driftile-key-test-close-window-sent
+        display_krunner_after_physical_close close-window "$query" &
+        krunner_request_pid=$!
+
         if ! request_physical_shortcut close-window; then
           record_real_application_state \
             "physical close shortcut was not delivered" \
+            "$query"
+          kill "$krunner_request_pid" >/dev/null 2>&1 || true
+          wait "$krunner_request_pid" >/dev/null 2>&1 || true
+          terminate_process "$pid"
+          wait_for_window_gone_contains "$query" >/dev/null 2>&1 || true
+          return 1
+        fi
+
+        if ! wait "$krunner_request_pid"; then
+          record_real_application_state \
+            "KRunner did not open immediately after physical close" \
             "$query"
           terminate_process "$pid"
           wait_for_window_gone_contains "$query" >/dev/null 2>&1 || true
@@ -6552,6 +6645,7 @@ let
           record_real_application_state \
             "physical close shortcut did not close the real application" \
             "$query"
+          toggle_krunner_display >/dev/null 2>&1 || true
           terminate_process "$pid"
           wait_for_window_gone_contains "$query" >/dev/null 2>&1 || true
           return 1
@@ -6559,9 +6653,37 @@ let
 
         terminate_process "$pid"
 
+        if ! wait_for_active_krunner \
+          || ! wait_for_singleton_layout \
+            "$baseline_first" \
+            "$baseline_second" \
+            "$baseline_third" \
+          || ! active_window_is_krunner; then
+          record_focus_state \
+            "physical close did not preserve consecutive KRunner focus"
+          {
+            printf 'active caption: %s\n' \
+              "$(active_window_caption 2>/dev/null || printf unavailable)"
+            printf 'active class: %s\n' \
+              "$(active_window_classname 2>/dev/null || printf unavailable)"
+          } >> /tmp/shared/driftile-focus-diagnostics
+          toggle_krunner_display >/dev/null 2>&1 || true
+          return 1
+        fi
+
+        if ! request_physical_shortcut overview-escape; then
+          record_focus_state \
+            "physical Escape was not delivered to KRunner after close"
+          toggle_krunner_display >/dev/null 2>&1 || true
+          return 1
+        fi
+
         if ! wait_for_active "$title_c"; then
           record_focus_state \
-            "physical close layout focus restoration failed"
+            "KRunner Escape did not restore the pre-application focus"
+          if active_window_is_krunner; then
+            toggle_krunner_display >/dev/null 2>&1 || true
+          fi
           return 1
         fi
 
@@ -6570,7 +6692,7 @@ let
             "$baseline_second" \
             "$baseline_third"; then
           record_focus_state \
-            "physical close layout restoration failed"
+            "KRunner close-focus layout restoration failed"
           {
             printf 'expected frame A: %s\n' "$baseline_first"
             printf 'expected frame B: %s\n' "$baseline_second"
