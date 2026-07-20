@@ -313,6 +313,7 @@ Item {
                 anchors.fill: parent
                 active: card.desktopSurfaceEnabled && card.desktopSurfaceContextExact
                     && card.desktopSurfaceReady
+                asynchronous: true
                 enabled: false
                 opacity: 0
                 z: 0
