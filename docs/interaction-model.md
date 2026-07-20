@@ -173,11 +173,15 @@ layers. An unavailable or inexact surface keeps a solid dark fallback. Ordinary
 visual row rendering stays within a bounded visible range, while search or drag
 state may retain an off-screen card without creating its Desktop surface.
 Panels, docks, and notifications are excluded from Desktop surface selection.
-A desktop-shell restart clears any stale visible surface to the fallback and
-reacquires the replacement Desktop window without polling or activating an
-off-screen surface. Normal wallpaper damage continues to update live. Neutral
-workspace-label backplates remain readable over the wallpaper, and a subtle
-output-area outline identifies the current row without changing its geometry.
+A desktop-shell lifecycle burst clears only visible surfaces matching its exact
+public output, desktop, and activity scope, then reacquires each replacement
+Desktop window once. Empty public desktop or activity membership means all in
+that dimension. Incomplete or ambiguous identity falls back to one global
+visible refresh; unrelated exact rows and every off-screen surface stay
+untouched. No polling is added. Normal wallpaper damage continues to update
+live. Neutral workspace-label backplates remain readable over the wallpaper,
+and a subtle output-area outline identifies the current row without changing
+its geometry.
 
 Vertical input moves between workspace rows, while horizontal input pans or
 selects within a row. Precise wheel or touchpad input drives the camera

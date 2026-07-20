@@ -38,11 +38,7 @@ Rectangle {
         && typeof sceneEffect.showApplicationIcons === "boolean"
         ? sceneEffect.showApplicationIcons
         : false
-    readonly property int desktopSurfaceLifecycleRevision: sceneEffect && sceneEffect.controller
-        && Number.isInteger(sceneEffect.controller.desktopSurfaceLifecycleRevision)
-        && sceneEffect.controller.desktopSurfaceLifecycleRevision >= 0
-        ? sceneEffect.controller.desktopSurfaceLifecycleRevision
-        : 0
+    readonly property var desktopSurfaceLifecycleEvent: validatedDesktopSurfaceLifecycleEvent()
     readonly property bool showOutputNames: sceneEffect && typeof sceneEffect.showOutputNames === "boolean"
         ? sceneEffect.showOutputNames
         : false
@@ -862,7 +858,7 @@ Rectangle {
                                                    desktopCardLoader.index,
                                                    desktopCardLoader.modelData,
                                                    desktopCardLoader.desktopObject)
-                        desktopSurfaceLifecycleRevision: root.desktopSurfaceLifecycleRevision
+                        desktopSurfaceLifecycleEvent: root.desktopSurfaceLifecycleEvent
                         floatingWindows: root.floatingFor(desktopCardLoader.modelData)
                         keyboardSelectionId: root.keyboardSelectionId
                         liveGeometryEnabled: current && !root.spatialLiveGeometryIsManuallyDetached(
@@ -1480,6 +1476,22 @@ Rectangle {
             firstIndex: 0,
             lastIndex: desktopIds.length - 1
         };
+    }
+
+    function validatedDesktopSurfaceLifecycleEvent() {
+        try {
+            const controller = sceneEffect ? sceneEffect.controller : null;
+            if (!controller) {
+                return null;
+            }
+
+            const event = controller.desktopSurfaceLifecycleEvent;
+            return event !== null && event !== undefined
+                && Number.isSafeInteger(event.revision) && event.revision > 0
+                && event.revision <= 2147483647 ? event : null;
+        } catch (error) {
+            return null;
+        }
     }
 
     function desktopCardShouldLoad(index, expectedDesktopId) {

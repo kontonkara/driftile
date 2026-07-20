@@ -93,6 +93,15 @@ Events travel from KWin through the bridge into the runtime. Commands and result
   changes, so delegates never outlive their projected activity topology.
 - Keeps each rendered thumbnail's direct live window object in its QML delegate;
   the object does not enter projected or persisted state.
+- Snapshots a public Desktop-window lifecycle identity synchronously while the
+  add or remove signal still owns it. Exact output, desktop, and activity scopes
+  from one event-loop burst are deduplicated into one bounded generation. Empty
+  desktop or activity membership means all; incomplete, ambiguous, or
+  over-budget identity becomes one global visible-surface refresh.
+- Reloads only instantiated Desktop surfaces selected by that immutable
+  generation. Each card owns its reload revision and token, so an unrelated
+  later event cannot strand a targeted card on its solid fallback. Off-screen
+  retained cards never instantiate or reload a surface.
 - Keeps current-card thumbnail focus direct. A non-current thumbnail first
   revalidates the exact active effect, model, live screen, projected output,
   desktop, window, and activity; off-desktop hidden state is allowed only at

@@ -30,12 +30,15 @@ or inexact identity, or an unavailable surface, leaves a solid dark fallback
 visible. Desktop surfaces are virtualized separately from cards, so a retained
 off-screen card does not create one. KWin's Desktop selection excludes panels,
 docks, and notifications. If the desktop shell restarts while Overview is open,
-visible rows discard the stale surface immediately, expose the solid fallback,
-and reconnect when the replacement Desktop window appears. Ordinary wallpaper
-damage remains live without polling. Compact neutral backplates keep the
-workspace number and optional name readable on arbitrary wallpapers, while a
-subtle output-area outline identifies the current row without changing its
-geometry.
+only visible rows matching the public output, desktop, and activity identity
+discard the stale surface immediately, expose the solid fallback, and reconnect
+when the replacement Desktop window appears. One event-loop burst produces one
+bounded refresh generation. Incomplete or ambiguous public identity safely
+refreshes every visible surface, while unrelated exact rows remain live.
+Ordinary wallpaper damage remains live without polling. Compact neutral
+backplates keep the workspace number and optional name readable on arbitrary
+wallpapers, while a subtle output-area outline identifies the current row
+without changing its geometry.
 
 Every row uses the normal layout solver for its usable work area, pixel grid,
 gaps, horizontal camera, columns, and member frames. Captured rows preserve

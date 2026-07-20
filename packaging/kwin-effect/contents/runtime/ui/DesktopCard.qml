@@ -11,7 +11,7 @@ Item {
     required property bool desktopReorderEnabled
     required property bool desktopReorderSource
     required property bool desktopSurfaceEnabled
-    required property int desktopSurfaceLifecycleRevision
+    required property var desktopSurfaceLifecycleEvent
     required property string desktopId
     required property var floatingWindows
     required property bool liveGeometryEnabled
@@ -69,6 +69,7 @@ Item {
         ? desktopSurfaceActivityId : "driftile-unavailable-activity"
     readonly property bool desktopSurfaceContextExact: desktopSurfaceContextIsExact()
     property bool desktopSurfaceReady: true
+    property int desktopSurfaceReloadRevision: 0
     property int desktopSurfaceReloadToken: 0
     readonly property real contentLeft: 0
     readonly property real contentTop: 0
@@ -1238,7 +1239,7 @@ Item {
     onContextChanged: card.clearInvalidWindowDropHover()
     onDesktopChanged: card.clearWindowDropHover()
     onDesktopIdChanged: card.clearWindowDropHover()
-    onDesktopSurfaceLifecycleRevisionChanged: card.scheduleDesktopSurfaceReload()
+    onDesktopSurfaceLifecycleEventChanged: card.scheduleDesktopSurfaceReload()
     onEnabledChanged: {
         if (!enabled) {
             card.clearWindowDropHover();
@@ -1262,28 +1263,76 @@ Item {
     Component.onDestruction: card.clearWindowDropHover()
 
     function scheduleDesktopSurfaceReload() {
+        const event = desktopSurfaceLifecycleEvent;
+        const eventRevision = desktopSurfaceLifecycleEventRevision(event);
+        if (eventRevision <= 0 || !desktopSurfaceContextExact) {
+            return false;
+        }
+
+        const plan = planDesktopSurfaceLifecycleRefresh(event, eventRevision);
+        if (plan.targeted !== true) {
+            return false;
+        }
+
         desktopSurfaceReloadToken = desktopSurfaceReloadToken >= 2147483647
             ? 1 : desktopSurfaceReloadToken + 1;
         const token = desktopSurfaceReloadToken;
-        const expectedRevision = desktopSurfaceLifecycleRevision;
-
-        if (!desktopSurfaceEnabled || !desktopSurfaceContextExact) {
-            desktopSurfaceReady = true;
-            return;
-        }
-
+        desktopSurfaceReloadRevision = plan.revision;
+        const reloadRevision = desktopSurfaceReloadRevision;
         desktopSurfaceReady = false;
-        Qt.callLater(card.completeDesktopSurfaceReload, token, expectedRevision);
+        Qt.callLater(card.completeDesktopSurfaceReload, token, reloadRevision);
+        return true;
     }
 
-    function completeDesktopSurfaceReload(token, expectedRevision) {
+    function completeDesktopSurfaceReload(token, reloadRevision) {
         if (token !== desktopSurfaceReloadToken
-                || expectedRevision !== desktopSurfaceLifecycleRevision) {
+                || reloadRevision !== desktopSurfaceReloadRevision) {
             return false;
         }
 
         desktopSurfaceReady = true;
         return true;
+    }
+
+    function desktopSurfaceLifecycleEventRevision(event) {
+        try {
+            return event !== null && event !== undefined
+                && Number.isSafeInteger(event.revision) && event.revision > 0
+                && event.revision <= 2147483647 ? event.revision : 0;
+        } catch (error) {
+            return 0;
+        }
+    }
+
+    function planDesktopSurfaceLifecycleRefresh(event, eventRevision) {
+        const fallback = {
+            revision: eventRevision,
+            targeted: true
+        };
+
+        try {
+            const runtime = OverviewRuntime.DriftileOverview;
+            if (!runtime || typeof runtime.planOverviewDesktopSurfaceLifecycleRefresh !== "function") {
+                return fallback;
+            }
+
+            const plan = runtime.planOverviewDesktopSurfaceLifecycleRefresh({
+                event,
+                output: screen,
+                outputName: String(screen.name),
+                desktopId,
+                activityId: desktopSurfaceActivityId
+            });
+            return desktopSurfaceLifecycleRefreshPlanIsValid(plan, eventRevision) ? plan : fallback;
+        } catch (error) {
+            return fallback;
+        }
+    }
+
+    function desktopSurfaceLifecycleRefreshPlanIsValid(plan, eventRevision) {
+        return plan && !Array.isArray(plan) && typeof plan === "object"
+            && Number.isSafeInteger(plan.revision) && plan.revision === eventRevision
+            && typeof plan.targeted === "boolean";
     }
 
     function desktopSurfaceContextIsExact() {

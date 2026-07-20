@@ -8,13 +8,20 @@ QtObject {
 
     property bool active: false
     property int activeSessionId: 0
+    property var desktopSurfaceLifecycleEvent: null
+    readonly property int desktopSurfaceLifecycleIdLimit: 512
+    readonly property int desktopSurfaceLifecycleIdentifierLimit: 256
     property int desktopSurfaceLifecycleRevision: 0
+    readonly property int desktopSurfaceLifecycleScopeLimit: 64
+    property bool desktopSurfaceLifecycleFlushQueued: false
     property bool loading: false
     property var overviewModel: null
     property int lastActivationAttemptId: 0
     property int lastLiveRefreshAttemptId: 0
     property int lastPresentationTransitionToken: 0
     property int pendingActivationAttemptId: 0
+    property bool pendingDesktopSurfaceLifecycleGlobal: false
+    property var pendingDesktopSurfaceLifecycleScopes: []
     property int pendingLiveRefreshAttemptId: 0
     property var pendingLiveRefreshModel: null
     property int pendingLiveRefreshRetryCount: 0
@@ -132,12 +139,12 @@ QtObject {
         ignoreUnknownSignals: true
 
         function onWindowAdded(window) {
-            controller.advanceDesktopSurfaceLifecycleRevision(window);
+            controller.queueDesktopSurfaceLifecycleEvent(window);
             controller.requestLiveModelRefresh();
         }
 
         function onWindowRemoved(window) {
-            controller.advanceDesktopSurfaceLifecycleRevision(window);
+            controller.queueDesktopSurfaceLifecycleEvent(window);
             controller.requestLiveModelRefresh();
         }
 
@@ -156,7 +163,7 @@ QtObject {
         }
     }
 
-    function advanceDesktopSurfaceLifecycleRevision(window) {
+    function queueDesktopSurfaceLifecycleEvent(window) {
         try {
             if (!window || window.desktopWindow !== true) {
                 return false;
@@ -164,10 +171,390 @@ QtObject {
         } catch (error) {
             return false;
         }
+        if (!active) {
+            return false;
+        }
 
-        desktopSurfaceLifecycleRevision = desktopSurfaceLifecycleRevision >= 2147483647
-            ? 1 : desktopSurfaceLifecycleRevision + 1;
+        let scope = null;
+        try {
+            scope = snapshotDesktopSurfaceLifecycleScope(window);
+        } catch (error) {
+            scope = null;
+        }
+        if (!scope) {
+            queueGlobalDesktopSurfaceLifecycleEvent();
+            return true;
+        }
+
+        mergeDesktopSurfaceLifecycleScope(scope);
         return true;
+    }
+
+    function snapshotDesktopSurfaceLifecycleScope(window) {
+        const output = snapshotDesktopSurfaceLifecycleOutput(window);
+        const desktops = snapshotDesktopSurfaceLifecycleDesktops(window);
+        const activities = snapshotDesktopSurfaceLifecycleActivities(window);
+        if (!output || !desktops || !activities) {
+            return null;
+        }
+
+        return {
+            output: output.output,
+            outputName: output.outputName,
+            allDesktops: desktops.all,
+            desktopIds: desktops.ids,
+            allActivities: activities.all,
+            activityIds: activities.ids
+        };
+    }
+
+    function snapshotDesktopSurfaceLifecycleOutput(window) {
+        const output = window.output;
+        if (!output || output.name === undefined || output.name === null) {
+            return null;
+        }
+
+        const outputName = String(output.name);
+        if (!desktopSurfaceLifecycleIdentifierIsValid(outputName)) {
+            return null;
+        }
+
+        const liveOutputs = KWin.Workspace.screens;
+        if (!desktopSurfaceLifecycleSequenceIsValid(liveOutputs)) {
+            return null;
+        }
+        let objectMatches = 0;
+        let nameMatches = 0;
+        for (const liveOutput of liveOutputs) {
+            if (!liveOutput || liveOutput.name === undefined || liveOutput.name === null) {
+                return null;
+            }
+            const liveOutputName = String(liveOutput.name);
+            if (!desktopSurfaceLifecycleIdentifierIsValid(liveOutputName)) {
+                return null;
+            }
+            if (liveOutput === output) {
+                objectMatches += 1;
+                if (liveOutputName !== outputName) {
+                    return null;
+                }
+            }
+            if (liveOutputName === outputName) {
+                nameMatches += 1;
+            }
+        }
+
+        return objectMatches === 1 && nameMatches === 1 ? { output, outputName } : null;
+    }
+
+    function snapshotDesktopSurfaceLifecycleDesktops(window) {
+        const memberships = window.desktops;
+        if (!desktopSurfaceLifecycleSequenceIsValid(memberships)) {
+            return null;
+        }
+        const liveDesktops = KWin.Workspace.desktops;
+        if (!desktopSurfaceLifecycleSequenceIsValid(liveDesktops)) {
+            return null;
+        }
+        if (memberships.length === 0) {
+            return { all: true, ids: [] };
+        }
+
+        const ids = [];
+        const knownIds = Object.create(null);
+        for (const desktop of memberships) {
+            if (!desktop || desktop.id === undefined || desktop.id === null) {
+                return null;
+            }
+            const desktopId = String(desktop.id);
+            if (!desktopSurfaceLifecycleIdentifierIsValid(desktopId)) {
+                return null;
+            }
+
+            let objectMatches = 0;
+            let idMatches = 0;
+            for (const liveDesktop of liveDesktops) {
+                if (!liveDesktop || liveDesktop.id === undefined || liveDesktop.id === null) {
+                    return null;
+                }
+                const liveDesktopId = String(liveDesktop.id);
+                if (!desktopSurfaceLifecycleIdentifierIsValid(liveDesktopId)) {
+                    return null;
+                }
+                if (liveDesktop === desktop) {
+                    objectMatches += 1;
+                    if (liveDesktopId !== desktopId) {
+                        return null;
+                    }
+                }
+                if (liveDesktopId === desktopId) {
+                    idMatches += 1;
+                }
+            }
+            if (objectMatches !== 1 || idMatches !== 1) {
+                return null;
+            }
+            if (knownIds[desktopId] === true) {
+                return null;
+            }
+            knownIds[desktopId] = true;
+            ids.push(desktopId);
+        }
+
+        return { all: false, ids };
+    }
+
+    function snapshotDesktopSurfaceLifecycleActivities(window) {
+        const memberships = window.activities;
+        if (!desktopSurfaceLifecycleSequenceIsValid(memberships)) {
+            return null;
+        }
+        const liveActivities = KWin.Workspace.activities;
+        if (!desktopSurfaceLifecycleSequenceIsValid(liveActivities)) {
+            return null;
+        }
+        if (memberships.length === 0) {
+            return { all: true, ids: [] };
+        }
+
+        const ids = [];
+        const knownIds = Object.create(null);
+        for (const membership of memberships) {
+            if (membership === undefined || membership === null) {
+                return null;
+            }
+            const activityId = String(membership);
+            if (!desktopSurfaceLifecycleIdentifierIsValid(activityId)) {
+                return null;
+            }
+
+            let matches = 0;
+            for (const liveActivity of liveActivities) {
+                if (liveActivity === undefined || liveActivity === null) {
+                    return null;
+                }
+                const liveActivityId = String(liveActivity);
+                if (!desktopSurfaceLifecycleIdentifierIsValid(liveActivityId)) {
+                    return null;
+                }
+                if (liveActivityId === activityId) {
+                    matches += 1;
+                }
+            }
+            if (matches !== 1) {
+                return null;
+            }
+            if (knownIds[activityId] === true) {
+                return null;
+            }
+            knownIds[activityId] = true;
+            ids.push(activityId);
+        }
+
+        return { all: false, ids };
+    }
+
+    function desktopSurfaceLifecycleSequenceIsValid(sequence) {
+        return sequence !== undefined && sequence !== null && typeof sequence !== "string"
+            && Number.isInteger(sequence.length) && sequence.length >= 0
+            && sequence.length <= desktopSurfaceLifecycleIdLimit;
+    }
+
+    function desktopSurfaceLifecycleIdentifierIsValid(value) {
+        if (typeof value !== "string" || value.length === 0
+                || value.length > desktopSurfaceLifecycleIdentifierLimit) {
+            return false;
+        }
+        for (let index = 0; index < value.length; index += 1) {
+            const code = value.charCodeAt(index);
+            if (code <= 31 || code === 127) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    function mergeDesktopSurfaceLifecycleScope(scope) {
+        if (pendingDesktopSurfaceLifecycleGlobal) {
+            scheduleDesktopSurfaceLifecycleFlush();
+            return;
+        }
+        if (!desktopSurfaceLifecycleScopeIsValid(scope)) {
+            queueGlobalDesktopSurfaceLifecycleEvent();
+            return;
+        }
+
+        for (let index = 0; index < pendingDesktopSurfaceLifecycleScopes.length; index += 1) {
+            const pendingScope = pendingDesktopSurfaceLifecycleScopes[index];
+            if (!desktopSurfaceLifecycleScopeIsValid(pendingScope)) {
+                queueGlobalDesktopSurfaceLifecycleEvent();
+                return;
+            }
+            if (pendingScope.output === scope.output
+                    && pendingScope.outputName !== scope.outputName) {
+                queueGlobalDesktopSurfaceLifecycleEvent();
+                return;
+            }
+            if (desktopSurfaceLifecycleScopesAreEqual(pendingScope, scope)) {
+                scheduleDesktopSurfaceLifecycleFlush();
+                return;
+            }
+        }
+
+        if (pendingDesktopSurfaceLifecycleScopes.length >= desktopSurfaceLifecycleScopeLimit) {
+            queueGlobalDesktopSurfaceLifecycleEvent();
+            return;
+        }
+
+        pendingDesktopSurfaceLifecycleScopes.push({
+                                                      output: scope.output,
+                                                      outputName: scope.outputName,
+                                                      allDesktops: scope.allDesktops,
+                                                      desktopIds: scope.allDesktops ? [] : scope.desktopIds.slice(),
+                                                      allActivities: scope.allActivities,
+                                                      activityIds: scope.allActivities ? [] : scope.activityIds.slice()
+                                                  });
+        scheduleDesktopSurfaceLifecycleFlush();
+    }
+
+    function desktopSurfaceLifecycleScopeIsValid(scope) {
+        try {
+            return scope && typeof scope === "object" && !Array.isArray(scope)
+                && scope.output && typeof scope.output === "object" && !Array.isArray(scope.output)
+                && desktopSurfaceLifecycleIdentifierIsValid(scope.outputName)
+                && desktopSurfaceLifecycleIdSelectionIsValid(scope.allDesktops, scope.desktopIds)
+                && desktopSurfaceLifecycleIdSelectionIsValid(scope.allActivities, scope.activityIds);
+        } catch (error) {
+            return false;
+        }
+    }
+
+    function desktopSurfaceLifecycleIdSelectionIsValid(all, ids) {
+        if (typeof all !== "boolean" || !desktopSurfaceLifecycleSequenceIsValid(ids)
+                || (all ? ids.length !== 0 : ids.length === 0)) {
+            return false;
+        }
+
+        const knownIds = Object.create(null);
+        for (const id of ids) {
+            if (!desktopSurfaceLifecycleIdentifierIsValid(id) || knownIds[id] === true) {
+                return false;
+            }
+            knownIds[id] = true;
+        }
+        return true;
+    }
+
+    function desktopSurfaceLifecycleScopesAreEqual(first, second) {
+        return first.output === second.output && first.outputName === second.outputName
+            && first.allDesktops === second.allDesktops
+            && first.allActivities === second.allActivities
+            && desktopSurfaceLifecycleIdSetsAreEqual(first.desktopIds, second.desktopIds)
+            && desktopSurfaceLifecycleIdSetsAreEqual(first.activityIds, second.activityIds);
+    }
+
+    function desktopSurfaceLifecycleIdSetsAreEqual(first, second) {
+        if (!desktopSurfaceLifecycleSequenceIsValid(first)
+                || !desktopSurfaceLifecycleSequenceIsValid(second)
+                || first.length !== second.length) {
+            return false;
+        }
+
+        const firstIds = Object.create(null);
+        for (const id of first) {
+            if (!desktopSurfaceLifecycleIdentifierIsValid(id) || firstIds[id] === true) {
+                return false;
+            }
+            firstIds[id] = true;
+        }
+        const secondIds = Object.create(null);
+        for (const id of second) {
+            if (!desktopSurfaceLifecycleIdentifierIsValid(id) || secondIds[id] === true
+                    || firstIds[id] !== true) {
+                return false;
+            }
+            secondIds[id] = true;
+        }
+        return true;
+    }
+
+    function queueGlobalDesktopSurfaceLifecycleEvent() {
+        pendingDesktopSurfaceLifecycleGlobal = true;
+        pendingDesktopSurfaceLifecycleScopes = [];
+        scheduleDesktopSurfaceLifecycleFlush();
+    }
+
+    function scheduleDesktopSurfaceLifecycleFlush() {
+        if (desktopSurfaceLifecycleFlushQueued) {
+            return;
+        }
+
+        desktopSurfaceLifecycleFlushQueued = true;
+        Qt.callLater(controller.flushDesktopSurfaceLifecycleEvent);
+    }
+
+    function flushDesktopSurfaceLifecycleEvent() {
+        if (!desktopSurfaceLifecycleFlushQueued) {
+            return false;
+        }
+
+        const global = pendingDesktopSurfaceLifecycleGlobal;
+        const pendingScopes = pendingDesktopSurfaceLifecycleScopes;
+        clearPendingDesktopSurfaceLifecycleEvent();
+        if (!active) {
+            return false;
+        }
+
+        const scopes = [];
+        if (!global) {
+            for (const scope of pendingScopes) {
+                const allDesktops = scope.allDesktops === true;
+                const allActivities = scope.allActivities === true;
+                scopes.push(Object.freeze({
+                                              output: scope.output,
+                                              outputName: scope.outputName,
+                                              allDesktops,
+                                              desktopIds: Object.freeze(allDesktops ? [] : scope.desktopIds.slice()),
+                                              allActivities,
+                                              activityIds: Object.freeze(allActivities ? [] : scope.activityIds.slice())
+                                          }));
+            }
+        }
+
+        const revision = nextDesktopSurfaceLifecycleRevision();
+        desktopSurfaceLifecycleRevision = revision;
+        if (!active) {
+            desktopSurfaceLifecycleEvent = null;
+            return false;
+        }
+        const event = Object.freeze({
+                                        revision,
+                                        global,
+                                        scopes: Object.freeze(scopes)
+                                    });
+        desktopSurfaceLifecycleEvent = event;
+        Qt.callLater(controller.clearPublishedDesktopSurfaceLifecycleEvent, event);
+        return true;
+    }
+
+    function clearPublishedDesktopSurfaceLifecycleEvent(expectedEvent) {
+        if (desktopSurfaceLifecycleEvent !== expectedEvent) {
+            return false;
+        }
+
+        desktopSurfaceLifecycleEvent = null;
+        return true;
+    }
+
+    function clearPendingDesktopSurfaceLifecycleEvent() {
+        desktopSurfaceLifecycleFlushQueued = false;
+        pendingDesktopSurfaceLifecycleGlobal = false;
+        pendingDesktopSurfaceLifecycleScopes = [];
+    }
+
+    function nextDesktopSurfaceLifecycleRevision() {
+        return desktopSurfaceLifecycleRevision >= 2147483647 ? 1
+                                                             : desktopSurfaceLifecycleRevision + 1;
     }
 
     function open() {
@@ -444,6 +831,8 @@ QtObject {
     function deactivateImmediately() {
         resetTouchpadGestureState();
         touchpadGestureDispatching = false;
+        clearPendingDesktopSurfaceLifecycleEvent();
+        desktopSurfaceLifecycleEvent = null;
         invalidatePresentationTransition();
         pendingActivationAttemptId = 0;
         clearPendingLiveModelRefresh();

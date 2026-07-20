@@ -18,6 +18,13 @@ export type {
 } from "./navigation";
 export { planOverviewDesktopLabel } from "./desktop-label";
 export type { OverviewDesktopLabelPlan } from "./desktop-label";
+export { planOverviewDesktopSurfaceLifecycleRefresh } from "./desktop-surface-lifecycle";
+export type {
+  OverviewDesktopSurfaceLifecycleEvent,
+  OverviewDesktopSurfaceLifecycleRefreshInput,
+  OverviewDesktopSurfaceLifecycleRefreshPlan,
+  OverviewDesktopSurfaceLifecycleScope,
+} from "./desktop-surface-lifecycle";
 export { planOverviewOutputLabel } from "./output-label";
 export type { OverviewOutputLabelPlan } from "./output-label";
 export { planOverviewDesktopDrop } from "./desktop-drop";

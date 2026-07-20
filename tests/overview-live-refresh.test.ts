@@ -28,10 +28,10 @@ describe("overview live model refresh", () => {
 
     expect(lifecycle).toContain("target: KWin.Workspace");
     expect(lifecycle).toMatch(
-      /function onWindowAdded\(window\) \{\s*controller\.advanceDesktopSurfaceLifecycleRevision\(window\);\s*controller\.requestLiveModelRefresh\(\);/u,
+      /function onWindowAdded\(window\) \{\s*controller\.queueDesktopSurfaceLifecycleEvent\(window\);\s*controller\.requestLiveModelRefresh\(\);/u,
     );
     expect(lifecycle).toMatch(
-      /function onWindowRemoved\(window\) \{\s*controller\.advanceDesktopSurfaceLifecycleRevision\(window\);\s*controller\.requestLiveModelRefresh\(\);/u,
+      /function onWindowRemoved\(window\) \{\s*controller\.queueDesktopSurfaceLifecycleEvent\(window\);\s*controller\.requestLiveModelRefresh\(\);/u,
     );
     expect(lifecycle).toMatch(
       /function onDesktopsChanged\(\) \{\s*controller\.requestLiveModelRefresh\(\);/u,
@@ -60,39 +60,293 @@ describe("overview live model refresh", () => {
     );
   });
 
-  it("advances only public desktop-window surface lifecycles without polling", () => {
+  it("snapshots only active confirmed desktop windows through exact public identities", () => {
     const lifecycle = controller.slice(
       controller.indexOf("id: workspaceWindowLifecycleConnection"),
       controller.indexOf("function toggle("),
     );
-    const revisionAdvance = controller.slice(
-      controller.indexOf(
-        "function advanceDesktopSurfaceLifecycleRevision(window)",
-      ),
+    const capture = controller.slice(
+      controller.indexOf("function queueDesktopSurfaceLifecycleEvent(window)"),
       controller.indexOf("function open()"),
     );
+    const queue = capture.slice(
+      capture.indexOf("function queueDesktopSurfaceLifecycleEvent(window)"),
+      capture.indexOf("function snapshotDesktopSurfaceLifecycleScope(window)"),
+    );
+    const output = capture.slice(
+      capture.indexOf("function snapshotDesktopSurfaceLifecycleOutput(window)"),
+      capture.indexOf(
+        "function snapshotDesktopSurfaceLifecycleDesktops(window)",
+      ),
+    );
+    const desktops = capture.slice(
+      capture.indexOf(
+        "function snapshotDesktopSurfaceLifecycleDesktops(window)",
+      ),
+      capture.indexOf(
+        "function snapshotDesktopSurfaceLifecycleActivities(window)",
+      ),
+    );
+    const activities = capture.slice(
+      capture.indexOf(
+        "function snapshotDesktopSurfaceLifecycleActivities(window)",
+      ),
+      capture.indexOf(
+        "function desktopSurfaceLifecycleSequenceIsValid(sequence)",
+      ),
+    );
 
+    expect(controller).toContain(
+      "property var desktopSurfaceLifecycleEvent: null",
+    );
     expect(controller).toContain(
       "property int desktopSurfaceLifecycleRevision: 0",
     );
     expect(
-      lifecycle.match(/advanceDesktopSurfaceLifecycleRevision\(window\)/gu),
+      lifecycle.match(/queueDesktopSurfaceLifecycleEvent\(window\)/gu),
     ).toHaveLength(2);
-    expect(lifecycle).toMatch(
-      /function onWindowAdded\(window\) \{\s*controller\.advanceDesktopSurfaceLifecycleRevision\(window\);\s*controller\.requestLiveModelRefresh\(\);/u,
-    );
-    expect(lifecycle).toMatch(
-      /function onWindowRemoved\(window\) \{\s*controller\.advanceDesktopSurfaceLifecycleRevision\(window\);\s*controller\.requestLiveModelRefresh\(\);/u,
-    );
-    expect(revisionAdvance).toMatch(
+    expect(queue).toMatch(
       /try \{\s*if \(!window \|\| window\.desktopWindow !== true\) \{\s*return false;\s*\}\s*\} catch \(error\) \{\s*return false;/u,
     );
-    expect(revisionAdvance).toMatch(
-      /desktopSurfaceLifecycleRevision = desktopSurfaceLifecycleRevision >= 2147483647\s*\? 1 : desktopSurfaceLifecycleRevision \+ 1;\s*return true;/u,
+    expect(queue).toMatch(
+      /if \(!active\) \{\s*return false;\s*\}[\s\S]*scope = snapshotDesktopSurfaceLifecycleScope\(window\);/u,
     );
-    expect(revisionAdvance.match(/desktopWindow/gu)).toHaveLength(1);
-    expect(`${lifecycle}\n${revisionAdvance}`).not.toMatch(
-      /org\.kde\.kwin\.private|\bTimer\s*\{|repeat:\s*true|setInterval|setTimeout|Qt\.callLater|KWin\.Workspace\.(?:stackingOrder|windows)\b/u,
+    expect(queue.indexOf("window.desktopWindow !== true")).toBeLessThan(
+      queue.indexOf("snapshotDesktopSurfaceLifecycleScope(window)"),
+    );
+    expect(queue).not.toMatch(/window\.(?:output|desktops|activities)/u);
+    expect(queue).toMatch(
+      /if \(!scope\) \{\s*queueGlobalDesktopSurfaceLifecycleEvent\(\);\s*return true;/u,
+    );
+
+    expect(output).toContain("const output = window.output;");
+    expect(output).toContain("const liveOutputs = KWin.Workspace.screens;");
+    expect(output).toContain("liveOutput === output");
+    expect(output).toContain("objectMatches === 1 && nameMatches === 1");
+    expect(output).toContain(
+      "desktopSurfaceLifecycleIdentifierIsValid(outputName)",
+    );
+
+    expect(desktops).toContain("const memberships = window.desktops;");
+    expect(desktops).toContain("const liveDesktops = KWin.Workspace.desktops;");
+    expect(desktops).toMatch(
+      /if \(memberships\.length === 0\) \{\s*return \{ all: true, ids: \[\] \};/u,
+    );
+    expect(desktops).toContain("liveDesktop === desktop");
+    expect(desktops).toContain("objectMatches !== 1 || idMatches !== 1");
+    expect(desktops).toMatch(
+      /if \(knownIds\[desktopId\] === true\) \{\s*return null;/u,
+    );
+
+    expect(activities).toContain("const memberships = window.activities;");
+    expect(activities).toContain(
+      "const liveActivities = KWin.Workspace.activities;",
+    );
+    expect(activities).toMatch(
+      /if \(memberships\.length === 0\) \{\s*return \{ all: true, ids: \[\] \};/u,
+    );
+    expect(activities).toContain("if (matches !== 1)");
+    expect(activities).toMatch(
+      /if \(knownIds\[activityId\] === true\) \{\s*return null;/u,
+    );
+  });
+
+  it("bounds, validates, and deduplicates exact lifecycle scopes", () => {
+    const capture = controller.slice(
+      controller.indexOf("function queueDesktopSurfaceLifecycleEvent(window)"),
+      controller.indexOf("function open()"),
+    );
+    const shapeValidation = capture.slice(
+      capture.indexOf(
+        "function desktopSurfaceLifecycleSequenceIsValid(sequence)",
+      ),
+      capture.indexOf("function mergeDesktopSurfaceLifecycleScope(scope)"),
+    );
+    const merge = capture.slice(
+      capture.indexOf("function mergeDesktopSurfaceLifecycleScope(scope)"),
+      capture.indexOf("function queueGlobalDesktopSurfaceLifecycleEvent()"),
+    );
+    const scopeValidation = capture.slice(
+      capture.indexOf("function desktopSurfaceLifecycleScopeIsValid(scope)"),
+      capture.indexOf("function desktopSurfaceLifecycleScopesAreEqual("),
+    );
+    const scopeEquality = capture.slice(
+      capture.indexOf("function desktopSurfaceLifecycleScopesAreEqual("),
+      capture.indexOf("function queueGlobalDesktopSurfaceLifecycleEvent()"),
+    );
+
+    expect(controller).toContain(
+      "readonly property int desktopSurfaceLifecycleIdLimit: 512",
+    );
+    expect(controller).toContain(
+      "readonly property int desktopSurfaceLifecycleIdentifierLimit: 256",
+    );
+    expect(controller).toContain(
+      "readonly property int desktopSurfaceLifecycleScopeLimit: 64",
+    );
+    expect(shapeValidation).toContain(
+      "sequence.length <= desktopSurfaceLifecycleIdLimit",
+    );
+    expect(shapeValidation).toMatch(
+      /typeof value !== "string" \|\| value\.length === 0[\s\S]*value\.length > desktopSurfaceLifecycleIdentifierLimit/u,
+    );
+    expect(shapeValidation).toMatch(
+      /const code = value\.charCodeAt\(index\);\s*if \(code <= 31 \|\| code === 127\)/u,
+    );
+
+    expect(merge).toMatch(
+      /if \(!desktopSurfaceLifecycleScopeIsValid\(scope\)\) \{\s*queueGlobalDesktopSurfaceLifecycleEvent\(\);/u,
+    );
+    expect(merge).toMatch(
+      /pendingScope\.output === scope\.output\s*&& pendingScope\.outputName !== scope\.outputName/u,
+    );
+    expect(merge).toContain(
+      "desktopSurfaceLifecycleScopesAreEqual(pendingScope, scope)",
+    );
+    expect(merge).toContain("pendingDesktopSurfaceLifecycleScopes.push({");
+    expect(merge).toContain(
+      "pendingDesktopSurfaceLifecycleScopes.length >= desktopSurfaceLifecycleScopeLimit",
+    );
+    expect(scopeValidation).toMatch(
+      /desktopSurfaceLifecycleIdSelectionIsValid\(scope\.allDesktops, scope\.desktopIds\)[\s\S]*desktopSurfaceLifecycleIdSelectionIsValid\(scope\.allActivities, scope\.activityIds\)/u,
+    );
+    expect(scopeValidation).toMatch(
+      /all \? ids\.length !== 0 : ids\.length === 0/u,
+    );
+    expect(scopeValidation).toMatch(
+      /!desktopSurfaceLifecycleIdentifierIsValid\(id\) \|\| knownIds\[id\] === true/u,
+    );
+    expect(scopeEquality).toMatch(
+      /first\.output === second\.output && first\.outputName === second\.outputName[\s\S]*first\.allDesktops === second\.allDesktops[\s\S]*first\.allActivities === second\.allActivities[\s\S]*desktopSurfaceLifecycleIdSetsAreEqual\(first\.desktopIds, second\.desktopIds\)[\s\S]*desktopSurfaceLifecycleIdSetsAreEqual\(first\.activityIds, second\.activityIds\)/u,
+    );
+  });
+
+  it("preserves desktop and activity rectangles without cross-product widening", () => {
+    const merge = controller.slice(
+      controller.indexOf("function mergeDesktopSurfaceLifecycleScope(scope)"),
+      controller.indexOf("function desktopSurfaceLifecycleScopeIsValid(scope)"),
+    );
+
+    const dedupe = merge.indexOf(
+      "desktopSurfaceLifecycleScopesAreEqual(pendingScope, scope)",
+    );
+    const append = merge.indexOf("pendingDesktopSurfaceLifecycleScopes.push({");
+    expect(dedupe).toBeGreaterThan(0);
+    expect(append).toBeGreaterThan(dedupe);
+    expect(merge).not.toMatch(
+      /pendingScope\.(?:allDesktops|desktopIds|allActivities|activityIds)\s*=/u,
+    );
+    expect(merge).not.toMatch(
+      /mergeDesktopSurfaceLifecycleIds|pendingScope\.allDesktops \|\| scope\.allDesktops|pendingScope\.allActivities \|\| scope\.allActivities/u,
+    );
+    expect(merge).toMatch(
+      /desktopIds: scope\.allDesktops \? \[\] : scope\.desktopIds\.slice\(\)[\s\S]*activityIds: scope\.allActivities \? \[\] : scope\.activityIds\.slice\(\)/u,
+    );
+  });
+
+  it("flushes one immutable lifecycle event and cancels stale bursts on teardown", () => {
+    const capture = controller.slice(
+      controller.indexOf("function queueDesktopSurfaceLifecycleEvent(window)"),
+      controller.indexOf("function open()"),
+    );
+    const globalFallback = capture.slice(
+      capture.indexOf("function queueGlobalDesktopSurfaceLifecycleEvent()"),
+      capture.indexOf("function scheduleDesktopSurfaceLifecycleFlush()"),
+    );
+    const schedule = capture.slice(
+      capture.indexOf("function scheduleDesktopSurfaceLifecycleFlush()"),
+      capture.indexOf("function flushDesktopSurfaceLifecycleEvent()"),
+    );
+    const flush = capture.slice(
+      capture.indexOf("function flushDesktopSurfaceLifecycleEvent()"),
+      capture.indexOf(
+        "function clearPublishedDesktopSurfaceLifecycleEvent(expectedEvent)",
+      ),
+    );
+    const publicationClear = capture.slice(
+      capture.indexOf(
+        "function clearPublishedDesktopSurfaceLifecycleEvent(expectedEvent)",
+      ),
+      capture.indexOf("function clearPendingDesktopSurfaceLifecycleEvent()"),
+    );
+    const revision = capture.slice(
+      capture.indexOf("function nextDesktopSurfaceLifecycleRevision()"),
+    );
+    const deactivateImmediately = controller.slice(
+      controller.indexOf("function deactivateImmediately()"),
+      controller.indexOf("function boundedPresentationProgress("),
+    );
+
+    expect(controller).toContain(
+      "property bool desktopSurfaceLifecycleFlushQueued: false",
+    );
+    expect(globalFallback).toMatch(
+      /pendingDesktopSurfaceLifecycleGlobal = true;\s*pendingDesktopSurfaceLifecycleScopes = \[\];\s*scheduleDesktopSurfaceLifecycleFlush\(\);/u,
+    );
+    expect(schedule).toMatch(
+      /if \(desktopSurfaceLifecycleFlushQueued\) \{\s*return;\s*\}[\s\S]*desktopSurfaceLifecycleFlushQueued = true;\s*Qt\.callLater\(controller\.flushDesktopSurfaceLifecycleEvent\);/u,
+    );
+    expect(schedule.match(/Qt\.callLater\(/gu)).toHaveLength(1);
+    expect(flush.match(/Qt\.callLater\(/gu)).toHaveLength(1);
+    expect(capture.match(/Qt\.callLater\(/gu)).toHaveLength(2);
+    expect(flush).toMatch(
+      /clearPendingDesktopSurfaceLifecycleEvent\(\);\s*if \(!active\) \{\s*return false;/u,
+    );
+    expect(flush).toContain("scopes.push(Object.freeze({");
+    expect(flush).toContain(
+      "desktopIds: Object.freeze(allDesktops ? [] : scope.desktopIds.slice())",
+    );
+    expect(flush).toContain(
+      "activityIds: Object.freeze(allActivities ? [] : scope.activityIds.slice())",
+    );
+    expect(flush).toContain("scopes: Object.freeze(scopes)");
+    expect(flush).toContain("const event = Object.freeze({");
+    expect(flush).toContain("desktopSurfaceLifecycleEvent = event;");
+    expect(flush).toContain(
+      "Qt.callLater(controller.clearPublishedDesktopSurfaceLifecycleEvent, event);",
+    );
+    expect(
+      flush.indexOf("desktopSurfaceLifecycleRevision = revision;"),
+    ).toBeLessThan(flush.indexOf("desktopSurfaceLifecycleEvent = event;"));
+    expect(flush).toMatch(
+      /desktopSurfaceLifecycleRevision = revision;\s*if \(!active\) \{\s*desktopSurfaceLifecycleEvent = null;\s*return false;/u,
+    );
+    expect(revision).toMatch(
+      /desktopSurfaceLifecycleRevision >= 2147483647 \? 1[\s\S]*desktopSurfaceLifecycleRevision \+ 1/u,
+    );
+    expect(publicationClear).toMatch(
+      /if \(desktopSurfaceLifecycleEvent !== expectedEvent\) \{\s*return false;\s*\}[\s\S]*desktopSurfaceLifecycleEvent = null;\s*return true;/u,
+    );
+    expect(deactivateImmediately).toMatch(
+      /clearPendingDesktopSurfaceLifecycleEvent\(\);\s*desktopSurfaceLifecycleEvent = null;/u,
+    );
+    expect(`${capture}\n${deactivateImmediately}`).not.toMatch(
+      /org\.kde\.kwin\.private|\bTimer\s*\{|repeat:\s*true|setInterval|setTimeout|KWin\.Workspace\.(?:stackingOrder|windows)\b/u,
+    );
+  });
+
+  it("does not retain or let an older callback clear a published lifecycle event", () => {
+    const flush = controller.slice(
+      controller.indexOf("function flushDesktopSurfaceLifecycleEvent()"),
+      controller.indexOf(
+        "function clearPublishedDesktopSurfaceLifecycleEvent(expectedEvent)",
+      ),
+    );
+    const publicationClear = controller.slice(
+      controller.indexOf(
+        "function clearPublishedDesktopSurfaceLifecycleEvent(expectedEvent)",
+      ),
+      controller.indexOf("function clearPendingDesktopSurfaceLifecycleEvent()"),
+    );
+
+    expect(flush).toMatch(
+      /desktopSurfaceLifecycleEvent = event;\s*Qt\.callLater\(controller\.clearPublishedDesktopSurfaceLifecycleEvent, event\);/u,
+    );
+    expect(publicationClear).toMatch(
+      /desktopSurfaceLifecycleEvent !== expectedEvent[\s\S]*return false;[\s\S]*desktopSurfaceLifecycleEvent = null;/u,
+    );
+    expect(publicationClear).not.toMatch(
+      /desktopSurfaceLifecycleRevision|pendingDesktopSurfaceLifecycleScopes|clearPendingDesktopSurfaceLifecycleEvent/u,
     );
   });
 
