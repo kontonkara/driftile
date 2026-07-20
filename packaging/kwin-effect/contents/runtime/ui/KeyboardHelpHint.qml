@@ -5,18 +5,23 @@ Rectangle {
 
     signal openRequested()
 
-    implicitWidth: 128
-    implicitHeight: 20
-    color: hintTapHandler.pressed ? "#f286aee8" : hintHoverHandler.hovered ? "#e62b3a50" : "#cc1a2230"
+    readonly property string label: "Type to search \u00b7 F1 help"
+
+    implicitWidth: 168
+    implicitHeight: 28
+    color: hintTapHandler.pressed ? "#f23b526f" : hintHoverHandler.hovered ? "#e62b3a50" : "#cc1a2230"
     border.width: 1
-    border.color: hintHoverHandler.hovered ? "#d8e8ff" : "#66758c"
+    border.color: hintTapHandler.pressed ? "#ffffff" : hintHoverHandler.hovered ? "#d8e8ff" : "#66758c"
     radius: 7
+    Accessible.name: hint.label
+    Accessible.role: Accessible.Button
+    Accessible.onPressAction: hint.openRequested()
 
     Text {
         anchors.fill: parent
-        text: "F1  Keyboard help"
+        text: hint.label
         textFormat: Text.PlainText
-        color: "#c9d3e2"
+        color: hintTapHandler.pressed ? "#ffffff" : hintHoverHandler.hovered ? "#eaf2ff" : "#d8e1ee"
         font.pixelSize: 11
         horizontalAlignment: Text.AlignHCenter
         verticalAlignment: Text.AlignVCenter

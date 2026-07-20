@@ -281,9 +281,15 @@ The ownership rule is strict:
 - On opening, keyboard selection prefers the active actionable window, then an
   actionable target on the current desktop, then the first actionable target
   in visual order.
-- Arrow keys move spatially without wrapping. `Enter`, `Return`, and `Space`
-  use the selected target's existing guarded activation path; `Escape` closes
-  the effect.
+- A settled Overview with neither search nor help open shows one compact
+  `Type to search · F1 help` control. Hover signals clickability, click or touch
+  opens the existing keyboard reference, and the control hides during opening,
+  closing, search, and help. Typing continues to start search directly.
+- Arrow keys move spatially without wrapping. Before dispatching `Enter` or
+  `Return`, or `Space` outside search, Overview synchronously establishes the
+  preferred selection if the initial asynchronous repair has not run, then
+  enters the selected target's existing guarded path exactly once. `Escape`
+  closes the effect.
 - A selected tabbed member contributes its thumbnail as one target. Other live
   members contribute their tabs, while minimized, invalid, and fully clipped
   items are excluded. Partially clipped targets use their visible intersection;

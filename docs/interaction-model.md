@@ -202,10 +202,19 @@ private APIs, layout writes, or persistence.
 
 Keyboard selection starts from the active actionable window when possible.
 Every workspace marker, including the current one, is also actionable. Arrow
-keys move spatially, `Tab` cycles visible targets, and `Enter`, `Return`, or
-`Space` activates the selection. Activating the current marker closes Overview
-without a desktop write. Typing filters windows by title, application, desktop,
-output, or state. `F1` opens the compact keyboard and search reference.
+keys move spatially and `Tab` cycles visible targets. In a settled scene with
+neither search nor help open, a compact `Type to search · F1 help` control
+advertises both entry points. Hover signals clickability, while click or touch
+opens the keyboard reference. It hides during opening, closing, search, and
+help; typing still starts search directly.
+
+`Enter` or `Return`, plus `Space` outside search, activates the selection. If
+the initial asynchronous repair has not run, the key establishes the same
+preferred selection synchronously and activates it exactly once through the
+existing guarded path. Activating the current marker closes Overview without a
+desktop write. Typing filters windows by title, application, desktop, output,
+or state. `F1` opens the compact keyboard and search reference. The hint and
+repair add no persistence, layout write, or private API.
 
 A short mouse, touchpad, or touchscreen tap on empty row space or its workspace
 marker selects an exact non-current workspace and closes Overview on the

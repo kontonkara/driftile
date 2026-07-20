@@ -135,7 +135,7 @@ describe("spatial overview navigation geometry", () => {
       /targets\.push\(\{\s*candidate: desktop,\s*desktop,\s*desktopId,\s*id: desktopNavigationTargetId\(\),\s*kind: "desktop",\s*rect: gutterRect,\s*screen\s*\}\);/u,
     );
     expect(keyboardActivation).toMatch(
-      /if \(target\.kind === "desktop"\) \{\s*selectDesktop\(target\.candidate, target\.desktopId, target\.screen\);/u,
+      /if \(target\.kind === "desktop"\) \{\s*return selectDesktop\(target\.candidate, target\.desktopId, target\.screen\);/u,
     );
     expect(`${numberGutter}\n${collection}\n${keyboardActivation}`).not.toMatch(
       /org\.kde\.kwin\.private|\bTimer\s*\{|setInterval|setTimeout|\.setValue\s*\(|KWin\.(?:SceneView|Workspace)\.[A-Za-z0-9_]+\s*=(?!=)/u,

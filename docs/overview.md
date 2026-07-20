@@ -108,10 +108,18 @@ order. Every workspace marker, including the current one, is an actionable
 target. Arrow keys move spatially without wrapping. `Tab` and `Shift+Tab` cycle
 visible targets; `Home` and `End` select the first or last target.
 
-`Enter`, `Return`, or `Space` activates the selected live window or
-workspace through guarded public KWin APIs. `Delete` requests closure of a
-selected closeable window. `Escape` clears a non-empty search first and
-otherwise closes the effect.
+Once Overview has settled, a compact `Type to search · F1 help` control is
+visible while neither search nor the keyboard reference is open. Hover signals
+that it is clickable, and a click or touch opens the reference. The control
+hides during opening, closing, search, and help; typing still starts search
+directly.
+
+`Enter` or `Return`, plus `Space` outside search, activates the selected live
+window or workspace through guarded public KWin APIs. If the initial
+asynchronous selection repair has not run, these keys first establish the same
+preferred selection synchronously, then activate it exactly once through the
+existing guarded path. `Delete` requests closure of a selected closeable window.
+`Escape` clears a non-empty search first and otherwise closes the effect.
 
 Only the selected member of a tabbed column is a target in the spatial plane.
 Unselected tabbed members and minimized windows do not receive synthetic
@@ -176,7 +184,9 @@ trailing structured clause, and `Ctrl+U` clears the query. The query is
 session-only.
 
 `F1` opens the compact keyboard reference. While it is open, background input
-is inactive; `F1` or `Escape` closes the panel first.
+is inactive; `F1` or `Escape` closes the panel first. The discoverability
+control and synchronous selection repair add no layout write, persistence, or
+private API.
 
 ## Optional appearance
 

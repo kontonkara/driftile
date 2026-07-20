@@ -1140,7 +1140,8 @@ Rectangle {
         anchors.horizontalCenter: parent.horizontalCenter
         anchors.top: parent.top
         anchors.topMargin: Math.max(0, (root.outerMargin - height) / 2)
-        visible: false
+        visible: root.spatialPresentationSettled && !root.keyboardHelpVisible
+                 && root.searchQuery.length === 0
         z: 19000
         onOpenRequested: root.keyboardHelpVisible = true
     }
@@ -5739,19 +5740,23 @@ Rectangle {
 
     function activateKeyboardSelection() {
         const targets = collectNavigationTargets();
-        const target = navigationTargetForId(targets, keyboardSelectionId);
+        let target = navigationTargetForId(targets, keyboardSelectionId);
         if (!target) {
             repairKeyboardSelectionFrom(targets);
-            return;
+            target = navigationTargetForId(targets, keyboardSelectionId);
+        }
+        if (!target) {
+            return false;
         }
 
         if (target.kind === "desktop") {
-            selectDesktop(target.candidate, target.desktopId, target.screen);
-        } else if (target.kind === "window") {
-            focusWindow(target.candidate, target.windowId, target.desktop, target.desktopId, target.screen);
-        } else {
-            repairKeyboardSelectionFrom(targets);
+            return selectDesktop(target.candidate, target.desktopId, target.screen);
         }
+        if (target.kind === "window") {
+            return focusWindow(target.candidate, target.windowId, target.desktop, target.desktopId, target.screen);
+        }
+
+        return false;
     }
 
     function closeKeyboardSelection() {
@@ -6043,19 +6048,19 @@ Rectangle {
                                                                                expectedActivityId)
                 || !windowFocusStateIsExact(candidate, expectedMinimized, false)
                 || (expectedMinimized && candidate.managed !== true)) {
-            return;
+            return false;
         }
 
         const activeDesktop = currentDesktop;
         if (!activeDesktop) {
-            return;
+            return false;
         }
 
         let desktopSelectionConfirmed = false;
         if (activeDesktop !== liveDesktop || String(activeDesktop.id) !== expectedDesktopId) {
             if (!requestDesktopSelection(effect, model, liveScreen, expectedOutput, expectedOutputId, liveDesktop,
                                          expectedDesktopId)) {
-                return;
+                return false;
             }
             desktopSelectionConfirmed = true;
         }
@@ -6066,13 +6071,13 @@ Rectangle {
                     || !windowContextIsExact(candidate, expectedWindowId, liveScreen, liveDesktop,
                                              expectedDesktopId, expectedActivityId)
                     || !windowFocusStateIsExact(candidate, true, false) || candidate.managed !== true) {
-                return;
+                return false;
             }
 
             try {
                 candidate.minimized = false;
             } catch (error) {
-                return;
+                return false;
             }
 
             if (!desktopContextIsExact(effect, model, liveScreen, expectedOutput, expectedOutputId, liveDesktop,
@@ -6080,7 +6085,7 @@ Rectangle {
                     || !windowContextIsExact(candidate, expectedWindowId, liveScreen, liveDesktop,
                                              expectedDesktopId, expectedActivityId)
                     || !windowFocusStateIsExact(candidate, false, true) || candidate.managed !== true) {
-                return;
+                return false;
             }
         }
 
@@ -6110,7 +6115,9 @@ Rectangle {
 
         if (focusConfirmed || (!expectedMinimized && desktopSelectionConfirmed)) {
             effect.deactivate();
+            return true;
         }
+        return false;
     }
 
     function requestDesktopSelection(effect, model, liveScreen, expectedOutput, expectedOutputId, liveDesktop,

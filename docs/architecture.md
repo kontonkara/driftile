@@ -139,6 +139,16 @@ Events travel from KWin through the bridge into the runtime. Commands and result
   and camera context; horizontal updates also retain the exact row and desktop
   context. A mismatch cancels without a layout or persistence write. The
   gesture adds no polling or private API.
+- Shows one compact `Type to search · F1 help` control only after the scene has
+  settled and while search and help are both closed. Its hover state signals
+  clickability, and click or touch opens the existing keyboard reference. The
+  control is absent during opening, closing, search, and help; ordinary typing
+  still enters search directly.
+- Before dispatching `Enter` or `Return`, or `Space` outside search, the scene
+  synchronously establishes the normal preferred selection if the asynchronous
+  opening repair has not run. The selected target then enters the existing
+  guarded activation path exactly once. This adds no persistence, layout write,
+  private API, polling, or workspace scan.
 - Selects a non-current card through public `KWin.SceneView.currentDesktop`, or
   the guarded single-output `KWin.Workspace.currentDesktop` fallback, and
   requires an exact confirmation. Selecting the exact current card instead

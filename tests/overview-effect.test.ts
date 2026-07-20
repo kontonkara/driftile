@@ -1228,7 +1228,7 @@ describe("overview effect package", () => {
     );
     expect(focusHandler).toContain("const activeDesktop = currentDesktop;");
     expect(focusHandler).toMatch(
-      /if \(activeDesktop !== liveDesktop \|\| String\(activeDesktop\.id\) !== expectedDesktopId\) \{\s*if \(!requestDesktopSelection\([\s\S]*?\)\) \{\s*return;\s*\}\s*desktopSelectionConfirmed = true;\s*\}/u,
+      /if \(activeDesktop !== liveDesktop \|\| String\(activeDesktop\.id\) !== expectedDesktopId\) \{\s*if \(!requestDesktopSelection\([\s\S]*?\)\) \{\s*return false;\s*\}\s*desktopSelectionConfirmed = true;\s*\}/u,
     );
     expect(focusHandler).toContain("const selectedDesktop = currentDesktop;");
     expect(focusHandler).toContain("selectedDesktop === liveDesktop");
@@ -1303,7 +1303,7 @@ describe("overview effect package", () => {
     ).toHaveLength(1);
     expect(focusHandler.match(/effect\.deactivate\(\)/gu)).toHaveLength(1);
     expect(focusHandler).toMatch(
-      /if \(focusConfirmed \|\| \(!expectedMinimized && desktopSelectionConfirmed\)\) \{\s*effect\.deactivate\(\);\s*\}/u,
+      /if \(focusConfirmed \|\| \(!expectedMinimized && desktopSelectionConfirmed\)\) \{\s*effect\.deactivate\(\);\s*return true;\s*\}\s*return false;/u,
     );
 
     const minimizedSnapshot = focusHandler.indexOf(
@@ -4319,7 +4319,7 @@ describe("overview effect package", () => {
     );
     const activation = scene.slice(
       scene.indexOf("function activateKeyboardSelection("),
-      scene.indexOf("function repairKeyboardSelection("),
+      scene.indexOf("function closeKeyboardSelection("),
     );
     const initialSelection = scene.slice(
       scene.indexOf("function preferredInitialNavigationTarget("),
@@ -4352,11 +4352,28 @@ describe("overview effect package", () => {
 
     expect(activation).toContain('target.kind === "desktop"');
     expect(activation).toContain(
-      "selectDesktop(target.candidate, target.desktopId, target.screen)",
+      "return selectDesktop(target.candidate, target.desktopId, target.screen)",
     );
     expect(activation).toContain('target.kind === "window"');
     expect(activation).toContain(
-      "focusWindow(target.candidate, target.windowId, target.desktop, target.desktopId, target.screen)",
+      "return focusWindow(target.candidate, target.windowId, target.desktop, target.desktopId, target.screen)",
+    );
+    expect(activation.match(/collectNavigationTargets\(\)/gu)).toHaveLength(1);
+    expect(activation).toMatch(
+      /const targets = collectNavigationTargets\(\);\s*let target = navigationTargetForId\(targets, keyboardSelectionId\);\s*if \(!target\) \{\s*repairKeyboardSelectionFrom\(targets\);\s*target = navigationTargetForId\(targets, keyboardSelectionId\);\s*\}\s*if \(!target\) \{\s*return false;/u,
+    );
+    expect(
+      activation.indexOf("repairKeyboardSelectionFrom(targets)"),
+    ).toBeLessThan(
+      activation.lastIndexOf(
+        "navigationTargetForId(targets, keyboardSelectionId)",
+      ),
+    );
+    expect(activation).toMatch(
+      /if \(target\.kind === "desktop"\) \{\s*return selectDesktop[\s\S]*if \(target\.kind === "window"\) \{\s*return focusWindow/u,
+    );
+    expect(activation).not.toMatch(
+      /Qt\.callLater|root\.activateKeyboardSelection|\bTimer\s*\{|org\.kde\.kwin\.private/u,
     );
     expect(initialSelection).toContain(
       'target.kind === "window" && target.candidate === activeWindow',
@@ -4519,11 +4536,32 @@ describe("overview effect package", () => {
       scene.indexOf("KeyboardHelpHint {"),
       scene.indexOf("id: keyboardHelpLoader"),
     );
-    expect(helpHint).toContain("visible: false");
+    expect(helpHint).toContain(
+      "visible: root.spatialPresentationSettled && !root.keyboardHelpVisible",
+    );
+    expect(helpHint).toContain("root.searchQuery.length === 0");
+    expect(helpHint).not.toContain("visible: false");
+    expect(helpHint).toContain("z: 19000");
+    expect(scene.indexOf("KeyboardHelpHint {")).toBeGreaterThan(
+      scene.indexOf("id: spatialCanvas"),
+    );
+    expect(scene).toContain(
+      "spatialViewportOverlayContainsPoint(keyboardHelpHint, point)",
+    );
     expect(helpHint).toContain(
       "onOpenRequested: root.keyboardHelpVisible = true",
     );
-    expect(keyboardHelpHint).toContain('text: "F1  Keyboard help"');
+    expect(keyboardHelpHint).toContain(
+      'readonly property string label: "Type to search \\u00b7 F1 help"',
+    );
+    expect(keyboardHelpHint).toContain("Accessible.name: hint.label");
+    expect(keyboardHelpHint).toContain("Accessible.role: Accessible.Button");
+    expect(keyboardHelpHint).toContain(
+      "Accessible.onPressAction: hint.openRequested()",
+    );
+    expect(keyboardHelpHint).toContain("text: hint.label");
+    expect(keyboardHelpHint).toContain("implicitWidth: 168");
+    expect(keyboardHelpHint).toContain("implicitHeight: 28");
     expect(keyboardHelpHint).toContain("hintTapHandler.pressed");
     expect(keyboardHelpHint).toContain("hintHoverHandler.hovered");
     expect(keyboardHelpHint).toContain("cursorShape: Qt.PointingHandCursor");
@@ -4540,6 +4578,9 @@ describe("overview effect package", () => {
     expect(keyboardHelpHint.match(/\bTapHandler\s*\{/gu)).toHaveLength(1);
     expect(keyboardHelpHint).not.toMatch(
       /\b(?:Action|Animation|Behavior|Connections|Settings|ShortcutHandler|Timer|WheelHandler)\s*\{|\.setValue\s*\(|\bsequence\s*:|org\.kde\.kwin\.private/u,
+    );
+    expect(helpHint).not.toMatch(
+      /\bTimer\s*\{|Qt\.callLater|org\.kde\.kwin\.private/u,
     );
   });
 
