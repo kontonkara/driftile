@@ -533,6 +533,17 @@ Driftile must integrate with, not duplicate:
   target changes no layout; release outside cancels, and an exact guarded close
   never activates or drags the window. The option adds no persistence field,
   layout write, or private API.
+- A one-finger touchscreen drag may start across the visible Overview canvas,
+  outside controls and overlays, when the vertical camera or touched row has
+  range. Its first clear dominant direction stays latched: vertical movement
+  pans workspace rows, while horizontal movement pans only the touched row when
+  that row has horizontal range. Ambiguous diagonal movement changes neither
+  camera. Short taps remain activation or desktop selection, and an eligible
+  thumbnail long press retains window-drag ownership. Inexact or stale output
+  or camera context cancels safely; horizontal panning also requires the exact
+  row and desktop context. Mouse, touchpad, and right-button behavior is
+  unchanged; the public Qt Pointer Handler path adds no polling, private API,
+  layout write, or persisted state.
 - Reordering moves one whole active column left, right, first, or last inside its context without changing focus or widths.
 - Column-width resizing changes one whole active column, translates client limits to decorated frame bounds, respects every member's width constraints, and preserves focus and grouping.
 - A newly admitted or explicitly resized width that reaches a hard minimum or maximum is stored at that fixed logical-pixel boundary, so work-area changes cannot scale it past the same constraint.

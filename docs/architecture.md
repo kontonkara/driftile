@@ -127,6 +127,18 @@ Events travel from KWin through the bridge into the runtime. Commands and result
   touchscreen target is modestly enlarged without changing delegate layout.
   Releasing outside cancels; the exact guarded close path consumes the gesture
   before window activation or drag.
+- Uses public Qt Pointer Handlers for one-finger touchscreen panning across the
+  visible canvas, outside controls and overlays, whenever at least one camera
+  has range. A clear dominant axis latches once per gesture: vertical input
+  moves the workspace-row camera, while horizontal input moves only the touched
+  row and only when it has horizontal range. Ambiguous diagonal movement moves
+  neither camera.
+- Preserves short-tap activation and desktop selection, lets an eligible
+  thumbnail long press take window-drag ownership, and leaves mouse, touchpad,
+  and right-button handling unchanged. Every update retains its exact output
+  and camera context; horizontal updates also retain the exact row and desktop
+  context. A mismatch cancels without a layout or persistence write. The
+  gesture adds no polling or private API.
 - Selects a non-current card through public `KWin.SceneView.currentDesktop`, or
   the guarded single-output `KWin.Workspace.currentDesktop` fallback, and
   requires an exact confirmation. Selecting the exact current card instead

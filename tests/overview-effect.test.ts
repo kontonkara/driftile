@@ -2226,8 +2226,9 @@ describe("overview effect package", () => {
     expect(spatialInput).toContain("target: null");
     expect(spatialInput).toContain("acceptedButtons: Qt.LeftButton");
     expect(spatialInput).toContain(
-      "acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad | PointerDevice.TouchScreen",
+      "acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad",
     );
+    expect(spatialInput).not.toContain("PointerDevice.TouchScreen");
     expect(spatialInput).toContain(
       "grabPermissions: PointerHandler.TakeOverForbidden",
     );
@@ -2478,6 +2479,165 @@ describe("overview effect package", () => {
     expect(spatialSessionRefresh).toContain("resetSpatialEdgePanTracking();");
     expect(`${scene}\n${desktopCard}`).not.toMatch(
       /\bMouseArea\s*\{|KWin\.Workspace\.(?:stackingOrder|windows)\b|\.setValue\s*\(/u,
+    );
+  });
+
+  it("routes full-surface touchscreen pans through one latched spatial axis", () => {
+    const touchInput = scene.slice(
+      scene.indexOf("id: spatialTouchPanInput"),
+      scene.indexOf("id: spatialViewportInput"),
+    );
+    const touchLogic = scene.slice(
+      scene.indexOf("function spatialTouchPanContains("),
+      scene.indexOf("function spatialViewportBackdropContains("),
+    );
+    const touchBegin = touchLogic.slice(
+      touchLogic.indexOf("function beginSpatialTouchPan("),
+      touchLogic.indexOf("function updateSpatialTouchPan("),
+    );
+    const touchUpdate = touchLogic.slice(
+      touchLogic.indexOf("function updateSpatialTouchPan("),
+      touchLogic.indexOf("function spatialTouchPanContextIsExact("),
+    );
+    const backdropInputs = scene.slice(
+      scene.indexOf("id: spatialViewportInput"),
+      scene.indexOf("id: spatialCanvas"),
+    );
+    const rowInput = scene.slice(
+      scene.indexOf("id: spatialHorizontalRowInput"),
+      scene.indexOf("KeyboardHelpHint {"),
+    );
+    const thumbnailTouchId = desktopCard.indexOf(
+      "id: thumbnailTouchDragHandler",
+    );
+    const thumbnailTouch = desktopCard.slice(
+      desktopCard.lastIndexOf("DragHandler {", thumbnailTouchId),
+      desktopCard.indexOf(
+        "\n                    DragHandler {",
+        thumbnailTouchId,
+      ),
+    );
+    const sessionRefresh = scene.slice(
+      scene.indexOf("function refreshOverviewSpatialSession("),
+      scene.indexOf("function currentSpatialViewportGeometry("),
+    );
+
+    expect(overviewRuntimeIndex).toContain("planOverviewTouchPanAxis");
+    expect(touchInput.match(/\bDragHandler\s*\{/gu)).toHaveLength(1);
+    expect(touchInput).toContain("anchors.fill: parent");
+    expect(touchInput).toContain("z: 18000");
+    expect(touchInput).toContain("containmentMask: QtObject {");
+    expect(touchInput).toContain("return root.spatialTouchPanContains(point)");
+    expect(touchInput).toContain("target: null");
+    expect(touchInput).toContain("acceptedButtons: Qt.NoButton");
+    expect(touchInput).toContain("acceptedDevices: PointerDevice.TouchScreen");
+    expect(touchInput).toContain("acceptedModifiers: Qt.NoModifier");
+    expect(touchInput).toContain("minimumPointCount: 1");
+    expect(touchInput).toContain("maximumPointCount: 1");
+    expect(touchInput).toContain(
+      "PointerHandler.CanTakeOverFromHandlersOfDifferentType",
+    );
+    expect(touchInput).toContain("PointerHandler.CanTakeOverFromItems");
+    expect(touchInput).toContain(
+      "PointerHandler.ApprovesTakeOverByHandlersOfSameType",
+    );
+    expect(touchInput).toContain("PointerHandler.ApprovesCancellation");
+    expect(touchInput).not.toContain(
+      "PointerHandler.CanTakeOverFromHandlersOfSameType",
+    );
+    expect(touchInput).not.toContain(
+      "PointerHandler.ApprovesTakeOverByHandlersOfDifferentType",
+    );
+    expect(touchInput).not.toContain("PointerHandler.ApprovesTakeOverByItems");
+    expect(touchInput).toMatch(
+      /beginSpatialTouchPan\(centroid\.pressPosition,[\s\S]*centroid\.position\.x - centroid\.pressPosition\.x,[\s\S]*centroid\.position\.y - centroid\.pressPosition\.y/u,
+    );
+    expect(touchInput).toMatch(
+      /onCentroidChanged:[\s\S]*updateSpatialTouchPan\(centroid\.position\.x - centroid\.pressPosition\.x,[\s\S]*centroid\.position\.y - centroid\.pressPosition\.y/u,
+    );
+    expect(touchInput).not.toContain("activeTranslation");
+    expect(touchInput).toMatch(
+      /onGrabChanged:[\s\S]*PointerDevice\.CancelGrabExclusive[\s\S]*PointerDevice\.CancelGrabPassive[\s\S]*root\.clearSpatialTouchPan\(\)/u,
+    );
+
+    expect(backdropInputs.match(/\bDragHandler\s*\{/gu)).toHaveLength(2);
+    expect(backdropInputs).toContain(
+      "acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad",
+    );
+    expect(backdropInputs).not.toContain("PointerDevice.TouchScreen");
+    expect(backdropInputs).toContain("!spatialTouchPanDragHandler.active");
+    expect(rowInput).toContain("!spatialTouchPanDragHandler.active");
+
+    expect(touchLogic).toMatch(
+      /function spatialTouchPanContains[\s\S]*point\.x < 0[\s\S]*point\.x >= width[\s\S]*spatialViewportOverlayContainsPoint\(keyboardHelpHint, point\)[\s\S]*spatialViewportOverlayContainsPoint\(searchOverlay, point\)[\s\S]*spatialViewportOverlayContainsPoint\(outputIdentityLoader, point\)/u,
+    );
+    expect(touchLogic).toMatch(
+      /const verticalAvailable = overviewSpatialLayout\.contentHeight > height;\s*return verticalAvailable \|\| spatialHorizontalViewportRowContains\(point\);/u,
+    );
+    expect(touchBegin).toContain(
+      "const horizontalCandidate = spatialHorizontalViewportRowContains(point)",
+    );
+    expect(touchBegin).toContain(
+      "const verticalCandidate = overviewSpatialLayout.contentHeight > height",
+    );
+    expect(touchBegin).toContain('spatialTouchPanInput.panAxis = "pending"');
+    expect(touchBegin).toContain("spatialTouchPanInput.panPressX = point.x");
+    expect(touchBegin).toContain("spatialTouchPanInput.panPressY = point.y");
+    expect(touchBegin).toContain("spatialTouchPanInput.panOutputId = outputId");
+    expect(touchBegin).toContain(
+      "spatialTouchPanInput.panSceneHeight = height",
+    );
+    expect(touchBegin).toMatch(
+      /beginSpatialHorizontalViewportDrag\([\s\S]*panPressX[\s\S]*panPressY[\s\S]*true\)/u,
+    );
+    expect(touchBegin).not.toContain("adoptSpatialVisualContentY()");
+    expect(touchUpdate).toMatch(
+      /runtime\.planOverviewTouchPanAxis\(\{[\s\S]*axis,[\s\S]*horizontalAvailable:[\s\S]*translationX,[\s\S]*translationY,[\s\S]*verticalAvailable:/u,
+    );
+    expect(touchUpdate).toMatch(
+      /axis === "pending" && plan\.axis === "pending"[\s\S]*return true;/u,
+    );
+    expect(touchUpdate).toMatch(
+      /plan\.axis === "horizontal"[\s\S]*updateSpatialHorizontalViewportDrag\(translationX\)[\s\S]*panAxis = "horizontal"[\s\S]*panVerticalAvailable = false;/u,
+    );
+    expect(touchUpdate).toMatch(
+      /plan\.axis === "vertical"[\s\S]*axis === "pending"[\s\S]*adoptSpatialVisualContentY\(\)[\s\S]*panStartContentY = spatialContentY[\s\S]*clearSpatialHorizontalViewportDrag\(\)[\s\S]*planSpatialViewport\([\s\S]*panStartContentY - translationY[\s\S]*setSpatialContentY\(viewportPlan\.contentY\)[\s\S]*panLastContentY = spatialContentY/u,
+    );
+    expect(touchLogic).toMatch(
+      /function spatialTouchPanContextIsExact[\s\S]*centroid\.pressPosition[\s\S]*pressPosition\.x !== spatialTouchPanInput\.panPressX[\s\S]*pressPosition\.y !== spatialTouchPanInput\.panPressY[\s\S]*spatialHorizontalViewportDragContext\(\) === null/u,
+    );
+    expect(touchLogic).toMatch(
+      /function spatialTouchPanVerticalContextIsExact[\s\S]*layout === overviewSpatialLayout[\s\S]*panOutputId === outputId[\s\S]*panSceneHeight === height[\s\S]*spatialContentY === spatialTouchPanInput\.panLastContentY/u,
+    );
+    expect(touchLogic).toMatch(
+      /function blockSpatialTouchPan[\s\S]*panAxis = "blocked"[\s\S]*clearSpatialHorizontalViewportDrag\(\);[\s\S]*function clearSpatialTouchPan[\s\S]*panPressX = Number\.NaN[\s\S]*panPressY = Number\.NaN/u,
+    );
+    expect(sessionRefresh).toContain("clearSpatialTouchPan();");
+    expect(scene).toMatch(
+      /function handleSpatialPresentationPhaseChanged[\s\S]*spatialPresentationPhase === "closing"[\s\S]*clearSpatialTouchPan\(\);/u,
+    );
+    expect(scene).toMatch(
+      /function resetOverviewSession\(\)[\s\S]*clearSpatialTouchPan\(\);/u,
+    );
+    expect(scene).toMatch(
+      /function beginDesktopReorder[\s\S]*spatialTouchPanDragHandler\.active/u,
+    );
+    expect(scene).toMatch(
+      /function handleOverviewWheel[\s\S]*spatialTouchPanDragHandler\.active[\s\S]*event\.accepted = true;/u,
+    );
+    expect(desktopCard).not.toContain("spatialTouchPanActive");
+    expect(thumbnailTouch).toContain(
+      "PointerHandler.CanTakeOverFromHandlersOfSameType",
+    );
+    expect(thumbnailTouch).toContain(
+      "PointerHandler.CanTakeOverFromHandlersOfDifferentType",
+    );
+    expect(thumbnailTouch).toContain("PointerHandler.CanTakeOverFromItems");
+    expect(thumbnailTouch).toContain(
+      "PointerHandler.ApprovesTakeOverByAnything",
+    );
+    expect(`${touchInput}\n${touchLogic}`).not.toMatch(
+      /org\.kde\.kwin\.private|\b(?:Animation|Behavior|MouseArea|TapHandler|Timer|WheelHandler)\s*\{|setInterval|setTimeout|\.setValue\s*\(|KWin\.(?:SceneView|Workspace)\.[A-Za-z0-9_]+\s*=(?!=)/u,
     );
   });
 
@@ -3613,10 +3773,10 @@ describe("overview effect package", () => {
       /function handleSpatialViewportWheel[\s\S]*spatialVerticalCameraAnimation\.running && !adoptSpatialVisualContentY\(\)[\s\S]*planSpatialWheel\(angleDeltaY, pixelDeltaY\)/u,
     );
     expect(wheelNavigation).toMatch(
-      /spatialViewportDragHandler\.active \|\| spatialHorizontalViewportDragHandler\.active[\s\S]*spatialHorizontalRowDragHandler\.active[\s\S]*spatialWindowDragSource !== null[\s\S]*\|\| desktopReorderActive[\s\S]*resetOverviewWheelState\(\);[\s\S]*event\.accepted = true;[\s\S]*return true;/u,
+      /spatialTouchPanDragHandler\.active \|\| spatialViewportDragHandler\.active[\s\S]*spatialHorizontalViewportDragHandler\.active[\s\S]*spatialHorizontalRowDragHandler\.active[\s\S]*spatialWindowDragSource !== null[\s\S]*\|\| desktopReorderActive[\s\S]*resetOverviewWheelState\(\);[\s\S]*event\.accepted = true;[\s\S]*return true;/u,
     );
     expect(
-      wheelNavigation.indexOf("if (spatialViewportDragHandler.active"),
+      wheelNavigation.indexOf("if (spatialTouchPanDragHandler.active"),
     ).toBeLessThan(wheelNavigation.indexOf("const handled = pixelDeltaY"));
     expect(wheelNavigation).toMatch(
       /const handled = pixelDeltaY !== 0[\s\S]*handleSpatialViewportWheel\(angleDeltaY, pixelDeltaY\)[\s\S]*searchQuery\.length > 0[\s\S]*handleSearchResultWheel\(angleDeltaY\)[\s\S]*handleSpatialWorkspaceWheel\(angleDeltaY\)/u,

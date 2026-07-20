@@ -828,6 +828,10 @@ Item {
                         acceptedModifiers: Qt.NoModifier
                         dragThreshold: windowPresentation.touchSpatialDragArmed ? 0 : 32767
                         enabled: thumbnailShell.visible && windowPresentation.dragEligible
+                        grabPermissions: PointerHandler.CanTakeOverFromHandlersOfSameType
+                                         | PointerHandler.CanTakeOverFromHandlersOfDifferentType
+                                         | PointerHandler.CanTakeOverFromItems
+                                         | PointerHandler.ApprovesTakeOverByAnything
 
                         function cancelSpatialDrag() {
                             thumbnailShell.Drag.cancel();

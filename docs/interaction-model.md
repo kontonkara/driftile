@@ -188,6 +188,18 @@ selects within a row. Precise wheel or touchpad input drives the camera
 directly; discrete input selects workspaces or columns. Empty-space dragging
 pans the plane, and a right-button drag pans the row under the pointer.
 
+A one-finger touchscreen drag can start across the visible Overview canvas,
+outside controls and overlays, when the vertical camera or touched row has
+range. A clear dominant direction latches for that gesture: vertical movement
+pans the workspace rows, while horizontal movement pans only the touched row
+when it has horizontal range. Ambiguous diagonal movement changes neither
+camera. Short taps keep their activation or desktop-selection meaning, and a
+long press on an eligible thumbnail still owns window dragging. An inexact or
+stale output or camera context cancels safely; horizontal panning also requires
+the exact row and desktop context. Mouse, touchpad, and right-button behavior
+remains unchanged. The gesture uses public Qt Pointer Handlers without polling,
+private APIs, layout writes, or persistence.
+
 Keyboard selection starts from the active actionable window when possible.
 Every workspace marker, including the current one, is also actionable. Arrow
 keys move spatially, `Tab` cycles visible targets, and `Enter`, `Return`, or

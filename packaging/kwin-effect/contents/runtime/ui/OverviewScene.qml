@@ -679,6 +679,71 @@ Rectangle {
     }
 
     Item {
+        id: spatialTouchPanInput
+
+        property string panAxis: "blocked"
+        property bool panHorizontalAvailable: false
+        property var panLayout: null
+        property real panLastContentY: 0
+        property string panOutputId: ""
+        property real panPressX: Number.NaN
+        property real panPressY: Number.NaN
+        property real panSceneHeight: 0
+        property real panStartContentY: 0
+        property bool panVerticalAvailable: false
+
+        anchors.fill: parent
+        enabled: root.spatialPointerInputEligible && !root.keyboardHelpVisible
+                 && !root.desktopReorderActive && root.spatialWindowDragSource === null
+                 && !spatialViewportDragHandler.active
+                 && !spatialHorizontalViewportDragHandler.active
+                 && !spatialHorizontalRowDragHandler.active
+        z: 18000
+        containmentMask: QtObject {
+            function contains(point: point) : bool {
+                return root.spatialTouchPanContains(point);
+            }
+        }
+
+        DragHandler {
+            id: spatialTouchPanDragHandler
+
+            target: null
+            acceptedButtons: Qt.NoButton
+            acceptedDevices: PointerDevice.TouchScreen
+            acceptedModifiers: Qt.NoModifier
+            minimumPointCount: 1
+            maximumPointCount: 1
+            grabPermissions: PointerHandler.CanTakeOverFromHandlersOfDifferentType
+                             | PointerHandler.CanTakeOverFromItems
+                             | PointerHandler.ApprovesTakeOverByHandlersOfSameType
+                             | PointerHandler.ApprovesCancellation
+
+            onActiveChanged: {
+                if (active) {
+                    root.beginSpatialTouchPan(centroid.pressPosition,
+                                              centroid.position.x - centroid.pressPosition.x,
+                                              centroid.position.y - centroid.pressPosition.y);
+                } else {
+                    root.clearSpatialTouchPan();
+                }
+            }
+            onCentroidChanged: {
+                if (active) {
+                    root.updateSpatialTouchPan(centroid.position.x - centroid.pressPosition.x,
+                                               centroid.position.y - centroid.pressPosition.y);
+                }
+            }
+            onGrabChanged: (transition, point) => {
+                if (transition === PointerDevice.CancelGrabExclusive
+                        || transition === PointerDevice.CancelGrabPassive) {
+                    root.clearSpatialTouchPan();
+                }
+            }
+        }
+    }
+
+    Item {
         id: spatialViewportInput
 
         property var panLayout: null
@@ -687,6 +752,7 @@ Rectangle {
         anchors.fill: parent
         enabled: root.spatialPointerInputEligible && !root.keyboardHelpVisible
                  && !root.desktopReorderActive
+                 && !spatialTouchPanDragHandler.active
                  && !spatialHorizontalRowDragHandler.active
                  && root.overviewSpatialLayout.contentHeight > root.height
         containmentMask: QtObject {
@@ -700,7 +766,7 @@ Rectangle {
 
             target: null
             acceptedButtons: Qt.LeftButton
-            acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad | PointerDevice.TouchScreen
+            acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
             acceptedModifiers: Qt.NoModifier
             grabPermissions: PointerHandler.TakeOverForbidden
             xAxis.enabled: false
@@ -742,6 +808,7 @@ Rectangle {
         anchors.fill: parent
         enabled: root.spatialPointerInputEligible && !root.keyboardHelpVisible
                  && !root.desktopReorderActive
+                 && !spatialTouchPanDragHandler.active
                  && !spatialHorizontalRowDragHandler.active
         containmentMask: QtObject {
             function contains(point: point) : bool {
@@ -754,7 +821,7 @@ Rectangle {
 
             target: null
             acceptedButtons: Qt.LeftButton
-            acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad | PointerDevice.TouchScreen
+            acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
             acceptedModifiers: Qt.NoModifier
             grabPermissions: PointerHandler.TakeOverForbidden
             xAxis.enabled: true
@@ -1030,6 +1097,7 @@ Rectangle {
         anchors.fill: parent
         enabled: root.spatialPointerInputEligible && !root.desktopReorderActive
                  && root.spatialWindowDragSource === null
+                 && !spatialTouchPanDragHandler.active
                  && !spatialViewportDragHandler.active
                  && !spatialHorizontalViewportDragHandler.active
         z: 9000
@@ -1880,6 +1948,7 @@ Rectangle {
             resetOverviewWheelState();
             resetDesktopReorder();
             resetSpatialEdgePanTracking();
+            clearSpatialTouchPan();
             clearSpatialHorizontalViewportDrag();
             spatialViewportInput.panLayout = null;
             spatialViewportInput.panStartContentY = 0;
@@ -1901,6 +1970,7 @@ Rectangle {
     function resetOverviewSession() {
         invalidateDesktopTopologyRefresh();
         resetSpatialLiveCameraSession();
+        clearSpatialTouchPan();
         keyboardSelectionViewportTarget = null;
         keyboardSelectionId = "";
         keyboardHelpVisible = false;
@@ -1968,6 +2038,7 @@ Rectangle {
         refreshSpatialHorizontalViewports(true);
         spatialViewportInput.panLayout = null;
         spatialViewportInput.panStartContentY = 0;
+        clearSpatialTouchPan();
         clearSpatialHorizontalViewportDrag();
         resetDesktopReorder();
         resetSpatialEdgePanTracking();
@@ -3464,6 +3535,201 @@ Rectangle {
         return spatialViewportPlanIsValid(plan) ? plan : null;
     }
 
+    function spatialTouchPanContains(point) {
+        try {
+            if (!point || !Number.isFinite(point.x) || !Number.isFinite(point.y)
+                    || point.x < 0 || point.y < 0 || point.x >= width || point.y >= height
+                    || !spatialPointerInputEligible || desktopReorderActive
+                    || spatialWindowDragSource !== null || !spatialWheelPresentationIsExact()
+                    || spatialViewportOverlayContainsPoint(keyboardHelpHint, point)
+                    || spatialViewportOverlayContainsPoint(searchOverlay, point)
+                    || spatialViewportOverlayContainsPoint(outputIdentityLoader, point)) {
+                return false;
+            }
+
+            const verticalAvailable = overviewSpatialLayout.contentHeight > height;
+            return verticalAvailable || spatialHorizontalViewportRowContains(point);
+        } catch (error) {
+            return false;
+        }
+    }
+
+    function beginSpatialTouchPan(point, translationX, translationY) {
+        clearSpatialTouchPan();
+        if (!spatialTouchPanDragHandler.active || !point
+                || !Number.isFinite(point.x) || !Number.isFinite(point.y)
+                || !Number.isFinite(translationX) || !Number.isFinite(translationY)
+                || !spatialTouchPanContains(point)) {
+            return blockSpatialTouchPan();
+        }
+
+        const horizontalCandidate = spatialHorizontalViewportRowContains(point);
+        const verticalCandidate = overviewSpatialLayout.contentHeight > height;
+        resetOverviewWheelState();
+
+        spatialTouchPanInput.panAxis = "pending";
+        spatialTouchPanInput.panHorizontalAvailable = horizontalCandidate;
+        spatialTouchPanInput.panLayout = verticalCandidate ? overviewSpatialLayout : null;
+        spatialTouchPanInput.panLastContentY = spatialContentY;
+        spatialTouchPanInput.panOutputId = outputId;
+        spatialTouchPanInput.panPressX = point.x;
+        spatialTouchPanInput.panPressY = point.y;
+        spatialTouchPanInput.panSceneHeight = height;
+        spatialTouchPanInput.panStartContentY = spatialContentY;
+        spatialTouchPanInput.panVerticalAvailable = verticalCandidate;
+
+        if (horizontalCandidate
+                && !beginSpatialHorizontalViewportDrag(
+                    { x: spatialTouchPanInput.panPressX, y: spatialTouchPanInput.panPressY }, true)) {
+            return blockSpatialTouchPan();
+        }
+        if (!horizontalCandidate) {
+            clearSpatialHorizontalViewportDrag();
+        }
+
+        return updateSpatialTouchPan(translationX, translationY);
+    }
+
+    function updateSpatialTouchPan(translationX, translationY) {
+        const axis = spatialTouchPanInput.panAxis;
+        if ((axis !== "pending" && axis !== "horizontal" && axis !== "vertical")
+                || !spatialTouchPanDragHandler.active
+                || !Number.isFinite(translationX) || !Number.isFinite(translationY)
+                || !spatialTouchPanContextIsExact()) {
+            return blockSpatialTouchPan();
+        }
+
+        const runtime = OverviewRuntime.DriftileOverview;
+        if (!runtime || typeof runtime.planOverviewTouchPanAxis !== "function") {
+            return blockSpatialTouchPan();
+        }
+
+        let plan = null;
+        try {
+            plan = runtime.planOverviewTouchPanAxis({
+                                                        axis,
+                                                        horizontalAvailable:
+                                                            spatialTouchPanInput.panHorizontalAvailable,
+                                                        translationX,
+                                                        translationY,
+                                                        verticalAvailable:
+                                                            spatialTouchPanInput.panVerticalAvailable
+                                                    });
+        } catch (error) {
+            return blockSpatialTouchPan();
+        }
+        if (!spatialTouchPanAxisPlanIsValid(plan, axis)) {
+            return blockSpatialTouchPan();
+        }
+
+        if (axis === "pending" && plan.axis === "pending") {
+            return true;
+        }
+        if (plan.axis === "horizontal") {
+            if (!spatialTouchPanInput.panHorizontalAvailable
+                    || !updateSpatialHorizontalViewportDrag(translationX)) {
+                return blockSpatialTouchPan();
+            }
+            spatialTouchPanInput.panAxis = "horizontal";
+            spatialTouchPanInput.panLayout = null;
+            spatialTouchPanInput.panVerticalAvailable = false;
+            return true;
+        }
+        if (plan.axis === "vertical") {
+            if (!spatialTouchPanInput.panVerticalAvailable
+                    || !spatialTouchPanVerticalContextIsExact()) {
+                return blockSpatialTouchPan();
+            }
+            if (axis === "pending") {
+                if (!adoptSpatialVisualContentY()) {
+                    return blockSpatialTouchPan();
+                }
+                spatialTouchPanInput.panStartContentY = spatialContentY;
+                spatialTouchPanInput.panLastContentY = spatialContentY;
+            }
+            clearSpatialHorizontalViewportDrag();
+            spatialTouchPanInput.panAxis = "vertical";
+            spatialTouchPanInput.panHorizontalAvailable = false;
+            const viewportPlan = planSpatialViewport(
+                spatialTouchPanInput.panStartContentY - translationY);
+            if (!viewportPlan || !setSpatialContentY(viewportPlan.contentY)
+                    || spatialContentY !== viewportPlan.contentY) {
+                return blockSpatialTouchPan();
+            }
+            spatialTouchPanInput.panLastContentY = spatialContentY;
+            if (!spatialTouchPanVerticalContextIsExact()) {
+                return blockSpatialTouchPan();
+            }
+            return true;
+        }
+
+        return blockSpatialTouchPan();
+    }
+
+    function spatialTouchPanContextIsExact() {
+        try {
+            const pressPosition = spatialTouchPanDragHandler.centroid.pressPosition;
+            if (!pressPosition || !Number.isFinite(spatialTouchPanInput.panPressX)
+                    || !Number.isFinite(spatialTouchPanInput.panPressY)
+                    || pressPosition.x !== spatialTouchPanInput.panPressX
+                    || pressPosition.y !== spatialTouchPanInput.panPressY
+                    || (!spatialTouchPanInput.panHorizontalAvailable
+                        && !spatialTouchPanInput.panVerticalAvailable)) {
+                return false;
+            }
+            if (spatialTouchPanInput.panHorizontalAvailable
+                    && spatialHorizontalViewportDragContext() === null) {
+                return false;
+            }
+            return !spatialTouchPanInput.panVerticalAvailable
+                || spatialTouchPanVerticalContextIsExact();
+        } catch (error) {
+            return false;
+        }
+    }
+
+    function spatialTouchPanVerticalContextIsExact() {
+        const layout = spatialTouchPanInput.panLayout;
+        const maximumContentY = layout ? layout.contentHeight - height : Number.NaN;
+        return spatialTouchPanInput.panVerticalAvailable && layout
+            && layout === overviewSpatialLayout && layout.contentHeight > height
+            && spatialTouchPanInput.panOutputId.length > 0
+            && spatialTouchPanInput.panOutputId === outputId
+            && spatialTouchPanInput.panSceneHeight === height
+            && spatialWheelPresentationIsExact()
+            && Number.isFinite(spatialTouchPanInput.panLastContentY)
+            && spatialContentY === spatialTouchPanInput.panLastContentY
+            && Number.isFinite(spatialTouchPanInput.panStartContentY)
+            && spatialTouchPanInput.panStartContentY >= 0
+            && spatialTouchPanInput.panStartContentY <= maximumContentY;
+    }
+
+    function spatialTouchPanAxisPlanIsValid(plan, expectedAxis) {
+        return plan && !Array.isArray(plan)
+            && (plan.axis === "pending" || plan.axis === "horizontal" || plan.axis === "vertical")
+            && (expectedAxis === "pending" || plan.axis === expectedAxis);
+    }
+
+    function blockSpatialTouchPan() {
+        spatialTouchPanInput.panAxis = "blocked";
+        spatialTouchPanInput.panHorizontalAvailable = false;
+        spatialTouchPanInput.panLayout = null;
+        spatialTouchPanInput.panLastContentY = 0;
+        spatialTouchPanInput.panOutputId = "";
+        spatialTouchPanInput.panSceneHeight = 0;
+        spatialTouchPanInput.panVerticalAvailable = false;
+        clearSpatialHorizontalViewportDrag();
+        return false;
+    }
+
+    function clearSpatialTouchPan() {
+        blockSpatialTouchPan();
+        spatialTouchPanInput.panPressX = Number.NaN;
+        spatialTouchPanInput.panPressY = Number.NaN;
+        spatialTouchPanInput.panLastContentY = 0;
+        spatialTouchPanInput.panStartContentY = 0;
+    }
+
     function spatialViewportBackdropContains(point) {
         if (!point || !Number.isFinite(point.x) || !Number.isFinite(point.y)
                 || point.x < 0 || point.y < 0 || point.x >= width || point.y >= height
@@ -3745,7 +4011,8 @@ Rectangle {
     }
 
     function beginDesktopReorder(candidate, expectedDesktopId, expectedScreen, sceneX, sceneY) {
-        if (desktopReorderActive || spatialWindowDragSource !== null || !desktopReorderAvailable) {
+        if (desktopReorderActive || spatialWindowDragSource !== null
+                || spatialTouchPanDragHandler.active || !desktopReorderAvailable) {
             return;
         }
         resetDesktopReorder();
@@ -4173,7 +4440,8 @@ Rectangle {
                     || request.currentDesktop !== currentDesktop
                     || request.currentWorkspaceIndex !== currentWorkspaceIndex
                     || searchQuery.length > 0 || keyboardHelpVisible || desktopReorderActive
-                    || spatialWindowDragSource !== null || spatialViewportDragHandler.active
+                    || spatialWindowDragSource !== null || spatialTouchPanDragHandler.active
+                    || spatialViewportDragHandler.active
                     || spatialHorizontalViewportDragHandler.active
                     || spatialHorizontalRowDragHandler.active
                     || desktopRepeater.count !== desktopIds.length
@@ -4378,7 +4646,8 @@ Rectangle {
             if (pixelDeltaY === 0 && angleDeltaY === 0) {
                 return false;
             }
-            if (spatialViewportDragHandler.active || spatialHorizontalViewportDragHandler.active
+            if (spatialTouchPanDragHandler.active || spatialViewportDragHandler.active
+                    || spatialHorizontalViewportDragHandler.active
                     || spatialHorizontalRowDragHandler.active
                     || spatialWindowDragSource !== null
                     || desktopReorderActive) {
@@ -4430,7 +4699,8 @@ Rectangle {
             if (pixelDeltaX !== 0) {
                 cancelOverviewHorizontalWheelSelectionRequest();
             }
-            if (spatialViewportDragHandler.active || spatialHorizontalViewportDragHandler.active
+            if (spatialTouchPanDragHandler.active || spatialViewportDragHandler.active
+                    || spatialHorizontalViewportDragHandler.active
                     || spatialHorizontalRowDragHandler.active
                     || spatialWindowDragSource !== null
                     || desktopReorderActive) {
@@ -4819,7 +5089,8 @@ Rectangle {
                     || overviewHorizontalWheelSelectionSourceTargetId !== expectedSourceTargetId
                     || outputId !== expectedOutputId || desktopIds[workspaceIndex] !== expectedDesktopId
                     || keyboardSelectionId !== expectedSourceTargetId || searchQuery.length > 0
-                    || keyboardHelpVisible || spatialViewportDragHandler.active
+                    || keyboardHelpVisible || spatialTouchPanDragHandler.active
+                    || spatialViewportDragHandler.active
                     || spatialHorizontalViewportDragHandler.active
                     || spatialHorizontalRowDragHandler.active
                     || spatialWindowDragSource !== null || desktopReorderActive

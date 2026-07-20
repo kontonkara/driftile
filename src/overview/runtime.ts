@@ -25,6 +25,12 @@ export type {
   OverviewDesktopSurfaceLifecycleRefreshPlan,
   OverviewDesktopSurfaceLifecycleScope,
 } from "./desktop-surface-lifecycle";
+export { planOverviewTouchPanAxis } from "./touch-pan";
+export type {
+  OverviewTouchPanAxis,
+  OverviewTouchPanAxisInput,
+  OverviewTouchPanAxisPlan,
+} from "./touch-pan";
 export { planOverviewOutputLabel } from "./output-label";
 export type { OverviewOutputLabelPlan } from "./output-label";
 export { planOverviewDesktopDrop } from "./desktop-drop";

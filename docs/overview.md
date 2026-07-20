@@ -82,6 +82,19 @@ right-button drag pans the row under the pointer horizontally, including when
 the drag starts over a window thumbnail. No pan, wheel, gesture, or reveal
 operation changes persisted layout state.
 
+A one-finger touchscreen drag can begin across the visible Overview canvas,
+outside controls and overlays, when the vertical camera or touched row has
+range. Once movement has a clear dominant direction, that direction stays
+latched for the gesture: vertical movement pans the workspace rows, while
+horizontal movement pans only the touched row and only when that row has
+horizontal range. Ambiguous diagonal movement changes neither camera. Short
+taps retain window activation and desktop selection, while a long press on an
+eligible thumbnail still takes ownership for window dragging. Stale or inexact
+output or camera context cancels the gesture; horizontal panning also requires
+the exact row and desktop context. Mouse, touchpad, and right-button behavior is
+unchanged. The gesture uses only public Qt Pointer Handlers and adds no polling,
+private API, layout write, or persistent state.
+
 The optional touchpad activation gesture uses KWin's native Wayland API. It is a
 safe no-op on native X11. Four fingers are used by default when the gesture is
 enabled; choose a different count or disable a conflicting Plasma gesture so
