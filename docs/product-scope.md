@@ -638,6 +638,10 @@ Driftile must integrate with, not duplicate:
   insertion attaches to the selected target stack. Both capture the latest
   floating frame as the next safe restore baseline.
 - Layer focus remains inside the active `(output, desktop, activity)` context and restores the last non-minimized tiled or floating window. Minimized slots are skipped, while any other blocker on the selected remembered or ordered target fails closed without fallback. Selecting a tiled target in another column reveals it with the normal minimal scroll; ownership never changes.
+- Bounded focus recovery after a window closes yields immediately and
+  permanently when a non-desktop KRunner or Plasma Application Dashboard
+  surface owns focus. Other active surfaces retain the existing close-focus
+  eligibility rules.
 - Directional floating focus chooses the nearest positive center distance on the requested axis; first and last choose frame-x extremes. Minimized windows are excluded, and no action wraps or writes geometry.
 - Directional floating movement requests a 50-logical-pixel translation and keeps only the minimum visible strip required by the frame size. It preserves size, focus, context, reinsertion placement, and every tiled layout.
 - Contextual centering places each manually floating frame dimension at the exact logical midpoint of its assigned work area, or at the work-area origin when that dimension is oversized. It performs no window, column, or layout enumeration and preserves the same ownership and state boundaries as directional movement.

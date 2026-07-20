@@ -94,6 +94,13 @@ original restore baselines across repeated reloads, manual-floating
 current-context capture with source-exact rollback, and permanent future-version
 or oversized-document write locking.
 
+Close-focus coverage activates KRunner and Plasma Shell identities before
+removal, during both observer orderings of settlement, and after recovery has
+entered its waiting phase. It requires a permanent handoff across later null
+focus, exact case-sensitive matching through every public application identity
+field, removed-client and desktop-background exclusions, and unchanged recovery
+past generic ineligible interim surfaces.
+
 Overview coverage validates current-snapshot selection, exact live topology,
 desktop and window matching, bare-v1 rejection, baseline stripping, immutable
 projection, input-order independence, the 4,096-window operation budget, the

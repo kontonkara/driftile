@@ -748,6 +748,11 @@ inspected safely within the codec bound.
 - Preserve whole-column member order and width, apply the active member last, and restore all owned mechanisms and frames if any batch step fails.
 - Apply floating transitions from immutable previews, commit ownership only after every geometry request succeeds, and defer later context writes until asynchronous frames settle.
 - Switch focus between tiled and floating layers by resolving one deterministic target in each layer. Minimized slots are skipped, but a selected target with any other suspension or geometry-authority blocker fails closed instead of falling through. A tiled target in another column is revealed transactionally before KWin receives focus; ordinary rejection restores the exact model and geometry, while topology supersession uses normal deferred recovery.
+- Treat an exact, case-sensitive KRunner or Plasma Shell identity in any public
+  `desktopFileName`, `resourceClass`, or `resourceName` field as a terminal veto
+  for pending close-focus recovery. The active surface must be neither the
+  removed client nor a desktop window; all other surfaces retain the existing
+  candidate and bounded-recovery rules.
 - Resolve floating `H/J/K/L` by the smallest strictly positive center delta on the requested axis and `Home/End` by frame-x extremes, scanning only live, non-minimized same-context floating windows.
 - Resolve the existing center-column action contextually: a manual-floating target uses the assigned output and desktop work area, exact logical midpoints, and work-area origins for oversized dimensions; a non-floating target keeps the tiled centering path. A blocked manual-floating target never falls through to tiled behavior.
 - Resolve the existing width decrease and increase actions contextually: a
