@@ -29,8 +29,14 @@ Item {
     readonly property bool exactWindowCandidate: windowCandidateIsExact()
     readonly property bool liveThumbnailEligible: exactWindowCandidate
         && thumbnailSource.length > 0 && thumbnailSource === handoffWindowId
+    readonly property bool liveThumbnailReady: liveThumbnailEligible
+        && exitThumbnailLoader.status === Loader.Ready
+        && objectAvailable(exitThumbnailLoader.item)
+    readonly property bool liveThumbnailPending: liveThumbnailEligible
+        && exitThumbnailLoader.status !== Loader.Ready
+        && exitThumbnailLoader.status !== Loader.Error
     readonly property string fallbackReason: plannedFallbackReason()
-    readonly property string visualMode: liveThumbnailEligible
+    readonly property string visualMode: liveThumbnailReady
         ? "thumbnail" : exactWindowCandidate ? "monochrome" : "row-fallback"
     readonly property rect safeSourceRect: rectIsUsable(sourceRect)
         ? sourceRect : Qt.rect(0, 0, Math.max(1, width), Math.max(1, height))
@@ -38,9 +44,11 @@ Item {
     readonly property rect animatedRect: interpolatedRect(safeSourceRect, localTargetRect,
                                                           easedProgress)
     readonly property real chromeOpacity: 1 - boundedUnit(boundedProgress / 0.45)
-    readonly property real surfaceOpacity: 1 - easedProgress
+    readonly property real surfaceOpacity: liveThumbnailPending
+        ? 1 : 1 - easedProgress
     readonly property real windowOverlayOpacity:
-        1 - boundedUnit((boundedProgress - 0.84) / 0.16)
+        liveThumbnailPending ? 0
+        : 1 - boundedUnit((boundedProgress - 0.84) / 0.16)
     readonly property real rowFallbackOpacity: surfaceOpacity
     readonly property real rowFallbackScale: 1 - 0.06 * easedProgress
     property bool completionReported: false
@@ -253,8 +261,11 @@ Item {
         }
 
         Loader {
+            id: exitThumbnailLoader
+
             anchors.fill: parent
             active: root.handoffActive && root.liveThumbnailEligible
+            asynchronous: true
 
             sourceComponent: Component {
                 KWin.WindowThumbnail {

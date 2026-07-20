@@ -70,7 +70,15 @@ describe("overview exit handoff scene", () => {
     expect(windowShell).toContain(
       "active: root.handoffActive && root.liveThumbnailEligible",
     );
+    expect(windowShell).toContain("id: exitThumbnailLoader");
+    expect(windowShell).toContain("asynchronous: true");
     expect(windowShell).toContain("wId: root.thumbnailSource");
+    expect(handoff).toMatch(
+      /readonly property bool liveThumbnailReady: liveThumbnailEligible[\s\S]*exitThumbnailLoader\.status === Loader\.Ready[\s\S]*objectAvailable\(exitThumbnailLoader\.item\)/u,
+    );
+    expect(handoff).toMatch(
+      /readonly property bool liveThumbnailPending: liveThumbnailEligible[\s\S]*exitThumbnailLoader\.status !== Loader\.Ready[\s\S]*exitThumbnailLoader\.status !== Loader\.Error/u,
+    );
     expect(handoff).toContain(
       "readonly property rect localTargetRect: rectForOutput(targetRect, targetOutputGeometry)",
     );
@@ -147,7 +155,7 @@ describe("overview exit handoff scene", () => {
     const rowShell = handoff.slice(handoff.indexOf("id: rowFallbackShell"));
 
     expect(handoff).toContain(
-      '? "thumbnail" : exactWindowCandidate ? "monochrome" : "row-fallback"',
+      'readonly property string visualMode: liveThumbnailReady\n        ? "thumbnail" : exactWindowCandidate ? "monochrome" : "row-fallback"',
     );
     for (const reason of [
       'return "desktop";',
@@ -173,7 +181,11 @@ describe("overview exit handoff scene", () => {
       "readonly property real chromeOpacity: 1 - boundedUnit(boundedProgress / 0.45)",
     );
     expect(handoff).toContain(
-      "readonly property real surfaceOpacity: 1 - easedProgress",
+      "readonly property real surfaceOpacity: liveThumbnailPending",
+    );
+    expect(handoff).toContain("? 1 : 1 - easedProgress");
+    expect(handoff).toMatch(
+      /readonly property real windowOverlayOpacity:\s*liveThumbnailPending \? 0\s*: 1 - boundedUnit/u,
     );
   });
 
