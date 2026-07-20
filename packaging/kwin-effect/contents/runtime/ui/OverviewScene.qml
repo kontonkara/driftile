@@ -64,6 +64,12 @@ Rectangle {
     readonly property var outputLabelPlan: outputLabelNeeded ? planOutputLabel(targetScreen) : null
     readonly property string outputName: outputLabelPlan ? outputLabelPlan.label : ""
     readonly property string outputId: outputIdForScreen()
+    readonly property int activeOverviewSessionId: sceneEffect
+        && Number.isInteger(sceneEffect.activeSessionId) ? sceneEffect.activeSessionId : 0
+    readonly property string activeOverviewActivityId:
+        KWin.Workspace.currentActivity === undefined
+        || KWin.Workspace.currentActivity === null
+        ? "" : String(KWin.Workspace.currentActivity)
     readonly property var desktopIds: outputId.length > 0
         ? orderedDesktopIds(desktopTopologyRevision) : []
     readonly property int currentWorkspaceIndex: currentDesktop && currentDesktop.id !== undefined
@@ -107,7 +113,7 @@ Rectangle {
     readonly property var overviewSpatialVisibleRangePlan: planSpatialVisibleRange()
     readonly property var overviewSpatialVisibleRange:
         spatialVisibleRangeIsValid(overviewSpatialVisibleRangePlan)
-        ? overviewSpatialVisibleRangePlan : allDesktopCardsRange()
+        ? overviewSpatialVisibleRangePlan : fallbackSpatialVisibleRange()
     readonly property real outerMargin: Math.max(20, Math.min(width, height) * 0.035)
     readonly property real cardGap: overviewSpatialLayout.gap
     readonly property real cardHeight: overviewSpatialLayout.cardHeight
@@ -118,6 +124,19 @@ Rectangle {
     property int desktopTopologyRevision: 0
     property int desktopTopologyRefreshRequestId: 0
     property bool desktopTopologyRefreshPending: false
+    property var desktopSurfaceCandidateRange: null
+    property var desktopSurfaceCommittedRange: null
+    readonly property int desktopSurfaceMaximumResidentRows: {
+        const runtime = OverviewRuntime.DriftileOverview;
+        return runtime && Number.isInteger(runtime.MAXIMUM_RESIDENT_ROWS)
+            ? runtime.MAXIMUM_RESIDENT_ROWS : 0;
+    }
+    property var desktopSurfaceResidencyDesktopIds: []
+    property string desktopSurfaceResidencyActivityId: ""
+    property string desktopSurfaceResidencyOutputId: ""
+    property var desktopSurfaceResidencyRange: null
+    property int desktopSurfaceResidencyRequestId: 0
+    property int desktopSurfaceResidencySessionId: 0
     property bool emptyDesktopAboveFirst: false
     property bool keyboardHelpVisible: false
     property string keyboardSelectionId: ""
@@ -305,6 +324,16 @@ Rectangle {
             forceActiveFocus();
         }
     }
+    onActiveOverviewSessionIdChanged: root.restartDesktopSurfaceResidency()
+    onActiveOverviewActivityIdChanged: root.restartDesktopSurfaceResidency()
+    onCurrentWorkspaceIndexChanged: root.updateDesktopSurfaceResidency()
+    onOverviewSpatialVisibleRangePlanChanged: root.updateDesktopSurfaceResidency()
+    onSpatialExternalZoomActiveChanged: root.finishDesktopSurfaceResidencyBridge()
+    onSpatialExternalZoomTransactionChanged: root.finishDesktopSurfaceResidencyBridge()
+    onSpatialVisualContentYDeferredChanged: root.finishDesktopSurfaceResidencyBridge()
+    onSpatialZoomApplyingChanged: root.finishDesktopSurfaceResidencyBridge()
+    onSpatialZoomOwnerChanged: root.finishDesktopSurfaceResidencyBridge()
+    onSpatialZoomTransactionChanged: root.finishDesktopSurfaceResidencyBridge()
     onKeyboardSelectionIdChanged: {
         const target = keyboardSelectionViewportTarget;
         keyboardSelectionViewportTarget = null;
@@ -378,11 +407,13 @@ Rectangle {
     onOutputIdChanged: {
         root.cancelSpatialZoomTransaction();
         root.discardSpatialZoomTransaction();
+        root.restartDesktopSurfaceResidency();
         root.synchronizeSpatialZoomInputState();
     }
     onDesktopIdsChanged: {
         root.cancelSpatialZoomTransaction();
         root.discardSpatialZoomTransaction();
+        root.handleDesktopSurfaceResidencyDesktopIdsChanged();
         root.synchronizeSpatialZoomInputState();
     }
     onWidthChanged: root.cancelSpatialZoomTransaction()
@@ -830,6 +861,7 @@ Rectangle {
         target: root
         property: "spatialVisualContentY"
         easing.type: Easing.OutCubic
+        onRunningChanged: root.finishDesktopSurfaceResidencyBridge()
     }
 
     WheelHandler {
@@ -1155,7 +1187,8 @@ Rectangle {
 
                 sourceComponent: Component {
                     DesktopCard {
-                        enabled: !root.keyboardHelpVisible && !root.spatialHorizontalRowDragActive
+                        enabled: interactionEligible && !root.keyboardHelpVisible
+                            && !root.spatialHorizontalRowDragActive
                         context: root.contextFor(desktopCardLoader.modelData)
                         current: root.spatialPresentationDesktopId === desktopCardLoader.modelData
                         desktop: desktopCardLoader.desktopObject
@@ -1172,6 +1205,9 @@ Rectangle {
                                                    desktopCardLoader.desktopObject)
                         desktopSurfaceLifecycleEvent: root.desktopSurfaceLifecycleEvent
                         floatingWindows: root.floatingFor(desktopCardLoader.modelData)
+                        interactionEligible: root.desktopCardInteractionEligible(
+                                                 desktopCardLoader.index,
+                                                 desktopCardLoader.modelData)
                         keyboardSelectionId: root.keyboardSelectionId
                         liveGeometryEnabled: current && !root.spatialLiveGeometryIsManuallyDetached(
                                                  root.outputId, desktopCardLoader.modelData)
@@ -1830,11 +1866,261 @@ Rectangle {
             && plan.lastIndex < desktopIds.length;
     }
 
-    function allDesktopCardsRange() {
+    function fallbackSpatialVisibleRange() {
+        if (currentWorkspaceIndex >= 0 && currentWorkspaceIndex < desktopIds.length) {
+            return {
+                firstIndex: currentWorkspaceIndex,
+                lastIndex: currentWorkspaceIndex
+            };
+        }
         return {
             firstIndex: 0,
-            lastIndex: desktopIds.length - 1
+            lastIndex: -1
         };
+    }
+
+    function restartDesktopSurfaceResidency() {
+        resetDesktopSurfaceResidency();
+        Qt.callLater(root.updateDesktopSurfaceResidency);
+    }
+
+    function handleDesktopSurfaceResidencyDesktopIdsChanged() {
+        if (desktopSurfaceResidencyContextMatchesCurrent()) {
+            Qt.callLater(root.updateDesktopSurfaceResidency);
+            return true;
+        }
+
+        restartDesktopSurfaceResidency();
+        return false;
+    }
+
+    function resetDesktopSurfaceResidency() {
+        advanceDesktopSurfaceResidencyRequestId();
+        desktopSurfaceCandidateRange = null;
+        desktopSurfaceCommittedRange = null;
+        desktopSurfaceResidencyRange = null;
+        desktopSurfaceResidencySessionId = 0;
+        desktopSurfaceResidencyOutputId = "";
+        desktopSurfaceResidencyActivityId = "";
+        desktopSurfaceResidencyDesktopIds = [];
+        return true;
+    }
+
+    function updateDesktopSurfaceResidency() {
+        if (!desktopSurfaceResidencyCurrentContextIsValid()) {
+            if (desktopSurfaceResidencySessionId > 0 || desktopSurfaceResidencyRange !== null) {
+                resetDesktopSurfaceResidency();
+            }
+            return false;
+        }
+
+        if (!desktopSurfaceResidencyContextMatchesCurrent()) {
+            resetDesktopSurfaceResidency();
+            desktopSurfaceResidencySessionId = activeOverviewSessionId;
+            desktopSurfaceResidencyOutputId = outputId;
+            desktopSurfaceResidencyActivityId = activeOverviewActivityId;
+            desktopSurfaceResidencyDesktopIds = copyDesktopSurfaceResidencyDesktopIds();
+        }
+
+        const candidate = spatialVisibleRangeIsValid(overviewSpatialVisibleRangePlan)
+            ? copyDesktopSurfaceResidencyRange(overviewSpatialVisibleRangePlan) : null;
+        if (candidate === null) {
+            const retained = spatialVisibleRangeIsValid(desktopSurfaceResidencyRange)
+                ? copyDesktopSurfaceResidencyRange(desktopSurfaceResidencyRange)
+                : spatialVisibleRangeIsValid(desktopSurfaceCommittedRange)
+                  ? copyDesktopSurfaceResidencyRange(desktopSurfaceCommittedRange) : null;
+            advanceDesktopSurfaceResidencyRequestId();
+            const retainedPlan = planDesktopSurfaceResidency(null, retained, false, true);
+            if (!desktopSurfaceResidencyPlanIsValid(retainedPlan)) {
+                return false;
+            }
+            desktopSurfaceResidencyRange = retainedPlan;
+            return true;
+        }
+
+        desktopSurfaceCandidateRange = candidate;
+        if (!spatialVisibleRangeIsValid(desktopSurfaceCommittedRange)) {
+            desktopSurfaceCommittedRange = copyDesktopSurfaceResidencyRange(candidate);
+        }
+        const previous = copyDesktopSurfaceResidencyRange(desktopSurfaceCommittedRange);
+        advanceDesktopSurfaceResidencyRequestId();
+        const plan = planDesktopSurfaceResidency(candidate, previous, true,
+                                                 desktopSurfaceResidencyShouldPinCurrent(candidate));
+        if (!desktopSurfaceResidencyPlanIsValid(plan)) {
+            return false;
+        }
+
+        desktopSurfaceResidencyRange = plan;
+
+        if (!desktopSurfaceResidencyBridgeIsActive()
+                && desktopSurfaceResidencyRangesAreEqual(plan, candidate)) {
+            desktopSurfaceCommittedRange = copyDesktopSurfaceResidencyRange(candidate);
+        } else if (!desktopSurfaceResidencyBridgeIsActive()) {
+            scheduleDesktopSurfaceResidencySettle(candidate);
+        }
+        return true;
+    }
+
+    function planDesktopSurfaceResidency(candidate, previous, retainPrevious, pinCurrent) {
+        const runtime = OverviewRuntime.DriftileOverview;
+        if (!runtime || typeof runtime.planOverviewDesktopSurfaceResidency !== "function") {
+            return null;
+        }
+
+        try {
+            return runtime.planOverviewDesktopSurfaceResidency({
+                candidateRange: candidate,
+                currentWorkspaceIndex,
+                pinCurrent,
+                previousRange: previous,
+                retainPrevious,
+                workspaceCount: desktopIds.length
+            });
+        } catch (error) {
+            return null;
+        }
+    }
+
+    function desktopSurfaceResidencyShouldPinCurrent(candidate) {
+        return candidate === null || spatialPresentationPhase !== "open"
+            || desktopSurfaceResidencyBridgeIsActive();
+    }
+
+    function desktopSurfaceResidencyBridgeIsActive() {
+        return spatialVisualContentYDeferred || spatialVerticalCameraAnimation.running
+            || spatialZoomApplying || spatialZoomOwner.length > 0
+            || spatialZoomTransaction !== null || spatialExternalZoomTransaction !== null
+            || spatialExternalZoomActive;
+    }
+
+    function finishDesktopSurfaceResidencyBridge() {
+        if (desktopSurfaceResidencyBridgeIsActive()
+                || !desktopSurfaceResidencyContextMatchesCurrent()) {
+            return false;
+        }
+
+        const candidate = spatialVisibleRangeIsValid(overviewSpatialVisibleRangePlan)
+            ? copyDesktopSurfaceResidencyRange(overviewSpatialVisibleRangePlan) : null;
+        if (candidate === null) {
+            return updateDesktopSurfaceResidency();
+        }
+
+        const plan = planDesktopSurfaceResidency(candidate, null, false,
+                                                 spatialPresentationPhase !== "open");
+        if (!desktopSurfaceResidencyPlanIsValid(plan)) {
+            return false;
+        }
+        advanceDesktopSurfaceResidencyRequestId();
+        desktopSurfaceCandidateRange = copyDesktopSurfaceResidencyRange(candidate);
+        desktopSurfaceCommittedRange = copyDesktopSurfaceResidencyRange(candidate);
+        desktopSurfaceResidencyRange = plan;
+        return true;
+    }
+
+    function scheduleDesktopSurfaceResidencySettle(candidate) {
+        const requestId = advanceDesktopSurfaceResidencyRequestId();
+        const expectation = {
+            activityId: desktopSurfaceResidencyActivityId,
+            candidate: copyDesktopSurfaceResidencyRange(candidate),
+            desktopIds: copyDesktopSurfaceResidencyDesktopIds(),
+            outputId: desktopSurfaceResidencyOutputId,
+            sessionId: desktopSurfaceResidencySessionId
+        };
+        Qt.callLater(root.advanceDesktopSurfaceResidencySettle, requestId, expectation, 0);
+        return true;
+    }
+
+    function advanceDesktopSurfaceResidencySettle(requestId, expectation, stage) {
+        if (!desktopSurfaceResidencyExpectationIsExact(requestId, expectation)) {
+            return false;
+        }
+        if (stage === 0) {
+            Qt.callLater(root.advanceDesktopSurfaceResidencySettle, requestId, expectation, 1);
+            return true;
+        }
+        if (stage !== 1) {
+            return false;
+        }
+        if (desktopSurfaceResidencyBridgeIsActive()) {
+            return true;
+        }
+
+        const plan = planDesktopSurfaceResidency(expectation.candidate, null, false,
+                                                 desktopSurfaceResidencyShouldPinCurrent(
+                                                     expectation.candidate));
+        if (!desktopSurfaceResidencyPlanIsValid(plan)) {
+            return false;
+        }
+        desktopSurfaceCommittedRange = copyDesktopSurfaceResidencyRange(expectation.candidate);
+        desktopSurfaceResidencyRange = plan;
+        return true;
+    }
+
+    function desktopSurfaceResidencyExpectationIsExact(requestId, expectation) {
+        try {
+            return Number.isInteger(requestId) && requestId > 0
+                && requestId === desktopSurfaceResidencyRequestId
+                && expectation && !Array.isArray(expectation)
+                && desktopSurfaceResidencyContextMatchesCurrent()
+                && expectation.sessionId === desktopSurfaceResidencySessionId
+                && expectation.outputId === desktopSurfaceResidencyOutputId
+                && expectation.activityId === desktopSurfaceResidencyActivityId
+                && sameStringList(expectation.desktopIds, desktopSurfaceResidencyDesktopIds)
+                && desktopSurfaceResidencyRangesAreEqual(
+                    expectation.candidate, desktopSurfaceCandidateRange)
+                && desktopSurfaceResidencyRangesAreEqual(
+                    expectation.candidate, overviewSpatialVisibleRangePlan);
+        } catch (error) {
+            return false;
+        }
+    }
+
+    function desktopSurfaceResidencyCurrentContextIsValid() {
+        return sceneEffect && sceneEffect.active === true
+            && activeOverviewSessionId > 0 && outputId.length > 0
+            && activeOverviewActivityId.length > 0
+            && desktopIdListShapeIsValid(desktopIds)
+            && desktopIds.length > 0;
+    }
+
+    function desktopSurfaceResidencyContextMatchesCurrent() {
+        return desktopSurfaceResidencyCurrentContextIsValid()
+            && desktopSurfaceResidencySessionId === activeOverviewSessionId
+            && desktopSurfaceResidencyOutputId === outputId
+            && desktopSurfaceResidencyActivityId === activeOverviewActivityId
+            && sameStringList(desktopSurfaceResidencyDesktopIds, desktopIds);
+    }
+
+    function desktopSurfaceResidencyPlanIsValid(plan) {
+        return spatialVisibleRangeIsValid(plan) && Object.isFrozen(plan)
+            && plan.lastIndex - plan.firstIndex + 1 <= desktopSurfaceMaximumResidentRows;
+    }
+
+    function desktopSurfaceResidencyRangesAreEqual(first, second) {
+        return first && second && Number.isInteger(first.firstIndex)
+            && Number.isInteger(first.lastIndex) && first.firstIndex === second.firstIndex
+            && first.lastIndex === second.lastIndex;
+    }
+
+    function copyDesktopSurfaceResidencyRange(range) {
+        return {
+            firstIndex: range.firstIndex,
+            lastIndex: range.lastIndex
+        };
+    }
+
+    function copyDesktopSurfaceResidencyDesktopIds() {
+        const copied = [];
+        for (const desktopId of desktopIds) {
+            copied.push(desktopId);
+        }
+        return copied;
+    }
+
+    function advanceDesktopSurfaceResidencyRequestId() {
+        desktopSurfaceResidencyRequestId = desktopSurfaceResidencyRequestId >= 2147483646
+            ? 1 : desktopSurfaceResidencyRequestId + 1;
+        return desktopSurfaceResidencyRequestId;
     }
 
     function validatedDesktopSurfaceLifecycleEvent() {
@@ -1858,6 +2144,20 @@ Rectangle {
                 || typeof expectedDesktopId !== "string" || desktopIds[index] !== expectedDesktopId) {
             return false;
         }
+        if (desktopCardInteractionEligible(index, expectedDesktopId)) {
+            return true;
+        }
+        return desktopSurfaceResidencyContextMatchesCurrent()
+            && spatialVisibleRangeIsValid(desktopSurfaceResidencyRange)
+            && index >= desktopSurfaceResidencyRange.firstIndex
+            && index <= desktopSurfaceResidencyRange.lastIndex;
+    }
+
+    function desktopCardInteractionEligible(index, expectedDesktopId) {
+        if (!Number.isInteger(index) || index < 0 || index >= desktopIds.length
+                || typeof expectedDesktopId !== "string" || desktopIds[index] !== expectedDesktopId) {
+            return false;
+        }
         if (searchQuery.length > 0
                 || (spatialPresentationPhase !== "open"
                     && index === spatialPresentationWorkspaceIndex)
@@ -1867,15 +2167,17 @@ Rectangle {
             return true;
         }
 
-        return index >= overviewSpatialVisibleRange.firstIndex
-            && index <= overviewSpatialVisibleRange.lastIndex;
+        return spatialVisibleRangeIsValid(overviewSpatialVisibleRangePlan)
+            && index >= overviewSpatialVisibleRangePlan.firstIndex
+            && index <= overviewSpatialVisibleRangePlan.lastIndex;
     }
 
     function desktopSurfaceShouldLoad(index, expectedDesktopId, expectedDesktop) {
         if (!Number.isInteger(index) || index < 0 || index >= desktopIds.length
                 || typeof expectedDesktopId !== "string" || desktopIds[index] !== expectedDesktopId
                 || outputId.length === 0 || !targetScreen
-                || !spatialVisibleRangeIsValid(overviewSpatialVisibleRangePlan)) {
+                || !desktopSurfaceResidencyContextMatchesCurrent()
+                || !spatialVisibleRangeIsValid(desktopSurfaceResidencyRange)) {
             return false;
         }
 
@@ -1888,8 +2190,8 @@ Rectangle {
             return false;
         }
 
-        return index >= overviewSpatialVisibleRangePlan.firstIndex
-            && index <= overviewSpatialVisibleRangePlan.lastIndex;
+        return index >= desktopSurfaceResidencyRange.firstIndex
+            && index <= desktopSurfaceResidencyRange.lastIndex;
     }
 
     function desktopCardAt(index) {
@@ -1901,7 +2203,8 @@ Rectangle {
         const expectedDesktopId = desktopIds[index];
         if (!loader || loader.index !== index || loader.modelData !== expectedDesktopId
                 || loader.active !== true || !loader.item
-                || loader.item.desktopId !== expectedDesktopId) {
+                || loader.item.desktopId !== expectedDesktopId
+                || loader.item.interactionEligible !== true) {
             return null;
         }
 
@@ -2280,6 +2583,7 @@ Rectangle {
         spatialHorizontalViewportOffsets = [];
         spatialViewportSnapshot = null;
         refreshOverviewSpatialSession(false);
+        restartDesktopSurfaceResidency();
         return true;
     }
 

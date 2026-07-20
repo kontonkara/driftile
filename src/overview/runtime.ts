@@ -31,6 +31,15 @@ export type {
   OverviewDesktopSurfaceLifecycleRefreshPlan,
   OverviewDesktopSurfaceLifecycleScope,
 } from "./desktop-surface-lifecycle";
+export {
+  MAXIMUM_RESIDENT_ROWS,
+  planOverviewDesktopSurfaceResidency,
+} from "./desktop-surface-residency";
+export type {
+  OverviewDesktopSurfaceResidencyInput,
+  OverviewDesktopSurfaceResidencyPlan,
+  OverviewDesktopSurfaceResidencyRange,
+} from "./desktop-surface-residency";
 export { planOverviewTouchPanAxis } from "./touch-pan";
 export type {
   OverviewTouchPanAxis,

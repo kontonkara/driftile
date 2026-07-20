@@ -14,6 +14,7 @@ Item {
     required property var desktopSurfaceLifecycleEvent
     required property string desktopId
     required property var floatingWindows
+    required property bool interactionEligible
     required property bool liveGeometryEnabled
     required property string outputId
     required property string outputName
@@ -303,11 +304,53 @@ Item {
             Loader {
                 id: desktopSurfaceLoader
 
+                property bool desktopSurfaceComponentComplete: false
+                readonly property bool desktopSurfacePresented: desktopSurfaceLoader.active
+                    && desktopSurfaceLoader.status === Loader.Ready
+                    && card.desktopSurfaceEnabled && card.desktopSurfaceContextExact
+                    && card.desktopSurfaceReady
+
                 anchors.fill: parent
                 active: card.desktopSurfaceEnabled && card.desktopSurfaceContextExact
                     && card.desktopSurfaceReady
                 enabled: false
+                opacity: 0
                 z: 0
+
+                Component.onCompleted: {
+                    desktopSurfaceComponentComplete = true;
+                    synchronizeDesktopSurfacePresentation();
+                }
+                onActiveChanged: synchronizeDesktopSurfacePresentation()
+                onDesktopSurfacePresentedChanged: synchronizeDesktopSurfacePresentation()
+                onLoaded: synchronizeDesktopSurfacePresentation()
+                onStatusChanged: synchronizeDesktopSurfacePresentation()
+
+                NumberAnimation {
+                    id: desktopSurfaceFadeIn
+
+                    target: desktopSurfaceLoader
+                    property: "opacity"
+                    from: 0
+                    to: 1
+                    duration: 90
+                    easing.type: Easing.OutCubic
+                }
+
+                function synchronizeDesktopSurfacePresentation() {
+                    if (!desktopSurfaceComponentComplete || !desktopSurfacePresented) {
+                        desktopSurfaceFadeIn.stop();
+                        opacity = 0;
+                        return false;
+                    }
+                    if (desktopSurfaceFadeIn.running || opacity >= 1) {
+                        return true;
+                    }
+
+                    opacity = 0;
+                    desktopSurfaceFadeIn.restart();
+                    return true;
+                }
 
                 sourceComponent: Component {
                     KWin.DesktopBackground {
@@ -1389,7 +1432,8 @@ Item {
 
     function collectNavigationTargets(sceneItem, includeOffscreen = false) {
         const targets = [];
-        if (!sceneItem || !desktop || !screen || desktop.id === undefined || desktop.id === null
+        if (!interactionEligible || !sceneItem || !desktop || !screen
+                || desktop.id === undefined || desktop.id === null
                 || desktopId.length === 0 || String(desktop.id) !== desktopId) {
             return targets;
         }
