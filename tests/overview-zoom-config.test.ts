@@ -30,9 +30,18 @@ describe("overview spatial zoom configuration", () => {
     expect(control).toContain("<double>0.500000000000000</double>");
   });
 
-  it("exposes only finite in-range live values to the scene", () => {
+  it("uses only finite in-range values as the fresh-session baseline", () => {
     expect(main).toContain(
-      "readonly property real overviewZoom: overviewZoomFromConfig()",
+      "readonly property real configuredOverviewZoom: overviewZoomFromConfig()",
+    );
+    expect(main).toMatch(
+      /readonly property real overviewZoom:[\s\S]*controller\.overviewSessionZoom[\s\S]*: configuredOverviewZoom/u,
+    );
+    expect(main).toContain(
+      "onConfiguredOverviewZoomChanged: syncOverviewZoomSetting()",
+    );
+    expect(main).toContain(
+      "controller.applyOverviewZoomSetting(configuredOverviewZoom)",
     );
 
     const readerStart = main.indexOf("function overviewZoomFromConfig()");
@@ -45,5 +54,6 @@ describe("overview spatial zoom configuration", () => {
     expect(reader).toContain("value >= 0.2 && value <= 0.75");
     expect(reader).toContain("? value : fallback;");
     expect(reader).not.toMatch(/\.setValue\s*\(|\bTimer\s*\{/u);
+    expect(main).not.toMatch(/configuration\.OverviewZoom\s*=/u);
   });
 });

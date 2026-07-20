@@ -56,8 +56,23 @@ Rectangle {
         ? orderedDesktopIds(desktopTopologyRevision) : []
     readonly property int currentWorkspaceIndex: currentDesktop && currentDesktop.id !== undefined
         && currentDesktop.id !== null ? desktopIds.indexOf(String(currentDesktop.id)) : -1
+    readonly property real configuredOverviewZoom: sceneEffect
+        && Number.isFinite(sceneEffect.configuredOverviewZoom)
+        ? sceneEffect.configuredOverviewZoom : 0.5
     readonly property real overviewZoom: sceneEffect && Number.isFinite(sceneEffect.overviewZoom)
         ? sceneEffect.overviewZoom : 0.5
+    readonly property int overviewZoomRevision: sceneEffect
+        && Number.isInteger(sceneEffect.overviewZoomRevision)
+        ? sceneEffect.overviewZoomRevision : 0
+    readonly property int overviewZoomInputStateRevision: sceneEffect
+        && Number.isInteger(sceneEffect.overviewZoomInputStateRevision)
+        ? sceneEffect.overviewZoomInputStateRevision : 0
+    readonly property string overviewZoomGestureDirection: sceneEffect
+        && typeof sceneEffect.overviewZoomGestureDirection === "string"
+        ? sceneEffect.overviewZoomGestureDirection : ""
+    readonly property int overviewZoomGestureSessionId: sceneEffect
+        && Number.isInteger(sceneEffect.overviewZoomGestureSessionId)
+        ? sceneEffect.overviewZoomGestureSessionId : 0
     readonly property bool overviewAlwaysCenterSingleColumn: sceneEffect
         && typeof sceneEffect.overviewAlwaysCenterSingleColumn === "boolean"
         ? sceneEffect.overviewAlwaysCenterSingleColumn
@@ -80,6 +95,7 @@ Rectangle {
     property bool desktopReorderAvailable: false
     property int desktopTopologyRevision: 0
     property int desktopTopologyRefreshRequestId: 0
+    property bool desktopTopologyRefreshPending: false
     property bool emptyDesktopAboveFirst: false
     property bool keyboardHelpVisible: false
     property string keyboardSelectionId: ""
@@ -132,7 +148,64 @@ Rectangle {
     readonly property bool spatialKeyboardInputEligible: spatialPresentationInteractive
     readonly property bool spatialPointerInputEligible:
         spatialPresentationInteractive && !keyboardHelpVisible
+        && spatialZoomOwner.length === 0 && spatialExternalZoomTransaction === null
+        && !spatialExternalZoomActive
     readonly property bool spatialHorizontalRowDragActive: spatialHorizontalRowDragHandler.active
+    readonly property bool spatialZoomContextEligible:
+        spatialPresentationSettled && !desktopTopologyRefreshPending
+        && sceneEffect && sceneEffect.active === true
+        && Number.isInteger(sceneEffect.activeSessionId) && sceneEffect.activeSessionId > 0
+        && overviewModel && outputId.length > 0 && desktopIds.length > 0
+        && currentWorkspaceIndex >= 0 && currentWorkspaceIndex < desktopIds.length
+        && Number.isFinite(width) && width > 0 && Number.isFinite(height) && height > 0
+        && spatialLayoutIsValid(overviewSpatialLayout) && spatialViewportSnapshot !== null
+        && sameStringList(spatialHorizontalDesktopIds, desktopIds)
+        && spatialHorizontalViewportOffsets.length === desktopIds.length
+    readonly property bool spatialZoomCompetingInputEligible:
+        !keyboardHelpVisible && !desktopReorderActive
+        && spatialWindowDragSource === null
+        && !spatialViewportDragHandler.active && !spatialHorizontalViewportDragHandler.active
+        && !spatialHorizontalRowDragHandler.active && !spatialVisualContentYDeferred
+        && !spatialVerticalCameraAnimation.running && !keyboardBoundaryNavigationPending
+        && !overviewVerticalWheelSettlePending && !overviewHorizontalWheelSelectionPending
+        && overviewWheelAxisOwner.length === 0
+    readonly property bool spatialZoomInputEligible:
+        spatialZoomContextEligible && spatialZoomCompetingInputEligible
+        && !spatialTouchPanDragHandler.active
+    readonly property bool spatialTouchscreenZoomGestureEligible:
+        spatialZoomContextEligible && spatialZoomCompetingInputEligible
+    readonly property bool spatialZoomSceneRegistrationEligible:
+        spatialZoomInputEligible && spatialZoomOwner.length === 0
+        && !spatialZoomWheelHandler.active
+    readonly property bool spatialExternalZoomActive:
+        overviewZoomGestureDirection === "in" || overviewZoomGestureDirection === "out"
+    readonly property bool spatialZoomHudShown:
+        spatialPresentationSettled && !keyboardHelpVisible
+        && (spatialZoomOwner.length > 0 || spatialExternalZoomActive
+            || Math.abs(overviewZoom - configuredOverviewZoom) > 0.000001)
+    readonly property var spatialZoomSceneToken: ({})
+    property bool spatialZoomApplying: false
+    property var spatialExternalZoomContext: null
+    property int spatialExternalZoomFinalizeRequestId: 0
+    property var spatialExternalZoomTransaction: null
+    property var spatialZoomDesktopIds: []
+    property var spatialZoomRegisteredEffect: null
+    property int spatialZoomRegisteredSessionId: 0
+    property string spatialZoomRegisteredOutputId: ""
+    property bool spatialZoomRegistrationSuppressed: false
+    property real spatialZoomHeight: 0
+    property var spatialZoomHorizontalOffsets: []
+    property var spatialZoomModel: null
+    property string spatialZoomOutputId: ""
+    property string spatialZoomOwner: ""
+    property int spatialZoomSessionId: 0
+    property int spatialZoomTopologyRevision: -1
+    property var spatialZoomTransaction: null
+    property bool spatialZoomFinishing: false
+    property real spatialZoomWheelPixelTotal: 0
+    property int spatialZoomWheelRemainder: 0
+    property string spatialZoomWheelMode: ""
+    property real spatialZoomWidth: 0
     property int spatialPresentationWorkspaceIndex: -1
     property var spatialHorizontalDesktopIds: []
     property var spatialHorizontalGeometryPlans: []
@@ -215,11 +288,15 @@ Rectangle {
         root.synchronizeKeyboardSelectionViewport(target);
     }
     onKeyboardHelpVisibleChanged: {
+        if (keyboardHelpVisible) {
+            root.cancelSpatialZoomTransaction();
+        }
         root.resetOverviewWheelState();
         root.resetWindowWorkspaceHover();
     }
     onCurrentDesktopChanged: root.handleCurrentDesktopChanged()
     function handleCurrentDesktopChanged() {
+        root.cancelSpatialZoomTransaction();
         if (spatialPresentationPhase === "closing") {
             if (sceneEffect && typeof sceneEffect.deactivateImmediately === "function") {
                 sceneEffect.deactivateImmediately();
@@ -244,10 +321,49 @@ Rectangle {
         }
         root.refreshOverviewSpatialSession(false, spatialPresentationInteractive);
     }
-    onOverviewModelChanged: root.refreshOverviewSpatialSession(true)
+    onOverviewModelChanged: {
+        root.cancelSpatialZoomTransaction();
+        root.discardSpatialZoomTransaction();
+        root.refreshOverviewSpatialSession(true);
+        root.synchronizeSpatialZoomInputState();
+    }
     onOverviewAlwaysCenterSingleColumnChanged: root.refreshOverviewSpatialSession(true)
     onOverviewGapChanged: root.refreshOverviewSpatialSession(true)
-    onOverviewSpatialLayoutChanged: root.refreshOverviewSpatialSession(true)
+    onOverviewSpatialLayoutChanged: {
+        if (spatialExternalZoomTransaction !== null) {
+            if (!root.applyExternalSpatialZoom()) {
+                root.recoverExternalSpatialZoomContext();
+            }
+        } else if (spatialZoomTransaction !== null && !spatialZoomApplying) {
+            if (!root.applyControllerSpatialZoomRollback()) {
+                root.cancelSpatialZoomTransaction();
+                root.refreshOverviewSpatialSession(true);
+            }
+        } else if (!spatialZoomApplying) {
+            root.refreshOverviewSpatialSession(true);
+        }
+    }
+    onOverviewZoomGestureDirectionChanged: root.handleExternalSpatialZoomDirectionChanged()
+    onOutputIdChanged: {
+        root.cancelSpatialZoomTransaction();
+        root.discardSpatialZoomTransaction();
+        root.synchronizeSpatialZoomInputState();
+    }
+    onDesktopIdsChanged: {
+        root.cancelSpatialZoomTransaction();
+        root.discardSpatialZoomTransaction();
+        root.synchronizeSpatialZoomInputState();
+    }
+    onWidthChanged: root.cancelSpatialZoomTransaction()
+    onHeightChanged: root.cancelSpatialZoomTransaction()
+    onSpatialZoomInputEligibleChanged: {
+        if (!spatialZoomInputEligible) {
+            root.cancelSpatialZoomTransaction();
+        }
+        root.synchronizeSpatialZoomInputState();
+    }
+    onSpatialZoomSceneRegistrationEligibleChanged: root.synchronizeSpatialZoomInputState()
+    onOverviewZoomInputStateRevisionChanged: root.synchronizeSpatialZoomInputState()
     onSpatialContentYChanged: {
         if (!spatialVisualContentYDeferred) {
             spatialVerticalCameraAnimation.stop();
@@ -272,6 +388,8 @@ Rectangle {
         const modifiers = event.modifiers & ~Qt.KeypadModifier;
         const forbiddenModifiers = Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier;
         const controlOnly = modifiers === Qt.ControlModifier;
+        const zoomControl = controlOnly
+            || modifiers === (Qt.ControlModifier | Qt.ShiftModifier);
         const unmodified = modifiers === Qt.NoModifier;
         const searchTextModifier = unmodified || modifiers === Qt.ShiftModifier;
         if (keyboardHelpVisible) {
@@ -292,9 +410,20 @@ Rectangle {
             event.accepted = true;
             return;
         }
+        if (spatialZoomOwner.length > 0 || spatialExternalZoomTransaction !== null
+                || spatialExternalZoomActive) {
+            event.accepted = true;
+            return;
+        }
 
         let handled = true;
-        if (controlOnly && event.key === Qt.Key_Backspace && searchQuery.length > 0) {
+        if (zoomControl && (event.key === Qt.Key_Plus || event.key === Qt.Key_Equal)) {
+            handled = root.handleSpatialZoomKeyboard("in");
+        } else if (controlOnly && event.key === Qt.Key_Minus) {
+            handled = root.handleSpatialZoomKeyboard("out");
+        } else if (controlOnly && event.key === Qt.Key_0) {
+            handled = root.handleSpatialZoomKeyboard("reset");
+        } else if (controlOnly && event.key === Qt.Key_Backspace && searchQuery.length > 0) {
             root.removeLastSearchClause();
         } else if (controlOnly && event.key === Qt.Key_U && searchQuery.length > 0) {
             searchQuery = "";
@@ -346,17 +475,21 @@ Rectangle {
         resetOverviewSession();
         spatialPresentationWorkspaceIndex = currentWorkspaceIndex;
         handleSpatialPresentationPhaseChanged();
+        synchronizeSpatialZoomInputState();
     }
+    Component.onDestruction: root.destroySpatialZoomScene()
 
     Connections {
         target: root.sceneEffect
         ignoreUnknownSignals: true
 
         function onActiveChanged() {
+            root.cancelSpatialZoomTransaction();
             root.resetOverviewSession();
             if (root.sceneEffect && root.sceneEffect.active === true) {
                 root.refreshEmptyDesktopBoundarySetting();
             }
+            root.synchronizeSpatialZoomInputState();
         }
 
         function onPresentationPhaseChanged() {
@@ -639,6 +772,28 @@ Rectangle {
     }
 
     WheelHandler {
+        id: spatialZoomWheelHandler
+
+        target: null
+        enabled: root.spatialZoomInputEligible
+                 && !root.spatialExternalZoomActive
+                 && root.spatialExternalZoomTransaction === null
+                 && (root.spatialZoomOwner.length === 0 || root.spatialZoomOwner === "wheel")
+        acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
+        acceptedModifiers: Qt.ControlModifier
+        blocking: true
+        orientation: Qt.Vertical
+
+        onActiveChanged: {
+            root.synchronizeSpatialZoomInputState();
+            if (!active) {
+                root.finishSpatialZoomWheelGesture();
+            }
+        }
+        onWheel: event => root.handleSpatialZoomWheel(event, point.position)
+    }
+
+    WheelHandler {
         id: spatialVerticalWheelHandler
 
         target: null
@@ -718,6 +873,7 @@ Rectangle {
             maximumPointCount: 1
             grabPermissions: PointerHandler.CanTakeOverFromHandlersOfDifferentType
                              | PointerHandler.CanTakeOverFromItems
+                             | PointerHandler.ApprovesTakeOverByHandlersOfDifferentType
                              | PointerHandler.ApprovesTakeOverByHandlersOfSameType
                              | PointerHandler.ApprovesCancellation
 
@@ -743,6 +899,32 @@ Rectangle {
                 }
             }
         }
+    }
+
+    OverviewTouchscreenZoomGesture {
+        id: spatialTouchscreenZoom
+
+        anchors.fill: parent
+        gestureEnabled: root.spatialTouchscreenZoomGestureEligible
+                        && !root.spatialExternalZoomActive
+                        && root.spatialExternalZoomTransaction === null
+                        && (root.spatialZoomOwner.length === 0
+                            || root.spatialZoomOwner === "touchscreen")
+        z: 18500
+
+        onZoomStarted: (scale, sceneX, sceneY) => {
+            if (!root.beginSpatialZoomTransaction("touchscreen", sceneY)
+                    || !root.previewSpatialZoomTransaction(scale)) {
+                root.cancelSpatialZoomTransaction();
+            }
+        }
+        onZoomProgressed: scale => {
+            if (!root.previewSpatialZoomTransaction(scale)) {
+                root.cancelSpatialZoomTransaction();
+            }
+        }
+        onZoomCommitted: scale => root.commitSpatialTouchscreenZoom(scale)
+        onZoomCancelled: root.cancelSpatialZoomTransaction()
     }
 
     Item {
@@ -1136,6 +1318,15 @@ Rectangle {
         }
     }
 
+    OverviewZoomHud {
+        anchors.horizontalCenter: parent.horizontalCenter
+        anchors.bottom: parent.bottom
+        anchors.bottomMargin: Math.max(8, root.outerMargin * 0.3)
+        shown: root.spatialZoomHudShown
+        zoom: root.overviewZoom
+        z: 19000
+    }
+
     KeyboardHelpHint {
         id: keyboardHelpHint
 
@@ -1263,6 +1454,10 @@ Rectangle {
                         { keys: "Backspace", action: "Remove last search character" },
                         { keys: "Ctrl+Backspace", action: "Remove last search clause" },
                         { keys: "Ctrl+U", action: "Clear search" },
+                        { keys: "Ctrl+wheel", action: "Zoom at the pointer" },
+                        { keys: "Ctrl++ / Ctrl+-", action: "Zoom in / out" },
+                        { keys: "Ctrl+0", action: "Reset session zoom" },
+                        { keys: "Pinch", action: "Zoom with a touchpad or touchscreen" },
                         { keys: "Escape", action: "Close help, clear search, or close Overview" },
                         { keys: "F1", action: "Toggle keyboard help" },
                         { keys: "Search fields", action: "title:, app:, desktop:, output:, state:" },
@@ -1943,6 +2138,7 @@ Rectangle {
 
     function handleSpatialPresentationPhaseChanged() {
         if (spatialPresentationPhase === "closing") {
+            cancelSpatialZoomTransaction();
             spatialPresentationWorkspaceIndex = currentWorkspaceIndex;
             if (!adoptSpatialVisualContentY()) {
                 spatialVerticalCameraAnimation.stop();
@@ -1956,21 +2152,27 @@ Rectangle {
             spatialViewportInput.panLayout = null;
             spatialViewportInput.panStartContentY = 0;
             keyboardSelectionViewportTarget = null;
+            synchronizeSpatialZoomInputState();
             return;
         }
 
         if (spatialPresentationPhase === "opening") {
+            cancelSpatialZoomTransaction();
             spatialPresentationWorkspaceIndex = currentWorkspaceIndex >= 0
                 && currentWorkspaceIndex < desktopIds.length ? currentWorkspaceIndex : 0;
+            synchronizeSpatialZoomInputState();
             return;
         }
 
         if (spatialKeyboardInputEligible) {
             forceActiveFocus();
         }
+        synchronizeSpatialZoomInputState();
     }
 
     function resetOverviewSession() {
+        cancelSpatialZoomTransaction();
+        clearExternalSpatialZoom();
         invalidateDesktopTopologyRefresh();
         resetSpatialLiveCameraSession();
         clearSpatialTouchPan();
@@ -1983,9 +2185,738 @@ Rectangle {
         spatialHorizontalViewportOffsets = [];
         spatialViewportSnapshot = null;
         refreshOverviewSpatialSession(false);
+        return true;
+    }
+
+    function synchronizeSpatialZoomInputState() {
+        if (spatialZoomRegistrationSuppressed) {
+            return false;
+        }
+        const effect = sceneEffect;
+        const sessionId = effect && Number.isInteger(effect.activeSessionId)
+            ? effect.activeSessionId : 0;
+        const expectedOutputId = outputId;
+        if (spatialZoomRegisteredEffect !== null
+                && (spatialZoomRegisteredEffect !== effect
+                    || spatialZoomRegisteredSessionId !== sessionId
+                    || spatialZoomRegisteredOutputId !== expectedOutputId)) {
+            clearSpatialZoomInputState();
+        }
+        if (!effect || typeof effect.applyOverviewZoomInputState !== "function"
+                || effect.active !== true || sessionId <= 0 || expectedOutputId.length === 0) {
+            return false;
+        }
+
+        let accepted = false;
+        try {
+            accepted = effect.applyOverviewZoomInputState(
+                sessionId, expectedOutputId, spatialZoomSceneToken,
+                spatialZoomSceneRegistrationEligible) === true;
+        } catch (error) {
+            accepted = false;
+        }
+        if (accepted) {
+            spatialZoomRegisteredEffect = effect;
+            spatialZoomRegisteredSessionId = sessionId;
+            spatialZoomRegisteredOutputId = expectedOutputId;
+        }
+        return accepted;
+    }
+
+    function clearSpatialZoomInputState() {
+        const effect = spatialZoomRegisteredEffect;
+        const sessionId = spatialZoomRegisteredSessionId;
+        const expectedOutputId = spatialZoomRegisteredOutputId;
+        spatialZoomRegisteredEffect = null;
+        spatialZoomRegisteredSessionId = 0;
+        spatialZoomRegisteredOutputId = "";
+        if (!effect || typeof effect.clearOverviewZoomInputState !== "function"
+                || sessionId <= 0 || expectedOutputId.length === 0) {
+            return false;
+        }
+        try {
+            return effect.clearOverviewZoomInputState(
+                sessionId, expectedOutputId, spatialZoomSceneToken) === true;
+        } catch (error) {
+            return false;
+        }
+    }
+
+    function destroySpatialZoomScene() {
+        spatialZoomRegistrationSuppressed = true;
+        cancelSpatialZoomTransaction(false);
+        clearExternalSpatialZoom();
+        clearSpatialZoomInputState();
+        clearSpatialZoomTransactionState();
+    }
+
+    function discardSpatialZoomTransaction() {
+        if (spatialZoomTransaction === null && spatialZoomOwner.length === 0) {
+            return false;
+        }
+        const wasApplying = spatialZoomApplying;
+        const wasRegistrationSuppressed = spatialZoomRegistrationSuppressed;
+        spatialZoomApplying = true;
+        spatialZoomRegistrationSuppressed = true;
+        try {
+            clearSpatialZoomInputState();
+            clearSpatialZoomTransactionState();
+        } finally {
+            spatialZoomApplying = wasApplying;
+            spatialZoomRegistrationSuppressed = wasRegistrationSuppressed;
+        }
+        return true;
+    }
+
+    function handleExternalSpatialZoomDirectionChanged() {
+        const direction = overviewZoomGestureDirection;
+        spatialExternalZoomFinalizeRequestId = spatialExternalZoomFinalizeRequestId >= 2147483647
+            ? 1 : spatialExternalZoomFinalizeRequestId + 1;
+        const requestId = spatialExternalZoomFinalizeRequestId;
+        if (direction === "in" || direction === "out") {
+            if (spatialExternalZoomTransaction !== null) {
+                clearExternalSpatialZoom();
+            }
+            return beginExternalSpatialZoom(direction);
+        }
+
+        Qt.callLater(function() {
+            if (requestId === root.spatialExternalZoomFinalizeRequestId
+                    && root.overviewZoomGestureDirection.length === 0) {
+                root.clearExternalSpatialZoom();
+            }
+        });
+        return true;
+    }
+
+    function captureSpatialZoomHorizontalOffsets() {
+        if (!sameStringList(spatialHorizontalDesktopIds, desktopIds)
+                || spatialHorizontalViewportOffsets.length !== desktopIds.length) {
+            return null;
+        }
+
+        const snapshot = [];
+        const knownIds = Object.create(null);
+        for (let index = 0; index < desktopIds.length; index += 1) {
+            const desktopId = desktopIds[index];
+            const offset = spatialHorizontalViewportOffsets[index];
+            if (typeof desktopId !== "string" || desktopId.length === 0
+                    || knownIds[desktopId] === true || !Number.isFinite(offset)) {
+                return null;
+            }
+            knownIds[desktopId] = true;
+            snapshot.push({ desktopId, offset });
+        }
+        return snapshot;
+    }
+
+    function restoreSpatialZoomHorizontalOffsets(snapshot) {
+        if (!snapshot || !Number.isInteger(snapshot.length) || snapshot.length > 512
+                || !sameStringList(spatialHorizontalDesktopIds, desktopIds)
+                || spatialHorizontalViewportOffsets.length !== desktopIds.length) {
+            return false;
+        }
+
+        const offsetsByDesktopId = Object.create(null);
+        for (const entry of snapshot) {
+            if (!entry || typeof entry.desktopId !== "string" || entry.desktopId.length === 0
+                    || offsetsByDesktopId[entry.desktopId] !== undefined
+                    || !Number.isFinite(entry.offset)) {
+                return false;
+            }
+            offsetsByDesktopId[entry.desktopId] = entry.offset;
+        }
+        for (let index = 0; index < desktopIds.length; index += 1) {
+            const desktopId = desktopIds[index];
+            const offset = offsetsByDesktopId[desktopId];
+            if (!Number.isFinite(offset)) {
+                continue;
+            }
+            const bounds = spatialHorizontalViewportBounds(index, desktopId);
+            if (!bounds || !setSpatialHorizontalViewportOffsetForBounds(
+                    index, desktopId,
+                    Math.min(bounds.maximum, Math.max(bounds.minimum, offset)), bounds)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    function beginExternalSpatialZoom(direction) {
+        if ((direction !== "in" && direction !== "out") || spatialZoomOwner.length > 0
+                || !spatialZoomInputEligible || !sceneEffect
+                || overviewZoomGestureSessionId !== sceneEffect.activeSessionId) {
+            return false;
+        }
+
+        const runtime = OverviewRuntime.DriftileOverview;
+        if (!runtime || typeof runtime.planOverviewSpatialZoomBegin !== "function") {
+            return false;
+        }
+        let transaction = null;
+        try {
+            transaction = runtime.planOverviewSpatialZoomBegin({
+                                                                    anchorSceneY: height / 2,
+                                                                    contentY: spatialContentY,
+                                                                    currentWorkspaceIndex,
+                                                                    sceneHeight: height,
+                                                                    sceneWidth: width,
+                                                                    workspaceCount: desktopIds.length,
+                                                                    zoom: overviewZoom
+                                                                });
+        } catch (error) {
+            return false;
+        }
+        if (!transaction) {
+            return false;
+        }
+
+        const copiedDesktopIds = [];
+        for (const desktopId of desktopIds) {
+            if (typeof desktopId !== "string" || desktopId.length === 0) {
+                return false;
+            }
+            copiedDesktopIds.push(desktopId);
+        }
+        const horizontalOffsets = captureSpatialZoomHorizontalOffsets();
+        if (horizontalOffsets === null) {
+            return false;
+        }
+        spatialExternalZoomContext = {
+            desktopIds: copiedDesktopIds,
+            height,
+            horizontalOffsets,
+            model: overviewModel,
+            outputId,
+            sessionId: sceneEffect.activeSessionId,
+            topologyRevision: desktopTopologyRevision,
+            width
+        };
+        spatialExternalZoomTransaction = transaction;
+        return true;
+    }
+
+    function applyExternalSpatialZoom() {
+        const context = spatialExternalZoomContext;
+        const transaction = spatialExternalZoomTransaction;
+        const effect = sceneEffect;
+        if (!context || !transaction || !effect || effect.active !== true
+                || effect.activeSessionId !== context.sessionId
+                || overviewModel !== context.model || effect.overviewModel !== context.model
+                || outputId !== context.outputId || desktopTopologyRevision !== context.topologyRevision
+                || width !== context.width || height !== context.height
+                || currentWorkspaceIndex !== transaction.currentWorkspaceIndex
+                || !sameStringList(desktopIds, context.desktopIds)
+                || Math.abs(spatialContentY - transaction.previewContentY) > 0.000001
+                || !Number.isFinite(overviewZoom) || transaction.originZoom <= 0) {
+            return false;
+        }
+
+        const runtime = OverviewRuntime.DriftileOverview;
+        let plan = null;
+        if (runtime && typeof runtime.planOverviewSpatialZoomPreview === "function") {
+            try {
+                plan = runtime.planOverviewSpatialZoomPreview({
+                                                                  scale: overviewZoom / transaction.originZoom,
+                                                                  transaction
+                                                              });
+            } catch (error) {
+                plan = null;
+            }
+        }
+        if (!plan || !plan.transaction) {
+            return false;
+        }
+
+        spatialZoomApplying = true;
+        let applied = false;
+        try {
+            applied = setSpatialContentY(plan.contentY, false);
+            if (applied) {
+                applied = refreshSpatialHorizontalViewports(true);
+                if (overviewZoomGestureDirection.length === 0
+                        && Math.abs(overviewZoom - transaction.originZoom) <= 0.000001) {
+                    applied = applied
+                        && restoreSpatialZoomHorizontalOffsets(context.horizontalOffsets);
+                }
+                if (applied) {
+                    spatialExternalZoomTransaction = plan.transaction;
+                    captureSpatialViewportSnapshot();
+                }
+            }
+        } finally {
+            spatialZoomApplying = false;
+        }
+        return applied;
+    }
+
+    function clearExternalSpatialZoom() {
+        spatialExternalZoomContext = null;
+        spatialExternalZoomTransaction = null;
+    }
+
+    function recoverExternalSpatialZoomContext() {
+        const context = spatialExternalZoomContext;
+        const horizontalOffsets = context && context.horizontalOffsets
+            ? context.horizontalOffsets : null;
+        clearExternalSpatialZoom();
+        refreshOverviewSpatialSession(true);
+        if (horizontalOffsets !== null) {
+            restoreSpatialZoomHorizontalOffsets(horizontalOffsets);
+        }
+    }
+
+    function beginSpatialZoomTransaction(owner, anchorSceneY) {
+        if (spatialZoomFinishing || spatialZoomOwner.length > 0
+                || spatialExternalZoomActive || spatialExternalZoomTransaction !== null
+                || (owner !== "wheel" && owner !== "keyboard" && owner !== "touchscreen")
+                || !spatialZoomInputEligible || !Number.isFinite(anchorSceneY)
+                || anchorSceneY < 0 || anchorSceneY > height) {
+            return false;
+        }
+
+        const runtime = OverviewRuntime.DriftileOverview;
+        if (!runtime || typeof runtime.planOverviewSpatialZoomBegin !== "function") {
+            return false;
+        }
+
+        let transaction = null;
+        try {
+            transaction = runtime.planOverviewSpatialZoomBegin({
+                                                                    anchorSceneY,
+                                                                    contentY: spatialContentY,
+                                                                    currentWorkspaceIndex,
+                                                                    sceneHeight: height,
+                                                                    sceneWidth: width,
+                                                                    workspaceCount: desktopIds.length,
+                                                                    zoom: overviewZoom
+                                                                });
+        } catch (error) {
+            return false;
+        }
+        if (!transaction) {
+            return false;
+        }
+
+        const copiedDesktopIds = [];
+        for (const desktopId of desktopIds) {
+            if (typeof desktopId !== "string" || desktopId.length === 0) {
+                return false;
+            }
+            copiedDesktopIds.push(desktopId);
+        }
+
+        const horizontalOffsets = captureSpatialZoomHorizontalOffsets();
+        if (horizontalOffsets === null) {
+            return false;
+        }
+
+        spatialZoomDesktopIds = copiedDesktopIds;
+        spatialZoomHeight = height;
+        spatialZoomHorizontalOffsets = horizontalOffsets;
+        spatialZoomModel = overviewModel;
+        spatialZoomOutputId = outputId;
+        spatialZoomSessionId = sceneEffect.activeSessionId;
+        spatialZoomTopologyRevision = desktopTopologyRevision;
+        spatialZoomTransaction = transaction;
+        spatialZoomWidth = width;
+        spatialZoomOwner = owner;
+        synchronizeSpatialZoomInputState();
+        return true;
+    }
+
+    function spatialZoomSessionContextIsCurrent() {
+        const effect = sceneEffect;
+        return spatialZoomSessionId > 0 && effect && effect.active === true
+            && effect.activeSessionId === spatialZoomSessionId
+            && overviewModel === spatialZoomModel && effect.overviewModel === spatialZoomModel;
+    }
+
+    function spatialZoomContextIsExact() {
+        const transaction = spatialZoomTransaction;
+        return spatialZoomOwner.length > 0 && transaction
+            && spatialZoomSessionContextIsCurrent()
+            && spatialPresentationPhase === "open" && spatialPresentationProgress >= 1
+            && outputId === spatialZoomOutputId
+            && desktopTopologyRevision === spatialZoomTopologyRevision
+            && width === spatialZoomWidth && height === spatialZoomHeight
+            && currentWorkspaceIndex === transaction.currentWorkspaceIndex
+            && sameStringList(desktopIds, spatialZoomDesktopIds)
+            && Math.abs(spatialContentY - transaction.previewContentY) <= 0.000001
+            && Math.abs(overviewZoom - transaction.previewZoom) <= 0.000001;
+    }
+
+    function applySpatialZoomPlan(plan) {
+        if (!plan || !Number.isFinite(plan.zoom) || !Number.isFinite(plan.contentY)
+                || !Number.isFinite(plan.maximumContentY) || !spatialZoomContextIsExact()
+                || !sceneEffect || typeof sceneEffect.setOverviewSessionZoom !== "function") {
+            return false;
+        }
+
+        spatialZoomApplying = true;
+        let applied = false;
+        const previousZoom = spatialZoomTransaction.previewZoom;
+        const previousContentY = spatialZoomTransaction.previewContentY;
+        const previousHorizontalOffsets = captureSpatialZoomHorizontalOffsets();
+        try {
+            if (previousHorizontalOffsets === null) {
+                return false;
+            }
+            const result = sceneEffect.setOverviewSessionZoom(
+                spatialZoomSessionId, spatialZoomOutputId, spatialZoomSceneToken, plan.zoom);
+            if (result === false && Math.abs(overviewZoom - plan.zoom) > 0.000001) {
+                return false;
+            }
+            if (!setSpatialContentY(plan.contentY, false)) {
+                return false;
+            }
+            if (!refreshSpatialHorizontalViewports(true)) {
+                return false;
+            }
+            captureSpatialViewportSnapshot();
+            applied = true;
+        } catch (error) {
+            applied = false;
+        } finally {
+            if (!applied && previousHorizontalOffsets !== null) {
+                try {
+                    const rollbackResult = sceneEffect.setOverviewSessionZoom(
+                        spatialZoomSessionId, spatialZoomOutputId,
+                        spatialZoomSceneToken, previousZoom);
+                    if ((rollbackResult === true
+                            || Math.abs(overviewZoom - previousZoom) <= 0.000001)
+                            && setSpatialContentY(previousContentY, false)
+                            && refreshSpatialHorizontalViewports(false)
+                            && restoreSpatialZoomHorizontalOffsets(previousHorizontalOffsets)) {
+                        captureSpatialViewportSnapshot();
+                    }
+                } catch (error) {
+                }
+            }
+            spatialZoomApplying = false;
+        }
+        return applied;
+    }
+
+    function previewSpatialZoomTransaction(scale) {
+        if (!Number.isFinite(scale) || !spatialZoomContextIsExact()) {
+            return false;
+        }
+        const runtime = OverviewRuntime.DriftileOverview;
+        if (!runtime || typeof runtime.planOverviewSpatialZoomPreview !== "function") {
+            return false;
+        }
+
+        let plan = null;
+        try {
+            plan = runtime.planOverviewSpatialZoomPreview({
+                                                              scale,
+                                                              transaction: spatialZoomTransaction
+                                                          });
+        } catch (error) {
+            return false;
+        }
+        if (!plan || !plan.transaction || !applySpatialZoomPlan(plan)) {
+            return false;
+        }
+        spatialZoomTransaction = plan.transaction;
+        return true;
+    }
+
+    function applyControllerSpatialZoomRollback() {
+        const transaction = spatialZoomTransaction;
+        const effect = sceneEffect;
+        if (spatialZoomFinishing || !transaction || !effect || effect.active !== true
+                || effect.activeSessionId !== spatialZoomSessionId
+                || overviewModel !== spatialZoomModel || effect.overviewModel !== spatialZoomModel
+                || outputId !== spatialZoomOutputId
+                || desktopTopologyRevision !== spatialZoomTopologyRevision
+                || width !== spatialZoomWidth || height !== spatialZoomHeight
+                || currentWorkspaceIndex !== transaction.currentWorkspaceIndex
+                || !sameStringList(desktopIds, spatialZoomDesktopIds)
+                || Math.abs(spatialContentY - transaction.previewContentY) > 0.000001
+                || Math.abs(overviewZoom - transaction.originZoom) > 0.000001) {
+            return false;
+        }
+
+        const runtime = OverviewRuntime.DriftileOverview;
+        let plan = null;
+        if (runtime && typeof runtime.planOverviewSpatialZoomFinish === "function") {
+            try {
+                plan = runtime.planOverviewSpatialZoomFinish({
+                                                                 disposition: "cancel",
+                                                                 transaction
+                                                             });
+            } catch (error) {
+                plan = null;
+            }
+        }
+        if (!plan) {
+            return false;
+        }
+
+        spatialZoomFinishing = true;
+        spatialZoomApplying = true;
+        let restored = false;
+        try {
+            restored = setSpatialContentY(plan.contentY, false)
+                && refreshSpatialHorizontalViewports(true)
+                && restoreSpatialZoomHorizontalOffsets(spatialZoomHorizontalOffsets);
+            if (restored) {
+                captureSpatialViewportSnapshot();
+            }
+        } finally {
+            spatialZoomApplying = false;
+        }
+        clearSpatialZoomTransactionState();
+        spatialZoomFinishing = false;
+        synchronizeSpatialZoomInputState();
+        return restored;
+    }
+
+    function finishSpatialZoomTransaction(disposition) {
+        if (spatialZoomFinishing || spatialZoomOwner.length === 0 || !spatialZoomTransaction
+                || (disposition !== "commit" && disposition !== "cancel")) {
+            return false;
+        }
+
+        spatialZoomFinishing = true;
+        const transaction = spatialZoomTransaction;
+        const exactContext = spatialZoomContextIsExact();
+        const runtime = OverviewRuntime.DriftileOverview;
+        let plan = null;
+        if (runtime && typeof runtime.planOverviewSpatialZoomFinish === "function") {
+            try {
+                plan = runtime.planOverviewSpatialZoomFinish({ disposition, transaction });
+            } catch (error) {
+                plan = null;
+            }
+        }
+
+        let finished = false;
+        if (exactContext && plan) {
+            finished = applySpatialZoomPlan(plan);
+            if (finished && disposition === "cancel") {
+                finished = restoreSpatialZoomHorizontalOffsets(spatialZoomHorizontalOffsets);
+            }
+        }
+        const needsOriginFallback = !exactContext || !plan
+            || (disposition === "cancel" && !finished);
+        if (needsOriginFallback && spatialZoomSessionContextIsCurrent()
+                && sceneEffect && typeof sceneEffect.setOverviewSessionZoom === "function") {
+            spatialZoomApplying = true;
+            try {
+                const result = sceneEffect.setOverviewSessionZoom(
+                    spatialZoomSessionId, spatialZoomOutputId,
+                    spatialZoomSceneToken, transaction.originZoom);
+                if (result === true
+                        || Math.abs(overviewZoom - transaction.originZoom) <= 0.000001) {
+                    if (exactContext && plan && disposition === "cancel") {
+                        finished = setSpatialContentY(plan.contentY, false)
+                            && refreshSpatialHorizontalViewports(true)
+                            && restoreSpatialZoomHorizontalOffsets(spatialZoomHorizontalOffsets);
+                        if (finished) {
+                            captureSpatialViewportSnapshot();
+                        }
+                    } else {
+                        refreshOverviewSpatialSession(true);
+                        finished = restoreSpatialZoomHorizontalOffsets(spatialZoomHorizontalOffsets);
+                    }
+                }
+            } catch (error) {
+                finished = false;
+            } finally {
+                spatialZoomApplying = false;
+            }
+        }
+
+        if (disposition === "cancel" && !finished) {
+            spatialZoomFinishing = false;
+            synchronizeSpatialZoomInputState();
+            return false;
+        }
+        clearSpatialZoomTransactionState();
+        spatialZoomFinishing = false;
+        synchronizeSpatialZoomInputState();
+        return finished;
+    }
+
+    function clearSpatialZoomTransactionState() {
+        spatialZoomDesktopIds = [];
+        spatialZoomHeight = 0;
+        spatialZoomHorizontalOffsets = [];
+        spatialZoomModel = null;
+        spatialZoomOutputId = "";
+        spatialZoomOwner = "";
+        spatialZoomSessionId = 0;
+        spatialZoomTopologyRevision = -1;
+        spatialZoomTransaction = null;
+        spatialZoomWheelPixelTotal = 0;
+        spatialZoomWheelRemainder = 0;
+        spatialZoomWheelMode = "";
+        spatialZoomWidth = 0;
+    }
+
+    function cancelSpatialZoomTransaction(repairAfterDiscard = true) {
+        if (spatialZoomFinishing || spatialZoomOwner.length === 0 || !spatialZoomTransaction) {
+            return false;
+        }
+        const finished = finishSpatialZoomTransaction("cancel");
+        if (!finished && spatialZoomTransaction !== null) {
+            discardSpatialZoomTransaction();
+            if (repairAfterDiscard && sceneEffect && sceneEffect.active === true) {
+                refreshOverviewSpatialSession(true);
+                synchronizeSpatialZoomInputState();
+            }
+        }
+        return finished;
+    }
+
+    function handleSpatialZoomKeyboard(intent) {
+        if ((intent !== "in" && intent !== "out" && intent !== "reset")
+                || !beginSpatialZoomTransaction("keyboard", height / 2)) {
+            return false;
+        }
+
+        const runtime = OverviewRuntime.DriftileOverview;
+        let levelPlan = null;
+        if (runtime && typeof runtime.planOverviewSpatialZoomLevel === "function") {
+            try {
+                levelPlan = intent === "reset"
+                    ? runtime.planOverviewSpatialZoomLevel({
+                                                               configuredZoom: configuredOverviewZoom,
+                                                               currentZoom: overviewZoom,
+                                                               intent: "reset"
+                                                           })
+                    : runtime.planOverviewSpatialZoomLevel({
+                                                               currentZoom: overviewZoom,
+                                                               direction: intent,
+                                                               intent: "step",
+                                                               steps: 1
+                                                           });
+            } catch (error) {
+                levelPlan = null;
+            }
+        }
+        if (!levelPlan || !previewSpatialZoomTransaction(levelPlan.scale)) {
+            cancelSpatialZoomTransaction();
+            return false;
+        }
+        return finishSpatialZoomTransaction("commit");
+    }
+
+    function handleSpatialZoomWheel(event, point) {
+        if (!event || !point || !spatialZoomInputEligible
+                || event.modifiers !== Qt.ControlModifier || !event.pixelDelta || !event.angleDelta
+                || !Number.isFinite(point.y) || !Number.isFinite(event.pixelDelta.y)
+                || !Number.isFinite(event.angleDelta.y)) {
+            return false;
+        }
+
+        const rawPixelDelta = event.pixelDelta.y;
+        const runtime = OverviewRuntime.DriftileOverview;
+        const angleDelta = runtime
+            && typeof runtime.normalizeOverviewPhysicalWheelAngleDelta === "function"
+            ? runtime.normalizeOverviewPhysicalWheelAngleDelta(
+                event.angleDelta.y, event.inverted === true) : Number.NaN;
+        const pixelDelta = runtime
+            && typeof runtime.normalizeOverviewPhysicalWheelPixelDelta === "function"
+            ? runtime.normalizeOverviewPhysicalWheelPixelDelta(
+                rawPixelDelta, event.inverted === true) : Number.NaN;
+        const mode = Number.isFinite(pixelDelta) && pixelDelta !== 0
+            ? "pixel" : angleDelta !== 0 ? "angle" : "";
+        if (mode.length === 0 || !Number.isSafeInteger(angleDelta)) {
+            return false;
+        }
+
+        if (spatialZoomOwner.length > 0 && spatialZoomOwner !== "wheel") {
+            event.accepted = true;
+            return true;
+        }
+        if (spatialZoomWheelMode.length > 0 && spatialZoomWheelMode !== mode) {
+            finishSpatialZoomWheelGesture();
+        }
+        spatialZoomWheelMode = mode;
+
+        if (mode === "pixel") {
+            if (spatialZoomOwner.length === 0
+                    && !beginSpatialZoomTransaction("wheel", point.y)) {
+                return false;
+            }
+            const maximumPixelTotal = Math.log(16) * 1200;
+            spatialZoomWheelPixelTotal = Math.max(-maximumPixelTotal,
+                Math.min(maximumPixelTotal, spatialZoomWheelPixelTotal + pixelDelta));
+            if (!previewSpatialZoomTransaction(Math.exp(-spatialZoomWheelPixelTotal / 1200))) {
+                cancelSpatialZoomTransaction();
+                return false;
+            }
+            const transaction = spatialZoomTransaction;
+            if (!transaction || !Number.isFinite(transaction.previewZoom)
+                    || !Number.isFinite(transaction.originZoom) || transaction.originZoom <= 0) {
+                cancelSpatialZoomTransaction();
+                return false;
+            }
+            spatialZoomWheelPixelTotal = -Math.log(
+                transaction.previewZoom / transaction.originZoom) * 1200;
+        } else {
+            const combined = spatialZoomWheelRemainder !== 0
+                && Math.sign(spatialZoomWheelRemainder) !== Math.sign(angleDelta)
+                ? angleDelta : spatialZoomWheelRemainder + angleDelta;
+            const stepCount = Math.min(4, Math.floor(Math.abs(combined) / 120));
+            spatialZoomWheelRemainder = Math.sign(combined) * (Math.abs(combined) % 120);
+            if (stepCount > 0) {
+                if (spatialZoomOwner.length === 0
+                        && !beginSpatialZoomTransaction("wheel", point.y)) {
+                    return false;
+                }
+                let levelPlan = null;
+                if (runtime && typeof runtime.planOverviewSpatialZoomLevel === "function") {
+                    try {
+                        levelPlan = runtime.planOverviewSpatialZoomLevel({
+                                                                            currentZoom: overviewZoom,
+                                                                            direction: combined < 0 ? "in" : "out",
+                                                                            intent: "step",
+                                                                            steps: stepCount
+                                                                        });
+                    } catch (error) {
+                        levelPlan = null;
+                    }
+                }
+                const originZoom = spatialZoomTransaction
+                    ? spatialZoomTransaction.originZoom : Number.NaN;
+                const scale = levelPlan && Number.isFinite(originZoom) && originZoom > 0
+                    ? levelPlan.zoom / originZoom : Number.NaN;
+                if (!previewSpatialZoomTransaction(scale)) {
+                    cancelSpatialZoomTransaction();
+                    return false;
+                }
+            }
+        }
+
+        event.accepted = true;
+        return true;
+    }
+
+    function finishSpatialZoomWheelGesture() {
+        const owned = spatialZoomOwner === "wheel";
+        spatialZoomWheelPixelTotal = 0;
+        spatialZoomWheelRemainder = 0;
+        spatialZoomWheelMode = "";
+        return owned ? finishSpatialZoomTransaction("commit") : false;
+    }
+
+    function commitSpatialTouchscreenZoom(scale) {
+        if (spatialZoomOwner !== "touchscreen" || !Number.isFinite(scale)
+                || !previewSpatialZoomTransaction(scale)) {
+            cancelSpatialZoomTransaction();
+            return false;
+        }
+        return finishSpatialZoomTransaction("commit");
     }
 
     function handleDesktopTopologyChanged() {
+        desktopTopologyRefreshPending = true;
+        cancelSpatialZoomTransaction();
         desktopTopologyRevision = desktopTopologyRevision >= 2147483646
             ? 0 : desktopTopologyRevision + 1;
         resetOverviewWheelState();
@@ -1999,10 +2930,13 @@ Rectangle {
             ? effect.activeSessionId : 0;
         if (!effect || effect.active !== true || spatialPresentationPhase === "closing"
                 || !expectedModel || expectedSessionId <= 0) {
+            desktopTopologyRefreshPending = false;
+            synchronizeSpatialZoomInputState();
             return false;
         }
 
         invalidateDesktopTopologyRefresh();
+        desktopTopologyRefreshPending = true;
         const requestId = desktopTopologyRefreshRequestId;
         resetWindowWorkspaceHover();
         Qt.callLater(function() {
@@ -2017,16 +2951,23 @@ Rectangle {
                 || spatialPresentationPhase === "closing"
                 || effect.activeSessionId !== expectedSessionId || overviewModel !== expectedModel
                 || effect.overviewModel !== expectedModel) {
+            if (requestId === desktopTopologyRefreshRequestId) {
+                desktopTopologyRefreshPending = false;
+                synchronizeSpatialZoomInputState();
+            }
             return false;
         }
 
         refreshOverviewSpatialSession(true);
+        desktopTopologyRefreshPending = false;
+        synchronizeSpatialZoomInputState();
         return true;
     }
 
     function invalidateDesktopTopologyRefresh() {
         desktopTopologyRefreshRequestId = desktopTopologyRefreshRequestId >= 2147483646
             ? 0 : desktopTopologyRefreshRequestId + 1;
+        desktopTopologyRefreshPending = false;
     }
 
     function refreshOverviewSpatialSession(preserveViewport, animateViewport = false) {
@@ -2178,8 +3119,22 @@ Rectangle {
 
         const previousDesktopIds = spatialHorizontalDesktopIds;
         const previousOffsets = spatialHorizontalViewportOffsets;
-        const preserve = preserveViewport === true && sameStringList(previousDesktopIds, currentDesktopIds)
-            && previousOffsets && previousOffsets.length === currentDesktopIds.length;
+        const previousOffsetsByDesktopId = Object.create(null);
+        let preserve = preserveViewport === true && desktopIdListShapeIsValid(previousDesktopIds)
+            && previousOffsets && previousOffsets.length === previousDesktopIds.length;
+        if (preserve) {
+            for (let index = 0; index < previousDesktopIds.length; index += 1) {
+                const previousDesktopId = previousDesktopIds[index];
+                const previousOffset = previousOffsets[index];
+                if (typeof previousDesktopId !== "string" || previousDesktopId.length === 0
+                        || previousOffsetsByDesktopId[previousDesktopId] !== undefined
+                        || !Number.isFinite(previousOffset)) {
+                    preserve = false;
+                    break;
+                }
+                previousOffsetsByDesktopId[previousDesktopId] = previousOffset;
+            }
+        }
         const nextDesktopIds = [];
         const nextGeometryPlans = [];
         const nextOffsets = [];
@@ -2196,8 +3151,8 @@ Rectangle {
                 return false;
             }
 
-            const previous = preserve && Number.isFinite(previousOffsets[index])
-                ? previousOffsets[index] : bounds.base;
+            const preservedOffset = preserve ? previousOffsetsByDesktopId[desktopId] : undefined;
+            const previous = Number.isFinite(preservedOffset) ? preservedOffset : bounds.base;
             nextDesktopIds.push(desktopId);
             nextGeometryPlans.push(geometryPlan);
             nextOffsets.push(Math.min(bounds.maximum, Math.max(bounds.minimum, previous)));

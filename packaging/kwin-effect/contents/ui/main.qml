@@ -14,8 +14,19 @@ KWin.SceneEffect {
     readonly property bool configuredTouchpadGesture: touchpadGestureEnabledFromConfig()
     readonly property int configuredTouchpadGestureFingerCount: touchpadGestureFingerCountFromConfig()
     readonly property int configuredScreenEdge: screenEdgeFromConfig()
+    readonly property real configuredOverviewZoom: overviewZoomFromConfig()
     readonly property color backdropColor: backdropColorFromConfig()
-    readonly property real overviewZoom: overviewZoomFromConfig()
+    readonly property real overviewZoom: controller && typeof controller.overviewSessionZoom === "number" && Number.isFinite(controller.overviewSessionZoom) && controller.overviewSessionZoom >= 0.2 && controller.overviewSessionZoom <= 0.75 ? controller.overviewSessionZoom : configuredOverviewZoom
+    readonly property int overviewZoomRevision: controller && Number.isInteger(controller.overviewZoomRevision) && controller.overviewZoomRevision >= 0 ? controller.overviewZoomRevision : 0
+    readonly property int overviewZoomInputStateRevision: controller && Number.isInteger(controller.overviewZoomInputStateRevision) && controller.overviewZoomInputStateRevision >= 0 ? controller.overviewZoomInputStateRevision : 0
+    readonly property int overviewZoomGestureSessionId: controller
+        && Number.isInteger(controller.overviewZoomGestureSessionId)
+        && controller.overviewZoomGestureSessionId > 0
+        ? controller.overviewZoomGestureSessionId : 0
+    readonly property string overviewZoomGestureDirection: controller
+        && (controller.overviewZoomGestureDirection === "in"
+            || controller.overviewZoomGestureDirection === "out")
+        ? controller.overviewZoomGestureDirection : ""
     readonly property bool showWindowLabels: showWindowLabelsFromConfig()
     readonly property bool showApplicationIdentity: showApplicationIdentityFromConfig()
     readonly property bool showWindowCloseButtons: showWindowCloseButtonsFromConfig()
@@ -34,6 +45,8 @@ KWin.SceneEffect {
         : 16
 
     readonly property bool active: controller ? controller.active : false
+    readonly property int activeSessionId: controller && Number.isInteger(controller.activeSessionId)
+        && controller.activeSessionId > 0 ? controller.activeSessionId : 0
     readonly property bool loading: controller ? controller.loading : false
     readonly property var overviewModel: controller ? controller.overviewModel : null
     readonly property real presentationProgress: controller
@@ -57,11 +70,18 @@ KWin.SceneEffect {
         onActivated: effect.activate()
     }
 
-    onControllerChanged: syncTouchpadGestureSettings()
+    onControllerChanged: {
+        syncTouchpadGestureSettings();
+        syncOverviewZoomSetting();
+    }
     onConfiguredTouchpadGestureChanged: syncTouchpadGestureSettings()
     onConfiguredTouchpadGestureFingerCountChanged: syncTouchpadGestureSettings()
+    onConfiguredOverviewZoomChanged: syncOverviewZoomSetting()
 
-    Component.onCompleted: syncTouchpadGestureSettings()
+    Component.onCompleted: {
+        syncTouchpadGestureSettings();
+        syncOverviewZoomSetting();
+    }
 
     function toggle() {
         if (controller) {
@@ -93,10 +113,52 @@ KWin.SceneEffect {
             : false;
     }
 
+    function applyOverviewZoomInputState(sessionId, outputId, sceneToken, eligible) {
+        return controller && typeof controller.applyOverviewZoomInputState === "function" ? controller.applyOverviewZoomInputState(sessionId, outputId, sceneToken, eligible) === true : false;
+    }
+
+    function clearOverviewZoomInputState(sessionId, outputId, sceneToken) {
+        return controller && typeof controller.clearOverviewZoomInputState === "function" ? controller.clearOverviewZoomInputState(sessionId, outputId, sceneToken) === true : false;
+    }
+
+    function setOverviewSessionZoom(sessionId, outputId, sceneToken, zoom) {
+        return controller && typeof controller.setOverviewSessionZoom === "function" ? controller.setOverviewSessionZoom(sessionId, outputId, sceneToken, zoom) === true : false;
+    }
+
+    function resetOverviewSessionZoom(sessionId, outputId, sceneToken) {
+        return controller && typeof controller.resetOverviewSessionZoom === "function" ? controller.resetOverviewSessionZoom(sessionId, outputId, sceneToken) === true : false;
+    }
+
+    function beginOverviewZoomGesture(sessionId, direction, progress) {
+        return controller && typeof controller.beginOverviewZoomGesture === "function" ? controller.beginOverviewZoomGesture(sessionId, direction, progress) === true : false;
+    }
+
+    function updateOverviewZoomGesture(sessionId, direction, progress) {
+        return controller && typeof controller.updateOverviewZoomGesture === "function" ? controller.updateOverviewZoomGesture(sessionId, direction, progress) === true : false;
+    }
+
+    function commitOverviewZoomGesture(sessionId, direction) {
+        return controller && typeof controller.commitOverviewZoomGesture === "function" ? controller.commitOverviewZoomGesture(sessionId, direction) === true : false;
+    }
+
+    function cancelOverviewZoomGesture(sessionId, direction) {
+        return controller && typeof controller.cancelOverviewZoomGesture === "function" ? controller.cancelOverviewZoomGesture(sessionId, direction) === true : false;
+    }
+
+    function invalidateOverviewZoomGesture(sessionId, direction) {
+        return controller && typeof controller.invalidateOverviewZoomGesture === "function" ? controller.invalidateOverviewZoomGesture(sessionId, direction) === true : false;
+    }
+
     function syncTouchpadGestureSettings() {
         if (controller && typeof controller.applyTouchpadGestureSettings === "function") {
             controller.applyTouchpadGestureSettings(configuredTouchpadGesture,
                                                      configuredTouchpadGestureFingerCount);
+        }
+    }
+
+    function syncOverviewZoomSetting() {
+        if (controller && typeof controller.applyOverviewZoomSetting === "function") {
+            controller.applyOverviewZoomSetting(configuredOverviewZoom);
         }
     }
 

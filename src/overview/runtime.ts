@@ -58,11 +58,33 @@ export type {
   OverviewWindowSearchQueryGroup,
   OverviewWindowSearchQueryPlan,
 } from "./window-search";
-export { planOverviewSpatialLayout } from "./spatial-layout";
+export {
+  OVERVIEW_SPATIAL_LAYOUT_ZOOM_LIMITS,
+  planOverviewSpatialLayout,
+} from "./spatial-layout";
 export type {
   OverviewSpatialLayoutInput,
   OverviewSpatialLayoutPlan,
 } from "./spatial-layout";
+export {
+  OVERVIEW_SPATIAL_ZOOM_LIMITS,
+  planOverviewSpatialZoomBegin,
+  planOverviewSpatialZoomFinish,
+  planOverviewSpatialZoomLevel,
+  planOverviewSpatialZoomPreview,
+} from "./spatial-zoom";
+export type {
+  OverviewSpatialZoomBeginInput,
+  OverviewSpatialZoomFinishDisposition,
+  OverviewSpatialZoomFinishInput,
+  OverviewSpatialZoomLevelInput,
+  OverviewSpatialZoomLevelPlan,
+  OverviewSpatialZoomPlan,
+  OverviewSpatialZoomPreviewInput,
+  OverviewSpatialZoomPreviewPlan,
+  OverviewSpatialZoomStepDirection,
+  OverviewSpatialZoomTransaction,
+} from "./spatial-zoom";
 export {
   planOverviewSpatialViewportAnchor,
   planOverviewSpatialViewport,
@@ -81,6 +103,7 @@ export type {
 } from "./spatial-viewport";
 export {
   normalizeOverviewPhysicalWheelAngleDelta,
+  normalizeOverviewPhysicalWheelPixelDelta,
   planOverviewSpatialWheelAxis,
   planOverviewSpatialWheel,
   planOverviewSpatialWorkspaceWheelTarget,

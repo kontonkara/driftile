@@ -33,12 +33,38 @@ QtObject {
     property string presentationPhase: "closed"
     property bool overviewAlwaysCenterSingleColumn: false
     property real overviewGap: 16
+    readonly property real overviewZoomMinimum: 0.2
+    readonly property real overviewZoomMaximum: 0.75
+    readonly property real overviewZoomGestureSpan: 0.1
+    property real configuredOverviewZoom: 0.5
+    property real overviewSessionZoom: 0.5
+    property int overviewZoomRevision: 0
+    property var overviewZoomInputStates: []
+    property int overviewZoomInputStateRevision: 0
+    property bool overviewZoomLiveRefreshDeferred: false
+    property bool overviewZoomLiveRefreshResumeQueued: false
+    property int overviewZoomLocalOwnerSessionId: 0
+    property string overviewZoomLocalOwnerOutputId: ""
+    property var overviewZoomLocalOwnerSceneToken: null
+    property var overviewZoomLocalOwnerModel: null
+    property real overviewZoomLocalOwnerInitialZoom: 0.5
+    property int overviewZoomGestureSessionId: 0
+    property string overviewZoomGestureDirection: ""
+    property real overviewZoomGestureInitialZoom: 0.5
     property bool touchpadGestureEnabled: false
     property bool touchpadGestureDispatching: false
     property int touchpadGestureFingerCount: 4
     property real touchpadGestureProgress: 0
     property string touchpadGestureOwner: ""
     readonly property var overviewDelegate: Qt.createComponent("OverviewScene.qml")
+
+    onActiveChanged: syncOverviewTouchpadZoomGesture()
+    onLoadingChanged: syncOverviewTouchpadZoomGesture()
+    onOverviewModelChanged: reconcileOverviewZoomInputStatesForModel()
+    onPresentationPhaseChanged: {
+        syncOverviewTouchpadZoomGesture();
+        scheduleDeferredOverviewZoomLiveRefresh();
+    }
 
     readonly property NumberAnimation presentationAnimation: NumberAnimation {
         property int sessionId: 0
@@ -132,6 +158,35 @@ QtObject {
         }
     }
 
+    readonly property Loader overviewTouchpadZoomGestureLoader: Loader {
+        active: false
+    }
+
+    readonly property Connections overviewTouchpadZoomGestureConnection: Connections {
+        ignoreUnknownSignals: true
+        target: overviewTouchpadZoomGestureLoader.item
+
+        function onZoomStarted(direction, progress) {
+            controller.beginOverviewZoomGesture(controller.activeSessionId, direction, progress);
+        }
+
+        function onZoomProgressed(direction, progress) {
+            controller.updateOverviewZoomGesture(controller.overviewZoomGestureSessionId, direction, progress);
+        }
+
+        function onZoomCancelled(direction) {
+            controller.cancelOverviewZoomGesture(controller.overviewZoomGestureSessionId, direction);
+        }
+
+        function onZoomCommitted(direction) {
+            controller.commitOverviewZoomGesture(controller.overviewZoomGestureSessionId, direction);
+        }
+
+        function onZoomInvalidated(direction) {
+            controller.invalidateOverviewZoomGesture(controller.overviewZoomGestureSessionId, direction);
+        }
+    }
+
     readonly property Connections workspaceWindowLifecycleConnection: Connections {
         id: workspaceWindowLifecycleConnection
 
@@ -149,7 +204,28 @@ QtObject {
         }
 
         function onDesktopsChanged() {
+            controller.invalidateOverviewZoomGestureContext();
             controller.requestLiveModelRefresh();
+        }
+
+        function onCurrentDesktopChanged() {
+            controller.invalidateOverviewZoomGestureContext();
+        }
+
+        function onCurrentActivityChanged() {
+            controller.invalidateOverviewZoomGestureContext();
+        }
+
+        function onActivitiesChanged() {
+            controller.invalidateOverviewZoomGestureContext();
+        }
+
+        function onScreensChanged() {
+            controller.invalidateOverviewZoomGestureContext();
+        }
+
+        function onVirtualScreenGeometryChanged() {
+            controller.invalidateOverviewZoomGestureContext();
         }
     }
 
@@ -596,6 +672,7 @@ QtObject {
         touchpadGestureEnabled = nextEnabled;
         touchpadGestureFingerCount = nextFingerCount;
         rebuildTouchpadGesture();
+        syncOverviewTouchpadZoomGesture(true);
     }
 
     function rebuildTouchpadGesture() {
@@ -613,6 +690,480 @@ QtObject {
             fingerCount: touchpadGestureFingerCount
         });
         touchpadGestureLoader.active = true;
+    }
+
+    function applyOverviewZoomSetting(value) {
+        const zoom = normalizedOverviewZoom(value);
+        if (!Number.isFinite(zoom)) {
+            return false;
+        }
+
+        configuredOverviewZoom = zoom;
+        if (!active) {
+            assignOverviewSessionZoom(zoom);
+        }
+        return true;
+    }
+
+    function setOverviewSessionZoom(sessionId, outputId, sceneToken, value) {
+        const zoom = normalizedOverviewZoom(value);
+        if (!Number.isFinite(zoom)
+                || !overviewZoomSceneOwnsMutation(sessionId, outputId, sceneToken)
+                || !captureOverviewZoomLocalOwner(sessionId, outputId, sceneToken)) {
+            return false;
+        }
+
+        assignOverviewSessionZoom(zoom);
+        return true;
+    }
+
+    function resetOverviewSessionZoom(sessionId, outputId, sceneToken) {
+        return setOverviewSessionZoom(sessionId, outputId, sceneToken,
+            configuredOverviewZoom);
+    }
+
+    function applyOverviewZoomInputState(sessionId, outputId, sceneToken, eligible) {
+        if (!overviewZoomInputStateContextIsExact(sessionId, outputId, sceneToken) || typeof eligible !== "boolean") {
+            return false;
+        }
+
+        const nextStates = [];
+        let matchingState = null;
+        for (const state of overviewZoomInputStates) {
+            if (state.outputId !== outputId) {
+                nextStates.push(state);
+                continue;
+            }
+            if (matchingState !== null || state.sceneToken !== sceneToken) {
+                return false;
+            }
+            matchingState = state;
+        }
+        if (eligible && overviewZoomLocalOwnerIsExact(
+                sessionId, outputId, sceneToken, overviewModel)) {
+            clearOverviewZoomLocalOwner();
+        }
+        if (matchingState && matchingState.eligible === eligible
+                && matchingState.model === overviewModel) {
+            if (eligible) {
+                scheduleDeferredOverviewZoomLiveRefresh();
+            }
+            return true;
+        }
+        nextStates.push({
+            eligible,
+            model: overviewModel,
+            outputId,
+            sceneToken,
+            sessionId
+        });
+        overviewZoomInputStates = nextStates;
+        advanceOverviewZoomInputStateRevision();
+        syncOverviewTouchpadZoomGesture();
+        if (eligible) {
+            scheduleDeferredOverviewZoomLiveRefresh();
+        }
+        return true;
+    }
+
+    function clearOverviewZoomInputState(sessionId, outputId, sceneToken) {
+        if (!Number.isInteger(sessionId) || sessionId <= 0 || !overviewZoomIdentifierIsValid(outputId) || !overviewZoomSceneTokenIsValid(sceneToken)) {
+            return false;
+        }
+
+        let matchingState = null;
+        for (const state of overviewZoomInputStates) {
+            if (state.sessionId === sessionId && state.outputId === outputId) {
+                if (matchingState !== null || state.sceneToken !== sceneToken) {
+                    return false;
+                }
+                matchingState = state;
+            }
+        }
+        if (!matchingState) {
+            return false;
+        }
+
+        if (overviewZoomLocalOwnerIsExact(
+                sessionId, outputId, sceneToken, matchingState.model)) {
+            rollbackActiveOverviewLocalZoom();
+        }
+        const nextStates = overviewZoomInputStates.filter(state => state !== matchingState);
+        overviewZoomInputStates = nextStates;
+        advanceOverviewZoomInputStateRevision();
+        syncOverviewTouchpadZoomGesture();
+        scheduleDeferredOverviewZoomLiveRefresh();
+        return true;
+    }
+
+    function invalidateOverviewZoomInputStates() {
+        rollbackActiveOverviewLocalZoom();
+        cancelActiveOverviewZoomGesture();
+        if (overviewZoomInputStates.length > 0) {
+            overviewZoomInputStates = [];
+            advanceOverviewZoomInputStateRevision();
+        }
+        syncOverviewTouchpadZoomGesture();
+    }
+
+    function reconcileOverviewZoomInputStatesForModel() {
+        rollbackActiveOverviewLocalZoom();
+        invalidateOverviewZoomGestureContext();
+        const outputIds = overviewZoomModelOutputIds();
+        const nextStates = [];
+        if (outputIds !== null) {
+            for (const state of overviewZoomInputStates) {
+                if (state && state.model === overviewModel
+                        && outputIds.indexOf(state.outputId) >= 0) {
+                    nextStates.push(state);
+                }
+            }
+        }
+        if (nextStates.length !== overviewZoomInputStates.length) {
+            overviewZoomInputStates = nextStates;
+            advanceOverviewZoomInputStateRevision();
+        }
+        syncOverviewTouchpadZoomGesture();
+    }
+
+    function invalidateOverviewZoomGestureContext() {
+        const gesture = overviewTouchpadZoomGestureLoader.item;
+        if (gesture && typeof gesture.invalidateGesture === "function") {
+            try {
+                if (gesture.invalidateGesture() === true) {
+                    return true;
+                }
+            } catch (error) {
+            }
+        }
+        return cancelActiveOverviewZoomGesture();
+    }
+
+    function captureOverviewZoomLocalOwner(sessionId, outputId, sceneToken) {
+        if (overviewZoomLocalOwnerSessionId > 0) {
+            return overviewZoomLocalOwnerIsExact(
+                sessionId, outputId, sceneToken, overviewModel);
+        }
+
+        overviewZoomLocalOwnerSessionId = sessionId;
+        overviewZoomLocalOwnerOutputId = outputId;
+        overviewZoomLocalOwnerSceneToken = sceneToken;
+        overviewZoomLocalOwnerModel = overviewModel;
+        overviewZoomLocalOwnerInitialZoom = overviewSessionZoom;
+        return true;
+    }
+
+    function overviewZoomLocalOwnerIsExact(sessionId, outputId, sceneToken, model) {
+        return overviewZoomLocalOwnerSessionId > 0
+            && overviewZoomLocalOwnerSessionId === sessionId
+            && overviewZoomLocalOwnerOutputId === outputId
+            && overviewZoomLocalOwnerSceneToken === sceneToken
+            && overviewZoomLocalOwnerModel === model;
+    }
+
+    function clearOverviewZoomLocalOwner() {
+        overviewZoomLocalOwnerSessionId = 0;
+        overviewZoomLocalOwnerOutputId = "";
+        overviewZoomLocalOwnerSceneToken = null;
+        overviewZoomLocalOwnerModel = null;
+        overviewZoomLocalOwnerInitialZoom = overviewSessionZoom;
+    }
+
+    function rollbackActiveOverviewLocalZoom() {
+        if (overviewZoomLocalOwnerSessionId <= 0) {
+            return false;
+        }
+
+        const sessionId = overviewZoomLocalOwnerSessionId;
+        const initialZoom = overviewZoomLocalOwnerInitialZoom;
+        clearOverviewZoomLocalOwner();
+        if (active && sessionId === activeSessionId && Number.isFinite(initialZoom)) {
+            assignOverviewSessionZoom(initialZoom);
+        }
+        return true;
+    }
+
+    function beginOverviewZoomGesture(sessionId, direction, progress) {
+        const boundedProgress = normalizedOverviewZoomGestureProgress(progress);
+        if (!overviewZoomGestureDirectionIsValid(direction)
+                || !Number.isFinite(boundedProgress)
+                || !overviewZoomGlobalGestureCanBegin(sessionId)) {
+            return false;
+        }
+
+        overviewZoomGestureSessionId = sessionId;
+        overviewZoomGestureDirection = direction;
+        overviewZoomGestureInitialZoom = overviewSessionZoom;
+        if (!applyOverviewZoomGesturePreview(boundedProgress)) {
+            clearOverviewZoomGestureState();
+            return false;
+        }
+        return true;
+    }
+
+    function updateOverviewZoomGesture(sessionId, direction, progress) {
+        const boundedProgress = normalizedOverviewZoomGestureProgress(progress);
+        if (!Number.isFinite(boundedProgress) || !overviewZoomGestureContextIsExact(sessionId, direction)) {
+            cancelActiveOverviewZoomGesture();
+            return false;
+        }
+
+        if (!applyOverviewZoomGesturePreview(boundedProgress)) {
+            cancelActiveOverviewZoomGesture();
+            return false;
+        }
+        return true;
+    }
+
+    function commitOverviewZoomGesture(sessionId, direction) {
+        if (!overviewZoomGestureContextIsExact(sessionId, direction)) {
+            cancelActiveOverviewZoomGesture();
+            return false;
+        }
+
+        clearOverviewZoomGestureState();
+        scheduleDeferredOverviewZoomLiveRefresh();
+        return true;
+    }
+
+    function cancelOverviewZoomGesture(sessionId, direction) {
+        if (!Number.isInteger(sessionId) || sessionId <= 0 || sessionId !== overviewZoomGestureSessionId || !overviewZoomGestureDirectionIsValid(direction) || direction !== overviewZoomGestureDirection) {
+            return false;
+        }
+
+        return cancelActiveOverviewZoomGesture();
+    }
+
+    function invalidateOverviewZoomGesture(sessionId, direction) {
+        return cancelOverviewZoomGesture(sessionId, direction);
+    }
+
+    function cancelActiveOverviewZoomGesture() {
+        if (overviewZoomGestureDirection === "") {
+            return false;
+        }
+
+        const sessionId = overviewZoomGestureSessionId;
+        const initialZoom = overviewZoomGestureInitialZoom;
+        clearOverviewZoomGestureState();
+        if (active && sessionId === activeSessionId && Number.isFinite(initialZoom)) {
+            assignOverviewSessionZoom(initialZoom);
+        }
+        scheduleDeferredOverviewZoomLiveRefresh();
+        return true;
+    }
+
+    function clearOverviewZoomGestureState() {
+        overviewZoomGestureSessionId = 0;
+        overviewZoomGestureDirection = "";
+        overviewZoomGestureInitialZoom = overviewSessionZoom;
+    }
+
+    function applyOverviewZoomGesturePreview(progress) {
+        if (overviewZoomGestureDirection === "" || !Number.isFinite(progress) || progress < 0 || progress > 1 || !Number.isFinite(overviewZoomGestureInitialZoom)) {
+            return false;
+        }
+
+        const direction = overviewZoomGestureDirection === "in" ? 1 : -1;
+        const requested = overviewZoomGestureInitialZoom + direction * overviewZoomGestureSpan * progress;
+        const bounded = Math.max(overviewZoomMinimum, Math.min(overviewZoomMaximum, requested));
+        const zoom = normalizedOverviewZoom(bounded);
+        if (!Number.isFinite(zoom)) {
+            return false;
+        }
+
+        assignOverviewSessionZoom(zoom);
+        return true;
+    }
+
+    function overviewZoomGestureContextIsExact(sessionId, direction) {
+        return Number.isInteger(sessionId) && sessionId > 0 && sessionId === overviewZoomGestureSessionId && sessionId === activeSessionId && overviewZoomGestureDirectionIsValid(direction) && direction === overviewZoomGestureDirection && overviewZoomSessionContextIsExact(sessionId) && overviewZoomInputStatesAreEligible();
+    }
+
+    function overviewZoomGlobalGestureCanBegin(sessionId) {
+        return overviewZoomGestureDirection === ""
+            && overviewZoomSessionContextIsExact(sessionId)
+            && overviewZoomInputStatesAreEligible();
+    }
+
+    function overviewZoomSceneOwnsMutation(sessionId, outputId, sceneToken) {
+        if (overviewZoomGestureDirection !== ""
+                || !overviewZoomSessionContextIsExact(sessionId)
+                || !overviewZoomIdentifierIsValid(outputId)
+                || !overviewZoomSceneTokenIsValid(sceneToken)) {
+            return false;
+        }
+
+        const outputIds = overviewZoomModelOutputIds();
+        const states = overviewZoomInputStates;
+        if (outputIds === null || !states || !Number.isInteger(states.length)
+                || states.length !== outputIds.length) {
+            return false;
+        }
+
+        let callerMatched = false;
+        for (const expectedOutputId of outputIds) {
+            let matchingState = null;
+            for (const state of states) {
+                if (state && state.outputId === expectedOutputId) {
+                    if (matchingState !== null) {
+                        return false;
+                    }
+                    matchingState = state;
+                }
+            }
+            if (!matchingState || matchingState.sessionId !== sessionId
+                    || matchingState.model !== overviewModel
+                    || !overviewZoomSceneTokenIsValid(matchingState.sceneToken)) {
+                return false;
+            }
+            if (expectedOutputId === outputId) {
+                if (matchingState.sceneToken !== sceneToken
+                        || matchingState.eligible !== false) {
+                    return false;
+                }
+                callerMatched = true;
+            } else if (matchingState.eligible !== true) {
+                return false;
+            }
+        }
+        return callerMatched;
+    }
+
+    function overviewZoomSessionContextIsExact(sessionId) {
+        return Number.isInteger(sessionId) && sessionId > 0 && active && !loading && activeSessionId === sessionId && overviewModel && presentationPhase === "open" && Math.abs(presentationProgress - 1) <= 0.000001;
+    }
+
+    function overviewZoomInputStateContextIsExact(sessionId, outputId, sceneToken) {
+        if (!Number.isInteger(sessionId) || sessionId <= 0 || sessionId !== activeSessionId || !active || loading || !overviewModel || presentationPhase === "closing" || !overviewZoomIdentifierIsValid(outputId) || !overviewZoomSceneTokenIsValid(sceneToken)) {
+            return false;
+        }
+
+        const outputIds = overviewZoomModelOutputIds();
+        return outputIds !== null && outputIds.indexOf(outputId) >= 0;
+    }
+
+    function overviewZoomInputStatesAreEligible() {
+        if (!overviewZoomSessionContextIsExact(activeSessionId)) {
+            return false;
+        }
+
+        const outputIds = overviewZoomModelOutputIds();
+        const states = overviewZoomInputStates;
+        if (outputIds === null || !states || !Number.isInteger(states.length) || states.length !== outputIds.length) {
+            return false;
+        }
+
+        for (const outputId of outputIds) {
+            let matchingState = null;
+            for (const state of states) {
+                if (state && state.outputId === outputId) {
+                    if (matchingState !== null) {
+                        return false;
+                    }
+                    matchingState = state;
+                }
+            }
+            if (!matchingState || matchingState.sessionId !== activeSessionId || matchingState.model !== overviewModel || matchingState.eligible !== true || !overviewZoomSceneTokenIsValid(matchingState.sceneToken)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    function overviewZoomModelOutputIds() {
+        try {
+            const outputs = overviewModel ? overviewModel.outputs : null;
+            if (!outputs || !Number.isInteger(outputs.length) || outputs.length < 1 || outputs.length > 64) {
+                return null;
+            }
+
+            const outputIds = [];
+            for (const output of outputs) {
+                const outputId = output && overviewZoomIdentifierIsValid(output.outputId) ? String(output.outputId) : "";
+                if (outputId.length === 0 || outputIds.indexOf(outputId) >= 0) {
+                    return null;
+                }
+                outputIds.push(outputId);
+            }
+            return outputIds;
+        } catch (error) {
+            return null;
+        }
+    }
+
+    function overviewZoomIdentifierIsValid(value) {
+        if (typeof value !== "string" || value.length < 1 || value.length > 4096) {
+            return false;
+        }
+        for (let index = 0; index < value.length; index += 1) {
+            const code = value.charCodeAt(index);
+            if (code <= 31 || code === 127) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    function overviewZoomSceneTokenIsValid(value) {
+        return value !== null && typeof value === "object";
+    }
+
+    function overviewZoomGestureDirectionIsValid(value) {
+        return value === "in" || value === "out";
+    }
+
+    function normalizedOverviewZoomGestureProgress(value) {
+        const numeric = Number(value);
+        return Number.isFinite(numeric) && numeric >= 0 ? Math.max(0, Math.min(1, numeric)) : Number.NaN;
+    }
+
+    function normalizedOverviewZoom(value) {
+        if (typeof value !== "number" || !Number.isFinite(value) || value < overviewZoomMinimum || value > overviewZoomMaximum) {
+            return Number.NaN;
+        }
+        return Object.is(value, -0) ? 0 : value;
+    }
+
+    function assignOverviewSessionZoom(value) {
+        if (overviewSessionZoom === value) {
+            return false;
+        }
+        overviewSessionZoom = value;
+        advanceOverviewZoomRevision();
+        return true;
+    }
+
+    function advanceOverviewZoomRevision() {
+        overviewZoomRevision = overviewZoomRevision >= 2147483647 ? 1 : overviewZoomRevision + 1;
+    }
+
+    function advanceOverviewZoomInputStateRevision() {
+        overviewZoomInputStateRevision = overviewZoomInputStateRevision >= 2147483647 ? 1 : overviewZoomInputStateRevision + 1;
+    }
+
+    function syncOverviewTouchpadZoomGesture(forceRebuild = false) {
+        const shouldLoad = touchpadGestureEnabled && overviewZoomInputStatesAreEligible();
+        const loader = overviewTouchpadZoomGestureLoader;
+        if (!shouldLoad) {
+            cancelActiveOverviewZoomGesture();
+            loader.active = false;
+            loader.source = "";
+            return false;
+        }
+
+        if (!forceRebuild && loader.active && loader.item && loader.item.fingerCount === touchpadGestureFingerCount) {
+            return true;
+        }
+
+        cancelActiveOverviewZoomGesture();
+        loader.active = false;
+        loader.source = "";
+        loader.setSource("OverviewTouchpadZoomGesture.qml", {
+            fingerCount: touchpadGestureFingerCount
+        });
+        loader.active = true;
+        return true;
     }
 
     function resetTouchpadGestureState() {
@@ -785,6 +1336,7 @@ QtObject {
             return;
         }
 
+        prepareOverviewZoomForFreshActivation();
         captureOverviewLayoutSettings();
         const attemptId = lastActivationAttemptId >= 2147483647
             ? 1
@@ -820,6 +1372,7 @@ QtObject {
             return;
         }
 
+        invalidateOverviewZoomInputStates();
         if (pendingLiveRefreshAttemptId > 0) {
             pendingPostTransitionLiveRefresh = true;
         }
@@ -829,6 +1382,8 @@ QtObject {
     }
 
     function deactivateImmediately() {
+        invalidateOverviewZoomInputStates();
+        clearDeferredOverviewZoomLiveRefresh();
         resetTouchpadGestureState();
         touchpadGestureDispatching = false;
         clearPendingDesktopSurfaceLifecycleEvent();
@@ -844,6 +1399,13 @@ QtObject {
         pendingPostTransitionLiveRefresh = false;
         presentationProgress = 0;
         presentationPhase = "closed";
+    }
+
+    function prepareOverviewZoomForFreshActivation() {
+        invalidateOverviewZoomInputStates();
+        clearDeferredOverviewZoomLiveRefresh();
+        clearOverviewZoomGestureState();
+        assignOverviewSessionZoom(configuredOverviewZoom);
     }
 
     function boundedPresentationProgress(value) {
@@ -1062,8 +1624,14 @@ QtObject {
             return false;
         }
 
+        if (overviewZoomModelReplacementIsBlocked()) {
+            deferOverviewZoomLiveRefresh();
+            return true;
+        }
+
         const sessionId = activeSessionId;
         const expectedModel = overviewModel;
+        overviewZoomLiveRefreshDeferred = false;
         layoutStateReader.cancel();
         clearPendingLiveModelRefresh();
 
@@ -1085,6 +1653,10 @@ QtObject {
         if (!liveModelRefreshIsExact(attemptId, sessionId, expectedModel)) {
             return;
         }
+        if (overviewZoomModelReplacementIsBlocked()) {
+            deferOverviewZoomLiveRefresh();
+            return;
+        }
 
         try {
             const runtime = OverviewRuntime.DriftileOverview;
@@ -1101,8 +1673,14 @@ QtObject {
             if (!liveModelRefreshIsExact(attemptId, sessionId, expectedModel)) {
                 return;
             }
+            if (overviewZoomModelReplacementIsBlocked()) {
+                deferOverviewZoomLiveRefresh();
+                return;
+            }
 
+            rollbackActiveOverviewLocalZoom();
             clearPendingLiveModelRefresh();
+            overviewZoomLiveRefreshDeferred = false;
             overviewModel = result.value;
         } catch (error) {
             controller.rejectLiveModelRefresh(attemptId);
@@ -1147,6 +1725,57 @@ QtObject {
         pendingLiveRefreshModel = null;
         pendingLiveRefreshRetryCount = 0;
         pendingLiveRefreshSessionId = 0;
+    }
+
+    function overviewZoomModelReplacementIsBlocked() {
+        if (overviewZoomGestureDirection !== ""
+                || overviewZoomLocalOwnerSessionId > 0) {
+            return true;
+        }
+
+        for (const state of overviewZoomInputStates) {
+            if (state && state.sessionId === activeSessionId
+                    && state.model === overviewModel && state.eligible === false) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    function deferOverviewZoomLiveRefresh() {
+        overviewZoomLiveRefreshDeferred = true;
+        clearPendingLiveModelRefresh();
+        layoutStateReader.cancel();
+    }
+
+    function scheduleDeferredOverviewZoomLiveRefresh() {
+        if (!overviewZoomLiveRefreshDeferred
+                || overviewZoomLiveRefreshResumeQueued
+                || overviewZoomModelReplacementIsBlocked()) {
+            return false;
+        }
+
+        const sessionId = activeSessionId;
+        const model = overviewModel;
+        overviewZoomLiveRefreshResumeQueued = true;
+        Qt.callLater(function() {
+            controller.overviewZoomLiveRefreshResumeQueued = false;
+            if (!controller.overviewZoomLiveRefreshDeferred
+                    || controller.overviewZoomModelReplacementIsBlocked()
+                    || !controller.active || controller.loading
+                    || controller.presentationPhase !== "open"
+                    || controller.activeSessionId !== sessionId
+                    || controller.overviewModel !== model) {
+                return;
+            }
+            controller.requestLiveModelRefresh();
+        });
+        return true;
+    }
+
+    function clearDeferredOverviewZoomLiveRefresh() {
+        overviewZoomLiveRefreshDeferred = false;
+        overviewZoomLiveRefreshResumeQueued = false;
     }
 
     function liveSnapshot() {

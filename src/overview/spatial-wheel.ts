@@ -86,6 +86,21 @@ export function normalizeOverviewPhysicalWheelAngleDelta(
   }
 }
 
+export function normalizeOverviewPhysicalWheelPixelDelta(
+  pixelDeltaY: unknown,
+  inverted: unknown,
+): number | null {
+  try {
+    if (!isPixelDelta(pixelDeltaY) || typeof inverted !== "boolean") {
+      return null;
+    }
+
+    return normalizeZero(inverted ? pixelDeltaY : -pixelDeltaY);
+  } catch {
+    return null;
+  }
+}
+
 export function planOverviewSpatialWheelAxis(
   input: unknown,
 ): OverviewSpatialWheelAxisPlan | null {

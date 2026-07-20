@@ -34,7 +34,7 @@ describe("overview live model refresh", () => {
       /function onWindowRemoved\(window\) \{\s*controller\.queueDesktopSurfaceLifecycleEvent\(window\);\s*controller\.requestLiveModelRefresh\(\);/u,
     );
     expect(lifecycle).toMatch(
-      /function onDesktopsChanged\(\) \{\s*controller\.requestLiveModelRefresh\(\);/u,
+      /function onDesktopsChanged\(\) \{\s*controller\.invalidateOverviewZoomGestureContext\(\);\s*controller\.requestLiveModelRefresh\(\);/u,
     );
     expect(request).toMatch(
       /if \(!active \|\| loading \|\| activeSessionId <= 0 \|\| !overviewModel\) \{\s*return;/u,
@@ -502,7 +502,7 @@ describe("overview live model refresh", () => {
       /function orderedDesktopIds\(expectedTopologyRevision\)[\s\S]*Number\.isInteger\(expectedTopologyRevision\)[\s\S]*for \(const desktop of KWin\.Workspace\.desktops\)/u,
     );
     expect(topologySchedule).toMatch(
-      /if \(!effect \|\| effect\.active !== true \|\| spatialPresentationPhase === "closing"[\s\S]*!expectedModel \|\| expectedSessionId <= 0\) \{\s*return false;/u,
+      /if \(!effect \|\| effect\.active !== true \|\| spatialPresentationPhase === "closing"[\s\S]*!expectedModel \|\| expectedSessionId <= 0\) \{\s*desktopTopologyRefreshPending = false;\s*synchronizeSpatialZoomInputState\(\);\s*return false;/u,
     );
     expect(topologySchedule).toContain("resetWindowWorkspaceHover();");
     expect(topologySchedule).toMatch(
@@ -518,8 +518,8 @@ describe("overview live model refresh", () => {
     expect(workspaceLifecycle).not.toMatch(
       /function onWindowRemoved\(window\)[\s\S]*requestLiveModelRefresh|function onWindowRemoved\(window\)[\s\S]*closeStaleOverview/u,
     );
-    expect(scene).toContain(
-      "onOverviewModelChanged: root.refreshOverviewSpatialSession(true)",
+    expect(scene).toMatch(
+      /onOverviewModelChanged: \{\s*root\.cancelSpatialZoomTransaction\(\);\s*root\.discardSpatialZoomTransaction\(\);\s*root\.refreshOverviewSpatialSession\(true\);\s*root\.synchronizeSpatialZoomInputState\(\);\s*\}/u,
     );
     expect(scene).toMatch(
       /function refreshOverviewSpatialSession\(preserveViewport, animateViewport = false\)[\s\S]*Qt\.callLater\(root\.repairKeyboardSelection\);/u,

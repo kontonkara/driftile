@@ -18,8 +18,10 @@ export interface OverviewSpatialLayoutPlan {
   readonly initialContentY: number;
 }
 
-const MINIMUM_ZOOM = 0.2;
-const MAXIMUM_ZOOM = 0.75;
+export const OVERVIEW_SPATIAL_LAYOUT_ZOOM_LIMITS = Object.freeze({
+  maximum: 0.75,
+  minimum: 0.2,
+});
 const CARD_GAP_RATIO = 0.1;
 const MAXIMUM_CARD_GAP = 48;
 
@@ -48,8 +50,8 @@ export function planOverviewSpatialLayout(
       currentWorkspaceIndex >= workspaceCount ||
       typeof zoom !== "number" ||
       !Number.isFinite(zoom) ||
-      zoom < MINIMUM_ZOOM ||
-      zoom > MAXIMUM_ZOOM
+      zoom < OVERVIEW_SPATIAL_LAYOUT_ZOOM_LIMITS.minimum ||
+      zoom > OVERVIEW_SPATIAL_LAYOUT_ZOOM_LIMITS.maximum
     ) {
       return null;
     }

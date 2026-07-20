@@ -27,6 +27,18 @@ const touchpadGesture = readFileSync(
   new URL("contents/runtime/ui/OverviewTouchpadGesture.qml", effectRoot),
   "utf8",
 );
+const touchpadZoomGesture = readFileSync(
+  new URL("contents/runtime/ui/OverviewTouchpadZoomGesture.qml", effectRoot),
+  "utf8",
+);
+const touchscreenZoomGesture = readFileSync(
+  new URL("contents/runtime/ui/OverviewTouchscreenZoomGesture.qml", effectRoot),
+  "utf8",
+);
+const zoomHud = readFileSync(
+  new URL("contents/runtime/ui/OverviewZoomHud.qml", effectRoot),
+  "utf8",
+);
 const reader = readFileSync(
   new URL("contents/runtime/ui/LayoutStateReader.qml", effectRoot),
   "utf8",
@@ -71,6 +83,9 @@ const qmlSources = [
   main,
   controller,
   touchpadGesture,
+  touchpadZoomGesture,
+  touchscreenZoomGesture,
+  zoomHud,
   reader,
   scene,
   desktopCard,
@@ -503,7 +518,7 @@ describe("overview effect package", () => {
 
   it("keeps a fixed scene-effect proxy over the cache-busted controller", () => {
     expect(createHash("sha256").update(main, "utf8").digest("hex")).toBe(
-      "d97e28698025443af6769782e83b943aa64960a2bd114c6348d385c1545ebfc4",
+      "2c0a73370a3c5bc0cb9c8e00af42f4f69bf53238db0da0ead27ef6d3f2226a82",
     );
     expect(main).toContain("KWin.SceneEffect {");
     expect(main).toContain("Date.now().toString(36)");
@@ -2167,11 +2182,11 @@ describe("overview effect package", () => {
     expect(spatialLayout).toMatch(
       /function resetSpatialViewport\(animateVisual = false\)[\s\S]*planSpatialViewport\(overviewSpatialLayout\.initialContentY\)[\s\S]*return setSpatialContentY\(plan\.contentY, animateVisual\);/u,
     );
-    expect(scene).toContain(
-      "onOverviewSpatialLayoutChanged: root.refreshOverviewSpatialSession(true)",
+    expect(scene).toMatch(
+      /onOverviewSpatialLayoutChanged: \{[\s\S]*spatialExternalZoomTransaction !== null[\s\S]*spatialZoomTransaction !== null[\s\S]*root\.refreshOverviewSpatialSession\(true\);/u,
     );
-    expect(scene).toContain(
-      "onOverviewModelChanged: root.refreshOverviewSpatialSession(true)",
+    expect(scene).toMatch(
+      /onOverviewModelChanged: \{[\s\S]*root\.cancelSpatialZoomTransaction\(\);[\s\S]*root\.refreshOverviewSpatialSession\(true\);[\s\S]*root\.synchronizeSpatialZoomInputState\(\);/u,
     );
     expect(scene).toContain(
       "onCurrentDesktopChanged: root.handleCurrentDesktopChanged()",
@@ -2195,7 +2210,7 @@ describe("overview effect package", () => {
       /Component\.onCompleted:[\s\S]*resetOverviewSession\(\);[\s\S]*forceActiveFocus\(\);/u,
     );
     expect(scene).toMatch(
-      /function onActiveChanged\(\) \{\s*root\.resetOverviewSession\(\);/u,
+      /function onActiveChanged\(\) \{\s*root\.cancelSpatialZoomTransaction\(\);\s*root\.resetOverviewSession\(\);/u,
     );
     expect(sessionReset).toMatch(
       /function resetOverviewSession\(\)[\s\S]*keyboardSelectionId = "";[\s\S]*keyboardHelpVisible = false;[\s\S]*searchQuery = "";[\s\S]*spatialViewportSnapshot = null;[\s\S]*refreshOverviewSpatialSession\(false\);/u,
@@ -2586,7 +2601,7 @@ describe("overview effect package", () => {
     expect(touchInput).not.toContain(
       "PointerHandler.CanTakeOverFromHandlersOfSameType",
     );
-    expect(touchInput).not.toContain(
+    expect(touchInput).toContain(
       "PointerHandler.ApprovesTakeOverByHandlersOfDifferentType",
     );
     expect(touchInput).not.toContain("PointerHandler.ApprovesTakeOverByItems");
@@ -3802,7 +3817,7 @@ describe("overview effect package", () => {
       /runtime\.normalizeOverviewPhysicalWheelAngleDelta\(\s*event\.angleDelta\.y, event\.inverted === true\);[\s\S]*Number\.isSafeInteger\(angleDeltaY\)/u,
     );
     expect(scene).toMatch(
-      /onKeyboardHelpVisibleChanged: \{\s*root\.resetOverviewWheelState\(\);\s*root\.resetWindowWorkspaceHover\(\);\s*\}/u,
+      /onKeyboardHelpVisibleChanged: \{[\s\S]*root\.cancelSpatialZoomTransaction\(\);[\s\S]*root\.resetOverviewWheelState\(\);\s*root\.resetWindowWorkspaceHover\(\);\s*\}/u,
     );
     expect(scene).toMatch(
       /onSpatialContentYChanged: \{[\s\S]*if \(!spatialVisualContentYDeferred\)[\s\S]*spatialVerticalCameraAnimation\.stop\(\);[\s\S]*spatialVisualContentY = spatialContentY;[\s\S]*root\.resetOverviewWheelState\(\);\s*root\.captureSpatialViewportSnapshot\(\);/u,
@@ -4016,7 +4031,7 @@ describe("overview effect package", () => {
       /function desktopIdListShapeIsValid\(candidate\) \{\s*return candidate !== undefined && candidate !== null && Number\.isInteger\(candidate\.length\)[\s\S]*candidate\.length >= 0 && candidate\.length <= 512;\s*\}/u,
     );
     expect(horizontalViewportRefresh).toMatch(
-      /function refreshSpatialHorizontalViewports[\s\S]*const currentDesktopIds = desktopIds;[\s\S]*!desktopIdListShapeIsValid\(currentDesktopIds\)[\s\S]*return false;[\s\S]*previousOffsets\.length === currentDesktopIds\.length[\s\S]*index < currentDesktopIds\.length[\s\S]*planSpatialHorizontalGeometry\(index, desktopId\)[\s\S]*nextGeometryPlans\.push\(geometryPlan\)[\s\S]*nextOffsets\.push\(Math\.min\(bounds\.maximum, Math\.max\(bounds\.minimum, previous\)\)\)/u,
+      /function refreshSpatialHorizontalViewports[\s\S]*const currentDesktopIds = desktopIds;[\s\S]*!desktopIdListShapeIsValid\(currentDesktopIds\)[\s\S]*return false;[\s\S]*previousOffsets\.length === previousDesktopIds\.length[\s\S]*previousOffsetsByDesktopId\[previousDesktopId\] = previousOffset;[\s\S]*index < currentDesktopIds\.length[\s\S]*planSpatialHorizontalGeometry\(index, desktopId\)[\s\S]*const preservedOffset = preserve \? previousOffsetsByDesktopId\[desktopId\] : undefined;[\s\S]*nextGeometryPlans\.push\(geometryPlan\)[\s\S]*nextOffsets\.push\(Math\.min\(bounds\.maximum, Math\.max\(bounds\.minimum, previous\)\)\)/u,
     );
     expect(horizontalViewportRefresh).toMatch(
       /!desktopIdListShapeIsValid\(currentDesktopIds\)[\s\S]*spatialHorizontalDesktopIds = \[\];[\s\S]*spatialHorizontalGeometryPlans = \[\];[\s\S]*spatialHorizontalViewportOffsets = \[\];[\s\S]*resetOverviewHorizontalWheelState\(\);[\s\S]*return false;/u,
@@ -4215,7 +4230,7 @@ describe("overview effect package", () => {
       /function spatialLiveGeometryIsManuallyDetached[\s\S]*spatialLiveGeometryDetachedOutputId === expectedOutputId[\s\S]*spatialLiveGeometryDetachedDesktopId === expectedDesktopId/u,
     );
     expect(scene).toMatch(
-      /function resetOverviewSession\(\) \{\s*invalidateDesktopTopologyRefresh\(\);\s*resetSpatialLiveCameraSession\(\);/u,
+      /function resetOverviewSession\(\) \{\s*cancelSpatialZoomTransaction\(\);\s*clearExternalSpatialZoom\(\);\s*invalidateDesktopTopologyRefresh\(\);\s*resetSpatialLiveCameraSession\(\);/u,
     );
     expect(liveCamera).toMatch(
       /function resetSpatialLiveCameraSession\(\) \{\s*resetSpatialLiveCameraRefresh\(\);\s*clearSpatialLiveCameraAttachment\(\);\s*clearSpatialLiveCameraProbe\(\);/u,

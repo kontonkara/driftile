@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { LAYOUT_PERSISTENCE_LIMITS } from "../../src/core/layout-persistence";
 import {
   normalizeOverviewPhysicalWheelAngleDelta,
+  normalizeOverviewPhysicalWheelPixelDelta,
   planOverviewSpatialWheelAxis,
   planOverviewSpatialWheel,
   planOverviewSpatialWorkspaceWheelTarget,
@@ -165,6 +166,39 @@ describe("normalizeOverviewPhysicalWheelAngleDelta", () => {
   it("normalizes negative zero", () => {
     expect(
       Object.is(normalizeOverviewPhysicalWheelAngleDelta(0, false), -0),
+    ).toBe(false);
+  });
+});
+
+describe("normalizeOverviewPhysicalWheelPixelDelta", () => {
+  it.each([
+    [-24, false, 24],
+    [24, false, -24],
+    [24, true, 24],
+    [-24, true, -24],
+  ] as const)(
+    "normalizes pixel delta %i with inverted=%s to physical delta %i",
+    (pixelDeltaY, inverted, expected) => {
+      expect(
+        normalizeOverviewPhysicalWheelPixelDelta(pixelDeltaY, inverted),
+      ).toBe(expected);
+    },
+  );
+
+  it.each([
+    [24, undefined],
+    [24, 1],
+    [4_097, false],
+    [Number.NaN, false],
+  ])("fails closed for malformed input (%o, %o)", (pixelDeltaY, inverted) => {
+    expect(
+      normalizeOverviewPhysicalWheelPixelDelta(pixelDeltaY, inverted),
+    ).toBeNull();
+  });
+
+  it("normalizes negative zero", () => {
+    expect(
+      Object.is(normalizeOverviewPhysicalWheelPixelDelta(0, false), -0),
     ).toBe(false);
   });
 });
