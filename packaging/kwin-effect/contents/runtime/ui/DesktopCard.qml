@@ -18,6 +18,7 @@ Item {
     required property bool liveGeometryEnabled
     required property bool overviewAlwaysCenterSingleColumn
     required property real overviewGap
+    required property string overviewActivityId
     required property string outputId
     required property string outputName
     required property real presentationProgress
@@ -25,6 +26,7 @@ Item {
     required property string searchQuery
     required property var searchQueryPlan
     required property int searchResultCount
+    required property bool spatialDirectDragBlocked
     required property bool showApplicationIcons
     required property bool showApplicationIdentity
     required property bool showDesktopNames
@@ -43,6 +45,11 @@ Item {
     signal desktopReorderMoved(string expectedDesktopId, real sceneX, real sceneY)
     signal desktopReorderReleased(string expectedDesktopId, real sceneX, real sceneY)
     signal navigationTargetsChanged()
+    signal columnDropped(var source, var expectedTargetDesktop, string expectedTargetDesktopId,
+                         var expectedScreen, var exactTarget)
+    signal columnSpatialDragStarted(var source, real sceneX, real sceneY)
+    signal columnSpatialDragMoved(var source, real sceneX, real sceneY)
+    signal columnSpatialDragFinished(var source)
     signal windowDropped(var candidate, string expectedWindowId, var expectedSourceDesktop,
                          string expectedSourceDesktopId, var expectedTargetDesktop,
                          string expectedTargetDesktopId, var expectedScreen, var exactTarget)
@@ -104,6 +111,21 @@ Item {
     readonly property var floatingWindowIds: buildFloatingWindowIds()
     property int spatialLiveGeometryRevision: 0
     property int attentionRevision: 0
+    property int columnDragEligibilityRevision: 0
+    property bool columnDragEligibilityRefreshPending: false
+    property var columnDragActiveSource: null
+    property var columnPointerHoverSource: null
+    property var columnPointerPressSource: null
+    property bool columnDropHoverOwned: false
+    property var columnDropHoverSource: null
+    property string columnDropHoverSourceWindowId: ""
+    property var columnDropHoverDesktop: null
+    property string columnDropHoverDesktopId: ""
+    property var columnDropHoverScreen: null
+    property var columnDropHoverSnapshot: null
+    property var columnDropHoverTarget: null
+    property var columnDropHoverPreview: null
+    property bool columnDropHoverCrossWorkspace: false
     property bool windowDropHoverOwned: false
     property var windowDropHoverSource: null
     property string windowDropHoverSourceWindowId: ""
@@ -205,7 +227,8 @@ Item {
             acceptedButtons: Qt.LeftButton
             acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad | PointerDevice.TouchScreen
             gesturePolicy: TapHandler.DragThreshold
-            enabled: card.desktop && card.screen && card.searchQuery.trim().length === 0
+            enabled: card.desktop && card.screen
+                && card.searchQuery.trim().length === 0 && !card.spatialDirectDragBlocked
             onTapped: card.desktopTapped(card.desktop, card.desktopId, card.screen)
         }
 
@@ -217,6 +240,7 @@ Item {
             acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
             acceptedModifiers: Qt.NoModifier
             enabled: card.desktopReorderEnabled && card.desktop && card.screen
+                && !card.spatialDirectDragBlocked
 
             onCentroidChanged: {
                 if (active) {
@@ -402,11 +426,279 @@ Item {
 
                 readonly property var liveGeometryPlan: card.spatialLiveColumnPlan(index)
                 readonly property var frame: card.columnShellFrame(index, liveGeometryPlan)
+                readonly property string selectedWindowId: card.selectedWindowIdForColumn(modelData)
+                readonly property var selectedPresentation: {
+                    const revision = card.columnDragEligibilityRevision;
+                    return revision >= 0 && !card.columnDragEligibilityRefreshPending
+                        ? card.presentationForWindowId(selectedWindowId) : null;
+                }
+                readonly property var candidate: selectedPresentation ? selectedPresentation.candidate : null
+                readonly property bool dragEligible: {
+                    const revision = card.columnDragEligibilityRevision;
+                    const presentation = selectedPresentation;
+                    return revision >= 0 && !card.columnDragEligibilityRefreshPending
+                        && presentation !== null && card.columnDragHandleIsEligible(columnShell);
+                }
+                readonly property var sourceCard: card
+                readonly property var sourceContext: card.context
+                readonly property var sourceDesktop: card.desktop
+                readonly property string sourceDesktopId: card.desktopId
+                readonly property var sourceScreen: card.screen
+                readonly property string scope: "column"
+                readonly property var columnVisualTarget: columnShell
+                property var columnDragSnapshot: null
+                property bool columnSpatialDragLifecycleActive: false
+                property bool touchColumnDragArmed: false
+                property point spatialDragHotSpot: Qt.point(0, 0)
 
                 x: frame.x
                 y: 0
                 width: frame.width
                 height: viewport.height
+                z: 9000
+
+                Drag.active: false
+                Drag.source: columnShell
+                Drag.hotSpot.x: spatialDragHotSpot.x
+                Drag.hotSpot.y: spatialDragHotSpot.y
+                Drag.keys: ["driftile-column"]
+                Drag.proposedAction: Qt.MoveAction
+                Drag.supportedActions: Qt.MoveAction
+
+                Component.onDestruction: {
+                    cancelColumnDrag();
+                    card.releaseColumnPointerHover(columnShell);
+                }
+
+                function storeColumnDragHotSpot(scenePosition) {
+                    if (!scenePosition || !Number.isFinite(scenePosition.x)
+                            || !Number.isFinite(scenePosition.y)) {
+                        return false;
+                    }
+                    try {
+                        const localPosition = columnShell.mapFromItem(null, scenePosition.x, scenePosition.y);
+                        if (!localPosition || !Number.isFinite(localPosition.x)
+                                || !Number.isFinite(localPosition.y)) {
+                            return false;
+                        }
+                        spatialDragHotSpot = Qt.point(localPosition.x, localPosition.y);
+                        return true;
+                    } catch (error) {
+                        return false;
+                    }
+                }
+
+                function cancelColumnDrag() {
+                    columnShell.Drag.cancel();
+                    columnShell.Drag.active = false;
+                    card.finishColumnSpatialDrag(columnShell);
+                    card.releaseColumnPointerPress(columnShell);
+                    touchColumnDragArmed = false;
+                }
+
+                function releaseColumnDrag(scenePosition) {
+                    if (!storeColumnDragHotSpot(scenePosition)) {
+                        cancelColumnDrag();
+                        return;
+                    }
+                    columnShell.Drag.drop();
+                    columnShell.Drag.active = false;
+                    card.finishColumnSpatialDrag(columnShell);
+                    card.releaseColumnPointerPress(columnShell);
+                    touchColumnDragArmed = false;
+                }
+
+                Item {
+                    id: columnGrabHandle
+
+                    anchors.top: parent.top
+                    readonly property real visibleLeft: Math.max(0, Math.min(columnShell.width,
+                                                                             -columnShell.x))
+                    readonly property real visibleRight: Math.max(0, Math.min(columnShell.width,
+                                                                              viewport.width - columnShell.x))
+                    readonly property real visibleWidth: Math.max(0, visibleRight - visibleLeft)
+                    x: visibleLeft + (visibleWidth - width) / 2
+                    width: Math.min(56, visibleWidth)
+                    height: 26
+                    visible: columnShell.dragEligible && visibleWidth >= 12
+                    enabled: visible && (!card.spatialDirectDragBlocked
+                                          || card.columnDragActiveSource === columnShell)
+                    z: 1
+
+                    Rectangle {
+                        anchors.top: parent.top
+                        anchors.topMargin: 5
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        width: Math.max(4, Math.min(38, parent.width - 4))
+                        height: 7
+                        color: columnShell.columnSpatialDragLifecycleActive ? "#f3f8ff" : "#c6d6ea"
+                        border.width: 1
+                        border.color: "#b0182433"
+                        radius: height / 2
+                    }
+
+                    HoverHandler {
+                        id: columnPointerHoverHandler
+
+                        acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
+                        enabled: columnGrabHandle.enabled && columnShell.dragEligible
+                        cursorShape: Qt.SizeAllCursor
+
+                        onHoveredChanged: {
+                            if (hovered) {
+                                card.claimColumnPointerHover(columnShell);
+                            } else {
+                                card.releaseColumnPointerHover(columnShell);
+                            }
+                        }
+                    }
+
+                    TapHandler {
+                        id: columnPointerPressHandler
+
+                        target: null
+                        acceptedButtons: Qt.LeftButton
+                        acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
+                        acceptedModifiers: Qt.NoModifier
+                        gesturePolicy: TapHandler.ReleaseWithinBounds
+                        enabled: columnGrabHandle.enabled && columnShell.dragEligible
+                        grabPermissions: PointerHandler.ApprovesTakeOverByHandlersOfDifferentType
+                                         | PointerHandler.ApprovesCancellation
+
+                        onPressedChanged: {
+                            if (pressed) {
+                                card.claimColumnPointerPress(columnShell);
+                            } else if (point.state === EventPoint.Released) {
+                                card.releaseColumnPointerPress(columnShell);
+                            }
+                        }
+                    }
+
+                    TapHandler {
+                        id: columnTouchHoldHandler
+
+                        target: null
+                        acceptedButtons: Qt.LeftButton
+                        acceptedDevices: PointerDevice.TouchScreen
+                        acceptedModifiers: Qt.NoModifier
+                        gesturePolicy: TapHandler.ReleaseWithinBounds
+                        enabled: columnGrabHandle.enabled
+                        grabPermissions: PointerHandler.ApprovesTakeOverByHandlersOfDifferentType
+                                         | PointerHandler.ApprovesCancellation
+
+                        onPressedChanged: {
+                            if (pressed) {
+                                columnShell.touchColumnDragArmed = false;
+                                card.claimColumnPointerPress(columnShell);
+                            } else if (point.state === EventPoint.Released
+                                       && !columnTouchDragHandler.active) {
+                                card.releaseColumnPointerPress(columnShell);
+                                columnShell.touchColumnDragArmed = false;
+                            }
+                        }
+                        onLongPressed: {
+                            if (columnShell.dragEligible) {
+                                columnShell.touchColumnDragArmed = true;
+                            }
+                        }
+                    }
+
+                    DragHandler {
+                        id: columnTouchDragHandler
+
+                        target: null
+                        acceptedButtons: Qt.LeftButton
+                        acceptedDevices: PointerDevice.TouchScreen
+                        acceptedModifiers: Qt.NoModifier
+                        dragThreshold: columnShell.touchColumnDragArmed ? 0 : 32767
+                        enabled: columnGrabHandle.enabled && columnShell.dragEligible
+                        grabPermissions: PointerHandler.CanTakeOverFromHandlersOfSameType
+                                         | PointerHandler.CanTakeOverFromHandlersOfDifferentType
+                                         | PointerHandler.CanTakeOverFromItems
+                                         | PointerHandler.ApprovesCancellation
+
+                        onActiveTranslationChanged: {
+                            if (active && columnShell.columnSpatialDragLifecycleActive) {
+                                const scenePosition = centroid.scenePosition;
+                                if (columnShell.storeColumnDragHotSpot(scenePosition)) {
+                                    card.moveColumnSpatialDrag(columnShell, scenePosition);
+                                }
+                            }
+                        }
+                        onGrabChanged: (transition, point) => {
+                            if (transition === PointerDevice.GrabExclusive) {
+                                if (!columnShell.touchColumnDragArmed
+                                        || !columnShell.storeColumnDragHotSpot(point.scenePosition)) {
+                                    columnShell.cancelColumnDrag();
+                                    return;
+                                }
+                                card.beginColumnSpatialDrag(columnShell, point.scenePosition);
+                                if (!columnShell.columnSpatialDragLifecycleActive) {
+                                    columnShell.cancelColumnDrag();
+                                    return;
+                                }
+                                columnShell.Drag.active = true;
+                            } else if (transition === PointerDevice.UngrabExclusive) {
+                                if (point.state === EventPoint.Released
+                                        && columnShell.columnSpatialDragLifecycleActive) {
+                                    columnShell.releaseColumnDrag(point.scenePosition);
+                                } else {
+                                    columnShell.cancelColumnDrag();
+                                }
+                            } else if (transition === PointerDevice.CancelGrabExclusive
+                                       || transition === PointerDevice.CancelGrabPassive) {
+                                columnShell.cancelColumnDrag();
+                            }
+                        }
+                    }
+
+                    DragHandler {
+                        id: columnDragHandler
+
+                        target: null
+                        acceptedButtons: Qt.LeftButton
+                        acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
+                        acceptedModifiers: Qt.NoModifier
+                        enabled: columnGrabHandle.enabled && columnShell.dragEligible
+                        grabPermissions: PointerHandler.CanTakeOverFromHandlersOfSameType
+                                         | PointerHandler.CanTakeOverFromHandlersOfDifferentType
+                                         | PointerHandler.CanTakeOverFromItems
+                                         | PointerHandler.ApprovesCancellation
+
+                        onActiveTranslationChanged: {
+                            if (active && columnShell.columnSpatialDragLifecycleActive) {
+                                const scenePosition = centroid.scenePosition;
+                                if (columnShell.storeColumnDragHotSpot(scenePosition)) {
+                                    card.moveColumnSpatialDrag(columnShell, scenePosition);
+                                }
+                            }
+                        }
+                        onGrabChanged: (transition, point) => {
+                            if (transition === PointerDevice.GrabExclusive) {
+                                if (!columnShell.storeColumnDragHotSpot(point.scenePosition)) {
+                                    columnShell.cancelColumnDrag();
+                                    return;
+                                }
+                                card.beginColumnSpatialDrag(columnShell, point.scenePosition);
+                                if (!columnShell.columnSpatialDragLifecycleActive) {
+                                    columnShell.cancelColumnDrag();
+                                    return;
+                                }
+                                columnShell.Drag.active = true;
+                            } else if (transition === PointerDevice.UngrabExclusive) {
+                                if (point.state === EventPoint.Released
+                                        && columnShell.columnSpatialDragLifecycleActive) {
+                                    columnShell.releaseColumnDrag(point.scenePosition);
+                                } else {
+                                    columnShell.cancelColumnDrag();
+                                }
+                            } else if (transition === PointerDevice.CancelGrabExclusive
+                                       || transition === PointerDevice.CancelGrabPassive) {
+                                columnShell.cancelColumnDrag();
+                            }
+                        }
+                    }
+                }
             }
         }
 
@@ -422,12 +714,24 @@ Item {
                 acceptedButtons: Qt.LeftButton
                 acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad | PointerDevice.TouchScreen
                 gesturePolicy: TapHandler.DragThreshold
-                enabled: card.desktop && card.screen && card.searchQuery.trim().length === 0
+                enabled: card.desktop && card.screen
+                    && card.searchQuery.trim().length === 0 && !card.spatialDirectDragBlocked
                 onTapped: point => {
                     if (!card.viewportPointHitsWindow(point.position)) {
                         card.desktopTapped(card.desktop, card.desktopId, card.screen);
                     }
                 }
+            }
+        }
+
+        Timer {
+            id: columnDragEligibilityRefreshTimer
+
+            interval: 0
+            repeat: false
+            onTriggered: {
+                card.columnDragEligibilityRefreshPending = false;
+                card.advanceColumnDragEligibilityRevision();
             }
         }
 
@@ -448,11 +752,13 @@ Item {
                 card.navigationTargetsChanged();
                 card.attentionRevision += 1;
                 card.spatialLiveGeometryRevision += 1;
+                card.scheduleColumnDragEligibilityRefresh();
             }
             onItemRemoved: {
                 card.navigationTargetsChanged();
                 card.attentionRevision += 1;
                 card.spatialLiveGeometryRevision += 1;
+                card.scheduleColumnDragEligibilityRefresh();
             }
 
             Item {
@@ -494,7 +800,7 @@ Item {
 
                 width: viewport.width
                 height: viewport.height
-                opacity: thumbnailShell.Drag.active ? 0.2 : 1
+                opacity: thumbnailShell.Drag.active || card.columnDragWindowIsDimmed(windowId) ? 0.2 : 1
                 z: frame && frame.floating ? 1000 + index : 100 + index
 
                 onCandidateChanged: {
@@ -509,6 +815,7 @@ Item {
 
                 function refreshActionSnapshot() {
                     actionSnapshot = card.snapshotWindowActions(candidate);
+                    card.scheduleColumnDragEligibilityRefresh();
                     card.navigationTargetsChanged();
                 }
 
@@ -799,6 +1106,9 @@ Item {
                         closeEligible: windowPresentation.closeEligible
                         keyboardSelected: thumbnailShell.keyboardSelected
                         surfaceLargeEnough: thumbnailShell.closeButtonLargeEnough
+                        enabled: card.columnPointerHoverSource === null
+                            && card.columnPointerPressSource === null
+                            && !card.spatialDirectDragBlocked
                         z: 4
                         onCloseRequested: card.windowCloseRequested(windowPresentation.candidate,
                                                                     windowPresentation.windowId,
@@ -811,6 +1121,9 @@ Item {
                         acceptedButtons: Qt.LeftButton
                         acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
                         enabled: thumbnailShell.visible && card.desktop && card.screen
+                            && card.columnPointerHoverSource === null
+                            && card.columnPointerPressSource === null
+                            && !card.spatialDirectDragBlocked
                         onTapped: point => {
                             if (card.closeButtonContainsPoint(thumbnailCloseButton, thumbnailShell,
                                                               point.position)) {
@@ -825,6 +1138,8 @@ Item {
                         acceptedButtons: Qt.MiddleButton
                         acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
                         enabled: thumbnailShell.visible && windowPresentation.closeEligible
+                            && card.columnPointerHoverSource === null
+                            && !card.spatialDirectDragBlocked
                         onTapped: card.windowCloseRequested(windowPresentation.candidate,
                                                            windowPresentation.windowId,
                                                            windowPresentation.sourceDesktop,
@@ -841,6 +1156,9 @@ Item {
                         acceptedModifiers: Qt.NoModifier
                         gesturePolicy: TapHandler.DragThreshold
                         enabled: thumbnailShell.visible && card.desktop && card.screen
+                            && card.columnPointerPressSource === null
+                            && (!card.spatialDirectDragBlocked
+                                || windowPresentation.spatialDragLifecycleActive)
 
                         onPressedChanged: {
                             if (pressed || (point.state === EventPoint.Released
@@ -875,6 +1193,10 @@ Item {
                         acceptedModifiers: Qt.NoModifier
                         dragThreshold: windowPresentation.touchSpatialDragArmed ? 0 : 32767
                         enabled: thumbnailShell.visible && windowPresentation.dragEligible
+                            && card.columnDragActiveSource === null
+                            && card.columnPointerPressSource === null
+                            && (!card.spatialDirectDragBlocked
+                                || windowPresentation.spatialDragLifecycleActive)
                         grabPermissions: PointerHandler.CanTakeOverFromHandlersOfSameType
                                          | PointerHandler.CanTakeOverFromHandlersOfDifferentType
                                          | PointerHandler.CanTakeOverFromItems
@@ -952,6 +1274,11 @@ Item {
                         acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
                         acceptedModifiers: Qt.NoModifier
                         enabled: thumbnailShell.visible && windowPresentation.dragEligible
+                            && card.columnDragActiveSource === null
+                            && card.columnPointerHoverSource === null
+                            && card.columnPointerPressSource === null
+                            && (!card.spatialDirectDragBlocked
+                                || windowPresentation.spatialDragLifecycleActive)
 
                         onActiveTranslationChanged: {
                             if (thumbnailDragHandler.active) {
@@ -970,6 +1297,10 @@ Item {
                                 }
                                 thumbnailShell.Drag.active = true;
                                 card.beginWindowSpatialDrag(windowPresentation, point.scenePosition);
+                                if (!windowPresentation.spatialDragLifecycleActive) {
+                                    thumbnailShell.Drag.cancel();
+                                    thumbnailShell.Drag.active = false;
+                                }
                             } else if (transition === PointerDevice.UngrabExclusive) {
                                 if (point.state === EventPoint.Released
                                         && windowPresentation.spatialDragLifecycleActive
@@ -1107,6 +1438,7 @@ Item {
                         closeEligible: windowPresentation.closeEligible
                         keyboardSelected: minimizedPlaceholderShell.keyboardSelected
                         surfaceLargeEnough: minimizedPlaceholderShell.closeButtonLargeEnough
+                        enabled: !card.spatialDirectDragBlocked
                         z: 4
                         onCloseRequested: card.windowCloseRequested(windowPresentation.candidate,
                                                                     windowPresentation.windowId,
@@ -1120,7 +1452,7 @@ Item {
                         acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad | PointerDevice.TouchScreen
                         gesturePolicy: TapHandler.DragThreshold
                         enabled: minimizedPlaceholderShell.visible && minimizedPlaceholderShell.activationEligible
-                                 && card.desktop && card.screen
+                                 && card.desktop && card.screen && !card.spatialDirectDragBlocked
                         onTapped: point => {
                             if (card.closeButtonContainsPoint(minimizedPlaceholderCloseButton,
                                                               minimizedPlaceholderShell, point.position)) {
@@ -1135,6 +1467,7 @@ Item {
                         acceptedButtons: Qt.MiddleButton
                         acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
                         enabled: minimizedPlaceholderShell.visible && windowPresentation.closeEligible
+                            && !card.spatialDirectDragBlocked
                         onTapped: card.windowCloseRequested(windowPresentation.candidate,
                                                            windowPresentation.windowId,
                                                            windowPresentation.sourceDesktop,
@@ -1279,6 +1612,170 @@ Item {
         }
     }
 
+    DropArea {
+        id: columnDropArea
+
+        readonly property bool validTarget: containsDrag && card.columnDropHoverOwned
+            && card.columnDropHoverTarget !== null && card.columnDropHoverOwnershipIsValid()
+        readonly property var spatialPreview: validTarget ? card.columnDropHoverPreview : null
+
+        anchors.fill: parent
+        clip: true
+        enabled: card.enabled && card.searchQuery.trim().length === 0
+        keys: ["driftile-column"]
+        z: 10001
+
+        Rectangle {
+            id: spatialColumnDropPreviewSurface
+
+            readonly property var plan: columnDropArea.spatialPreview
+            readonly property var frame: plan ? plan.columnFrame : null
+
+            x: frame ? frame.x : 0
+            y: frame ? frame.y : 0
+            width: frame ? frame.width : 0
+            height: frame ? frame.height : 0
+            visible: frame !== null
+            enabled: false
+            color: "#2f86aee8"
+            border.width: frame ? 2 : 0
+            border.color: "#d986aee8"
+            radius: 3
+            opacity: card.presentationProgress
+            antialiasing: false
+            z: 1
+        }
+
+        Repeater {
+            model: columnDropArea.spatialPreview ? columnDropArea.spatialPreview.memberFrames : []
+
+            Rectangle {
+                required property var modelData
+
+                x: modelData.x
+                y: modelData.y
+                width: modelData.width
+                height: modelData.height
+                color: "#2486aee8"
+                border.width: 1
+                border.color: "#b8b8d8ff"
+                radius: 2
+                opacity: card.presentationProgress
+                enabled: false
+                z: 2
+            }
+        }
+
+        Rectangle {
+            id: spatialColumnDropPreviewMarker
+
+            readonly property var plan: columnDropArea.spatialPreview
+            readonly property var marker: plan ? plan.marker : null
+
+            x: marker ? marker.x : 0
+            y: marker ? marker.y : 0
+            width: marker ? marker.width : 0
+            height: marker ? marker.height : 0
+            visible: marker !== null
+            enabled: false
+            color: "#ff9fc5ff"
+            radius: 2
+            opacity: card.presentationProgress
+            antialiasing: false
+            z: 3
+        }
+
+        onEntered: drag => drag.accepted = card.columnDropIsValid(drag.source, drag.keys)
+            ? card.claimColumnDropHover(drag.source, drag)
+            : card.rejectColumnDropHover()
+        onPositionChanged: drag => drag.accepted = card.columnDropIsValid(drag.source, drag.keys)
+            ? card.columnDropHoverOwned
+              ? card.moveColumnDropHover(drag.source, drag)
+              : card.claimColumnDropHover(drag.source, drag)
+            : card.rejectColumnDropHover()
+        onExited: card.clearColumnDropHover()
+        onContainsDragChanged: {
+            if (!containsDrag) {
+                card.clearColumnDropHover();
+            }
+        }
+        onDropped: drop => {
+            const source = drop.source;
+            if (!card.columnDropIsValid(source, drop.keys)
+                    || !card.moveColumnDropHover(source, drop)) {
+                card.clearColumnDropHover();
+                drop.accepted = false;
+                return;
+            }
+
+            const exactTarget = card.columnDropHoverTarget;
+            if (!card.columnDropPreviewIsExact(card.columnDropHoverPreview, source, exactTarget,
+                                               card.columnDropHoverSnapshot)) {
+                card.clearColumnDropHover();
+                drop.accepted = false;
+                return;
+            }
+
+            drop.action = Qt.MoveAction;
+            drop.accepted = true;
+            card.clearColumnDropHover();
+            card.columnDropped(source, card.desktop, card.desktopId, card.screen, exactTarget);
+        }
+
+        Connections {
+            target: card.columnDropHoverSource
+            ignoreUnknownSignals: true
+
+            function onColumnDragSnapshotChanged() {
+                card.clearInvalidColumnDropHover();
+            }
+
+            function onColumnSpatialDragLifecycleActiveChanged() {
+                card.clearInvalidColumnDropHover();
+            }
+
+            function onCandidateChanged() {
+                card.clearInvalidColumnDropHover();
+            }
+
+            function onDestroyed() {
+                card.clearColumnDropHover();
+            }
+
+            function onDragEligibleChanged() {
+                card.clearInvalidColumnDropHover();
+            }
+
+            function onIndexChanged() {
+                card.clearInvalidColumnDropHover();
+            }
+
+            function onModelDataChanged() {
+                card.clearInvalidColumnDropHover();
+            }
+
+            function onSelectedWindowIdChanged() {
+                card.clearInvalidColumnDropHover();
+            }
+
+            function onSourceContextChanged() {
+                card.clearInvalidColumnDropHover();
+            }
+
+            function onSourceDesktopChanged() {
+                card.clearInvalidColumnDropHover();
+            }
+
+            function onSourceDesktopIdChanged() {
+                card.clearInvalidColumnDropHover();
+            }
+
+            function onSourceScreenChanged() {
+                card.clearInvalidColumnDropHover();
+            }
+        }
+    }
+
     Rectangle {
         anchors.fill: parent
         visible: card.windowWorkspaceHoverTarget
@@ -1290,31 +1787,83 @@ Item {
     }
 
     onCurrentChanged: card.navigationTargetsChanged()
-    onContextChanged: card.clearInvalidWindowDropHover()
-    onDesktopChanged: card.clearWindowDropHover()
-    onDesktopIdChanged: card.clearWindowDropHover()
+    onContextChanged: {
+        card.clearInvalidWindowDropHover();
+        card.clearInvalidColumnDropHover();
+        card.cancelInvalidActiveColumnSpatialDrag();
+    }
+    onDesktopChanged: {
+        card.clearWindowDropHover();
+        card.clearColumnDropHover();
+        card.cancelActiveColumnSpatialDrag();
+    }
+    onDesktopIdChanged: {
+        card.clearWindowDropHover();
+        card.clearColumnDropHover();
+        card.cancelActiveColumnSpatialDrag();
+    }
     onDesktopSurfaceLifecycleEventChanged: card.scheduleDesktopSurfaceReload()
     onEnabledChanged: {
         if (!enabled) {
             card.clearWindowDropHover();
+            card.clearColumnDropHover();
+            card.cancelActiveColumnSpatialDrag();
         }
     }
-    onScreenChanged: card.clearWindowDropHover()
-    onOutputIdChanged: card.clearInvalidWindowDropHover()
-    onColumnFramesChanged: card.clearInvalidWindowDropHover()
-    onTiledPresentationsChanged: card.clearInvalidWindowDropHover()
-    onSpatialLiveColumnFramesChanged: card.clearInvalidWindowDropHover()
-    onSpatialRowGeometryPlanChanged: card.clearInvalidWindowDropHover()
-    onWidthChanged: card.clearInvalidWindowDropHover()
-    onHeightChanged: card.clearInvalidWindowDropHover()
+    onScreenChanged: {
+        card.clearWindowDropHover();
+        card.clearColumnDropHover();
+        card.cancelActiveColumnSpatialDrag();
+    }
+    onOutputIdChanged: {
+        card.clearInvalidWindowDropHover();
+        card.clearInvalidColumnDropHover();
+        card.cancelInvalidActiveColumnSpatialDrag();
+    }
+    onColumnFramesChanged: {
+        card.clearInvalidWindowDropHover();
+        card.clearInvalidColumnDropHover();
+        card.cancelInvalidActiveColumnSpatialDrag();
+    }
+    onTiledPresentationsChanged: {
+        card.clearInvalidWindowDropHover();
+        card.clearInvalidColumnDropHover();
+        card.cancelInvalidActiveColumnSpatialDrag();
+    }
+    onSpatialLiveColumnFramesChanged: {
+        card.clearInvalidWindowDropHover();
+        card.clearInvalidColumnDropHover();
+        card.cancelInvalidActiveColumnSpatialDrag();
+    }
+    onSpatialRowGeometryPlanChanged: {
+        card.clearInvalidWindowDropHover();
+        card.clearInvalidColumnDropHover();
+        card.cancelInvalidActiveColumnSpatialDrag();
+    }
+    onWidthChanged: {
+        card.clearInvalidWindowDropHover();
+        card.clearInvalidColumnDropHover();
+        card.cancelInvalidActiveColumnSpatialDrag();
+    }
+    onHeightChanged: {
+        card.clearInvalidWindowDropHover();
+        card.clearInvalidColumnDropHover();
+        card.cancelInvalidActiveColumnSpatialDrag();
+    }
     onSearchQueryChanged: {
         card.navigationTargetsChanged();
         if (searchQuery.trim().length > 0) {
             card.clearWindowDropHover();
+            card.clearColumnDropHover();
+            card.cancelActiveColumnSpatialDrag();
         }
     }
 
-    Component.onDestruction: card.clearWindowDropHover()
+    Component.onDestruction: {
+        card.clearWindowDropHover();
+        card.clearColumnDropHover();
+        card.cancelActiveColumnSpatialDrag();
+    }
 
     function scheduleDesktopSurfaceReload() {
         const event = desktopSurfaceLifecycleEvent;
@@ -1705,10 +2254,560 @@ Item {
         }
     }
 
+    function selectedWindowIdForColumn(column) {
+        try {
+            const members = column ? column.members : null;
+            const selectedMemberIndex = column ? column.selectedMemberIndex : -1;
+            const selectedMember = indexedListHasBoundedLength(members, 1, 256)
+                && Number.isInteger(selectedMemberIndex)
+                && selectedMemberIndex >= 0 && selectedMemberIndex < members.length
+                ? members[selectedMemberIndex] : null;
+            return selectedMember && typeof selectedMember.windowId === "string"
+                ? selectedMember.windowId : "";
+        } catch (error) {
+            return "";
+        }
+    }
+
+    function indexedListHasBoundedLength(value, minimumLength, maximumLength) {
+        return value !== null && value !== undefined && typeof value !== "string"
+            && Number.isInteger(value.length) && Number.isInteger(minimumLength)
+            && Number.isInteger(maximumLength) && minimumLength >= 0
+            && maximumLength >= minimumLength && value.length >= minimumLength
+            && value.length <= maximumLength;
+    }
+
+    function advanceColumnDragEligibilityRevision() {
+        columnDragEligibilityRevision = columnDragEligibilityRevision >= 2147483646
+            ? 0 : columnDragEligibilityRevision + 1;
+        return columnDragEligibilityRevision;
+    }
+
+    function scheduleColumnDragEligibilityRefresh() {
+        columnDragEligibilityRefreshPending = true;
+        columnDragEligibilityRefreshTimer.restart();
+    }
+
+    function presentationForWindowId(expectedWindowId) {
+        if (typeof expectedWindowId !== "string" || expectedWindowId.length === 0
+                || !Number.isInteger(windowRepeater.count) || windowRepeater.count < 0
+                || windowRepeater.count > 131072) {
+            return null;
+        }
+
+        let result = null;
+        for (let index = 0; index < windowRepeater.count; index += 1) {
+            const presentation = windowRepeater.itemAt(index);
+            if (!presentation || presentation.windowId !== expectedWindowId) {
+                continue;
+            }
+            if (result !== null) {
+                return null;
+            }
+            result = presentation;
+        }
+        return result;
+    }
+
+    function columnDragMemberSnapshotsAreEligible(column, expectedColumnIndex) {
+        try {
+            if (!column || !indexedListHasBoundedLength(column.members, 1, 256)
+                    || !Number.isInteger(expectedColumnIndex)
+                    || expectedColumnIndex < 0 || !Number.isInteger(windowRepeater.count)
+                    || windowRepeater.count < column.members.length || windowRepeater.count > 131072
+                    || !Number.isInteger(column.selectedMemberIndex)
+                    || column.selectedMemberIndex < 0
+                    || column.selectedMemberIndex >= column.members.length) {
+                return false;
+            }
+
+            const expectedMemberIndexes = Object.create(null);
+            for (let memberIndex = 0; memberIndex < column.members.length; memberIndex += 1) {
+                const member = column.members[memberIndex];
+                const windowId = member ? member.windowId : "";
+                if (typeof windowId !== "string" || windowId.length === 0
+                        || expectedMemberIndexes[windowId] !== undefined) {
+                    return false;
+                }
+                expectedMemberIndexes[windowId] = memberIndex;
+            }
+
+            const matchedMemberIndexes = Object.create(null);
+            let matchCount = 0;
+            for (let index = 0; index < windowRepeater.count; index += 1) {
+                const presentation = windowRepeater.itemAt(index);
+                const windowId = presentation ? presentation.windowId : "";
+                const memberIndex = expectedMemberIndexes[windowId];
+                if (memberIndex === undefined) {
+                    continue;
+                }
+                const tiled = presentation ? presentation.tiledPresentation : null;
+                const expectedSelected = column.presentation !== "tabbed"
+                    || memberIndex === column.selectedMemberIndex;
+                if (matchedMemberIndexes[memberIndex] === true || !tiled
+                        || presentation.sourceCard !== card || presentation.sourceDesktop !== desktop
+                        || presentation.sourceDesktopId !== desktopId || presentation.sourceScreen !== screen
+                        || tiledPresentations[windowId] !== tiled
+                        || tiled.columnIndex !== expectedColumnIndex || tiled.memberIndex !== memberIndex
+                        || tiled.selected !== expectedSelected || !windowSnapshotCanDrag(presentation)) {
+                    return false;
+                }
+                matchedMemberIndexes[memberIndex] = true;
+                matchCount += 1;
+            }
+            return matchCount === column.members.length;
+        } catch (error) {
+            return false;
+        }
+    }
+
+    function claimColumnPointerPress(source) {
+        try {
+            if (!source || source.sourceCard !== card || source.dragEligible !== true
+                    || (columnPointerPressSource !== null && columnPointerPressSource !== source)) {
+                return false;
+            }
+            columnPointerPressSource = source;
+            return true;
+        } catch (error) {
+            return false;
+        }
+    }
+
+    function claimColumnPointerHover(source) {
+        try {
+            if (!source || source.sourceCard !== card || source.dragEligible !== true
+                    || (columnPointerHoverSource !== null && columnPointerHoverSource !== source)) {
+                return false;
+            }
+            columnPointerHoverSource = source;
+            return true;
+        } catch (error) {
+            return false;
+        }
+    }
+
+    function releaseColumnPointerHover(source) {
+        if (columnPointerHoverSource === source) {
+            columnPointerHoverSource = null;
+            return true;
+        }
+        return false;
+    }
+
+    function releaseColumnPointerPress(source) {
+        if (columnPointerPressSource === source) {
+            columnPointerPressSource = null;
+            return true;
+        }
+        return false;
+    }
+
+    function columnDragHandleIsEligible(source) {
+        try {
+            const column = source ? source.modelData : null;
+            const selectedPresentation = source ? source.selectedPresentation : null;
+            const selectedWindowId = source ? source.selectedWindowId : "";
+            const selectedMemberIndex = column ? column.selectedMemberIndex : -1;
+            const selectedTiled = selectedPresentation ? selectedPresentation.tiledPresentation : null;
+            return source && source.sourceCard === card && source.sourceContext === context
+                    && source.sourceDesktop === desktop && source.sourceDesktopId === desktopId
+                    && source.sourceScreen === screen && source.scope === "column"
+                    && Number.isInteger(source.index) && source.index >= 0 && source.index < columns.length
+                    && columns[source.index] === column && column
+                    && indexedListHasBoundedLength(column.members, 1, 256)
+                    && (column.presentation === "stacked" || column.presentation === "tabbed")
+                    && Number.isInteger(selectedMemberIndex) && selectedMemberIndex >= 0
+                    && selectedMemberIndex < column.members.length
+                    && typeof selectedWindowId === "string" && selectedWindowId.length > 0
+                    && column.members[selectedMemberIndex].windowId === selectedWindowId
+                    && selectedPresentation && selectedPresentation.windowId === selectedWindowId
+                    && selectedPresentation.sourceCard === card
+                    && selectedTiled && tiledPresentations[selectedWindowId] === selectedTiled
+                    && selectedTiled.columnIndex === source.index
+                    && selectedTiled.memberIndex === selectedMemberIndex
+                    && selectedTiled.selected === true
+                    && windowSnapshotCanDrag(selectedPresentation)
+                    && columnDragMemberSnapshotsAreEligible(column, source.index)
+                    && windowDropTargetIsExact();
+        } catch (error) {
+            return false;
+        }
+    }
+
+    function captureColumnDragSnapshot(source) {
+        try {
+            if (!columnDragHandleIsEligible(source) || columnDragActiveSource !== null
+                    || spatialDirectDragBlocked) {
+                return null;
+            }
+
+            const expectedContext = context;
+            const expectedColumns = columns;
+            const expectedColumn = source.modelData;
+            const expectedColumnIndex = source.index;
+            const expectedPresentations = tiledPresentations;
+            const expectedDesktop = desktop;
+            const expectedDesktopId = desktopId;
+            const expectedScreen = screen;
+            const expectedOutputId = outputId;
+            const expectedActivityId = overviewActivityId;
+            const expectedWindowCount = windowRepeater.count;
+            const members = expectedColumn.members;
+            const selectedMemberIndex = expectedColumn.selectedMemberIndex;
+            const selectedWindowId = source.selectedWindowId;
+            const previewColumn = cloneWindowDropPreviewColumn(expectedColumn);
+            const widthState = captureColumnWidthState(expectedColumn.width);
+            const fullWidthRestoreState = expectedColumn.fullWidthRestore === undefined
+                ? Object.freeze({ defined: false })
+                : captureColumnWidthState(expectedColumn.fullWidthRestore);
+            if (!previewColumn || !widthState || !fullWidthRestoreState
+                    || !Number.isInteger(expectedWindowCount) || expectedWindowCount < members.length
+                    || expectedWindowCount > 131072 || expectedActivityId.length === 0
+                    || expectedOutputId.length === 0) {
+                return null;
+            }
+
+            const expectedMemberIds = Object.create(null);
+            for (let memberIndex = 0; memberIndex < members.length; memberIndex += 1) {
+                const member = members[memberIndex];
+                const windowId = member ? member.windowId : null;
+                if (typeof windowId !== "string" || windowId.length === 0
+                        || expectedMemberIds[windowId] !== undefined) {
+                    return null;
+                }
+                expectedMemberIds[windowId] = memberIndex;
+            }
+
+            const presentations = Object.create(null);
+            for (let index = 0; index < expectedWindowCount; index += 1) {
+                const presentation = windowRepeater.itemAt(index);
+                if (presentation && presentation.spatialDragLifecycleActive === true) {
+                    return null;
+                }
+                const windowId = presentation ? presentation.windowId : "";
+                if (expectedMemberIds[windowId] === undefined) {
+                    continue;
+                }
+                if (presentations[windowId] !== undefined) {
+                    return null;
+                }
+                presentations[windowId] = presentation;
+            }
+
+            const records = [];
+            for (let memberIndex = 0; memberIndex < members.length; memberIndex += 1) {
+                const member = members[memberIndex];
+                const windowId = member.windowId;
+                const presentation = presentations[windowId];
+                const tiled = expectedPresentations[windowId];
+                const heightState = captureColumnMemberHeightState(member);
+                const heightBoundsState = captureColumnMemberHeightBoundsState(member);
+                const expectedSelected = expectedColumn.presentation !== "tabbed"
+                    || memberIndex === selectedMemberIndex;
+                if (!presentation || !tiled || !heightState || !heightBoundsState
+                        || presentation.sourceCard !== card || presentation.windowId !== windowId
+                        || presentation.tiledPresentation !== tiled
+                        || tiled.columnIndex !== expectedColumnIndex || tiled.memberIndex !== memberIndex
+                        || tiled.selected !== expectedSelected || !windowSnapshotCanDrag(presentation)) {
+                    return null;
+                }
+                records.push(Object.freeze({
+                    actionSnapshot: presentation.actionSnapshot,
+                    candidate: presentation.candidate,
+                    heightBoundsState,
+                    heightState,
+                    member,
+                    memberIndex,
+                    presentation,
+                    thumbnailTarget: expectedSelected ? presentation.thumbnailTarget : null,
+                    windowId
+                }));
+            }
+
+            for (const member of previewColumn.members) {
+                Object.freeze(member);
+            }
+            Object.freeze(previewColumn.members);
+            Object.freeze(previewColumn);
+            Object.freeze(records);
+            Object.freeze(expectedMemberIds);
+            return Object.freeze({
+                activityId: expectedActivityId,
+                column: expectedColumn,
+                columnIndex: expectedColumnIndex,
+                columns: expectedColumns,
+                context: expectedContext,
+                desktop: expectedDesktop,
+                desktopId: expectedDesktopId,
+                fullWidthRestoreState,
+                memberIds: expectedMemberIds,
+                outputId: expectedOutputId,
+                previewColumn,
+                records,
+                screen: expectedScreen,
+                selectedMemberIndex,
+                selectedWindowId,
+                widthState,
+                windowCount: expectedWindowCount
+            });
+        } catch (error) {
+            return null;
+        }
+    }
+
+    function captureColumnWidthState(value) {
+        if (!value || (value.kind !== "fixed" && value.kind !== "proportion")
+                || !Number.isFinite(value.value) || value.value <= 0) {
+            return null;
+        }
+        return Object.freeze({ defined: true, kind: value.kind, value: Number(value.value) });
+    }
+
+    function captureColumnMemberHeightState(member) {
+        const height = member ? member.height : undefined;
+        if (height === undefined) {
+            return Object.freeze({ defined: false });
+        }
+        if (!height || typeof height.kind !== "string") {
+            return null;
+        }
+        if (height.kind === "auto" && Number.isFinite(height.weight) && height.weight > 0) {
+            return Object.freeze({ defined: true, kind: "auto", value: Number(height.weight) });
+        }
+        if (height.kind === "fixed" && Number.isFinite(height.clientHeight) && height.clientHeight > 0) {
+            return Object.freeze({ defined: true, kind: "fixed", value: Number(height.clientHeight) });
+        }
+        if (height.kind === "preset" && Number.isInteger(height.index) && height.index >= 0) {
+            return Object.freeze({ defined: true, kind: "preset", value: Number(height.index) });
+        }
+        return null;
+    }
+
+    function captureColumnMemberHeightBoundsState(member) {
+        const bounds = member ? member.heightBounds : undefined;
+        if (bounds === undefined) {
+            return Object.freeze({ defined: false });
+        }
+        if (!bounds || !Number.isFinite(bounds.decorationHeight) || bounds.decorationHeight < 0
+                || !Number.isFinite(bounds.minimumClientHeight) || bounds.minimumClientHeight < 0
+                || (bounds.maximumClientHeight !== Number.POSITIVE_INFINITY
+                    && (!Number.isFinite(bounds.maximumClientHeight)
+                        || bounds.maximumClientHeight <= 0
+                        || bounds.maximumClientHeight < bounds.minimumClientHeight))) {
+            return null;
+        }
+        return Object.freeze({
+            decorationHeight: Number(bounds.decorationHeight),
+            defined: true,
+            maximumClientHeight: Number(bounds.maximumClientHeight),
+            minimumClientHeight: Number(bounds.minimumClientHeight)
+        });
+    }
+
+    function columnWidthStateIsExact(value, state) {
+        return state && Object.isFrozen(state)
+            && (state.defined === false
+                ? value === undefined
+                : state.defined === true && value
+                  && value.kind === state.kind && Number(value.value) === state.value);
+    }
+
+    function columnMemberHeightStateIsExact(member, state) {
+        const height = member ? member.height : undefined;
+        if (!state || !Object.isFrozen(state)) {
+            return false;
+        }
+        if (state.defined === false) {
+            return height === undefined;
+        }
+        if (!height || height.kind !== state.kind) {
+            return false;
+        }
+        return state.kind === "auto" ? Number(height.weight) === state.value
+            : state.kind === "fixed" ? Number(height.clientHeight) === state.value
+            : state.kind === "preset" && Number(height.index) === state.value;
+    }
+
+    function columnMemberHeightBoundsStateIsExact(member, state) {
+        const bounds = member ? member.heightBounds : undefined;
+        if (!state || !Object.isFrozen(state)) {
+            return false;
+        }
+        return state.defined === false ? bounds === undefined
+            : state.defined === true && bounds
+              && Number(bounds.decorationHeight) === state.decorationHeight
+              && Number(bounds.maximumClientHeight) === state.maximumClientHeight
+              && Number(bounds.minimumClientHeight) === state.minimumClientHeight;
+    }
+
+    function ownedColumnDropSnapshotIsExact(source) {
+        try {
+            const snapshot = source ? source.columnDragSnapshot : null;
+            if (!source || source.sourceCard !== card || source.scope !== "column"
+                    || source.columnSpatialDragLifecycleActive !== true
+                    || columnDragActiveSource !== source || !snapshot || !Object.isFrozen(snapshot)
+                    || source.sourceContext !== context || source.sourceDesktop !== desktop
+                    || source.sourceDesktopId !== desktopId || source.sourceScreen !== screen
+                    || source.modelData !== snapshot.column || source.index !== snapshot.columnIndex
+                    || source.selectedWindowId !== snapshot.selectedWindowId
+                    || snapshot.context !== context || snapshot.columns !== columns
+                    || !context || context.columns !== columns
+                    || snapshot.desktop !== desktop || snapshot.desktopId !== desktopId
+                    || snapshot.screen !== screen || snapshot.outputId !== outputId
+                    || snapshot.activityId !== overviewActivityId
+                    || snapshot.windowCount !== windowRepeater.count
+                    || !Array.isArray(snapshot.records) || !Object.isFrozen(snapshot.records)
+                    || snapshot.records.length !== snapshot.column.members.length
+                    || snapshot.selectedMemberIndex !== snapshot.column.selectedMemberIndex
+                    || !columnWidthStateIsExact(snapshot.column.width, snapshot.widthState)
+                    || !columnWidthStateIsExact(snapshot.column.fullWidthRestore,
+                                                snapshot.fullWidthRestoreState)) {
+                return false;
+            }
+
+            for (let memberIndex = 0; memberIndex < snapshot.records.length; memberIndex += 1) {
+                const record = snapshot.records[memberIndex];
+                const member = snapshot.column.members[memberIndex];
+                const presentation = record ? record.presentation : null;
+                const tiled = presentation ? presentation.tiledPresentation : null;
+                const expectedSelected = snapshot.column.presentation !== "tabbed"
+                    || memberIndex === snapshot.selectedMemberIndex;
+                if (!record || !Object.isFrozen(record) || record.memberIndex !== memberIndex
+                        || record.member !== member || !member || member.windowId !== record.windowId
+                        || snapshot.memberIds[record.windowId] !== memberIndex
+                        || !columnMemberHeightStateIsExact(member, record.heightState)
+                        || !columnMemberHeightBoundsStateIsExact(member, record.heightBoundsState)
+                        || !presentation || presentation.candidate !== record.candidate
+                        || presentation.actionSnapshot !== record.actionSnapshot
+                        || presentation.windowId !== record.windowId
+                        || presentation.sourceCard !== card || presentation.sourceDesktop !== desktop
+                        || presentation.sourceDesktopId !== desktopId || presentation.sourceScreen !== screen
+                        || tiledPresentations[record.windowId] !== tiled
+                        || tiled.columnIndex !== snapshot.columnIndex || tiled.memberIndex !== memberIndex
+                        || tiled.selected !== expectedSelected || !windowSnapshotCanDrag(presentation)) {
+                    return false;
+                }
+            }
+            return snapshot.records[snapshot.selectedMemberIndex].windowId === snapshot.selectedWindowId;
+        } catch (error) {
+            return false;
+        }
+    }
+
+    function beginColumnSpatialDrag(source, scenePosition) {
+        try {
+            if (!source || source.columnSpatialDragLifecycleActive === true
+                    || !spatialDragScenePointIsFinite(scenePosition)) {
+                return;
+            }
+            const snapshot = captureColumnDragSnapshot(source);
+            if (!snapshot) {
+                return;
+            }
+
+            source.columnDragSnapshot = snapshot;
+            source.columnSpatialDragLifecycleActive = true;
+            columnDragActiveSource = source;
+            columnSpatialDragStarted(source, scenePosition.x, scenePosition.y);
+        } catch (error) {
+            cancelColumnSpatialDragSource(source);
+        }
+    }
+
+    function moveColumnSpatialDrag(source, scenePosition) {
+        try {
+            if (source !== columnDragActiveSource || !ownedColumnDropSnapshotIsExact(source)
+                    || !spatialDragScenePointIsFinite(scenePosition)) {
+                cancelColumnSpatialDragSource(source);
+                return;
+            }
+            columnSpatialDragMoved(source, scenePosition.x, scenePosition.y);
+        } catch (error) {
+            cancelColumnSpatialDragSource(source);
+        }
+    }
+
+    function finishColumnSpatialDrag(source) {
+        try {
+            if (!source || source.columnSpatialDragLifecycleActive !== true) {
+                if (columnDragActiveSource === source) {
+                    columnDragActiveSource = null;
+                }
+                return;
+            }
+            source.columnSpatialDragLifecycleActive = false;
+            if (columnDragActiveSource === source) {
+                columnDragActiveSource = null;
+            }
+            source.columnDragSnapshot = null;
+            clearColumnDropHover();
+            columnSpatialDragFinished(source);
+        } catch (error) {
+            columnDragActiveSource = null;
+        }
+    }
+
+    function cancelColumnSpatialDragSource(source) {
+        if (!source) {
+            return;
+        }
+        if (typeof source.cancelColumnDrag !== "function") {
+            finishColumnSpatialDrag(source);
+            return;
+        }
+        try {
+            source.cancelColumnDrag();
+        } catch (error) {
+            finishColumnSpatialDrag(source);
+        }
+    }
+
+    function cancelActiveColumnSpatialDrag() {
+        const source = columnDragActiveSource;
+        if (source !== null) {
+            cancelColumnSpatialDragSource(source);
+        }
+        columnPointerPressSource = null;
+        const hoveredSource = columnPointerHoverSource;
+        if (hoveredSource !== null && !columnDragHandleIsEligible(hoveredSource)) {
+            columnPointerHoverSource = null;
+        }
+    }
+
+    function cancelInvalidActiveColumnSpatialDrag() {
+        const source = columnDragActiveSource;
+        if (source !== null && !ownedColumnDropSnapshotIsExact(source)) {
+            cancelColumnSpatialDragSource(source);
+        }
+        const pressedSource = columnPointerPressSource;
+        if (pressedSource !== null && !columnDragHandleIsEligible(pressedSource)) {
+            columnPointerPressSource = null;
+        }
+        const hoveredSource = columnPointerHoverSource;
+        if (hoveredSource !== null && !columnDragHandleIsEligible(hoveredSource)) {
+            columnPointerHoverSource = null;
+        }
+    }
+
+    function columnDragWindowIsDimmed(windowId) {
+        try {
+            const source = columnDragActiveSource;
+            const snapshot = source ? source.columnDragSnapshot : null;
+            return source && source.columnSpatialDragLifecycleActive === true
+                    && snapshot && snapshot.memberIds[windowId] !== undefined;
+        } catch (error) {
+            return false;
+        }
+    }
+
     function beginWindowSpatialDrag(source, scenePosition) {
         try {
             if (!spatialDragSourceIsOwned(source) || source.dragEligible !== true
                     || source.minimizedWindow === true || source.spatialDragLifecycleActive === true
+                    || columnDragActiveSource !== null || columnPointerHoverSource !== null
+                    || columnPointerPressSource !== null
+                    || spatialDirectDragBlocked
                     || !spatialDragScenePointIsFinite(scenePosition)) {
                 return;
             }
@@ -1795,6 +2894,609 @@ Item {
 
     function spatialDragScenePointIsFinite(scenePosition) {
         return scenePosition && Number.isFinite(scenePosition.x) && Number.isFinite(scenePosition.y);
+    }
+
+    function buildColumnDropPlannerSnapshot() {
+        try {
+            const baseSnapshot = buildWindowDropPlannerSnapshot();
+            if (!baseSnapshot) {
+                return null;
+            }
+
+            const columnTargets = [];
+            for (let columnIndex = 0; columnIndex < baseSnapshot.columns.length; columnIndex += 1) {
+                const column = baseSnapshot.columns[columnIndex];
+                const selectedMember = column && indexedListHasBoundedLength(column.members, 1, 256)
+                    && Number.isInteger(column.selectedMemberIndex)
+                    && column.selectedMemberIndex >= 0
+                    && column.selectedMemberIndex < column.members.length
+                    ? column.members[column.selectedMemberIndex] : null;
+                const selectedWindowId = selectedMember ? selectedMember.windowId : "";
+                const preview = baseSnapshot.previewFrames[selectedWindowId];
+                if (!preview) {
+                    continue;
+                }
+                if (typeof selectedWindowId !== "string" || selectedWindowId.length === 0
+                        || !preview.columnFrame || !Object.isFrozen(preview.columnFrame)
+                        || !windowDropPreviewFrameIsBounded(preview.columnFrame, baseSnapshot)) {
+                    return null;
+                }
+                const before = Object.freeze({
+                    activityId: baseSnapshot.activityId,
+                    desktopId: baseSnapshot.desktopId,
+                    kind: "column-boundary",
+                    outputId: baseSnapshot.outputId,
+                    position: "before",
+                    rowIndex: 0,
+                    targetWindowId: selectedWindowId
+                });
+                const after = Object.freeze({
+                    activityId: baseSnapshot.activityId,
+                    desktopId: baseSnapshot.desktopId,
+                    kind: "column-boundary",
+                    outputId: baseSnapshot.outputId,
+                    position: "after",
+                    rowIndex: 0,
+                    targetWindowId: selectedWindowId
+                });
+                columnTargets.push(Object.freeze({
+                    after,
+                    before,
+                    columnIndex,
+                    frame: preview.columnFrame,
+                    selectedWindowId
+                }));
+            }
+            if (baseSnapshot.contextColumnCount > 0 && columnTargets.length === 0) {
+                return null;
+            }
+
+            const emptyTarget = baseSnapshot.contextColumnCount === 0
+                ? Object.freeze({
+                      activityId: baseSnapshot.activityId,
+                      desktopId: baseSnapshot.desktopId,
+                      kind: "empty-row",
+                      outputId: baseSnapshot.outputId,
+                      rowIndex: 0
+                  })
+                : null;
+            Object.freeze(columnTargets);
+            return Object.freeze({
+                baseSnapshot,
+                columnTargets,
+                emptyTarget
+            });
+        } catch (error) {
+            return null;
+        }
+    }
+
+    function columnDropPlannerSnapshotIsExact(snapshot) {
+        try {
+            const baseSnapshot = snapshot ? snapshot.baseSnapshot : null;
+            if (!snapshot || !Object.isFrozen(snapshot) || !Object.isFrozen(snapshot.columnTargets)
+                    || !windowDropPlannerSnapshotIsExact(baseSnapshot)
+                    || (baseSnapshot.contextColumnCount === 0) !== (snapshot.emptyTarget !== null)
+                    || (snapshot.emptyTarget !== null && !Object.isFrozen(snapshot.emptyTarget))) {
+                return false;
+            }
+            let previousColumnIndex = -1;
+            for (const target of snapshot.columnTargets) {
+                const column = baseSnapshot.columns[target.columnIndex];
+                const selectedMember = column ? column.members[column.selectedMemberIndex] : null;
+                if (!target || !Object.isFrozen(target) || !Object.isFrozen(target.before)
+                        || !Object.isFrozen(target.after) || target.columnIndex <= previousColumnIndex
+                        || !selectedMember || selectedMember.windowId !== target.selectedWindowId
+                        || baseSnapshot.previewFrames[target.selectedWindowId].columnFrame !== target.frame
+                        || target.before.targetWindowId !== target.selectedWindowId
+                        || target.after.targetWindowId !== target.selectedWindowId
+                        || target.before.position !== "before" || target.after.position !== "after") {
+                    return false;
+                }
+                previousColumnIndex = target.columnIndex;
+            }
+            return true;
+        } catch (error) {
+            return false;
+        }
+    }
+
+    function hitColumnDropPlannerSnapshot(snapshot, localPosition) {
+        try {
+            if (!columnDropPlannerSnapshotIsExact(snapshot)
+                    || !spatialDragScenePointIsFinite(localPosition)) {
+                return null;
+            }
+            const baseSnapshot = snapshot.baseSnapshot;
+            if (snapshot.emptyTarget !== null) {
+                return localPosition.x >= 0 && localPosition.y >= 0
+                    && localPosition.x < baseSnapshot.cardWidth
+                    && localPosition.y < baseSnapshot.cardHeight ? snapshot.emptyTarget : null;
+            }
+
+            let hit = null;
+            for (const target of snapshot.columnTargets) {
+                const frame = target.frame;
+                if (localPosition.x < frame.x || localPosition.x >= frame.x + frame.width
+                        || localPosition.y < frame.y || localPosition.y >= frame.y + frame.height) {
+                    continue;
+                }
+                if (hit !== null) {
+                    return null;
+                }
+                hit = localPosition.x < frame.x + frame.width / 2 ? target.before : target.after;
+            }
+            return hit;
+        } catch (error) {
+            return null;
+        }
+    }
+
+    function columnDropPlannerTargetIsExact(target, snapshot) {
+        try {
+            if (!columnDropPlannerSnapshotIsExact(snapshot) || !target || !Object.isFrozen(target)) {
+                return false;
+            }
+            if (target === snapshot.emptyTarget) {
+                return target.kind === "empty-row";
+            }
+            for (const candidate of snapshot.columnTargets) {
+                if (target === candidate.before || target === candidate.after) {
+                    return target.kind === "column-boundary"
+                        && target.targetWindowId === candidate.selectedWindowId;
+                }
+            }
+            return false;
+        } catch (error) {
+            return false;
+        }
+    }
+
+    function columnDropSourceIsExact(source) {
+        try {
+            const sourceCard = source ? source.sourceCard : null;
+            return Boolean(sourceCard && source.scope === "column"
+                && typeof sourceCard.ownedColumnDropSnapshotIsExact === "function"
+                && sourceCard.ownedColumnDropSnapshotIsExact(source));
+        } catch (error) {
+            return false;
+        }
+    }
+
+    function columnDropIsValid(source, keys) {
+        try {
+            return keys && typeof keys.indexOf === "function" && keys.indexOf("driftile-column") >= 0
+                    && source && source.scope === "column"
+                    && source.columnSpatialDragLifecycleActive === true
+                    && source.sourceScreen === screen && columnDropSourceIsExact(source)
+                    && windowDropTargetIsExact() && windowDropSourceWorkspaceRelationIsExact(source);
+        } catch (error) {
+            return false;
+        }
+    }
+
+    function columnDropLocalPosition(drag) {
+        if (!drag || !Number.isFinite(drag.x) || !Number.isFinite(drag.y)) {
+            return null;
+        }
+        return { x: Number(drag.x), y: Number(drag.y) };
+    }
+
+    function columnDropScenePosition(drag) {
+        if (!drag || !Number.isFinite(drag.x) || !Number.isFinite(drag.y)) {
+            return null;
+        }
+        try {
+            const scenePosition = columnDropArea.mapToItem(null, drag.x, drag.y);
+            return spatialDragScenePointIsFinite(scenePosition) ? scenePosition : null;
+        } catch (error) {
+            return null;
+        }
+    }
+
+    function claimColumnDropHover(source, drag) {
+        const localPosition = columnDropLocalPosition(drag);
+        const scenePosition = columnDropScenePosition(drag);
+        if (!localPosition || !scenePosition) {
+            clearColumnDropHover();
+            return false;
+        }
+        if (columnDropHoverOwned) {
+            if (columnDropHoverOwnershipMatches(source)) {
+                return moveColumnDropHoverToPositions(source, localPosition, scenePosition);
+            }
+            clearColumnDropHover();
+        }
+
+        try {
+            const snapshot = buildColumnDropPlannerSnapshot();
+            const target = hitColumnDropPlannerSnapshot(snapshot, localPosition);
+            const preview = planColumnDropPreview(source, target, snapshot);
+            if (!snapshot || !target || !preview || !windowDropSourceWorkspaceRelationIsExact(source)) {
+                clearColumnDropHover();
+                return false;
+            }
+            const crossWorkspace = windowDropSourceTargetsDifferentWorkspace(source);
+            columnDropHoverSource = source;
+            columnDropHoverSourceWindowId = source.selectedWindowId;
+            columnDropHoverDesktop = desktop;
+            columnDropHoverDesktopId = desktopId;
+            columnDropHoverScreen = screen;
+            columnDropHoverSnapshot = snapshot;
+            columnDropHoverTarget = target;
+            columnDropHoverPreview = preview;
+            columnDropHoverCrossWorkspace = crossWorkspace;
+            columnDropHoverOwned = true;
+            if (crossWorkspace) {
+                windowWorkspaceHoverEntered(source, desktop, desktopId, screen,
+                                            scenePosition.x, scenePosition.y);
+            }
+            return true;
+        } catch (error) {
+            clearColumnDropHover();
+            return false;
+        }
+    }
+
+    function moveColumnDropHover(source, drag) {
+        const localPosition = columnDropLocalPosition(drag);
+        const scenePosition = columnDropScenePosition(drag);
+        return localPosition && scenePosition
+            ? moveColumnDropHoverToPositions(source, localPosition, scenePosition) : false;
+    }
+
+    function moveColumnDropHoverToPositions(source, localPosition, scenePosition) {
+        if (!columnDropHoverOwnershipMatches(source)
+                || !spatialDragScenePointIsFinite(localPosition)
+                || !spatialDragScenePointIsFinite(scenePosition)) {
+            clearColumnDropHover();
+            return false;
+        }
+        const target = hitColumnDropPlannerSnapshot(columnDropHoverSnapshot, localPosition);
+        if (!target) {
+            clearColumnDropHover();
+            return false;
+        }
+        if (target !== columnDropHoverTarget) {
+            const preview = planColumnDropPreview(source, target, columnDropHoverSnapshot);
+            if (!preview) {
+                clearColumnDropHover();
+                return false;
+            }
+            columnDropHoverTarget = target;
+            columnDropHoverPreview = preview;
+        }
+        if (columnDropHoverCrossWorkspace) {
+            windowWorkspaceHoverMoved(source, columnDropHoverDesktop, columnDropHoverDesktopId,
+                                      columnDropHoverScreen, scenePosition.x, scenePosition.y);
+        }
+        return true;
+    }
+
+    function rejectColumnDropHover() {
+        clearColumnDropHover();
+        return false;
+    }
+
+    function clearInvalidColumnDropHover() {
+        if (columnDropHoverOwned && !columnDropHoverOwnershipIsValid()) {
+            clearColumnDropHover();
+        }
+    }
+
+    function clearColumnDropHover() {
+        if (!columnDropHoverOwned) {
+            resetColumnDropHoverOwnership();
+            return;
+        }
+        const source = columnDropHoverSource;
+        const targetDesktop = columnDropHoverDesktop;
+        const targetDesktopId = columnDropHoverDesktopId;
+        const targetScreen = columnDropHoverScreen;
+        const crossWorkspace = columnDropHoverCrossWorkspace;
+        resetColumnDropHoverOwnership();
+        if (crossWorkspace) {
+            windowWorkspaceHoverLeft(source, targetDesktop, targetDesktopId, targetScreen);
+        }
+    }
+
+    function resetColumnDropHoverOwnership() {
+        columnDropHoverOwned = false;
+        columnDropHoverSource = null;
+        columnDropHoverSourceWindowId = "";
+        columnDropHoverDesktop = null;
+        columnDropHoverDesktopId = "";
+        columnDropHoverScreen = null;
+        columnDropHoverSnapshot = null;
+        columnDropHoverTarget = null;
+        columnDropHoverPreview = null;
+        columnDropHoverCrossWorkspace = false;
+    }
+
+    function columnDropHoverOwnershipIsValid() {
+        return columnDropHoverOwnershipMatches(columnDropHoverSource)
+            && columnDropIsValid(columnDropHoverSource, ["driftile-column"]);
+    }
+
+    function columnDropHoverOwnershipMatches(source) {
+        try {
+            return columnDropHoverOwned && source && source === columnDropHoverSource
+                    && source.scope === "column"
+                    && source.selectedWindowId === columnDropHoverSourceWindowId
+                    && source.columnSpatialDragLifecycleActive === true
+                    && source.sourceScreen === screen && columnDropSourceIsExact(source)
+                    && windowDropSourceWorkspaceRelationIsExact(source)
+                    && columnDropHoverCrossWorkspace === windowDropSourceTargetsDifferentWorkspace(source)
+                    && columnDropHoverDesktop === desktop && columnDropHoverDesktopId === desktopId
+                    && columnDropHoverScreen === screen && windowDropTargetIsExact()
+                    && columnDropPlannerSnapshotIsExact(columnDropHoverSnapshot)
+                    && columnDropPlannerTargetIsExact(columnDropHoverTarget, columnDropHoverSnapshot)
+                    && columnDropPreviewIsExact(columnDropHoverPreview, source,
+                                                columnDropHoverTarget, columnDropHoverSnapshot);
+        } catch (error) {
+            return false;
+        }
+    }
+
+    function planColumnDropPreview(source, target, snapshot) {
+        try {
+            if (!columnDropSourceIsExact(source)
+                    || !columnDropPlannerTargetIsExact(target, snapshot)) {
+                return null;
+            }
+            const prospective = buildColumnDropPreviewColumns(source, target, snapshot);
+            const geometry = prospective ? solveColumnDropPreviewGeometry(prospective, snapshot) : null;
+            if (!geometry) {
+                return null;
+            }
+
+            let marker = null;
+            if (target.kind === "column-boundary") {
+                const targetFrames = snapshot.baseSnapshot.previewFrames[target.targetWindowId];
+                const frame = targetFrames ? targetFrames.columnFrame : null;
+                if (!frame || !windowDropPreviewFrameIsBounded(frame, snapshot.baseSnapshot)) {
+                    return null;
+                }
+                const thickness = Math.max(2, Math.min(6, frame.width, frame.height));
+                marker = Object.freeze({
+                    height: frame.height,
+                    width: thickness,
+                    x: target.position === "before" ? frame.x : frame.x + frame.width - thickness,
+                    y: frame.y
+                });
+                if (!windowDropPreviewFrameIsBounded(marker, snapshot.baseSnapshot)) {
+                    return null;
+                }
+            }
+
+            return Object.freeze({
+                columnFrame: geometry.columnFrame,
+                kind: target.kind,
+                marker,
+                memberFrames: geometry.memberFrames,
+                snapshot,
+                source,
+                target
+            });
+        } catch (error) {
+            return null;
+        }
+    }
+
+    function columnDropPreviewIsExact(preview, source, target, snapshot) {
+        return preview && Object.isFrozen(preview) && preview.source === source
+            && preview.target === target && preview.snapshot === snapshot
+            && Object.isFrozen(preview.columnFrame) && Object.isFrozen(preview.memberFrames)
+            && columnDropSourceIsExact(source) && columnDropPlannerTargetIsExact(target, snapshot)
+            && columnDropPreviewMemberFramesAreExact(preview.memberFrames, source, snapshot)
+            && windowDropPreviewFrameIsRenderable(preview.columnFrame, snapshot.baseSnapshot)
+            && (preview.marker === null
+                || Object.isFrozen(preview.marker)
+                && windowDropPreviewFrameIsBounded(preview.marker, snapshot.baseSnapshot));
+    }
+
+    function columnDropPreviewMemberFramesAreExact(memberFrames, source, snapshot) {
+        const sourceSnapshot = source ? source.columnDragSnapshot : null;
+        const expectedCount = sourceSnapshot && sourceSnapshot.column.presentation === "tabbed"
+            ? 1 : sourceSnapshot ? sourceSnapshot.records.length : -1;
+        if (!Object.isFrozen(memberFrames) || memberFrames.length !== expectedCount
+                || !snapshot || !snapshot.baseSnapshot) {
+            return false;
+        }
+        const seenWindowIds = Object.create(null);
+        for (const frame of memberFrames) {
+            if (!frame || !Object.isFrozen(frame) || typeof frame.windowId !== "string"
+                    || sourceSnapshot.memberIds[frame.windowId] === undefined
+                    || seenWindowIds[frame.windowId] === true
+                    || !windowDropPreviewFrameIsRenderable(frame, snapshot.baseSnapshot)) {
+                return false;
+            }
+            seenWindowIds[frame.windowId] = true;
+        }
+        return sourceSnapshot.column.presentation !== "tabbed"
+            || memberFrames[0].windowId === sourceSnapshot.selectedWindowId;
+    }
+
+    function buildColumnDropPreviewColumns(source, target, snapshot) {
+        const sourceSnapshot = source ? source.columnDragSnapshot : null;
+        const baseSnapshot = snapshot ? snapshot.baseSnapshot : null;
+        if (!sourceSnapshot || !baseSnapshot
+                || !indexedListHasBoundedLength(baseSnapshot.columns, 0, 512)) {
+            return null;
+        }
+        const sameContext = source.sourceCard === card;
+        if (sameContext !== (sourceSnapshot.context === baseSnapshot.context)) {
+            return null;
+        }
+
+        const columns = [];
+        for (const column of baseSnapshot.columns) {
+            const clone = cloneWindowDropPreviewColumn(column);
+            if (!clone) {
+                return null;
+            }
+            columns.push(clone);
+        }
+        let movedColumn = cloneWindowDropPreviewColumn(sourceSnapshot.previewColumn);
+        if (!movedColumn) {
+            return null;
+        }
+
+        let originalSourceColumnIndex = -1;
+        if (sameContext) {
+            const sourceLocation = windowDropPreviewLocation(columns, sourceSnapshot.selectedWindowId);
+            if (!sourceLocation || sourceLocation.columnIndex !== sourceSnapshot.columnIndex
+                    || !columnDropPreviewColumnMatchesSource(columns[sourceLocation.columnIndex],
+                                                             sourceSnapshot)) {
+                return null;
+            }
+            originalSourceColumnIndex = sourceLocation.columnIndex;
+            movedColumn = columns.splice(originalSourceColumnIndex, 1)[0];
+        } else {
+            for (const record of sourceSnapshot.records) {
+                if (windowDropPreviewLocation(columns, record.windowId) !== null) {
+                    return null;
+                }
+            }
+        }
+
+        if (target.kind === "empty-row") {
+            if (sameContext || columns.length !== 0) {
+                return null;
+            }
+            columns.push(movedColumn);
+            return {
+                activeColumnIndex: 0,
+                columns,
+                movedColumnIndex: 0,
+                sourceWindowId: sourceSnapshot.selectedWindowId
+            };
+        }
+        if (target.kind !== "column-boundary"
+                || sourceSnapshot.memberIds[target.targetWindowId] !== undefined) {
+            return null;
+        }
+
+        const targetLocation = windowDropPreviewLocation(columns, target.targetWindowId);
+        if (!targetLocation) {
+            return null;
+        }
+        const insertionIndex = targetLocation.columnIndex + (target.position === "after" ? 1 : 0);
+        if (sameContext && insertionIndex === originalSourceColumnIndex) {
+            return null;
+        }
+        columns.splice(insertionIndex, 0, movedColumn);
+        return {
+            activeColumnIndex: insertionIndex,
+            columns,
+            movedColumnIndex: insertionIndex,
+            sourceWindowId: sourceSnapshot.selectedWindowId
+        };
+    }
+
+    function columnDropPreviewColumnMatchesSource(column, sourceSnapshot) {
+        if (!column || !sourceSnapshot || !indexedListHasBoundedLength(column.members, 1, 256)
+                || column.members.length !== sourceSnapshot.records.length
+                || column.presentation !== sourceSnapshot.column.presentation
+                || column.selectedMemberIndex !== sourceSnapshot.selectedMemberIndex) {
+            return false;
+        }
+        for (let index = 0; index < column.members.length; index += 1) {
+            if (column.members[index].windowId !== sourceSnapshot.records[index].windowId) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    function solveColumnDropPreviewGeometry(prospective, snapshot) {
+        const baseSnapshot = snapshot ? snapshot.baseSnapshot : null;
+        if (!prospective || !baseSnapshot) {
+            return null;
+        }
+        const outputGeometry = windowDropPreviewRect(baseSnapshot.screen.geometry);
+        let workArea;
+        try {
+            workArea = windowDropPreviewRect(KWin.Workspace.clientArea(
+                KWin.Workspace.MaximizeArea, baseSnapshot.screen, baseSnapshot.desktop));
+        } catch (error) {
+            return null;
+        }
+        const devicePixelRatio = Number(baseSnapshot.screen.devicePixelRatio);
+        const viewportOffset = baseSnapshot.context ? Number(baseSnapshot.context.viewportOffset) : 0;
+        const windowHeightBounds = windowDropPreviewHeightBounds(prospective.columns);
+        const runtime = OverviewRuntime.DriftileOverview;
+        if (!outputGeometry || !workArea || windowHeightBounds === null
+                || !Number.isFinite(devicePixelRatio) || devicePixelRatio <= 0
+                || !Number.isFinite(viewportOffset) || !runtime
+                || typeof runtime.planOverviewSpatialRowGeometry !== "function") {
+            return null;
+        }
+
+        let plan;
+        try {
+            plan = runtime.planOverviewSpatialRowGeometry({
+                activeColumnIndex: prospective.activeColumnIndex,
+                alwaysCenterSingleColumn: overviewAlwaysCenterSingleColumn,
+                columns: prospective.columns,
+                devicePixelRatio,
+                gap: overviewGap,
+                outputGeometry,
+                viewportOffset,
+                windowHeightBounds,
+                workArea
+            });
+        } catch (error) {
+            return null;
+        }
+        if (!windowDropPreviewGeometryPlanIsExact(plan, prospective)) {
+            return null;
+        }
+
+        const plannedColumn = plan.columnFrames[prospective.movedColumnIndex];
+        const sourceColumn = prospective.columns[prospective.movedColumnIndex];
+        if (!plannedColumn || !sourceColumn || plannedColumn.columnIndex !== prospective.movedColumnIndex
+                || !Number.isFinite(plannedColumn.contentX) || !Number.isFinite(plannedColumn.width)
+                || plannedColumn.width <= 0) {
+            return null;
+        }
+        const columnFrame = Object.freeze({
+            height: projectedViewportHeight,
+            width: plannedColumn.width * projectionScale,
+            x: viewportOriginX
+                + (plan.dimensions.viewportInsetX + plannedColumn.contentX - plan.camera.base) * projectionScale,
+            y: viewportOriginY
+        });
+        if (!windowDropPreviewFrameIsRenderable(columnFrame, baseSnapshot)) {
+            return null;
+        }
+
+        const memberFrames = [];
+        for (const frame of plan.windowFrames) {
+            if (frame.columnIndex !== prospective.movedColumnIndex
+                    || sourceColumn.presentation === "tabbed"
+                    && frame.memberIndex !== sourceColumn.selectedMemberIndex) {
+                continue;
+            }
+            const projected = Object.freeze({
+                height: frame.height * projectionScale,
+                width: frame.width * projectionScale,
+                windowId: frame.windowId,
+                x: viewportOriginX + (frame.x - plan.camera.base) * projectionScale,
+                y: viewportOriginY + frame.y * projectionScale
+            });
+            if (!windowDropPreviewFrameIsRenderable(projected, baseSnapshot)) {
+                return null;
+            }
+            memberFrames.push(projected);
+        }
+        const expectedVisibleMembers = sourceColumn.presentation === "tabbed"
+            ? 1 : sourceColumn.members.length;
+        if (memberFrames.length !== expectedVisibleMembers) {
+            return null;
+        }
+        Object.freeze(memberFrames);
+        return Object.freeze({ columnFrame, memberFrames });
     }
 
     function claimWindowDropHover(source, drag) {
@@ -1979,10 +3681,10 @@ Item {
             const expectedDesktopId = desktopId;
             const expectedScreen = screen;
             const expectedOutputId = outputId;
-            const activityId = String(KWin.Workspace.currentActivity);
+            const activityId = overviewActivityId;
             const cardWidth = Number(width);
             const cardHeight = Number(height);
-            if (!Array.isArray(expectedColumns) || expectedColumns.length > 512
+            if (!indexedListHasBoundedLength(expectedColumns, 0, 512)
                     || !Array.isArray(expectedColumnFrames)
                     || expectedColumnFrames.length !== expectedColumns.length
                     || !expectedPresentations || !expectedRowGeometryPlan
@@ -2014,7 +3716,7 @@ Item {
                 const column = expectedColumns[columnIndex];
                 const members = column ? column.members : null;
                 const selectedMemberIndex = column ? column.selectedMemberIndex : -1;
-                if (!column || !Array.isArray(members) || members.length < 1 || members.length > 256
+                if (!column || !indexedListHasBoundedLength(members, 1, 256)
                         || (column.presentation !== "stacked" && column.presentation !== "tabbed")
                         || !Number.isInteger(selectedMemberIndex) || selectedMemberIndex < 0
                         || selectedMemberIndex >= members.length) {
@@ -2137,7 +3839,7 @@ Item {
                     || spatialRowGeometryPlan !== expectedRowGeometryPlan || desktop !== expectedDesktop
                     || desktopId !== expectedDesktopId || screen !== expectedScreen || outputId !== expectedOutputId
                     || Number(width) !== cardWidth || Number(height) !== cardHeight
-                    || String(KWin.Workspace.currentActivity) !== activityId) {
+                    || overviewActivityId !== activityId) {
                 return null;
             }
 
@@ -2185,7 +3887,7 @@ Item {
                     && snapshot.rowGeometryPlan === spatialRowGeometryPlan
                     && snapshot.desktop === desktop && snapshot.desktopId === desktopId
                     && snapshot.screen === screen && snapshot.outputId === outputId
-                    && snapshot.activityId === String(KWin.Workspace.currentActivity)
+                    && snapshot.activityId === overviewActivityId
                     && snapshot.cardWidth === Number(width) && snapshot.cardHeight === Number(height)
                     && snapshot.contextColumnCount === snapshot.columns.length;
         } catch (error) {
@@ -2362,7 +4064,8 @@ Item {
 
     function buildWindowDropPreviewColumns(source, target, snapshot) {
         const sourceState = windowDropPreviewSourceState(source);
-        if (!sourceState || !target || !snapshot || !Array.isArray(snapshot.columns)) {
+        if (!sourceState || !target || !snapshot
+                || !indexedListHasBoundedLength(snapshot.columns, 0, 512)) {
             return null;
         }
 
@@ -2545,7 +4248,7 @@ Item {
     }
 
     function cloneWindowDropPreviewColumn(column) {
-        if (!column || !Array.isArray(column.members) || column.members.length < 1
+        if (!column || !indexedListHasBoundedLength(column.members, 1, 256)
                 || !Number.isInteger(column.selectedMemberIndex)
                 || column.selectedMemberIndex < 0 || column.selectedMemberIndex >= column.members.length
                 || (column.presentation !== "stacked" && column.presentation !== "tabbed")
@@ -2608,7 +4311,7 @@ Item {
     }
 
     function retainWindowDropPreviewSource(column, memberIndex) {
-        if (!column || !Array.isArray(column.members) || column.members.length <= 1
+        if (!column || !indexedListHasBoundedLength(column.members, 2, 256)
                 || !Number.isInteger(memberIndex) || memberIndex < 0 || memberIndex >= column.members.length) {
             return null;
         }
@@ -2645,8 +4348,16 @@ Item {
     }
 
     function windowDropPreviewColumnUsesExplicitHeights(column) {
-        return column && Array.isArray(column.members)
-            && column.members.some(member => member && member.height !== undefined);
+        if (!column || !indexedListHasBoundedLength(column.members, 1, 256)) {
+            return false;
+        }
+        for (let index = 0; index < column.members.length; index += 1) {
+            const member = column.members[index];
+            if (member && member.height !== undefined) {
+                return true;
+            }
+        }
+        return false;
     }
 
     function windowDropPreviewHeightBounds(columns) {
@@ -2731,9 +4442,9 @@ Item {
 
     function windowDropTargetIsExact() {
         try {
-            const activityId = String(KWin.Workspace.currentActivity);
+            const activityId = overviewActivityId;
             const contextIsExact = context === null
-                ? Array.isArray(columns) && columns.length === 0
+                ? indexedListHasBoundedLength(columns, 0, 0)
                 : context && context.columns === columns && context.desktopId === desktopId
                   && context.outputId === outputId && context.activityId === activityId;
             return enabled && typeof searchQuery === "string" && searchQuery.trim().length === 0

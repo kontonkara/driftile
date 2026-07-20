@@ -474,7 +474,7 @@ describe("overview live model refresh", () => {
     );
 
     expect(workspaceLifecycle).toMatch(
-      /function onDesktopsChanged\(\) \{\s*if \(root\.spatialExitHandoffActive\) \{[\s\S]*root\.handleDesktopTopologyChanged\(\);/u,
+      /function onDesktopsChanged\(\) \{\s*root\.cancelActiveColumnSpatialDrag\(\);\s*if \(root\.spatialExitHandoffActive\) \{[\s\S]*root\.handleDesktopTopologyChanged\(\);/u,
     );
     for (const signal of [
       "onCurrentActivityChanged",
@@ -517,7 +517,7 @@ describe("overview live model refresh", () => {
       /function onWindowRemoved\(window\)[\s\S]*requestLiveModelRefresh|function onWindowRemoved\(window\)[\s\S]*closeStaleOverview/u,
     );
     expect(scene).toMatch(
-      /onOverviewModelChanged: \{\s*if \(spatialExitHandoffActive\) \{\s*root\.invalidateSpatialExitHandoff\("stale"\);\s*return;\s*\}\s*root\.cancelSpatialZoomTransaction\(\);\s*root\.discardSpatialZoomTransaction\(\);\s*root\.refreshOverviewSpatialSession\(true\);\s*root\.synchronizeSpatialZoomInputState\(\);\s*\}/u,
+      /onOverviewModelChanged: \{\s*root\.cancelActiveColumnSpatialDrag\(\);\s*if \(spatialExitHandoffActive\) \{\s*root\.invalidateSpatialExitHandoff\("stale"\);\s*return;\s*\}\s*root\.cancelSpatialZoomTransaction\(\);\s*root\.discardSpatialZoomTransaction\(\);\s*root\.refreshOverviewSpatialSession\(true\);\s*root\.synchronizeSpatialZoomInputState\(\);\s*\}/u,
     );
     expect(scene).toMatch(
       /function refreshOverviewSpatialSession\(preserveViewport, animateViewport = false\)[\s\S]*Qt\.callLater\(root\.repairKeyboardSelection\);/u,

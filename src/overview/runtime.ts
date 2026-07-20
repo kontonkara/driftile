@@ -162,6 +162,7 @@ export {
 export type {
   SpatialDropCommand,
   SpatialDropSource,
+  SpatialDropSourceScope,
   SpatialDropTarget,
 } from "./spatial-drop-command";
 export {

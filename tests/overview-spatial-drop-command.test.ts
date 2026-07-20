@@ -9,6 +9,7 @@ import {
   SPATIAL_DROP_COMMAND_LIMITS,
   SPATIAL_DROP_COMMAND_VERSION,
   type SpatialDropCommand,
+  type SpatialDropSource,
   type SpatialDropTarget,
 } from "../src/overview/spatial-drop-command";
 
@@ -21,8 +22,14 @@ const source = Object.freeze({
   activityId: "activity-source",
   desktopId: "desktop-source",
   outputId: "output-source",
+  scope: "window",
   windowId: "window-source",
-});
+}) satisfies SpatialDropSource;
+
+const columnSource = Object.freeze({
+  ...source,
+  scope: "column",
+}) satisfies SpatialDropSource;
 
 const emptyRowTarget = Object.freeze({
   activityId: "activity-target",
@@ -79,12 +86,13 @@ const targets = Object.freeze([
 
 function command(
   target: SpatialDropTarget = emptyRowTarget,
+  spatialSource: SpatialDropSource = source,
 ): SpatialDropCommand {
   return {
     createdAt: 1_751_000_000_000,
     format: SPATIAL_DROP_COMMAND_FORMAT,
     requestId: 41,
-    source,
+    source: spatialSource,
     target,
     version: SPATIAL_DROP_COMMAND_VERSION,
   };
@@ -101,6 +109,41 @@ describe("spatial drop command codec", () => {
     expect(Object.isFrozen(decoded?.source)).toBe(true);
     expect(Object.isFrozen(decoded?.target)).toBe(true);
     expect(encodeSpatialDropCommand(decoded)).toBe(encoded);
+  });
+
+  it.each(targets.filter((target) => target.kind !== "stack-insertion"))(
+    "round-trips a whole column to the $kind target",
+    (target) => {
+      const expected = command(target, columnSource);
+      const encoded = encodeSpatialDropCommand(expected);
+      const decoded = decodeSpatialDropCommand(encoded);
+
+      expect(encoded).not.toBeNull();
+      expect(decoded).toEqual(expected);
+      expect(decoded?.source).toEqual(columnSource);
+      expect(Object.isFrozen(decoded?.source)).toBe(true);
+    },
+  );
+
+  it.each(targets.filter((target) => target.kind === "stack-insertion"))(
+    "rejects a whole column at the $kind target",
+    (target) => {
+      const value = command(target, columnSource);
+
+      expect(encodeSpatialDropCommand(value)).toBeNull();
+      expect(decodeSpatialDropCommand(JSON.stringify(value))).toBeNull();
+    },
+  );
+
+  it("keeps the selected member window as the live whole-column anchor", () => {
+    const encoded = encodeSpatialDropCommand(
+      command(emptyRowTarget, columnSource),
+    );
+    const decoded = decodeSpatialDropCommand(encoded);
+
+    expect(decoded?.source).toEqual(columnSource);
+    expect(decoded?.source.windowId).toBe("window-source");
+    expect(decoded?.source).not.toHaveProperty("columnId");
   });
 
   it("uses an existing target window as every anchored drop reference", () => {
@@ -152,6 +195,7 @@ describe("spatial drop command codec", () => {
         activityId: identifier,
         desktopId: identifier,
         outputId: identifier,
+        scope: "window",
         windowId: identifier,
       },
     });
@@ -168,6 +212,7 @@ describe("spatial drop command codec", () => {
         activityId: identifier,
         desktopId: identifier,
         outputId: identifier,
+        scope: "column",
         windowId: identifier,
       },
     });
@@ -192,7 +237,8 @@ describe("spatial drop command codec", () => {
   it.each([
     { ...command(), format: "other" },
     { ...command(), version: 1 },
-    { ...command(), version: 3 },
+    { ...command(), version: 2 },
+    { ...command(), version: 4 },
     { ...command(), requestId: 0 },
     { ...command(), requestId: 1.5 },
     { ...command(), requestId: Number.MAX_SAFE_INTEGER + 1 },
@@ -200,6 +246,19 @@ describe("spatial drop command codec", () => {
     { ...command(), createdAt: 1.5 },
     { ...command(), createdAt: Number.MAX_SAFE_INTEGER + 1 },
     { ...command(), unexpected: true },
+    {
+      ...command(),
+      source: {
+        activityId: source.activityId,
+        desktopId: source.desktopId,
+        outputId: source.outputId,
+        windowId: source.windowId,
+      },
+    },
+    {
+      ...command(),
+      source: { ...source, scope: "workspace" },
+    },
     {
       ...command(),
       source: { ...source, windowId: "" },

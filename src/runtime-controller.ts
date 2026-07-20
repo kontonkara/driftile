@@ -3458,6 +3458,8 @@ export class RuntimeController {
         String(sourceContext.desktopId) !== command.source.desktopId ||
         String(sourceContext.outputId) !== command.source.outputId ||
         target.activityId !== command.source.activityId ||
+        (command.source.scope === "column" &&
+          target.outputId !== command.source.outputId) ||
         !sourceOutput ||
         !targetOutput ||
         !sourceDesktop ||
@@ -3534,7 +3536,12 @@ export class RuntimeController {
         (column) => column.id === sourceBefore.activeColumnId,
       );
 
-      if (!sourceColumn || !activeSourceColumn?.selectedWindowId) {
+      if (
+        !sourceColumn ||
+        !activeSourceColumn?.selectedWindowId ||
+        (command.source.scope === "column" &&
+          sourceColumn.selectedWindowId !== sourceId)
+      ) {
         return null;
       }
 
@@ -3697,6 +3704,8 @@ export class RuntimeController {
       String(sourceContext.desktopId) !== command.source.desktopId ||
       String(sourceContext.outputId) !== command.source.outputId ||
       command.target.activityId !== command.source.activityId ||
+      (command.source.scope === "column" &&
+        command.target.outputId !== command.source.outputId) ||
       (workspaceCreation !== null &&
         (workspaceCreation.baseline.sourceOutput !== output ||
           workspaceCreation.baseline.targetOutput !== targetOutput)) ||
@@ -3741,7 +3750,12 @@ export class RuntimeController {
     );
     const previousSourceWindowId = previousSourceColumn?.selectedWindowId;
 
-    if (!sourceColumn || !previousSourceWindowId) {
+    if (
+      !sourceColumn ||
+      !previousSourceWindowId ||
+      (command.source.scope === "column" &&
+        sourceColumn.selectedWindowId !== sourceId)
+    ) {
       return false;
     }
 
@@ -3986,6 +4000,10 @@ export class RuntimeController {
     }
 
     if (target.outputId !== source.outputId) {
+      if (source.scope === "column") {
+        return false;
+      }
+
       const applied = this.moveActiveWindowToOutput(target);
 
       if (applied && this.pendingSpatialOutputTransfer === null) {
@@ -3998,7 +4016,7 @@ export class RuntimeController {
     if (target.desktopId !== source.desktopId) {
       const applied = this.moveActiveWindowToDesktop(
         { desktopId: desktopId(target.desktopId), kind: "id" },
-        false,
+        source.scope === "column",
         true,
         target,
       );
@@ -4012,6 +4030,10 @@ export class RuntimeController {
 
     if (target.kind === "empty-row") {
       return false;
+    }
+
+    if (source.scope === "column") {
+      return this.executeActiveSpatialColumnDrop(prepared, target);
     }
 
     const targetId = windowId(target.targetWindowId);
@@ -4101,6 +4123,70 @@ export class RuntimeController {
       this.scheduleWork();
     }
 
+    this.requestLayoutStatePublication();
+    return true;
+  }
+
+  private executeActiveSpatialColumnDrop(
+    prepared: ActiveColumnCommand,
+    target: ResolvedSpatialDropTarget,
+  ): boolean {
+    if (target.kind !== "column-boundary") {
+      return false;
+    }
+
+    const targetId = windowId(target.targetWindowId);
+    const sourceIndex = prepared.before.columns.findIndex(
+      (column) => column.id === prepared.activeColumn.id,
+    );
+    const targetIndex = prepared.before.columns.findIndex((column) =>
+      column.windowIds.includes(targetId),
+    );
+    const targetColumn = prepared.before.columns[targetIndex];
+
+    if (
+      sourceIndex < 0 ||
+      targetIndex < 0 ||
+      !targetColumn ||
+      targetColumn.id === prepared.activeColumn.id ||
+      prepared.activeColumn.selectedWindowId !== prepared.activeId ||
+      targetColumn.selectedWindowId !== targetId
+    ) {
+      return false;
+    }
+
+    const targetIndexAfterRemoval =
+      targetIndex > sourceIndex ? targetIndex - 1 : targetIndex;
+    const insertionIndex =
+      targetIndexAfterRemoval + (target.position === "after" ? 1 : 0);
+
+    if (insertionIndex === sourceIndex) {
+      return false;
+    }
+
+    const editState: { value: StackEditResult | null } = { value: null };
+    const applied = this.applyActiveColumnMutation(
+      prepared,
+      "overview column drop",
+      () => {
+        editState.value = this.layout.moveActiveColumnToIndex(
+          prepared.activeId,
+          insertionIndex + 1,
+        );
+        return editState.value !== null;
+      },
+      () =>
+        editState.value !== null &&
+        this.layout.rollbackStackEdit(editState.value.rollback),
+    );
+    const edit = editState.value;
+
+    if (!applied || !edit) {
+      return false;
+    }
+
+    this.layout.discardStackEditRollback(edit.rollback);
+    this.capacityParkBackoffs.delete(prepared.context.key);
     this.requestLayoutStatePublication();
     return true;
   }
@@ -15257,7 +15343,8 @@ export class RuntimeController {
   ): boolean {
     if (
       this.stackEditOperation ||
-      (spatialTarget && (wholeColumn || !follow))
+      (spatialTarget && !follow) ||
+      (spatialTarget?.kind === "stack-insertion" && wholeColumn)
     ) {
       return false;
     }
@@ -15404,12 +15491,45 @@ export class RuntimeController {
     let previewValue: ColumnTransferPreview | WindowTransferPreview | null;
 
     if (wholeColumn) {
-      previewValue = this.layout.previewColumnTransfer(active.activeId, {
-        activityId: targetContext.activityId,
-        columnId: targetColumnId,
-        desktopId: targetContext.desktopId,
-        outputId: targetContext.outputId,
-      });
+      if (!spatialTarget) {
+        previewValue = this.layout.previewColumnTransfer(active.activeId, {
+          activityId: targetContext.activityId,
+          columnId: targetColumnId,
+          desktopId: targetContext.desktopId,
+          outputId: targetContext.outputId,
+        });
+      } else if (spatialTarget.kind === "empty-row") {
+        previewValue =
+          targetBefore.columns.length === 0
+            ? this.layout.previewColumnTransfer(active.activeId, {
+                activityId: targetContext.activityId,
+                columnId: targetColumnId,
+                desktopId: targetContext.desktopId,
+                outputId: targetContext.outputId,
+              })
+            : null;
+      } else if (spatialTarget.kind === "column-boundary") {
+        const targetWindowId = windowId(spatialTarget.targetWindowId);
+        const targetColumn = targetBefore.columns.find((column) =>
+          column.windowIds.includes(targetWindowId),
+        );
+        previewValue =
+          targetColumn?.selectedWindowId === targetWindowId
+            ? this.layout.previewColumnTransferToColumnBoundary(
+                active.activeId,
+                {
+                  activityId: targetContext.activityId,
+                  columnId: targetColumnId,
+                  desktopId: targetContext.desktopId,
+                  outputId: targetContext.outputId,
+                  position: spatialTarget.position,
+                  targetColumnId: targetColumn.id,
+                },
+              )
+            : null;
+      } else {
+        previewValue = null;
+      }
     } else if (!spatialTarget || spatialTarget.kind === "empty-row") {
       previewValue =
         spatialTarget && targetBefore.columns.length !== 0

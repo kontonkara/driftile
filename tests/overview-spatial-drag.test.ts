@@ -36,6 +36,26 @@ const thumbnailTouchDrag = handlerBlock(
   "thumbnailTouchDragHandler",
   "thumbnailDragHandler",
 );
+const thumbnailMouseActivationStart = desktopCard.indexOf(
+  "TapHandler {",
+  desktopCard.indexOf("id: thumbnailCloseButton"),
+);
+const thumbnailMiddleCloseStart = desktopCard.indexOf(
+  "TapHandler {",
+  thumbnailMouseActivationStart + 1,
+);
+const thumbnailCloseButton = desktopCard.slice(
+  desktopCard.indexOf("id: thumbnailCloseButton"),
+  thumbnailMouseActivationStart,
+);
+const thumbnailMouseActivation = desktopCard.slice(
+  thumbnailMouseActivationStart,
+  thumbnailMiddleCloseStart,
+);
+const thumbnailMiddleClose = desktopCard.slice(
+  thumbnailMiddleCloseStart,
+  desktopCard.indexOf("id: thumbnailTouchHoldHandler"),
+);
 const lifecycle = desktopCard.slice(
   desktopCard.indexOf("function beginWindowSpatialDrag("),
   desktopCard.indexOf("function windowDropIsValid("),
@@ -46,7 +66,7 @@ const hoverSignals = desktopCard.slice(
 );
 const dropArea = desktopCard.slice(
   desktopCard.indexOf("id: windowDropArea"),
-  desktopCard.indexOf("onCurrentChanged:"),
+  desktopCard.indexOf("id: columnDropArea"),
 );
 const hoverLifecycle = desktopCard.slice(
   desktopCard.indexOf("function claimWindowDropHover("),
@@ -90,6 +110,70 @@ const spatialCanvas = overviewScene.slice(
     overviewScene.indexOf("id: spatialCanvas"),
   ),
 );
+const columnShell = desktopCard.slice(
+  desktopCard.indexOf("id: columnShell"),
+  desktopCard.indexOf("id: emptyContentInput"),
+);
+const windowRepeaterLifecycle = desktopCard.slice(
+  desktopCard.indexOf("id: windowRepeater"),
+  desktopCard.indexOf("id: windowPresentation"),
+);
+const columnGrip = desktopCard.slice(
+  desktopCard.indexOf("id: columnGrabHandle"),
+  desktopCard.indexOf("id: columnTouchHoldHandler"),
+);
+const columnPointerHover = handlerBlock(
+  "columnPointerHoverHandler",
+  "columnPointerPressHandler",
+);
+const columnPointerPress = handlerBlock(
+  "columnPointerPressHandler",
+  "columnTouchHoldHandler",
+);
+const columnTouchHold = handlerBlock(
+  "columnTouchHoldHandler",
+  "columnTouchDragHandler",
+);
+const columnTouchDrag = handlerBlock(
+  "columnTouchDragHandler",
+  "columnDragHandler",
+);
+const columnPointerDrag = desktopCard.slice(
+  desktopCard.indexOf("id: columnDragHandler"),
+  desktopCard.indexOf("id: windowRepeater"),
+);
+const columnDropArea = desktopCard.slice(
+  desktopCard.indexOf("id: columnDropArea"),
+  desktopCard.indexOf("onCurrentChanged:"),
+);
+const columnLifecycle = desktopCard.slice(
+  desktopCard.indexOf("function selectedWindowIdForColumn("),
+  desktopCard.indexOf("function beginWindowSpatialDrag("),
+);
+const columnPlanner = desktopCard.slice(
+  desktopCard.indexOf("function buildColumnDropPlannerSnapshot("),
+  desktopCard.indexOf("function buildWindowDropPlannerSnapshot("),
+);
+const sceneColumnLifecycle = overviewScene.slice(
+  overviewScene.indexOf("function beginColumnSpatialEdgePan("),
+  overviewScene.indexOf("function beginWindowWorkspaceHover("),
+);
+const sceneColumnVisual = overviewScene.slice(
+  overviewScene.indexOf("id: spatialColumnDragVisual"),
+  overviewScene.indexOf("OverviewExitHandoff {"),
+);
+const sceneColumnVisualLifecycle = overviewScene.slice(
+  overviewScene.indexOf("function captureSpatialColumnDragVisual("),
+  overviewScene.indexOf("function handleSpatialPresentationPhaseChanged("),
+);
+const columnWorkspaceGapLifecycle = overviewScene.slice(
+  overviewScene.indexOf("function planColumnWorkspaceGapDrop("),
+  overviewScene.indexOf("function canonicalWorkspaceGapDropTarget("),
+);
+const columnSpatialSubmission = overviewScene.slice(
+  overviewScene.indexOf("function submitColumnSpatialDrop("),
+  overviewScene.indexOf("function submitWindowSpatialDrop("),
+);
 
 describe("spatial overview window drag lifecycle", () => {
   it("declares one deduplicated source lifecycle for exact thumbnails", () => {
@@ -105,7 +189,7 @@ describe("spatial overview window drag lifecycle", () => {
     expect(presentation).toContain(
       "property bool spatialDragLifecycleActive: false",
     );
-    expect(desktopCard.match(/\bDragHandler\s*\{/gu)).toHaveLength(3);
+    expect(desktopCard.match(/\bDragHandler\s*\{/gu)).toHaveLength(5);
     expect(desktopCard).not.toContain("id: tabDragHandler");
     expect(
       desktopCard.slice(
@@ -183,7 +267,7 @@ describe("spatial overview window drag lifecycle", () => {
       expect(drag).toContain("target: null");
     }
     expect(presentation).toContain(
-      "opacity: thumbnailShell.Drag.active ? 0.2 : 1",
+      "opacity: thumbnailShell.Drag.active || card.columnDragWindowIsDimmed(windowId) ? 0.2 : 1",
     );
     expect(sceneDragVisual).toContain("Loader {");
     expect(sceneDragVisual).toContain('color: "#e61b2432"');
@@ -693,7 +777,9 @@ describe("spatial overview window drag lifecycle", () => {
     expect(hoverRouting).toContain("sceneEffect.activeSessionId");
     expect(hoverRouting).toContain("overviewDesktopCardEpoch");
     expect(hoverRouting).toContain("spatialHorizontalViewportRevision");
-    expect(hoverRouting).toContain("card.windowDropHoverOwned === true");
+    expect(hoverRouting).toContain(
+      "spatialDirectDropHoverOwnedByCard(card, source)",
+    );
     const hoverMove = hoverRouting.slice(
       hoverRouting.indexOf("function moveWindowWorkspaceHover("),
       hoverRouting.indexOf("function leaveWindowWorkspaceHover("),
@@ -706,9 +792,9 @@ describe("spatial overview window drag lifecycle", () => {
       overviewScene.indexOf("function handleCurrentDesktopChanged()"),
       overviewScene.indexOf("onOverviewModelChanged:"),
     );
-    expect(currentDesktopHandler).toContain("spatialWindowDragSource !== null");
+    expect(currentDesktopHandler).toContain("spatialDirectDragSource !== null");
     expect(currentDesktopHandler).toContain(
-      "windowSpatialDragSourceIsExact(spatialWindowDragSource,",
+      "spatialDirectDragSourceIsExact(spatialDirectDragSource,",
     );
     expect(currentDesktopHandler).toContain(
       "planSpatialWorkspaceCenter(currentWorkspaceIndex)",
@@ -724,6 +810,447 @@ describe("spatial overview window drag lifecycle", () => {
     );
     expect(overviewScene).toMatch(
       /function resetSpatialEdgePanTracking\(\) \{\s*resetWindowWorkspaceHover\(\);/u,
+    );
+  });
+});
+
+describe("spatial overview column drag lifecycle", () => {
+  it("exposes one clipped top-center grip anchored by the selected live member", () => {
+    expect(desktopCard).toContain(
+      "signal columnSpatialDragStarted(var source, real sceneX, real sceneY)",
+    );
+    expect(desktopCard).toContain(
+      "signal columnSpatialDragMoved(var source, real sceneX, real sceneY)",
+    );
+    expect(desktopCard).toContain(
+      "signal columnSpatialDragFinished(var source)",
+    );
+    expect(columnShell).toContain(
+      "readonly property string selectedWindowId: card.selectedWindowIdForColumn(modelData)",
+    );
+    expect(columnShell).toContain('readonly property string scope: "column"');
+    expect(columnShell).toContain("Drag.source: columnShell");
+    expect(columnShell).toContain('Drag.keys: ["driftile-column"]');
+    expect(columnShell).toContain("Drag.hotSpot.x: spatialDragHotSpot.x");
+    expect(columnShell).toContain("Drag.hotSpot.y: spatialDragHotSpot.y");
+    expect(columnGrip).toContain("readonly property real visibleLeft:");
+    expect(columnGrip).toContain("readonly property real visibleRight:");
+    expect(columnGrip).toContain("readonly property real visibleWidth:");
+    expect(columnGrip).toContain("x: visibleLeft + (visibleWidth - width) / 2");
+    expect(columnGrip).toContain("width: Math.min(56, visibleWidth)");
+    expect(columnGrip).toContain(
+      "visible: columnShell.dragEligible && visibleWidth >= 12",
+    );
+    expect(columnGrip).toContain("height: 26");
+    expect(columnGrip).toContain("anchors.topMargin: 5");
+    expect(columnGrip).toContain("height: 7");
+    expect(columnLifecycle).toMatch(
+      /function selectedWindowIdForColumn[\s\S]*members\[selectedMemberIndex\][\s\S]*return selectedMember && typeof selectedMember\.windowId[\s\S]*selectedMember\.windowId/u,
+    );
+    expect(`${columnShell}\n${columnLifecycle}`).not.toMatch(
+      /selectedWindowId[^\n]*column\.id|windowId[^\n]*column\.id/u,
+    );
+  });
+
+  it("recomputes grip eligibility only from the latest exact window snapshots", () => {
+    expect(desktopCard).toContain(
+      "property int columnDragEligibilityRevision: 0",
+    );
+    expect(desktopCard).toContain(
+      "property bool columnDragEligibilityRefreshPending: false",
+    );
+    expect(columnShell).toMatch(
+      /readonly property var selectedPresentation:\s*\{\s*const revision = card\.columnDragEligibilityRevision;\s*return revision >= 0 && !card\.columnDragEligibilityRefreshPending\s*\? card\.presentationForWindowId\(selectedWindowId\) : null;\s*\}/u,
+    );
+    expect(columnShell).toMatch(
+      /readonly property bool dragEligible:\s*\{\s*const revision = card\.columnDragEligibilityRevision;\s*const presentation = selectedPresentation;\s*return revision >= 0 && !card\.columnDragEligibilityRefreshPending\s*&& presentation !== null && card\.columnDragHandleIsEligible\(columnShell\);\s*\}/u,
+    );
+    expect(desktopCard).toMatch(
+      /Timer \{\s*id: columnDragEligibilityRefreshTimer\s*interval: 0\s*repeat: false\s*onTriggered: \{\s*card\.columnDragEligibilityRefreshPending = false;\s*card\.advanceColumnDragEligibilityRevision\(\);\s*\}\s*\}/u,
+    );
+    for (const change of ["onItemAdded", "onItemRemoved"]) {
+      const start = windowRepeaterLifecycle.indexOf(change);
+      expect(start).toBeGreaterThanOrEqual(0);
+      expect(windowRepeaterLifecycle.slice(start, start + 260)).toContain(
+        "card.scheduleColumnDragEligibilityRefresh();",
+      );
+      expect(windowRepeaterLifecycle.slice(start, start + 260)).not.toContain(
+        "card.advanceColumnDragEligibilityRevision();",
+      );
+    }
+    expect(presentation).toMatch(
+      /function refreshActionSnapshot\(\) \{\s*actionSnapshot = card\.snapshotWindowActions\(candidate\);\s*card\.scheduleColumnDragEligibilityRefresh\(\);\s*card\.navigationTargetsChanged\(\);\s*\}/u,
+    );
+    expect(columnLifecycle).toMatch(
+      /function advanceColumnDragEligibilityRevision\(\) \{\s*columnDragEligibilityRevision = columnDragEligibilityRevision >= 2147483646\s*\? 0 : columnDragEligibilityRevision \+ 1;\s*return columnDragEligibilityRevision;\s*\}/u,
+    );
+    expect(columnLifecycle).toMatch(
+      /function scheduleColumnDragEligibilityRefresh\(\) \{\s*columnDragEligibilityRefreshPending = true;\s*columnDragEligibilityRefreshTimer\.restart\(\);\s*\}/u,
+    );
+    expect(`${windowRepeaterLifecycle}\n${presentation}`).not.toContain(
+      "Qt.callLater",
+    );
+    expect(columnLifecycle).toMatch(
+      /function presentationForWindowId\(expectedWindowId\)[\s\S]*expectedWindowId\.length === 0[\s\S]*windowRepeater\.count > 131072[\s\S]*return null;/u,
+    );
+    expect(columnLifecycle).toMatch(
+      /function presentationForWindowId\(expectedWindowId\)[\s\S]*if \(result !== null\) \{\s*return null;\s*\}/u,
+    );
+    expect(columnLifecycle).toMatch(
+      /function indexedListHasBoundedLength\(value, minimumLength, maximumLength\)[\s\S]*Number\.isInteger\(value\.length\)[\s\S]*value\.length <= maximumLength;/u,
+    );
+    expect(columnLifecycle).toMatch(
+      /function selectedWindowIdForColumn\(column\)[\s\S]*indexedListHasBoundedLength\(members, 1, 256\)/u,
+    );
+    expect(columnLifecycle).toMatch(
+      /function columnDragMemberSnapshotsAreEligible\(column, expectedColumnIndex\)[\s\S]*indexedListHasBoundedLength\(column\.members, 1, 256\)/u,
+    );
+    expect(columnLifecycle).toMatch(
+      /function columnDragHandleIsEligible\(source\)[\s\S]*indexedListHasBoundedLength\(column\.members, 1, 256\)[\s\S]*windowSnapshotCanDrag\(selectedPresentation\)[\s\S]*columnDragMemberSnapshotsAreEligible\(column, source\.index\)[\s\S]*windowDropTargetIsExact\(\);/u,
+    );
+  });
+
+  it("starts mouse and touchscreen drags only after exact frozen ownership exists", () => {
+    expect(desktopCard).toContain(
+      "property var columnPointerHoverSource: null",
+    );
+    expect(desktopCard).toContain(
+      "property var columnPointerPressSource: null",
+    );
+    expect(desktopCard).toContain(
+      "required property bool spatialDirectDragBlocked",
+    );
+    expect(overviewScene).toContain(
+      "spatialDirectDragBlocked: root.spatialDirectDragActive",
+    );
+    expect(columnGrip).toContain("!card.spatialDirectDragBlocked");
+    expect(columnLifecycle).toContain("spatialDirectDragBlocked");
+    expect(columnPointerHover).toContain(
+      "acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad",
+    );
+    expect(columnPointerHover).toContain("cursorShape: Qt.SizeAllCursor");
+    expect(columnPointerHover).toMatch(
+      /onHoveredChanged:[\s\S]*if \(hovered\)[\s\S]*card\.claimColumnPointerHover\(columnShell\);[\s\S]*card\.releaseColumnPointerHover\(columnShell\);/u,
+    );
+    expect(columnLifecycle).toMatch(
+      /function claimColumnPointerHover\(source\)[\s\S]*source\.sourceCard !== card[\s\S]*source\.dragEligible !== true[\s\S]*columnPointerHoverSource = source;/u,
+    );
+    expect(columnLifecycle).toMatch(
+      /function releaseColumnPointerHover\(source\)[\s\S]*columnPointerHoverSource === source[\s\S]*columnPointerHoverSource = null;/u,
+    );
+    expect(columnPointerPress).toContain("target: null");
+    expect(columnPointerPress).toContain("acceptedButtons: Qt.LeftButton");
+    expect(columnPointerPress).toContain(
+      "acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad",
+    );
+    for (const tap of [columnPointerPress, columnTouchHold]) {
+      expect(tap).toContain("gesturePolicy: TapHandler.ReleaseWithinBounds");
+      expect(tap).toContain(
+        "PointerHandler.ApprovesTakeOverByHandlersOfDifferentType",
+      );
+      expect(tap).toContain("PointerHandler.ApprovesCancellation");
+      expect(tap).not.toContain("gesturePolicy: TapHandler.DragThreshold");
+    }
+    expect(columnPointerPress).toMatch(
+      /onPressedChanged:[\s\S]*if \(pressed\)[\s\S]*card\.claimColumnPointerPress\(columnShell\);[\s\S]*point\.state === EventPoint\.Released[\s\S]*card\.releaseColumnPointerPress\(columnShell\);/u,
+    );
+    expect(columnLifecycle).toMatch(
+      /function claimColumnPointerPress\(source\)[\s\S]*source\.sourceCard !== card[\s\S]*source\.dragEligible !== true[\s\S]*columnPointerPressSource = source;/u,
+    );
+    expect(columnLifecycle).toMatch(
+      /function releaseColumnPointerPress\(source\)[\s\S]*columnPointerPressSource === source[\s\S]*columnPointerPressSource = null;/u,
+    );
+    expect(columnTouchHold).toContain(
+      "acceptedDevices: PointerDevice.TouchScreen",
+    );
+    expect(columnTouchHold).toMatch(
+      /onPressedChanged:[\s\S]*if \(pressed\)[\s\S]*columnShell\.touchColumnDragArmed = false;[\s\S]*card\.claimColumnPointerPress\(columnShell\);[\s\S]*point\.state === EventPoint\.Released[\s\S]*!columnTouchDragHandler\.active[\s\S]*card\.releaseColumnPointerPress\(columnShell\);/u,
+    );
+    expect(columnTouchHold).toContain("onLongPressed:");
+    expect(columnTouchHold).toContain(
+      "columnShell.touchColumnDragArmed = true",
+    );
+    expect(columnTouchDrag).toContain(
+      "dragThreshold: columnShell.touchColumnDragArmed ? 0 : 32767",
+    );
+    for (const drag of [columnTouchDrag, columnPointerDrag]) {
+      expect(drag).toContain(
+        "PointerHandler.CanTakeOverFromHandlersOfSameType",
+      );
+      expect(drag).toContain(
+        "PointerHandler.CanTakeOverFromHandlersOfDifferentType",
+      );
+      expect(drag).toContain("PointerHandler.CanTakeOverFromItems");
+      expect(drag).toContain("PointerHandler.ApprovesCancellation");
+      expect(drag).not.toContain("PointerHandler.ApprovesTakeOverByAnything");
+      expect(drag).not.toContain("PointerHandler.TakeOverForbidden");
+      expect(drag).toMatch(
+        /card\.beginColumnSpatialDrag\(columnShell, point\.scenePosition\);[\s\S]*columnSpatialDragLifecycleActive[\s\S]*columnShell\.Drag\.active = true/u,
+      );
+      expect(drag).toMatch(
+        /columnShell\.releaseColumnDrag\(point\.scenePosition\)/u,
+      );
+      expect(drag).toContain("columnShell.cancelColumnDrag()");
+      expect(drag).toContain("target: null");
+    }
+    expect(columnPointerDrag).toContain(
+      "acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad",
+    );
+    expect(columnLifecycle).toMatch(
+      /source\.columnDragSnapshot = snapshot;\s*source\.columnSpatialDragLifecycleActive = true;\s*columnDragActiveSource = source;\s*columnSpatialDragStarted/u,
+    );
+    expect(columnShell).toMatch(
+      /Component\.onDestruction:\s*\{\s*cancelColumnDrag\(\);\s*card\.releaseColumnPointerHover\(columnShell\);\s*\}/u,
+    );
+    expect(columnShell).toMatch(
+      /function releaseColumnDrag\(scenePosition\)[\s\S]*storeColumnDragHotSpot\(scenePosition\)[\s\S]*columnShell\.Drag\.drop\(\)/u,
+    );
+    expect(columnShell).toMatch(
+      /function cancelColumnDrag\(\)[\s\S]*card\.finishColumnSpatialDrag\(columnShell\);\s*card\.releaseColumnPointerPress\(columnShell\);/u,
+    );
+    expect(columnShell).toMatch(
+      /function releaseColumnDrag\(scenePosition\)[\s\S]*card\.finishColumnSpatialDrag\(columnShell\);\s*card\.releaseColumnPointerPress\(columnShell\);/u,
+    );
+    expect(thumbnailMouseActivation).toContain(
+      "&& card.columnPointerHoverSource === null",
+    );
+    expect(thumbnailMouseActivation).toContain(
+      "&& card.columnPointerPressSource === null",
+    );
+    expect(thumbnailCloseButton).toContain(
+      "enabled: card.columnPointerHoverSource === null",
+    );
+    expect(thumbnailCloseButton).toContain(
+      "&& card.columnPointerPressSource === null",
+    );
+    expect(thumbnailMiddleClose).toContain("acceptedButtons: Qt.MiddleButton");
+    expect(thumbnailMiddleClose).toContain(
+      "&& card.columnPointerHoverSource === null",
+    );
+    expect(thumbnailTouchHold).toContain(
+      "&& card.columnPointerPressSource === null",
+    );
+    expect(thumbnailDrag).toContain(
+      "&& card.columnPointerHoverSource === null",
+    );
+    expect(thumbnailDrag).toContain(
+      "&& card.columnPointerPressSource === null",
+    );
+    expect(thumbnailDrag).toContain("card.spatialDirectDragBlocked");
+    expect(thumbnailDrag).toMatch(
+      /card\.beginWindowSpatialDrag\(windowPresentation, point\.scenePosition\);[\s\S]*if \(!windowPresentation\.spatialDragLifecycleActive\)[\s\S]*thumbnailShell\.Drag\.cancel\(\)/u,
+    );
+    expect(lifecycle).toMatch(
+      /function beginWindowSpatialDrag\(source, scenePosition\)[\s\S]*columnDragActiveSource !== null \|\| columnPointerHoverSource !== null\s*\|\| columnPointerPressSource !== null[\s\S]*return;/u,
+    );
+    expect(columnLifecycle).toMatch(
+      /function cancelActiveColumnSpatialDrag\(\)[\s\S]*const hoveredSource = columnPointerHoverSource;[\s\S]*hoveredSource !== null && !columnDragHandleIsEligible\(hoveredSource\)[\s\S]*columnPointerHoverSource = null;/u,
+    );
+    expect(columnLifecycle).toMatch(
+      /function cancelInvalidActiveColumnSpatialDrag\(\)[\s\S]*const hoveredSource = columnPointerHoverSource;[\s\S]*hoveredSource !== null && !columnDragHandleIsEligible\(hoveredSource\)[\s\S]*columnPointerHoverSource = null;/u,
+    );
+  });
+
+  it("captures the complete column once and validates every member without a move-time scan", () => {
+    expect(columnLifecycle).toContain(
+      "function columnDragMemberSnapshotsAreEligible(column, expectedColumnIndex)",
+    );
+    expect(columnLifecycle).toContain(
+      "columnDragMemberSnapshotsAreEligible(column, source.index)",
+    );
+    expect(columnLifecycle).toMatch(
+      /function columnDragMemberSnapshotsAreEligible[\s\S]*!windowSnapshotCanDrag\(presentation\)[\s\S]*return matchCount === column\.members\.length/u,
+    );
+    expect(columnLifecycle).toContain(
+      "function captureColumnDragSnapshot(source)",
+    );
+    expect(columnLifecycle).toContain(
+      "const expectedColumn = source.modelData",
+    );
+    expect(columnLifecycle).toContain(
+      "const selectedMemberIndex = expectedColumn.selectedMemberIndex",
+    );
+    expect(columnLifecycle).toContain(
+      "const previewColumn = cloneWindowDropPreviewColumn(expectedColumn)",
+    );
+    expect(columnLifecycle).toContain(
+      "const widthState = captureColumnWidthState(expectedColumn.width)",
+    );
+    expect(columnLifecycle).toContain("heightState");
+    expect(columnLifecycle).toContain("heightBoundsState");
+    expect(columnLifecycle).toContain("memberIndex,");
+    expect(columnLifecycle).toContain("Object.freeze(previewColumn.members)");
+    expect(columnLifecycle).toContain("Object.freeze(records)");
+    expect(columnLifecycle).toContain("Object.freeze(expectedMemberIds)");
+    expect(columnLifecycle).toContain(
+      "function ownedColumnDropSnapshotIsExact(source)",
+    );
+    expect(columnLifecycle).toContain(
+      "snapshot.memberIds[record.windowId] !== memberIndex",
+    );
+    expect(columnLifecycle).toContain(
+      "columnMemberHeightStateIsExact(member, record.heightState)",
+    );
+    expect(columnLifecycle).toContain(
+      "columnMemberHeightBoundsStateIsExact(member, record.heightBoundsState)",
+    );
+    const move = columnLifecycle.slice(
+      columnLifecycle.indexOf("function moveColumnSpatialDrag("),
+      columnLifecycle.indexOf("function finishColumnSpatialDrag("),
+    );
+    expect(move).not.toMatch(
+      /windowRepeater\.itemAt|planOverviewSpatialRowGeometry|KWin\.Workspace\.(?:stackingOrder|windows)/u,
+    );
+    expect(columnLifecycle).not.toMatch(
+      /Object\.freeze\((?:expectedColumn|expectedContext|expectedDesktop|expectedScreen|presentation|candidate)\)/u,
+    );
+  });
+
+  it("keeps window and whole-column drop ownership strictly separate", () => {
+    expect(columnDropArea).toContain('keys: ["driftile-column"]');
+    expect(dropArea).toContain('keys: ["driftile-window"]');
+    expect(columnDropArea).toContain(
+      "card.columnDropIsValid(drag.source, drag.keys)",
+    );
+    expect(columnDropArea).toContain(
+      "const exactTarget = card.columnDropHoverTarget",
+    );
+    expect(columnDropArea).toContain(
+      "card.columnDropPreviewIsExact(card.columnDropHoverPreview, source, exactTarget,",
+    );
+    expect(columnDropArea.indexOf("card.clearColumnDropHover();")).toBeLessThan(
+      columnDropArea.indexOf("card.columnDropped("),
+    );
+    expect(columnDropArea).not.toContain("card.windowDropped(");
+    expect(dropArea).not.toContain("card.columnDropped(");
+    expect(columnPlanner).toContain("source.sourceScreen === screen");
+    expect(columnPlanner).not.toContain("requestCrossOutputWindowDrop");
+    expect(columnPointerDrag).not.toContain("requestCrossOutputWindowDrop");
+  });
+
+  it("canonicalizes whole-column targets and previews exact no-op-sensitive placement", () => {
+    expect(columnPlanner).toContain(
+      "column.members[column.selectedMemberIndex]",
+    );
+    expect(columnPlanner).toContain('kind: "column-boundary"');
+    expect(columnPlanner).toContain("targetWindowId: selectedWindowId");
+    expect(columnPlanner).toMatch(
+      /localPosition\.x < frame\.x \+ frame\.width \/ 2 \? target\.before : target\.after/u,
+    );
+    expect(columnPlanner).not.toContain('kind: "stack-insertion"');
+    expect(columnPlanner).toContain(
+      "const sourceLocation = windowDropPreviewLocation(columns, sourceSnapshot.selectedWindowId)",
+    );
+    expect(columnPlanner).toContain(
+      "columns.splice(originalSourceColumnIndex, 1)[0]",
+    );
+    expect(columnPlanner).toContain(
+      "if (sameContext && insertionIndex === originalSourceColumnIndex)",
+    );
+    expect(columnPlanner).toContain(
+      "sourceSnapshot.memberIds[target.targetWindowId] !== undefined",
+    );
+    expect(columnPlanner).toContain("runtime.planOverviewSpatialRowGeometry({");
+    expect(columnPlanner).toContain(
+      "plan.dimensions.viewportInsetX + plannedColumn.contentX - plan.camera.base",
+    );
+    expect(columnPlanner).toContain("frame.x - plan.camera.base");
+    expect(columnPlanner).toContain(
+      "function columnDropPreviewMemberFramesAreExact(",
+    );
+    expect(columnPlanner).toContain("Object.isFrozen(frame)");
+    expect(columnPlanner).toContain(
+      "memberFrames[0].windowId === sourceSnapshot.selectedWindowId",
+    );
+  });
+
+  it("renders one monochrome scene proxy and reuses the shared pan and dwell owners", () => {
+    expect(sceneColumnLifecycle).toContain("spatialColumnDragSource = source");
+    expect(sceneColumnLifecycle).toContain(
+      "captureSpatialColumnDragVisual(source)",
+    );
+    expect(sceneColumnVisual).toContain(
+      "visible: root.spatialColumnDragVisualIsExact()",
+    );
+    expect(sceneColumnVisual).toContain(
+      "model: spatialColumnDragVisual.plan ? spatialColumnDragVisual.plan.members : []",
+    );
+    expect(sceneColumnVisual).not.toMatch(
+      /KWin\.WindowThumbnail|\bLoader\s*\{/u,
+    );
+    expect(sceneColumnVisualLifecycle).toContain("members.length >= 32");
+    expect(sceneColumnVisualLifecycle).toContain(
+      "memberTarget.mapToItem(root, 0, 0,",
+    );
+    expect(sceneColumnVisualLifecycle).toContain(
+      "plan.snapshot === source.columnDragSnapshot",
+    );
+    expect(overviewScene).toContain(
+      "readonly property var spatialDirectDragSource:",
+    );
+    expect(overviewScene).toContain(
+      "readonly property bool spatialDirectDragActive:",
+    );
+    expect(hoverRouting).toContain("source !== spatialDirectDragSource");
+    expect(hoverRouting).toContain(
+      "spatialDirectDropHoverOwnedByCard(card, source)",
+    );
+  });
+
+  it("submits same-output column and workspace-gap commands with explicit v3 scope", () => {
+    expect(columnWorkspaceGapLifecycle).toContain(
+      "source.sourceScreen === targetScreen",
+    );
+    expect(columnWorkspaceGapLifecycle).toContain(
+      "liveScreen !== liveTargetScreen",
+    );
+    expect(columnWorkspaceGapLifecycle).toContain('scope: "column"');
+    expect(columnSpatialSubmission).toContain(
+      "liveSourceScreen !== liveTargetScreen",
+    );
+    expect(columnSpatialSubmission).toContain(
+      "liveSourceScreen !== targetScreen",
+    );
+    expect(columnSpatialSubmission).toContain('scope: "column"');
+    expect(columnSpatialSubmission).toContain(
+      "spatialDropContextSelectedColumnAnchorIsExact(",
+    );
+    expect(columnSpatialSubmission).not.toContain('kind: "stack-insertion"');
+    expect(overviewScene.match(/scope: "window"/gu)).toHaveLength(2);
+    expect(overviewScene.match(/scope: "column"/gu)).toHaveLength(2);
+    expect(
+      `${columnWorkspaceGapLifecycle}\n${columnSpatialSubmission}`,
+    ).not.toContain("checkItemDroppedOutOfScreen");
+  });
+
+  it("fails closed on escape, search, topology, and scene changes without new polling", () => {
+    expect(overviewScene).toMatch(
+      /Qt\.Key_Escape && spatialColumnDragSource !== null[\s\S]*root\.cancelActiveColumnSpatialDrag\(\)/u,
+    );
+    expect(overviewScene).toMatch(
+      /onSearchQueryChanged: \{\s*root\.cancelActiveColumnSpatialDrag\(\)/u,
+    );
+    for (const change of [
+      "onOverviewModelChanged",
+      "onOutputIdChanged",
+      "onDesktopIdsChanged",
+      "onWidthChanged",
+      "onHeightChanged",
+      "onDesktopsChanged",
+      "onCurrentActivityChanged",
+      "onActivitiesChanged",
+      "onScreensChanged",
+    ]) {
+      const start = overviewScene.indexOf(change);
+      expect(start).toBeGreaterThanOrEqual(0);
+      expect(overviewScene.slice(start, start + 260)).toContain(
+        "cancelActiveColumnSpatialDrag()",
+      );
+    }
+    expect(
+      `${columnShell}\n${columnLifecycle}\n${columnPlanner}\n${sceneColumnLifecycle}\n${sceneColumnVisualLifecycle}\n${columnWorkspaceGapLifecycle}\n${columnSpatialSubmission}`,
+    ).not.toMatch(
+      /org\.kde\.kwin\.private|KWin\.Workspace\.(?:stackingOrder|windows)|\b(?:MouseArea|Timer)\s*\{|setInterval|setTimeout|\.setValue\s*\(/u,
     );
   });
 });

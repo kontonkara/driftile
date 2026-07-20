@@ -1115,6 +1115,7 @@ describe("overview effect package", () => {
     expect(cardLoadPolicy).toContain('spatialPresentationPhase !== "open"');
     expect(cardLoadPolicy).toContain("desktopReorderActive");
     expect(cardLoadPolicy).toContain("spatialWindowDragSource !== null");
+    expect(cardLoadPolicy).toContain("spatialColumnDragSource !== null");
   });
 
   it("keeps neutral workspace chrome and the current cue below windows and input", () => {
@@ -1578,13 +1579,25 @@ describe("overview effect package", () => {
       desktopCard.indexOf("function windowDropSourceIsEligible("),
     );
 
+    expect(scene).toContain(
+      "readonly property string activeOverviewActivityId: canonicalOverviewActivityId()",
+    );
+    expect(scene).toMatch(
+      /function canonicalOverviewActivityId\(\)[\s\S]*const fallbackActivityId = "driftile-default-activity";[\s\S]*KWin\.Workspace\.currentActivity[\s\S]*KWin\.Workspace\.activities[\s\S]*return activityIds\.length === 1 \? activityIds\[0\] : fallbackActivityId;/u,
+    );
+    expect(desktopCard).toContain(
+      "required property string overviewActivityId",
+    );
+    expect(delegate).toContain(
+      "overviewActivityId: root.activeOverviewActivityId",
+    );
     expect(desktopCard).toMatch(
       /signal windowDropped\(var candidate, string expectedWindowId, var expectedSourceDesktop,\s*string expectedSourceDesktopId, var expectedTargetDesktop,\s*string expectedTargetDesktopId, var expectedScreen, var exactTarget\)/u,
     );
-    expect(desktopCard.match(/\bDragHandler\s*\{/gu)).toHaveLength(3);
-    expect(desktopCard.match(/\bDropArea\s*\{/gu)).toHaveLength(1);
-    expect(desktopCard.match(/\.Drag\.active = true;/gu)).toHaveLength(2);
-    expect(desktopCard.match(/\.Drag\.active = false;/gu)).toHaveLength(5);
+    expect(desktopCard.match(/\bDragHandler\s*\{/gu)).toHaveLength(5);
+    expect(desktopCard.match(/\bDropArea\s*\{/gu)).toHaveLength(2);
+    expect(desktopCard.match(/\.Drag\.active = true;/gu)).toHaveLength(4);
+    expect(desktopCard.match(/\.Drag\.active = false;/gu)).toHaveLength(8);
     expect(delegate).toMatch(
       /onWindowDropped:\s*\(\s*candidate,\s*expectedWindowId,\s*expectedSourceDesktop,\s*expectedSourceDesktopId,\s*expectedTargetDesktop,\s*expectedTargetDesktopId,\s*expectedScreen,\s*exactTarget\s*\)\s*=>\s*root\.submitWindowSpatialDrop\(\s*candidate,\s*expectedWindowId,\s*expectedSourceDesktop,\s*expectedSourceDesktopId,\s*expectedTargetDesktop,\s*expectedTargetDesktopId,\s*expectedScreen,\s*expectedScreen,\s*exactTarget\s*\)/u,
     );
@@ -1602,6 +1615,9 @@ describe("overview effect package", () => {
     );
     expect(transaction).toContain(
       "const targetOutput = projectedOutput(model, liveTargetScreen);",
+    );
+    expect(transaction).toContain(
+      "const expectedActivityId = activeOverviewActivityId;",
     );
     expect(transaction).toContain(
       "liveDesktopFor(expectedSourceDesktop, expectedSourceDesktopId)",
@@ -1668,8 +1684,7 @@ describe("overview effect package", () => {
       "exactTarget.desktopId !== expectedTargetDesktopId",
       'exactTarget.kind === "empty-row"',
       "const exactEmptyContext = targetContext === null",
-      "Array.isArray(targetContext.columns)",
-      "targetContext.columns.length === 0",
+      "indexedListHasBoundedLength(targetContext.columns, 0, 0)",
       'exactTarget.kind !== "column-boundary"',
       'exactTarget.kind !== "stack-insertion"',
       'exactTarget.position !== "before"',
@@ -1694,7 +1709,7 @@ describe("overview effect package", () => {
       "candidate.internalId === null",
       "String(candidate.internalId) !== expectedWindowId",
       "candidate.output !== liveScreen",
-      "String(KWin.Workspace.currentActivity) !== expectedActivityId",
+      "activeOverviewActivityId !== expectedActivityId",
       "!windowUsesActivity(candidate, expectedActivityId)",
       "candidate.transient !== false",
       "candidate.transientFor !== null",
@@ -1754,7 +1769,7 @@ describe("overview effect package", () => {
       /drop\.action = accepted \? Qt\.MoveAction : Qt\.IgnoreAction;[\s\S]*drop\.accepted = accepted;/u,
     );
     expect(gapDelegate).toMatch(
-      /readonly property var plan: root\.workspaceGapPreviewSource !== null\s*&& root\.workspaceGapPreviewWindowId\.length > 0\s*&& root\.workspaceGapPreviewSource\.windowId === root\.workspaceGapPreviewWindowId\s*&& root\.workspaceGapPreviewIndex === workspaceGapDropSlot\.index\s*&& root\.workspaceGapPreviewPlan !== null \? root\.workspaceGapPreviewPlan : null[\s\S]*x: root\.cardX[\s\S]*y: plan \? plan\.lineY - workspaceGapDropSlot\.y - height \/ 2[\s\S]*width: root\.cardWidth[\s\S]*visible: plan !== null/u,
+      /readonly property var plan: root\.workspaceGapPreviewSource !== null[\s\S]*root\.workspaceGapPreviewSourceId\(root\.workspaceGapPreviewSource\)[\s\S]*root\.workspaceGapPreviewPlan !== null \? root\.workspaceGapPreviewPlan : null[\s\S]*x: root\.cardX[\s\S]*y: plan \? plan\.lineY - workspaceGapDropSlot\.y - height \/ 2[\s\S]*width: root\.cardWidth[\s\S]*visible: plan !== null/u,
     );
     expect(gapDelegate).not.toContain("workspaceGapPreviewIsExact()");
     expect(gapDelegate).toContain(
@@ -1869,9 +1884,13 @@ describe("overview effect package", () => {
     expect(
       sourceHandlers.indexOf("crossOutputWindowDropGlobalPosition("),
     ).toBeLessThan(sourceHandlers.indexOf(".Drag.drop()"));
-    expect(
-      sourceHandlers.indexOf("requestCrossOutputWindowDrop("),
-    ).toBeLessThan(sourceHandlers.indexOf(".Drag.active = false"));
+    const crossOutputRequestIndex = sourceHandlers.indexOf(
+      "requestCrossOutputWindowDrop(",
+    );
+    expect(crossOutputRequestIndex).toBeGreaterThanOrEqual(0);
+    expect(crossOutputRequestIndex).toBeLessThan(
+      sourceHandlers.indexOf(".Drag.active = false", crossOutputRequestIndex),
+    );
     expect(transport).toContain(
       'typeof effect.checkItemDroppedOutOfScreen !== "function"',
     );
@@ -2207,7 +2226,7 @@ describe("overview effect package", () => {
       /spatialPresentationPhase === "opening" && currentWorkspaceIndex >= 0[\s\S]*spatialPresentationWorkspaceIndex = currentWorkspaceIndex;/u,
     );
     expect(currentDesktopChangeHandler).toMatch(
-      /spatialPresentationInteractive && spatialWindowDragSource !== null[\s\S]*windowSpatialDragSourceIsExact\(spatialWindowDragSource,[\s\S]*resetWindowWorkspaceHover\(\);[\s\S]*planSpatialWorkspaceCenter\(currentWorkspaceIndex\)[\s\S]*setSpatialContentY\(plan\.contentY, true\);[\s\S]*resolveSpatialLiveCamera\(\);[\s\S]*Qt\.callLater\(root\.repairKeyboardSelection\);[\s\S]*return;/u,
+      /spatialPresentationInteractive && spatialDirectDragSource !== null[\s\S]*spatialDirectDragSourceIsExact\(spatialDirectDragSource,[\s\S]*resetWindowWorkspaceHover\(\);[\s\S]*planSpatialWorkspaceCenter\(currentWorkspaceIndex\)[\s\S]*setSpatialContentY\(plan\.contentY, true\);[\s\S]*resolveSpatialLiveCamera\(\);[\s\S]*Qt\.callLater\(root\.repairKeyboardSelection\);[\s\S]*return;/u,
     );
     expect(currentDesktopChangeHandler).toContain(
       "root.refreshOverviewSpatialSession(false, spatialPresentationInteractive)",
@@ -2510,7 +2529,7 @@ describe("overview effect package", () => {
     );
     expect(spatialEdgePan).toContain("!canMoveUp && !canMoveDown");
     expect(spatialEdgePan).toMatch(
-      /function spatialHorizontalEdgePanContext[\s\S]*workspaceIndex >= desktopIds\.length[\s\S]*windowSpatialDragSourceIsExact\(spatialWindowDragSource, expectedDesktopId\)[\s\S]*card\.mapToItem\(root, card\.contentLeft, card\.contentTop\)[\s\S]*spatialHorizontalViewportOffsetForBounds/u,
+      /function spatialHorizontalEdgePanContext[\s\S]*workspaceIndex >= desktopIds\.length[\s\S]*spatialDirectDragSourceIsExact\(spatialDirectDragSource, expectedDesktopId\)[\s\S]*card\.mapToItem\(root, card\.contentLeft, card\.contentTop\)[\s\S]*spatialHorizontalViewportOffsetForBounds/u,
     );
     expect(spatialEdgePan).toMatch(
       /function spatialHorizontalEdgePanCanRun[\s\S]*context\.pointerX < context\.viewportLeft \+ edgeZone[\s\S]*context\.viewportOffset > context\.bounds\.minimum[\s\S]*context\.pointerX > viewportRight - edgeZone[\s\S]*context\.viewportOffset < context\.bounds\.maximum/u,
@@ -3575,7 +3594,7 @@ describe("overview effect package", () => {
     for (const signal of ["ItemAdded", "ItemRemoved"]) {
       expect(windowRepeaterHeader).toMatch(
         new RegExp(
-          `on${signal}: \\{\\s*card\\.navigationTargetsChanged\\(\\);\\s*card\\.attentionRevision \\+= 1;\\s*card\\.spatialLiveGeometryRevision \\+= 1;\\s*\\}`,
+          `on${signal}: \\{\\s*card\\.navigationTargetsChanged\\(\\);\\s*card\\.attentionRevision \\+= 1;\\s*card\\.spatialLiveGeometryRevision \\+= 1;\\s*card\\.scheduleColumnDragEligibilityRefresh\\(\\);\\s*\\}`,
           "u",
         ),
       );
@@ -3841,7 +3860,7 @@ describe("overview effect package", () => {
       /function handleSpatialViewportWheel[\s\S]*spatialVerticalCameraAnimation\.running && !adoptSpatialVisualContentY\(\)[\s\S]*planSpatialWheel\(angleDeltaY, pixelDeltaY\)/u,
     );
     expect(wheelNavigation).toMatch(
-      /spatialTouchPanDragHandler\.active \|\| spatialViewportDragHandler\.active[\s\S]*spatialHorizontalViewportDragHandler\.active[\s\S]*spatialHorizontalRowDragHandler\.active[\s\S]*spatialWindowDragSource !== null[\s\S]*\|\| desktopReorderActive[\s\S]*resetOverviewWheelState\(\);[\s\S]*event\.accepted = true;[\s\S]*return true;/u,
+      /spatialTouchPanDragHandler\.active \|\| spatialViewportDragHandler\.active[\s\S]*spatialHorizontalViewportDragHandler\.active[\s\S]*spatialHorizontalRowDragHandler\.active[\s\S]*spatialDirectDragActive[\s\S]*\|\| desktopReorderActive[\s\S]*resetOverviewWheelState\(\);[\s\S]*event\.accepted = true;[\s\S]*return true;/u,
     );
     expect(
       wheelNavigation.indexOf("if (spatialTouchPanDragHandler.active"),
@@ -4006,7 +4025,6 @@ describe("overview effect package", () => {
     );
     expect(liveColumnPlan).not.toContain("spatialLiveColumnPlanIsExact(");
     expect(columnGuides).not.toContain("columnMemberGuideFrame(");
-    expect(columnGuides).not.toMatch(/\bRectangle\s*\{/u);
     expect(columnGuides).not.toContain(
       "memberPresentation ? memberPresentation.thumbnailFrame : null",
     );
@@ -4680,7 +4698,7 @@ describe("overview effect package", () => {
       "readonly property bool searchQueryValid: searchQueryPlan !== null",
     );
     expect(scene).toMatch(
-      /onSearchQueryChanged: \{\s*resetOverviewWheelState\(\);\s*resetWindowWorkspaceHover\(\);\s*cancelKeyboardBoundaryNavigation\(\);\s*Qt\.callLater\(root\.repairKeyboardSelection\);\s*\}/u,
+      /onSearchQueryChanged: \{\s*root\.cancelActiveColumnSpatialDrag\(\);\s*resetOverviewWheelState\(\);\s*resetWindowWorkspaceHover\(\);\s*cancelKeyboardBoundaryNavigation\(\);\s*Qt\.callLater\(root\.repairKeyboardSelection\);\s*\}/u,
     );
     expect(keyHandler).toContain("event.key === Qt.Key_Backspace");
     expect(keyHandler).toContain("root.removeLastSearchCharacter()");

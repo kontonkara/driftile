@@ -1,7 +1,7 @@
 import { LAYOUT_PERSISTENCE_LIMITS } from "../core/layout-persistence";
 
 export const SPATIAL_DROP_COMMAND_FORMAT = "driftile-spatial-drop";
-export const SPATIAL_DROP_COMMAND_VERSION = 2;
+export const SPATIAL_DROP_COMMAND_VERSION = 3;
 
 const MAXIMUM_COMMAND_IDENTIFIER_FIELDS = 8;
 const MAXIMUM_JSON_IDENTIFIER_EXPANSION = 6;
@@ -18,11 +18,13 @@ export const SPATIAL_DROP_COMMAND_LIMITS = Object.freeze({
 });
 
 export type SpatialDropPosition = "after" | "before";
+export type SpatialDropSourceScope = "column" | "window";
 
 export interface SpatialDropSource {
   readonly activityId: string;
   readonly desktopId: string;
   readonly outputId: string;
+  readonly scope: SpatialDropSourceScope;
   readonly windowId: string;
 }
 
@@ -85,6 +87,7 @@ const SOURCE_KEYS = [
   "activityId",
   "desktopId",
   "outputId",
+  "scope",
   "windowId",
 ] as const;
 const EMPTY_ROW_TARGET_KEYS = [
@@ -163,7 +166,8 @@ function readCommand(value: unknown): SpatialDropCommand | null {
     !isPositiveSafeInteger(requestId) ||
     !isNonNegativeSafeInteger(createdAt) ||
     source === null ||
-    target === null
+    target === null ||
+    (source.scope === "column" && target.kind === "stack-insertion")
   ) {
     return null;
   }
@@ -187,13 +191,15 @@ function readSource(value: unknown): SpatialDropSource | null {
   const activityId = candidate["activityId"];
   const desktopId = candidate["desktopId"];
   const outputId = candidate["outputId"];
+  const scope = candidate["scope"];
   const windowId = candidate["windowId"];
 
   return isIdentifier(activityId) &&
     isIdentifier(desktopId) &&
     isIdentifier(outputId) &&
+    isSourceScope(scope) &&
     isIdentifier(windowId)
-    ? Object.freeze({ activityId, desktopId, outputId, windowId })
+    ? Object.freeze({ activityId, desktopId, outputId, scope, windowId })
     : null;
 }
 
@@ -363,6 +369,10 @@ function isIdentifier(value: unknown): value is string {
 
 function isPosition(value: unknown): value is SpatialDropPosition {
   return value === "after" || value === "before";
+}
+
+function isSourceScope(value: unknown): value is SpatialDropSourceScope {
+  return value === "column" || value === "window";
 }
 
 function isPositiveSafeInteger(value: unknown): value is number {

@@ -20,6 +20,7 @@ function command(requestId = 41, createdAt = CREATED_AT): SpatialDropCommand {
       activityId: "activity-a",
       desktopId: "desktop-a",
       outputId: "output-a",
+      scope: "window",
       windowId: "window-a",
     },
     target: {

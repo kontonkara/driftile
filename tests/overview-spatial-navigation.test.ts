@@ -274,7 +274,7 @@ describe("spatial overview navigation geometry", () => {
       "!spatialPresentationInteractive",
     );
     expect(horizontalRowHitTest).toContain("desktopReorderActive");
-    expect(horizontalRowHitTest).toContain("spatialWindowDragSource !== null");
+    expect(horizontalRowHitTest).toContain("spatialDirectDragActive");
     expect(horizontalRowHitTest).toContain("spatialViewportDragHandler.active");
     expect(horizontalRowHitTest).toContain(
       "spatialHorizontalViewportDragHandler.active",

@@ -66,10 +66,7 @@ Rectangle {
     readonly property string outputId: outputIdForScreen()
     readonly property int activeOverviewSessionId: sceneEffect
         && Number.isInteger(sceneEffect.activeSessionId) ? sceneEffect.activeSessionId : 0
-    readonly property string activeOverviewActivityId:
-        KWin.Workspace.currentActivity === undefined
-        || KWin.Workspace.currentActivity === null
-        ? "" : String(KWin.Workspace.currentActivity)
+    readonly property string activeOverviewActivityId: canonicalOverviewActivityId()
     readonly property var desktopIds: outputId.length > 0
         ? orderedDesktopIds(desktopTopologyRevision) : []
     readonly property int currentWorkspaceIndex: currentDesktop && currentDesktop.id !== undefined
@@ -192,6 +189,9 @@ Rectangle {
         spatialPresentationInteractive && !keyboardHelpVisible
         && spatialZoomOwner.length === 0 && spatialExternalZoomTransaction === null
         && !spatialExternalZoomActive
+    readonly property var spatialDirectDragSource: spatialColumnDragSource !== null
+        ? spatialColumnDragSource : spatialWindowDragSource
+    readonly property bool spatialDirectDragActive: spatialDirectDragSource !== null
     readonly property bool spatialHorizontalRowDragActive: spatialHorizontalRowDragHandler.active
     readonly property bool spatialZoomContextEligible:
         spatialPresentationSettled && !desktopTopologyRefreshPending
@@ -205,7 +205,7 @@ Rectangle {
         && spatialHorizontalViewportOffsets.length === desktopIds.length
     readonly property bool spatialZoomCompetingInputEligible:
         !keyboardHelpVisible && !desktopReorderActive
-        && spatialWindowDragSource === null
+        && !spatialDirectDragActive
         && !spatialViewportDragHandler.active && !spatialHorizontalViewportDragHandler.active
         && !spatialHorizontalRowDragHandler.active && !spatialVisualContentYDeferred
         && !spatialVerticalCameraAnimation.running && !keyboardBoundaryNavigationPending
@@ -269,6 +269,10 @@ Rectangle {
     property int spatialLiveCameraRefreshBudget: 1
     property int spatialLiveCameraRefreshEpoch: 0
     property var spatialViewportSnapshot: null
+    property var spatialColumnDragSource: null
+    property string spatialColumnDragSourceDesktopId: ""
+    property int spatialColumnDragSourceWorkspaceIndex: -1
+    property var spatialColumnDragVisualPlan: null
     property var spatialWindowDragSource: null
     property string spatialWindowDragSourceDesktopId: ""
     property int spatialWindowDragSourceWorkspaceIndex: -1
@@ -363,9 +367,9 @@ Rectangle {
                 && currentWorkspaceIndex < desktopIds.length) {
             spatialPresentationWorkspaceIndex = currentWorkspaceIndex;
         }
-        if (spatialPresentationInteractive && spatialWindowDragSource !== null
-                && windowSpatialDragSourceIsExact(spatialWindowDragSource,
-                                                  spatialWindowDragSourceDesktopId)) {
+        if (spatialPresentationInteractive && spatialDirectDragSource !== null
+                && spatialDirectDragSourceIsExact(spatialDirectDragSource,
+                                                  spatialDirectDragSourceDesktopId())) {
             resetWindowWorkspaceHover();
             const plan = planSpatialWorkspaceCenter(currentWorkspaceIndex);
             if (plan) {
@@ -378,6 +382,7 @@ Rectangle {
         root.refreshOverviewSpatialSession(false, spatialPresentationInteractive);
     }
     onOverviewModelChanged: {
+        root.cancelActiveColumnSpatialDrag();
         if (spatialExitHandoffActive) {
             root.invalidateSpatialExitHandoff("stale");
             return;
@@ -406,19 +411,27 @@ Rectangle {
     }
     onOverviewZoomGestureDirectionChanged: root.handleExternalSpatialZoomDirectionChanged()
     onOutputIdChanged: {
+        root.cancelActiveColumnSpatialDrag();
         root.cancelSpatialZoomTransaction();
         root.discardSpatialZoomTransaction();
         root.restartDesktopSurfaceResidency();
         root.synchronizeSpatialZoomInputState();
     }
     onDesktopIdsChanged: {
+        root.cancelActiveColumnSpatialDrag();
         root.cancelSpatialZoomTransaction();
         root.discardSpatialZoomTransaction();
         root.handleDesktopSurfaceResidencyDesktopIdsChanged();
         root.synchronizeSpatialZoomInputState();
     }
-    onWidthChanged: root.cancelSpatialZoomTransaction()
-    onHeightChanged: root.cancelSpatialZoomTransaction()
+    onWidthChanged: {
+        root.cancelActiveColumnSpatialDrag();
+        root.cancelSpatialZoomTransaction();
+    }
+    onHeightChanged: {
+        root.cancelActiveColumnSpatialDrag();
+        root.cancelSpatialZoomTransaction();
+    }
     onSpatialZoomInputEligibleChanged: {
         if (!spatialZoomInputEligible) {
             root.cancelSpatialZoomTransaction();
@@ -436,6 +449,7 @@ Rectangle {
         root.captureSpatialViewportSnapshot();
     }
     onSearchQueryChanged: {
+        root.cancelActiveColumnSpatialDrag();
         resetOverviewWheelState();
         resetWindowWorkspaceHover();
         cancelKeyboardBoundaryNavigation();
@@ -464,6 +478,11 @@ Rectangle {
             } else if (unmodified && keyboardHelpLoader.item) {
                 keyboardHelpLoader.item.handleScrollKey(event.key);
             }
+            event.accepted = true;
+            return;
+        }
+        if (unmodified && event.key === Qt.Key_Escape && spatialColumnDragSource !== null) {
+            root.cancelActiveColumnSpatialDrag();
             event.accepted = true;
             return;
         }
@@ -581,6 +600,7 @@ Rectangle {
         ignoreUnknownSignals: true
 
         function onDesktopsChanged() {
+            root.cancelActiveColumnSpatialDrag();
             if (root.spatialExitHandoffActive) {
                 root.invalidateSpatialExitHandoff("topology");
                 return;
@@ -589,6 +609,7 @@ Rectangle {
         }
 
         function onCurrentActivityChanged() {
+            root.cancelActiveColumnSpatialDrag();
             if (root.spatialExitHandoffActive) {
                 root.invalidateSpatialExitHandoff("topology");
                 root.sceneEffect.deactivate();
@@ -598,6 +619,7 @@ Rectangle {
         }
 
         function onActivitiesChanged() {
+            root.cancelActiveColumnSpatialDrag();
             if (root.spatialExitHandoffActive) {
                 root.invalidateSpatialExitHandoff("topology");
                 root.sceneEffect.deactivate();
@@ -607,6 +629,7 @@ Rectangle {
         }
 
         function onScreensChanged() {
+            root.cancelActiveColumnSpatialDrag();
             if (root.spatialExitHandoffActive) {
                 root.invalidateSpatialExitHandoff("topology");
                 root.sceneEffect.deactivate();
@@ -713,6 +736,18 @@ Rectangle {
             root.clearInvalidWorkspaceGapPreview();
         }
 
+        function onColumnDragSnapshotChanged() {
+            root.clearInvalidWorkspaceGapPreview();
+        }
+
+        function onColumnSpatialDragLifecycleActiveChanged() {
+            root.clearInvalidWorkspaceGapPreview();
+        }
+
+        function onIndexChanged() {
+            root.clearInvalidWorkspaceGapPreview();
+        }
+
         function onDestroyed() {
             root.clearWorkspaceGapPreview();
         }
@@ -722,6 +757,18 @@ Rectangle {
         }
 
         function onMinimizedWindowChanged() {
+            root.clearInvalidWorkspaceGapPreview();
+        }
+
+        function onModelDataChanged() {
+            root.clearInvalidWorkspaceGapPreview();
+        }
+
+        function onSelectedWindowIdChanged() {
+            root.clearInvalidWorkspaceGapPreview();
+        }
+
+        function onSourceContextChanged() {
             root.clearInvalidWorkspaceGapPreview();
         }
 
@@ -739,6 +786,67 @@ Rectangle {
 
         function onSpatialDragLifecycleActiveChanged() {
             root.clearInvalidWorkspaceGapPreview();
+        }
+    }
+
+    Connections {
+        target: root.spatialColumnDragSource
+        enabled: target !== null
+        ignoreUnknownSignals: true
+
+        function onColumnDragSnapshotChanged() {
+            if (target && !root.columnSpatialDragSourceIsExact(
+                    target, root.spatialColumnDragSourceDesktopId)) {
+                root.cancelActiveColumnSpatialDrag();
+            }
+        }
+
+        function onColumnSpatialDragLifecycleActiveChanged() {
+            if (target && target.columnSpatialDragLifecycleActive !== true) {
+                root.resetSpatialEdgePanTracking();
+            }
+        }
+
+        function onCandidateChanged() {
+            root.cancelActiveColumnSpatialDrag();
+        }
+
+        function onDestroyed() {
+            root.resetSpatialEdgePanTracking();
+        }
+
+        function onDragEligibleChanged() {
+            if (target && target.dragEligible !== true) {
+                root.cancelActiveColumnSpatialDrag();
+            }
+        }
+
+        function onIndexChanged() {
+            root.cancelActiveColumnSpatialDrag();
+        }
+
+        function onModelDataChanged() {
+            root.cancelActiveColumnSpatialDrag();
+        }
+
+        function onSelectedWindowIdChanged() {
+            root.cancelActiveColumnSpatialDrag();
+        }
+
+        function onSourceContextChanged() {
+            root.cancelActiveColumnSpatialDrag();
+        }
+
+        function onSourceDesktopChanged() {
+            root.cancelActiveColumnSpatialDrag();
+        }
+
+        function onSourceDesktopIdChanged() {
+            root.cancelActiveColumnSpatialDrag();
+        }
+
+        function onSourceScreenChanged() {
+            root.cancelActiveColumnSpatialDrag();
         }
     }
 
@@ -973,7 +1081,7 @@ Rectangle {
 
         anchors.fill: parent
         enabled: root.spatialPointerInputEligible && !root.keyboardHelpVisible
-                 && !root.desktopReorderActive && root.spatialWindowDragSource === null
+                 && !root.desktopReorderActive && !root.spatialDirectDragActive
                  && !spatialViewportDragHandler.active
                  && !spatialHorizontalViewportDragHandler.active
                  && !spatialHorizontalRowDragHandler.active
@@ -1243,6 +1351,7 @@ Rectangle {
                                                  root.outputId, desktopCardLoader.modelData)
                         overviewAlwaysCenterSingleColumn: root.overviewAlwaysCenterSingleColumn
                         overviewGap: root.overviewGap
+                        overviewActivityId: root.activeOverviewActivityId
                         outputId: root.outputId
                         outputName: root.outputName
                         presentationProgress: root.spatialPresentationProgress
@@ -1258,6 +1367,7 @@ Rectangle {
                         searchQueryPlan: root.searchQueryPlan
                         searchResultCount: root.searchResultCountForDesktop(desktopCardLoader.modelData)
                         screen: root.targetScreen
+                        spatialDirectDragBlocked: root.spatialDirectDragActive
                         showApplicationIdentity: root.showApplicationIdentity
                         showApplicationIcons: root.showApplicationIcons
                         showWindowCloseButtons: root.showWindowCloseButtons
@@ -1278,6 +1388,19 @@ Rectangle {
                         }
                         onDesktopTapped: (candidate, expectedDesktopId, expectedScreen) => root.selectDesktop(
                                              candidate, expectedDesktopId, expectedScreen)
+                        onColumnDropped: (source, expectedTargetDesktop, expectedTargetDesktopId,
+                                          expectedScreen, exactTarget) =>
+                                             root.submitColumnSpatialDrop(source, expectedTargetDesktop,
+                                                                          expectedTargetDesktopId,
+                                                                          expectedScreen, exactTarget)
+                        onColumnSpatialDragStarted: (source, sceneX, sceneY) =>
+                                                        root.beginColumnSpatialEdgePan(
+                                                            source, desktopCardLoader.modelData, sceneX, sceneY)
+                        onColumnSpatialDragMoved: (source, sceneX, sceneY) =>
+                                                      root.updateColumnSpatialEdgePan(
+                                                          source, desktopCardLoader.modelData, sceneX, sceneY)
+                        onColumnSpatialDragFinished: source => root.finishColumnSpatialEdgePan(
+                                                         source, desktopCardLoader.modelData)
                         onWindowTapped: (candidate, expectedWindowId, expectedDesktop, expectedDesktopId,
                                          expectedScreen) => root.focusWindow(candidate, expectedWindowId,
                                                                               expectedDesktop, expectedDesktopId,
@@ -1384,10 +1507,42 @@ Rectangle {
                     }
                 }
 
+                DropArea {
+                    id: workspaceGapColumnDropArea
+
+                    anchors.fill: parent
+                    keys: ["driftile-column"]
+
+                    onEntered: drag => {
+                        drag.accepted = root.claimColumnWorkspaceGapPreview(
+                            workspaceGapColumnDropArea, drag, workspaceGapDropSlot.index);
+                    }
+                    onPositionChanged: drag => {
+                        drag.accepted = root.claimColumnWorkspaceGapPreview(
+                            workspaceGapColumnDropArea, drag, workspaceGapDropSlot.index);
+                    }
+                    onExited: root.releaseWorkspaceGapPreview(workspaceGapDropSlot.index)
+                    onContainsDragChanged: {
+                        if (!containsDrag) {
+                            root.releaseWorkspaceGapPreview(workspaceGapDropSlot.index);
+                        }
+                    }
+                    onDropped: drop => {
+                        const plan = root.planColumnWorkspaceGapDrop(workspaceGapColumnDropArea, drop,
+                                                                     workspaceGapDropSlot.index);
+                        const accepted = plan !== null
+                            && root.submitColumnWorkspaceGapDrop(drop.source, plan, root.targetScreen);
+                        drop.action = accepted ? Qt.MoveAction : Qt.IgnoreAction;
+                        drop.accepted = accepted;
+                        root.releaseWorkspaceGapPreview(workspaceGapDropSlot.index);
+                    }
+                }
+
                 Rectangle {
                     readonly property var plan: root.workspaceGapPreviewSource !== null
                         && root.workspaceGapPreviewWindowId.length > 0
-                        && root.workspaceGapPreviewSource.windowId === root.workspaceGapPreviewWindowId
+                        && root.workspaceGapPreviewSourceId(root.workspaceGapPreviewSource)
+                           === root.workspaceGapPreviewWindowId
                         && root.workspaceGapPreviewIndex === workspaceGapDropSlot.index
                         && root.workspaceGapPreviewPlan !== null ? root.workspaceGapPreviewPlan : null
 
@@ -1445,6 +1600,69 @@ Rectangle {
         }
     }
 
+    Item {
+        id: spatialColumnDragVisual
+
+        readonly property var plan: root.spatialColumnDragVisualPlan
+
+        x: root.spatialEdgePanPointerX - (plan ? plan.hotSpotX : 0)
+        y: root.spatialEdgePanPointerY - (plan ? plan.hotSpotY : 0)
+        width: plan ? plan.width : 0
+        height: plan ? plan.height : 0
+        visible: root.spatialColumnDragVisualIsExact()
+        enabled: false
+        clip: true
+        opacity: root.spatialPresentationProgress
+        z: 23001
+
+        Rectangle {
+            anchors.fill: parent
+            color: "#dc1b2432"
+            border.width: 2
+            border.color: "#f2d7e8ff"
+            radius: 4
+        }
+
+        Repeater {
+            model: spatialColumnDragVisual.plan ? spatialColumnDragVisual.plan.members : []
+
+            Item {
+                required property var modelData
+
+                x: modelData.x
+                y: modelData.y
+                width: modelData.width
+                height: modelData.height
+                clip: true
+
+                Rectangle {
+                    anchors.fill: parent
+                    color: "#d8435368"
+                }
+
+                Rectangle {
+                    anchors.fill: parent
+                    color: "#10000000"
+                    border.width: 1
+                    border.color: "#b8b8d8ff"
+                    radius: 2
+                }
+            }
+        }
+
+        Rectangle {
+            anchors.top: parent.top
+            anchors.horizontalCenter: parent.horizontalCenter
+            anchors.topMargin: 5
+            width: Math.max(22, Math.min(38, parent.width - 4))
+            height: 7
+            color: "#f3f8ff"
+            border.width: 1
+            border.color: "#b0182433"
+            radius: height / 2
+        }
+    }
+
     OverviewExitHandoff {
         id: overviewExitHandoffOverlay
 
@@ -1477,7 +1695,7 @@ Rectangle {
 
         anchors.fill: parent
         enabled: root.spatialPointerInputEligible && !root.desktopReorderActive
-                 && root.spatialWindowDragSource === null
+                 && !root.spatialDirectDragActive
                  && !spatialTouchPanDragHandler.active
                  && !spatialViewportDragHandler.active
                  && !spatialHorizontalViewportDragHandler.active
@@ -2236,7 +2454,9 @@ Rectangle {
                     && index === spatialPresentationWorkspaceIndex)
                 || (desktopReorderActive && desktopReorderSourceId === expectedDesktopId)
                 || (spatialWindowDragSource !== null
-                    && spatialWindowDragSourceDesktopId === expectedDesktopId)) {
+                    && spatialWindowDragSourceDesktopId === expectedDesktopId)
+                || (spatialColumnDragSource !== null
+                    && spatialColumnDragSourceDesktopId === expectedDesktopId)) {
             return true;
         }
 
@@ -2286,7 +2506,7 @@ Rectangle {
 
     function beginWindowSpatialEdgePan(source, expectedDesktopId, sceneX, sceneY) {
         const workspaceIndex = desktopIds.indexOf(expectedDesktopId);
-        if (desktopReorderActive || spatialWindowDragSource !== null
+        if (desktopReorderActive || spatialDirectDragActive
                 || spatialHorizontalRowDragHandler.active
                 || workspaceIndex < 0 || workspaceIndex >= desktopIds.length
                 || !windowSpatialDragSourceIsExact(source, expectedDesktopId)) {
@@ -2324,12 +2544,53 @@ Rectangle {
         }
     }
 
+    function beginColumnSpatialEdgePan(source, expectedDesktopId, sceneX, sceneY) {
+        const workspaceIndex = desktopIds.indexOf(expectedDesktopId);
+        if (desktopReorderActive || spatialDirectDragActive
+                || spatialHorizontalRowDragHandler.active
+                || workspaceIndex < 0 || workspaceIndex >= desktopIds.length
+                || !columnSpatialDragSourceIsExact(source, expectedDesktopId)) {
+            cancelColumnSpatialDragOwner(source);
+            return;
+        }
+        if (!adoptSpatialVisualContentY() || !storeSpatialEdgePanScenePoint(sceneX, sceneY)) {
+            cancelColumnSpatialDragOwner(source);
+            return;
+        }
+
+        resetOverviewWheelState();
+        spatialColumnDragSource = source;
+        spatialColumnDragSourceDesktopId = expectedDesktopId;
+        spatialColumnDragSourceWorkspaceIndex = workspaceIndex;
+        if (!captureSpatialColumnDragVisual(source)) {
+            cancelActiveColumnSpatialDrag();
+        }
+    }
+
+    function updateColumnSpatialEdgePan(source, expectedDesktopId, sceneX, sceneY) {
+        if (source !== spatialColumnDragSource
+                || expectedDesktopId !== spatialColumnDragSourceDesktopId) {
+            return;
+        }
+        if (!columnSpatialDragSourceIsExact(source, expectedDesktopId)
+                || !storeSpatialEdgePanScenePoint(sceneX, sceneY)) {
+            cancelActiveColumnSpatialDrag();
+        }
+    }
+
+    function finishColumnSpatialEdgePan(source, expectedDesktopId) {
+        if (source === spatialColumnDragSource
+                && expectedDesktopId === spatialColumnDragSourceDesktopId) {
+            resetSpatialEdgePanTracking();
+        }
+    }
+
     function beginWindowWorkspaceHover(source, expectedTargetDesktop, expectedTargetDesktopId,
                                        expectedTargetScreen, sceneX, sceneY) {
         resetWindowWorkspaceHover();
         if (!Number.isFinite(sceneX) || !Number.isFinite(sceneY)
-                || source !== spatialWindowDragSource
-                || !windowSpatialDragSourceIsExact(source, spatialWindowDragSourceDesktopId)) {
+                || source !== spatialDirectDragSource
+                || !spatialDirectDragSourceIsExact(source, spatialDirectDragSourceDesktopId())) {
             return false;
         }
 
@@ -2487,8 +2748,7 @@ Rectangle {
                                                          targetDesktopId, targetScreen)
                 && windowWorkspaceHoverTargetIsExact(source, targetDesktop, targetDesktopId,
                                                       targetScreen, targetWorkspaceIndex)
-                && card && card.windowDropHoverOwned === true
-                && card.windowDropHoverSource === source;
+                && card && spatialDirectDropHoverOwnedByCard(card, source);
         } catch (error) {
             return false;
         }
@@ -2563,6 +2823,55 @@ Rectangle {
         } catch (error) {
             return false;
         }
+    }
+
+    function columnSpatialDragSourceIsExact(source, expectedDesktopId) {
+        try {
+            const sourceCard = source ? source.sourceCard : null;
+            const candidate = source ? source.candidate : null;
+            const liveDesktop = source ? source.sourceDesktop : null;
+            const liveScreen = source ? source.sourceScreen : null;
+            return spatialPresentationInteractive && sceneEffect && sceneEffect.active === true
+                && source && (source === spatialColumnDragSource
+                              || spatialColumnDragSource === null && spatialWindowDragSource === null)
+                && source.scope === "column" && source.columnSpatialDragLifecycleActive === true
+                && source.dragEligible === true && source.sourceDesktopId === expectedDesktopId
+                && typeof source.selectedWindowId === "string" && source.selectedWindowId.length > 0
+                && sourceCard && typeof sourceCard.ownedColumnDropSnapshotIsExact === "function"
+                && sourceCard.ownedColumnDropSnapshotIsExact(source)
+                && candidate && !candidate.deleted && candidate.internalId !== undefined
+                && candidate.internalId !== null
+                && String(candidate.internalId) === source.selectedWindowId
+                && liveDesktop && liveDesktop.id !== undefined && liveDesktop.id !== null
+                && String(liveDesktop.id) === expectedDesktopId
+                && liveScreen && liveScreen === targetScreen && candidate.output === liveScreen;
+        } catch (error) {
+            return false;
+        }
+    }
+
+    function spatialDirectDragSourceIsExact(source, expectedDesktopId) {
+        return source === spatialColumnDragSource
+            ? columnSpatialDragSourceIsExact(source, expectedDesktopId)
+            : source === spatialWindowDragSource
+              && windowSpatialDragSourceIsExact(source, expectedDesktopId);
+    }
+
+    function spatialDirectDragSourceDesktopId() {
+        return spatialColumnDragSource !== null
+            ? spatialColumnDragSourceDesktopId : spatialWindowDragSourceDesktopId;
+    }
+
+    function spatialDirectDragSourceWorkspaceIndex() {
+        return spatialColumnDragSource !== null
+            ? spatialColumnDragSourceWorkspaceIndex : spatialWindowDragSourceWorkspaceIndex;
+    }
+
+    function spatialDirectDropHoverOwnedByCard(card, source) {
+        return source === spatialColumnDragSource
+            ? card.columnDropHoverOwned === true && card.columnDropHoverSource === source
+            : source === spatialWindowDragSource
+              && card.windowDropHoverOwned === true && card.windowDropHoverSource === source;
     }
 
     function storeSpatialEdgePanScenePoint(sceneX, sceneY) {
@@ -2666,10 +2975,127 @@ Rectangle {
         }
     }
 
+    function captureSpatialColumnDragVisual(source) {
+        clearSpatialColumnDragVisual();
+        try {
+            const target = source ? source.columnVisualTarget : null;
+            const hotSpot = source ? source.spatialDragHotSpot : null;
+            const snapshot = source ? source.columnDragSnapshot : null;
+            if (!target || !hotSpot || !snapshot || !Object.isFrozen(snapshot)
+                    || !Array.isArray(snapshot.records) || snapshot.records.length > 256
+                    || typeof source.selectedWindowId !== "string" || source.selectedWindowId.length === 0
+                    || !Number.isFinite(target.width) || !Number.isFinite(target.height)
+                    || target.width <= 0 || target.height <= 0
+                    || !Number.isFinite(hotSpot.x) || !Number.isFinite(hotSpot.y)) {
+                return false;
+            }
+
+            const visualFrame = target.mapToItem(root, 0, 0, target.width, target.height);
+            const mappedHotSpot = target.mapToItem(root, hotSpot.x, hotSpot.y);
+            if (!visualFrame || !mappedHotSpot
+                    || !Number.isFinite(visualFrame.x) || !Number.isFinite(visualFrame.y)
+                    || !Number.isFinite(visualFrame.width) || !Number.isFinite(visualFrame.height)
+                    || visualFrame.width <= 0 || visualFrame.height <= 0
+                    || !Number.isFinite(mappedHotSpot.x) || !Number.isFinite(mappedHotSpot.y)) {
+                return false;
+            }
+
+            const members = [];
+            for (const record of snapshot.records) {
+                const memberTarget = record ? record.thumbnailTarget : null;
+                if (!memberTarget || members.length >= 32) {
+                    continue;
+                }
+                const memberFrame = memberTarget.mapToItem(root, 0, 0,
+                                                           memberTarget.width, memberTarget.height);
+                if (!memberFrame || !Number.isFinite(memberFrame.x) || !Number.isFinite(memberFrame.y)
+                        || !Number.isFinite(memberFrame.width) || memberFrame.width <= 0
+                        || !Number.isFinite(memberFrame.height) || memberFrame.height <= 0) {
+                    return false;
+                }
+                members.push(Object.freeze({
+                    height: memberFrame.height,
+                    width: memberFrame.width,
+                    windowId: record.windowId,
+                    x: memberFrame.x - visualFrame.x,
+                    y: memberFrame.y - visualFrame.y
+                }));
+            }
+            if (members.length === 0) {
+                return false;
+            }
+            Object.freeze(members);
+            spatialColumnDragVisualPlan = Object.freeze({
+                height: visualFrame.height,
+                hotSpotX: mappedHotSpot.x - visualFrame.x,
+                hotSpotY: mappedHotSpot.y - visualFrame.y,
+                members,
+                snapshot,
+                width: visualFrame.width,
+                windowId: source.selectedWindowId
+            });
+            return true;
+        } catch (error) {
+            clearSpatialColumnDragVisual();
+            return false;
+        }
+    }
+
+    function clearSpatialColumnDragVisual() {
+        spatialColumnDragVisualPlan = null;
+    }
+
+    function spatialColumnDragVisualIsExact() {
+        try {
+            const source = spatialColumnDragSource;
+            const plan = spatialColumnDragVisualPlan;
+            return source && columnSpatialDragSourceIsExact(source, spatialColumnDragSourceDesktopId)
+                && plan && Object.isFrozen(plan) && Object.isFrozen(plan.members)
+                && plan.snapshot === source.columnDragSnapshot
+                && plan.windowId === source.selectedWindowId && plan.windowId.length > 0
+                && plan.members.length > 0 && plan.members.length <= 32
+                && Number.isFinite(spatialEdgePanPointerX) && Number.isFinite(spatialEdgePanPointerY)
+                && Number.isFinite(plan.width) && plan.width > 0
+                && Number.isFinite(plan.height) && plan.height > 0
+                && Number.isFinite(plan.hotSpotX) && Number.isFinite(plan.hotSpotY);
+        } catch (error) {
+            return false;
+        }
+    }
+
+    function cancelActiveColumnSpatialDrag() {
+        const source = spatialColumnDragSource;
+        if (source === null) {
+            return false;
+        }
+        cancelColumnSpatialDragOwner(source);
+        if (spatialColumnDragSource === source) {
+            resetSpatialEdgePanTracking();
+        }
+        return true;
+    }
+
+    function cancelColumnSpatialDragOwner(source) {
+        try {
+            const sourceCard = source ? source.sourceCard : null;
+            if (sourceCard && typeof sourceCard.cancelColumnSpatialDragSource === "function") {
+                sourceCard.cancelColumnSpatialDragSource(source);
+                return true;
+            }
+        } catch (error) {
+            return false;
+        }
+        return false;
+    }
+
     function resetSpatialEdgePanTracking() {
         resetWindowWorkspaceHover();
         clearWorkspaceGapPreview();
         clearSpatialWindowDragVisual();
+        clearSpatialColumnDragVisual();
+        spatialColumnDragSource = null;
+        spatialColumnDragSourceDesktopId = "";
+        spatialColumnDragSourceWorkspaceIndex = -1;
         spatialWindowDragSource = null;
         spatialWindowDragSourceDesktopId = "";
         spatialWindowDragSourceWorkspaceIndex = -1;
@@ -2678,6 +3104,7 @@ Rectangle {
 
     function handleSpatialPresentationPhaseChanged() {
         if (spatialPresentationPhase === "closing") {
+            cancelActiveColumnSpatialDrag();
             cancelSpatialZoomTransaction();
             if (!spatialExitHandoffActive) {
                 spatialPresentationWorkspaceIndex = currentWorkspaceIndex;
@@ -3514,6 +3941,7 @@ Rectangle {
     }
 
     function refreshOverviewSpatialSession(preserveViewport, animateViewport = false) {
+        cancelActiveColumnSpatialDrag();
         const previousViewportSnapshot = preserveViewport === true ? spatialViewportSnapshot : null;
         let selectedDesktopId = "";
         if (previousViewportSnapshot && sceneEffect && sceneEffect.active === true
@@ -4718,19 +5146,19 @@ Rectangle {
             return false;
         }
 
-        return windowSpatialDragSourceIsExact(spatialWindowDragSource,
-                                              spatialWindowDragSourceDesktopId)
+        return spatialDirectDragSourceIsExact(spatialDirectDragSource,
+                                              spatialDirectDragSourceDesktopId())
             || desktopReorderSpatialEdgePanIsExact();
     }
 
     function spatialHorizontalEdgePanContext() {
         try {
-            const workspaceIndex = spatialWindowDragSourceWorkspaceIndex;
-            const expectedDesktopId = spatialWindowDragSourceDesktopId;
+            const workspaceIndex = spatialDirectDragSourceWorkspaceIndex();
+            const expectedDesktopId = spatialDirectDragSourceDesktopId();
             if (!Number.isInteger(workspaceIndex) || workspaceIndex < 0
                     || workspaceIndex >= desktopIds.length
                     || desktopIds[workspaceIndex] !== expectedDesktopId
-                    || !windowSpatialDragSourceIsExact(spatialWindowDragSource, expectedDesktopId)) {
+                    || !spatialDirectDragSourceIsExact(spatialDirectDragSource, expectedDesktopId)) {
                 return null;
             }
 
@@ -5054,7 +5482,7 @@ Rectangle {
             if (!point || !Number.isFinite(point.x) || !Number.isFinite(point.y)
                     || point.x < 0 || point.y < 0 || point.x >= width || point.y >= height
                     || !spatialPointerInputEligible || desktopReorderActive
-                    || spatialWindowDragSource !== null || !spatialWheelPresentationIsExact()
+                    || spatialDirectDragActive || !spatialWheelPresentationIsExact()
                     || spatialViewportOverlayContainsPoint(keyboardHelpHint, point)
                     || spatialViewportOverlayContainsPoint(searchOverlay, point)
                     || spatialViewportOverlayContainsPoint(outputIdentityLoader, point)) {
@@ -5276,7 +5704,7 @@ Rectangle {
         if (!point || !Number.isFinite(point.x) || !Number.isFinite(point.y)
                 || point.x < 0 || point.y < 0 || point.x >= width || point.y >= height
                 || !spatialPointerInputEligible || desktopReorderActive
-                || spatialWindowDragSource !== null
+                || spatialDirectDragActive
                 || spatialViewportOverlayContainsPoint(keyboardHelpHint, point)
                 || spatialViewportOverlayContainsPoint(searchOverlay, point)
                 || spatialViewportOverlayContainsPoint(outputIdentityLoader, point)) {
@@ -5313,7 +5741,7 @@ Rectangle {
         if (!point || !Number.isFinite(point.x) || !Number.isFinite(point.y)
                 || point.x < 0 || point.y < 0 || point.x >= width || point.y >= height
                 || !spatialPointerInputEligible || desktopReorderActive
-                || spatialWindowDragSource !== null || spatialViewportDragHandler.active
+                || spatialDirectDragActive || spatialViewportDragHandler.active
                 || spatialHorizontalViewportDragHandler.active
                 || spatialViewportOverlayContainsPoint(keyboardHelpHint, point)
                 || spatialViewportOverlayContainsPoint(searchOverlay, point)
@@ -5525,7 +5953,7 @@ Rectangle {
     }
 
     function beginDesktopReorder(candidate, expectedDesktopId, expectedScreen, sceneX, sceneY) {
-        if (desktopReorderActive || spatialWindowDragSource !== null
+        if (desktopReorderActive || spatialDirectDragActive
                 || spatialTouchPanDragHandler.active || !desktopReorderAvailable) {
             return;
         }
@@ -5681,7 +6109,7 @@ Rectangle {
         desktopReorderSource = null;
         desktopReorderSourceId = "";
         desktopReorderSourceIndex = -1;
-        if (spatialWindowDragSource === null) {
+        if (!spatialDirectDragActive) {
             clearSpatialEdgePanScenePoint();
         }
     }
@@ -5954,7 +6382,7 @@ Rectangle {
                     || request.currentDesktop !== currentDesktop
                     || request.currentWorkspaceIndex !== currentWorkspaceIndex
                     || searchQuery.length > 0 || keyboardHelpVisible || desktopReorderActive
-                    || spatialWindowDragSource !== null || spatialTouchPanDragHandler.active
+                    || spatialDirectDragActive || spatialTouchPanDragHandler.active
                     || spatialViewportDragHandler.active
                     || spatialHorizontalViewportDragHandler.active
                     || spatialHorizontalRowDragHandler.active
@@ -6176,7 +6604,7 @@ Rectangle {
             if (spatialTouchPanDragHandler.active || spatialViewportDragHandler.active
                     || spatialHorizontalViewportDragHandler.active
                     || spatialHorizontalRowDragHandler.active
-                    || spatialWindowDragSource !== null
+                    || spatialDirectDragActive
                     || desktopReorderActive) {
                 resetOverviewWheelState();
                 event.accepted = true;
@@ -6245,7 +6673,7 @@ Rectangle {
             if (spatialTouchPanDragHandler.active || spatialViewportDragHandler.active
                     || spatialHorizontalViewportDragHandler.active
                     || spatialHorizontalRowDragHandler.active
-                    || spatialWindowDragSource !== null
+                    || spatialDirectDragActive
                     || desktopReorderActive) {
                 resetOverviewWheelState();
                 event.accepted = true;
@@ -6636,7 +7064,7 @@ Rectangle {
                     || spatialViewportDragHandler.active
                     || spatialHorizontalViewportDragHandler.active
                     || spatialHorizontalRowDragHandler.active
-                    || spatialWindowDragSource !== null || desktopReorderActive
+                    || spatialDirectDragActive || desktopReorderActive
                     || !spatialWheelPresentationIsExact()) {
                 return false;
             }
@@ -8179,10 +8607,14 @@ Rectangle {
         return workspaceGapPreviewContextIsExact(workspaceGapPreviewSource,
                                                   workspaceGapPreviewPlan,
                                                   workspaceGapPreviewIndex)
-            && workspaceGapPreviewSource.windowId === workspaceGapPreviewWindowId;
+            && workspaceGapPreviewSourceId(workspaceGapPreviewSource)
+               === workspaceGapPreviewWindowId;
     }
 
     function workspaceGapPreviewContextIsExact(source, plan, expectedGapIndex) {
+        if (source && source.scope === "column") {
+            return columnWorkspaceGapPreviewContextIsExact(source, plan, expectedGapIndex);
+        }
         try {
             if (!spatialPointerInputEligible || desktopReorderActive
                     || !Number.isInteger(expectedGapIndex) || expectedGapIndex < 0
@@ -8206,9 +8638,7 @@ Rectangle {
             const liveSourceDesktop = liveDesktopFor(expectedSourceDesktop, expectedSourceDesktopId);
             const expectedAnchorDesktop = desktopForId(plan.anchorDesktopId);
             const anchorDesktop = liveDesktopFor(expectedAnchorDesktop, plan.anchorDesktopId);
-            const currentActivity = KWin.Workspace.currentActivity;
-            const expectedActivityId = currentActivity === undefined || currentActivity === null ? ""
-                                                                                                  : String(currentActivity);
+            const expectedActivityId = activeOverviewActivityId;
             const localSource = liveSourceScreen === liveTargetScreen
                 && source === spatialWindowDragSource
                 && expectedSourceDesktopId === spatialWindowDragSourceDesktopId;
@@ -8310,6 +8740,80 @@ Rectangle {
         }
     }
 
+    function planColumnWorkspaceGapDrop(dropArea, drag, expectedGapIndex) {
+        try {
+            if (!dropArea || !drag || !Number.isInteger(expectedGapIndex)
+                    || expectedGapIndex < 0 || !columnWorkspaceGapDropSourceIsExact(drag.source)
+                    || !Number.isFinite(drag.x) || !Number.isFinite(drag.y)) {
+                return null;
+            }
+            const point = dropArea.mapToItem(spatialCanvas, drag.x, drag.y);
+            const plan = point && Number.isFinite(point.y)
+                ? planWorkspaceGapDropAtCanvasY(point.y) : null;
+            return workspaceGapPlanIsExact(plan, expectedGapIndex + 1) ? plan : null;
+        } catch (error) {
+            return null;
+        }
+    }
+
+    function claimColumnWorkspaceGapPreview(dropArea, drag, expectedGapIndex) {
+        const source = drag ? drag.source : null;
+        const plan = planColumnWorkspaceGapDrop(dropArea, drag, expectedGapIndex);
+        if (!workspaceGapPreviewContextIsExact(source, plan, expectedGapIndex)) {
+            releaseWorkspaceGapPreview(expectedGapIndex);
+            return false;
+        }
+        workspaceGapPreviewSource = source;
+        workspaceGapPreviewWindowId = source.selectedWindowId;
+        workspaceGapPreviewIndex = expectedGapIndex;
+        workspaceGapPreviewPlan = plan;
+        return true;
+    }
+
+    function workspaceGapPreviewSourceId(source) {
+        return source && source.scope === "column" ? source.selectedWindowId
+            : source && typeof source.windowId === "string" ? source.windowId : "";
+    }
+
+    function columnWorkspaceGapPreviewContextIsExact(source, plan, expectedGapIndex) {
+        try {
+            if (!spatialPointerInputEligible || desktopReorderActive
+                    || !Number.isInteger(expectedGapIndex) || expectedGapIndex < 0
+                    || !columnWorkspaceGapDropSourceIsExact(source)
+                    || !workspaceGapPlanIsExact(plan, expectedGapIndex + 1)) {
+                return false;
+            }
+            const effect = sceneEffect;
+            const model = overviewModel;
+            const liveScreen = liveScreenFor(source.sourceScreen);
+            const sourceOutput = projectedOutput(model, liveScreen);
+            const sourceOutputId = sourceOutput ? String(sourceOutput.outputId) : "";
+            const sourceDesktop = liveDesktopFor(source.sourceDesktop, source.sourceDesktopId);
+            const expectedAnchorDesktop = desktopForId(plan.anchorDesktopId);
+            const anchorDesktop = liveDesktopFor(expectedAnchorDesktop, plan.anchorDesktopId);
+            return source === spatialColumnDragSource && liveScreen === targetScreen
+                && sourceOutputId === outputId && anchorDesktop
+                && windowSpatialDropSceneIsExact(effect, model, liveScreen, sourceOutput, sourceOutputId,
+                                                 targetScreen, sourceOutput, sourceOutputId, sourceDesktop,
+                                                 source.sourceDesktopId, anchorDesktop, plan.anchorDesktopId);
+        } catch (error) {
+            return false;
+        }
+    }
+
+    function columnWorkspaceGapDropSourceIsExact(source) {
+        try {
+            const sourceCard = source ? source.sourceCard : null;
+            return source && source === spatialColumnDragSource && source.scope === "column"
+                && source.sourceScreen === targetScreen && sourceCard
+                && typeof sourceCard.ownedColumnDropSnapshotIsExact === "function"
+                && sourceCard.ownedColumnDropSnapshotIsExact(source)
+                && columnSpatialDragSourceIsExact(source, spatialColumnDragSourceDesktopId);
+        } catch (error) {
+            return false;
+        }
+    }
+
     function submitWindowWorkspaceGapDrop(source, exactPlan, expectedTargetScreen) {
         try {
             const effect = sceneEffect;
@@ -8329,9 +8833,7 @@ Rectangle {
                 ? desktopForId(exactPlan.anchorDesktopId) : null;
             const anchorDesktop = exactPlan
                 ? liveDesktopFor(expectedAnchorDesktop, exactPlan.anchorDesktopId) : null;
-            const currentActivity = KWin.Workspace.currentActivity;
-            const expectedActivityId = currentActivity === undefined || currentActivity === null ? ""
-                                                                                                  : String(currentActivity);
+            const expectedActivityId = activeOverviewActivityId;
             const target = canonicalWorkspaceGapDropTarget(exactPlan, expectedActivityId, targetOutputId);
             if (!workspaceGapDropSourceIsExact(source) || !target || !anchorDesktop
                     || !windowSpatialDropSceneIsExact(effect, model, liveSourceScreen, sourceOutput,
@@ -8350,6 +8852,51 @@ Rectangle {
                                                        activityId: expectedActivityId,
                                                        desktopId: expectedSourceDesktopId,
                                                        outputId: sourceOutputId,
+                                                       scope: "window",
+                                                       windowId: expectedWindowId
+                                                   }, target) === true;
+        } catch (error) {
+            return false;
+        }
+    }
+
+    function submitColumnWorkspaceGapDrop(source, exactPlan, expectedTargetScreen) {
+        try {
+            const effect = sceneEffect;
+            const model = overviewModel;
+            const candidate = source ? source.candidate : null;
+            const expectedWindowId = source ? source.selectedWindowId : "";
+            const expectedSourceDesktop = source ? source.sourceDesktop : null;
+            const expectedSourceDesktopId = source ? source.sourceDesktopId : "";
+            const liveScreen = liveScreenFor(source ? source.sourceScreen : null);
+            const liveTargetScreen = liveScreenFor(expectedTargetScreen);
+            const sourceOutput = projectedOutput(model, liveScreen);
+            const sourceOutputId = sourceOutput ? String(sourceOutput.outputId) : "";
+            const liveSourceDesktop = liveDesktopFor(expectedSourceDesktop, expectedSourceDesktopId);
+            const expectedAnchorDesktop = exactPlan
+                ? desktopForId(exactPlan.anchorDesktopId) : null;
+            const anchorDesktop = exactPlan
+                ? liveDesktopFor(expectedAnchorDesktop, exactPlan.anchorDesktopId) : null;
+            const expectedActivityId = activeOverviewActivityId;
+            const target = canonicalWorkspaceGapDropTarget(exactPlan, expectedActivityId, sourceOutputId);
+            if (!columnWorkspaceGapDropSourceIsExact(source) || !target || !anchorDesktop
+                    || liveScreen !== liveTargetScreen || liveScreen !== targetScreen
+                    || !windowSpatialDropSceneIsExact(effect, model, liveScreen, sourceOutput, sourceOutputId,
+                                                      liveTargetScreen, sourceOutput, sourceOutputId,
+                                                      liveSourceDesktop, expectedSourceDesktopId,
+                                                      anchorDesktop, exactPlan.anchorDesktopId)
+                    || !windowDesktopDropCandidateIsExact(candidate, expectedWindowId, liveScreen,
+                                                           liveSourceDesktop, expectedSourceDesktopId,
+                                                           expectedActivityId)
+                    || typeof effect.submitSpatialDropCommand !== "function") {
+                return false;
+            }
+
+            return effect.submitSpatialDropCommand({
+                                                       activityId: expectedActivityId,
+                                                       desktopId: expectedSourceDesktopId,
+                                                       outputId: sourceOutputId,
+                                                       scope: "column",
                                                        windowId: expectedWindowId
                                                    }, target) === true;
         } catch (error) {
@@ -8472,9 +9019,7 @@ Rectangle {
         const targetOutputId = targetOutput ? String(targetOutput.outputId) : "";
         const liveSourceDesktop = liveDesktopFor(expectedSourceDesktop, expectedSourceDesktopId);
         const liveTargetDesktop = liveDesktopFor(expectedTargetDesktop, expectedTargetDesktopId);
-        const currentActivity = KWin.Workspace.currentActivity;
-        const expectedActivityId = currentActivity === undefined || currentActivity === null ? ""
-                                                                                              : String(currentActivity);
+        const expectedActivityId = activeOverviewActivityId;
         const state = {
             candidate,
             effect,
@@ -8697,6 +9242,119 @@ Rectangle {
         return matches === 1;
     }
 
+    function submitColumnSpatialDrop(source, expectedTargetDesktop,
+                                     expectedTargetDesktopId, expectedScreen, exactTarget) {
+        try {
+            const effect = sceneEffect;
+            const model = overviewModel;
+            const candidate = source ? source.candidate : null;
+            const expectedWindowId = source ? source.selectedWindowId : "";
+            const expectedSourceDesktop = source ? source.sourceDesktop : null;
+            const expectedSourceDesktopId = source ? source.sourceDesktopId : "";
+            const liveSourceScreen = liveScreenFor(source ? source.sourceScreen : null);
+            const liveTargetScreen = liveScreenFor(expectedScreen);
+            const sourceOutput = projectedOutput(model, liveSourceScreen);
+            const targetOutput = projectedOutput(model, liveTargetScreen);
+            const sourceOutputId = sourceOutput ? String(sourceOutput.outputId) : "";
+            const targetOutputId = targetOutput ? String(targetOutput.outputId) : "";
+            const liveSourceDesktop = liveDesktopFor(expectedSourceDesktop, expectedSourceDesktopId);
+            const liveTargetDesktop = liveDesktopFor(expectedTargetDesktop, expectedTargetDesktopId);
+            const expectedActivityId = activeOverviewActivityId;
+            const target = canonicalColumnSpatialDropTarget(exactTarget, expectedActivityId,
+                                                            targetOutputId, expectedTargetDesktopId);
+            if (!columnSpatialDragSourceIsExact(source, expectedSourceDesktopId)
+                    || liveSourceScreen !== liveTargetScreen || liveSourceScreen !== targetScreen
+                    || !windowSpatialDropSceneIsExact(effect, model, liveSourceScreen, sourceOutput,
+                                                      sourceOutputId, liveTargetScreen, targetOutput,
+                                                      targetOutputId, liveSourceDesktop,
+                                                      expectedSourceDesktopId, liveTargetDesktop,
+                                                      expectedTargetDesktopId)
+                    || !target
+                    || !windowDesktopDropCandidateIsExact(candidate, expectedWindowId, liveSourceScreen,
+                                                           liveSourceDesktop, expectedSourceDesktopId,
+                                                           expectedActivityId)
+                    || typeof effect.submitSpatialDropCommand !== "function") {
+                return false;
+            }
+
+            return effect.submitSpatialDropCommand({
+                                                       activityId: expectedActivityId,
+                                                       desktopId: expectedSourceDesktopId,
+                                                       outputId: sourceOutputId,
+                                                       scope: "column",
+                                                       windowId: expectedWindowId
+                                                   }, target) === true;
+        } catch (error) {
+            return false;
+        }
+    }
+
+    function canonicalColumnSpatialDropTarget(exactTarget, expectedActivityId,
+                                              expectedOutputId, expectedTargetDesktopId) {
+        try {
+            if (!exactTarget || !Object.isFrozen(exactTarget) || exactTarget.rowIndex !== 0
+                    || exactTarget.activityId !== expectedActivityId
+                    || exactTarget.outputId !== expectedOutputId
+                    || exactTarget.desktopId !== expectedTargetDesktopId) {
+                return null;
+            }
+            const targetContext = contextFor(expectedTargetDesktopId);
+            if (exactTarget.kind === "empty-row") {
+                return (targetContext === null
+                        || targetContext
+                           && indexedListHasBoundedLength(targetContext.columns, 0, 0))
+                    ? {
+                          activityId: expectedActivityId,
+                          desktopId: expectedTargetDesktopId,
+                          kind: "empty-row",
+                          outputId: expectedOutputId
+                      }
+                    : null;
+            }
+            if (exactTarget.kind !== "column-boundary"
+                    || (exactTarget.position !== "before" && exactTarget.position !== "after")
+                    || typeof exactTarget.targetWindowId !== "string"
+                    || exactTarget.targetWindowId.length === 0 || !targetContext
+                    || !spatialDropContextSelectedColumnAnchorIsExact(
+                        targetContext, exactTarget.targetWindowId)) {
+                return null;
+            }
+            return {
+                activityId: expectedActivityId,
+                desktopId: expectedTargetDesktopId,
+                kind: "column-boundary",
+                outputId: expectedOutputId,
+                position: exactTarget.position,
+                targetWindowId: exactTarget.targetWindowId
+            };
+        } catch (error) {
+            return null;
+        }
+    }
+
+    function spatialDropContextSelectedColumnAnchorIsExact(targetContext, expectedWindowId) {
+        if (!targetContext || !indexedListHasBoundedLength(targetContext.columns, 1, 512)) {
+            return false;
+        }
+        let matches = 0;
+        for (const column of targetContext.columns) {
+            if (!column || !indexedListHasBoundedLength(column.members, 1, 256)
+                    || !Number.isInteger(column.selectedMemberIndex)
+                    || column.selectedMemberIndex < 0
+                    || column.selectedMemberIndex >= column.members.length) {
+                return false;
+            }
+            const member = column.members[column.selectedMemberIndex];
+            if (!member || typeof member.windowId !== "string" || member.windowId.length === 0) {
+                return false;
+            }
+            if (member.windowId === expectedWindowId) {
+                matches += 1;
+            }
+        }
+        return matches === 1;
+    }
+
     function submitWindowSpatialDrop(candidate, expectedWindowId, expectedSourceDesktop,
                                      expectedSourceDesktopId, expectedTargetDesktop,
                                      expectedTargetDesktopId, expectedSourceScreen,
@@ -8711,9 +9369,7 @@ Rectangle {
         const targetOutputId = targetOutput ? String(targetOutput.outputId) : "";
         const liveSourceDesktop = liveDesktopFor(expectedSourceDesktop, expectedSourceDesktopId);
         const liveTargetDesktop = liveDesktopFor(expectedTargetDesktop, expectedTargetDesktopId);
-        const currentActivity = KWin.Workspace.currentActivity;
-        const expectedActivityId = currentActivity === undefined || currentActivity === null ? ""
-                                                                                              : String(currentActivity);
+        const expectedActivityId = activeOverviewActivityId;
         const target = canonicalSpatialDropTarget(exactTarget, expectedActivityId, targetOutputId,
                                                   expectedTargetDesktopId, expectedWindowId);
         if (!windowSpatialDropSceneIsExact(effect, model, liveSourceScreen, sourceOutput, sourceOutputId,
@@ -8731,6 +9387,7 @@ Rectangle {
                                                    activityId: expectedActivityId,
                                                    desktopId: expectedSourceDesktopId,
                                                    outputId: sourceOutputId,
+                                                   scope: "window",
                                                    windowId: expectedWindowId
                                                }, target) === true;
     }
@@ -8748,8 +9405,8 @@ Rectangle {
             const targetContext = contextFor(expectedTargetDesktopId);
             if (exactTarget.kind === "empty-row") {
                 const exactEmptyContext = targetContext === null
-                    || (targetContext && Array.isArray(targetContext.columns)
-                        && targetContext.columns.length === 0);
+                    || (targetContext
+                        && indexedListHasBoundedLength(targetContext.columns, 0, 0));
                 return exactEmptyContext
                     ? {
                           activityId: expectedActivityId,
@@ -8840,7 +9497,7 @@ Rectangle {
                 || expectedWindowId.length === 0
                 || String(candidate.internalId) !== expectedWindowId || candidate.output !== liveScreen
                 || expectedActivityId.length === 0
-                || String(KWin.Workspace.currentActivity) !== expectedActivityId
+                || activeOverviewActivityId !== expectedActivityId
                 || !windowUsesActivity(candidate, expectedActivityId) || candidate.transient !== false
                 || candidate.transientFor !== null) {
             return false;
@@ -9004,6 +9661,37 @@ Rectangle {
 
     function optionalIdentifier(value) {
         return value === undefined || value === null ? "" : String(value);
+    }
+
+    function canonicalOverviewActivityId() {
+        const fallbackActivityId = "driftile-default-activity";
+        const currentActivity = KWin.Workspace.currentActivity;
+        if (currentActivity !== undefined && currentActivity !== null
+                && String(currentActivity).length > 0) {
+            return String(currentActivity);
+        }
+
+        const activities = KWin.Workspace.activities;
+        if (!activities || !Number.isInteger(activities.length)
+                || activities.length > 1024) {
+            return fallbackActivityId;
+        }
+        const activityIds = [];
+        for (let index = 0; index < activities.length; index += 1) {
+            const activityId = String(activities[index]);
+            if (activityId.length > 0) {
+                activityIds.push(activityId);
+            }
+        }
+        return activityIds.length === 1 ? activityIds[0] : fallbackActivityId;
+    }
+
+    function indexedListHasBoundedLength(value, minimumLength, maximumLength) {
+        return value !== null && value !== undefined && typeof value !== "string"
+            && Number.isInteger(value.length) && Number.isInteger(minimumLength)
+            && Number.isInteger(maximumLength) && minimumLength >= 0
+            && maximumLength >= minimumLength && value.length >= minimumLength
+            && value.length <= maximumLength;
     }
 
     function contextFor(desktopId) {
