@@ -8064,6 +8064,13 @@ let
         local floating_left_frame
         local floating_left_up_frame
         local floating_output_frame
+        local floating_pointer_delta
+        local floating_pointer_destination_x
+        local floating_pointer_destination_y
+        local floating_pointer_moved_frame
+        local floating_pointer_restore_shortcut
+        local floating_pointer_source_x
+        local floating_pointer_source_y
         local floating_second_height
         local floating_second_frame
         local floating_second_width
@@ -8549,6 +8556,67 @@ let
           record_focus_state "window B floating center target was invalid"
           return 1
         fi
+        IFS=, read -r \
+          floating_work_area_x \
+          floating_work_area_y \
+          floating_work_area_width \
+          floating_work_area_height \
+          <<< "$floating_work_area"
+
+        floating_pointer_delta=50
+        if ((floating_second_x + floating_second_width + floating_pointer_delta \
+          <= floating_work_area_x + floating_work_area_width)); then
+          floating_pointer_restore_shortcut="driftile_move_column_left"
+        elif ((floating_second_x - floating_pointer_delta \
+          >= floating_work_area_x)); then
+          floating_pointer_delta=$((-floating_pointer_delta))
+          floating_pointer_restore_shortcut="driftile_move_column_right"
+        else
+          record_focus_state \
+            "manual floating pointer checkpoint had no safe horizontal target"
+          return 1
+        fi
+        floating_pointer_source_x=$((
+          floating_second_x + floating_second_width / 2
+        ))
+        floating_pointer_source_y=$((
+          floating_second_y + floating_second_height / 2
+        ))
+        floating_pointer_destination_x=$((
+          floating_pointer_source_x + floating_pointer_delta
+        ))
+        floating_pointer_destination_y=$floating_pointer_source_y
+        floating_pointer_moved_frame="$((floating_second_x + floating_pointer_delta)),$floating_second_y,$floating_second_width,$floating_second_height"
+
+        if ! request_physical_pointer_drag \
+            manual-floating \
+            "$floating_pointer_source_x" \
+            "$floating_pointer_source_y" \
+            "$floating_pointer_destination_x" \
+            "$floating_pointer_destination_y" \
+            "$floating_output_frame" \
+          || ! wait_for_frames \
+            "$stable_first_frame" \
+            "$floating_pointer_moved_frame" \
+            "$stable_third_frame" \
+          || ! wait_for_active "$title_b"; then
+          record_focus_state \
+            "physical manual floating pointer drag did not preserve exact frames and focus"
+          return 1
+        fi
+
+        if ! invoke_shortcut "$floating_pointer_restore_shortcut" \
+          || ! wait_for_frames \
+            "$stable_first_frame" \
+            "$floating_second_frame" \
+            "$stable_third_frame" \
+          || ! wait_for_active "$title_b"; then
+          record_focus_state \
+            "manual floating pointer drag did not retain floating ownership"
+          return 1
+        fi
+        record_focus_state \
+          "physical Meta+pointer drag moved and restored manual floating window B exactly"
 
         if ! request_physical_shortcut floating-move-left \
           || ! wait_for_frames \
@@ -9882,7 +9950,7 @@ let
         local temporary_file="$ready_file.tmp"
 
         case "$drag_name" in
-          cross-column|same-stack) ;;
+          cross-column|manual-floating|same-stack) ;;
           *) return 1 ;;
         esac
 
