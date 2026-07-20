@@ -106,6 +106,30 @@ Events travel from KWin through the bridge into the runtime. Commands and result
   generation. Each card owns its reload revision and token, so an unrelated
   later event cannot strand a targeted card on its solid fallback. Off-screen
   retained cards never instantiate or reload a surface.
+- Treats the configured zoom as a bounded fresh-session baseline. Interactive
+  zoom mutates only controller-owned session state; a completed close discards
+  it, while reopening during the same close transition preserves it.
+- Plans every zoom preview from an immutable transaction origin, preserving the
+  fractional workspace position at the pointer or pinch centroid. Keyboard and
+  global touchpad input use the centered current-row anchor. Cancellation
+  restores the exact origin rather than reversing accumulated deltas.
+- Preserves horizontal cameras by desktop ID across scale and workspace
+  reflow, then clamps each retained offset against its newly computed row
+  bounds. Off-screen Desktop surfaces remain lazy while the scale changes the
+  visible range.
+- Normalizes `Ctrl` plus wheel against KWin's system-inversion flag so physical
+  up zooms in and physical down zooms out. Pixel deltas preview continuously,
+  angle deltas advance by bounded steps, and `Ctrl++`, `Ctrl+-`, and `Ctrl+0`
+  share the same guarded session transaction.
+- When touchpad gesture support is enabled, keeps one global pair of KWin pinch
+  handlers for its configured `3`- to `5`-finger count and one output-local
+  public Qt two-point `PinchHandler` for touchscreens. Touchpad ownership is
+  enabled only when all exact output scenes publish an eligible state for the
+  current session.
+- Rejects or cancels zoom ownership when session, model, output, desktop order,
+  topology, or scene geometry changes, and while window drag, desktop reorder,
+  viewport pan, closing, topology refresh, or help owns interaction. Search
+  remains compatible. A passive percentage HUD has no input handler or timer.
 - Keeps current-card thumbnail focus direct. A non-current thumbnail first
   revalidates the exact active effect, model, live screen, projected output,
   desktop, window, and activity; off-desktop hidden state is allowed only at

@@ -535,6 +535,26 @@ Plasma's built-in Overview. After unloading the effect, the retained action is
 invoked once more to prove it is inert while the main extension remains
 loaded. The stable 1.22.0 release runs this expanded full checkpoint hidden.
 
+The same hidden full-VM Overview checkpoint fixes the configured session zoom
+at the unmistakably non-default `0.43` and extends its existing QMP wheel
+handshake without adding another application or backend pool. QMP sends
+physical `Ctrl+wheel-up`, `Ctrl+wheel-down`, `Ctrl++`, `Ctrl+-`, and `Ctrl+0`
+input. Duplicate same-state compositor screendumps calibrate a bounded public
+visual oracle. At the current row's center, wheel-up must match keyboard
+zoom-in, and every inverse or reset must return to the configured frame. A
+second wheel round trip places the pointer at three-quarters of the output
+height; image registration must observe the vertical anchor displacement
+predicted by the `0.43` to `0.48` layout geometry before the inverse restores
+the off-centre baseline. A rapid physical close captures a materially closing
+frame before the reopen input and must return to the seeded session frame.
+After `Ctrl+0`, the checkpoint seeds `0.48` again, proves that frame visually,
+completes a full close, and requires a fresh open to restore `0.43`. The
+selected desktop, exact frames, desktop order, persisted layout, component
+diagnostics, and the KWin process remain covered by the surrounding checkpoint.
+QMP cannot inject a real touchpad or touchscreen pinch, so the VM does not
+simulate one; pure contracts, QML lint, and the public gesture-handler checks
+remain the automated pinch boundary.
+
 The host injects real keyboard shortcuts and absolute `Meta+left` drags through QEMU QMP, so Plasma routing and pointer behavior cannot hide behind direct invocation. The pointer checkpoint moves native Wayland Firefox into an XWayland xterm column, verifies destination width and order, then reorders the resulting stack. A second physical drag moves native Wayland Firefox through a KWin-owned same-output desktop switch, releases it over a fresh XWayland target, and verifies destination order and width, active focus, unchanged hidden primary-desktop frames, and exact cleanup. The VM also verifies both desktop-reorder directions and aliases against real applications while preserving desktop IDs, selection, window memberships, focus, frames, and the shared tail. It applies and restores a live gap while a real Konsole window is floating. For default width and both resize steps, it co-delivers each policy with a temporary gap barrier, restores the gap, then proves exact existing frames before the explicit action. The remaining checks cover dynamic desktops, minimized-slot navigation, column reorder, horizontal extraction, explicit consume and expel past minimized peers, tiled and floating transfers, transfer boundaries, layer navigation, stack editing, fullscreen and maximize, sizing, and viewport scrolling with native Wayland and XWayland clients. The real xterm path also verifies advertised character-cell resize increments and exact off-lattice tiled geometry. See [Shortcuts](shortcuts.md).
 
 The VM is ephemeral, has restricted networking, and cannot be switched onto the host. The passwordless `driftile` account signs in automatically. Screen locking, display power saving, and system sleep are disabled inside the guest. The launcher closes the VM immediately after the checks report success or failure. The X11 Plasma session remains available from the login screen; automated integration tests cover both KWin backends.

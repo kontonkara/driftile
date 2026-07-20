@@ -182,7 +182,13 @@ complete column. Its session camera starts from the authoritative layout
 viewport, follows an eligible active tiled window, and retains local offsets
 across live refreshes. Manual horizontal input detaches that row for the
 remainder of the session; Overview navigation never writes the offset back to
-the normal layout.
+the normal layout. Offsets remain associated with desktop IDs through a reflow
+and are clamped only to the resulting finite row bounds.
+
+Every fresh Overview session starts at the configured scale. Wheel, keyboard,
+touchpad, and touchscreen zoom changes are session-only and never update that
+setting. Reopening during the animated close resumes the same session scale;
+opening after the effect has fully closed starts from the configured scale.
 
 Each instantiated visible-range row renders KWin's public Desktop surface for
 its exact output, virtual desktop, and current activity behind windows and input
@@ -207,9 +213,27 @@ and the previous row when scrolling up, independent of the system's natural
 scrolling inversion. Horizontal discrete input selects columns. Empty-space
 dragging pans the plane, and a right-button drag pans the row under the pointer.
 
+`Ctrl` plus a physical vertical wheel zooms at the pointer: up zooms in and down
+zooms out even when natural scrolling is enabled. Precise pixel deltas preview
+continuously, while discrete angle deltas advance in bounded steps. `Ctrl++`
+and `Ctrl+-` zoom around the current row; `Ctrl+0` restores the configured scale
+for the current session. When touchpad gesture support is enabled, its
+configured `3`- to `5`-finger KWin pinch on supported backends uses the centered
+current row, while a public two-finger touchscreen pinch anchors the workspace
+position under its centroid.
+
+Each preview is a transaction against one exact session, model, output,
+workspace order, topology, and viewport size. Cancellation restores its exact
+starting scale and camera. Zoom ownership is unavailable during a window drag,
+desktop reorder, viewport pan, closing transition, topology refresh, or open
+help panel; a context change cancels an active transaction. Search remains
+usable with zoom. A passive, non-interactive percentage indicator is visible
+while zoom changes or differs from the configured session start.
+
 Ordinary Overview opening settles directly into the spatial plane, avoiding an
 intermediate full-size projection. Closing remains animated, while interactive
-gestures continue to drive presentation progress directly.
+gestures continue to drive presentation progress directly. Reopening during
+that close motion keeps the current session zoom.
 
 A one-finger touchscreen drag can start across the visible Overview canvas,
 outside controls and overlays, when the vertical camera or touched row has

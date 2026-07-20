@@ -30,6 +30,11 @@ identity and icons, close buttons, state badges, desktop names, and output
 names. See [Spatial Overview](overview.md) for interaction details. Use a
 different finger count from Driftile's desktop navigation and Plasma's built-in
 Overview, or disable the overlapping gesture, so each direction has one owner.
+The configured zoom is the starting scale for each fresh Overview session;
+interactive zoom never rewrites it. When touchpad gesture support is enabled,
+the configured `3`- to `5`-finger count is also used by KWin's touchpad
+pinch-to-zoom gesture on supported backends. Touchscreen zoom always uses two
+touch points and does not add another setting.
 
 Window close buttons remain disabled by default. When enabled, eligible,
 sufficiently large previews and minimized placeholders keep a close control
@@ -60,10 +65,12 @@ programs.driftile.overview.touchpadGesture = {
 
 `screenEdge` accepts `none` or one of the eight named edges and corners;
 `backdropColor` uses strict `#AARRGGBB`; and `zoom` accepts `0.2` through `0.75`
-with an effect default of `0.5`. The seven `show*` options default to `false`.
-Every nullable Home Manager option leaves the existing per-user KConfig value
-unmanaged when set to `null`. Use `screenEdge = "none"` to manage and disable
-screen-edge activation explicitly. These appearance options add no private API.
+with an effect default of `0.5`. It is reapplied only when a fresh session
+starts; reopening during the close animation retains that session's current
+scale. The seven `show*` options default to `false`. Every nullable Home Manager
+option leaves the existing per-user KConfig value unmanaged when set to `null`.
+Use `screenEdge = "none"` to manage and disable screen-edge activation
+explicitly. These appearance options add no private API.
 
 ## Optional transitions
 

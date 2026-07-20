@@ -55,7 +55,14 @@ are excluded from the main spatial plane.
 The horizontal camera is session-only. It initially matches the authoritative
 layout viewport, follows a valid active tiled window, and can be detached by
 manual horizontal input. Overview navigation never writes a viewport offset
-back to Driftile.
+back to Driftile. Horizontal offsets follow their desktop IDs through a
+workspace reflow and are clamped only when the new row bounds require it.
+
+The configured zoom is the starting scale for each fresh Overview session.
+Interactive changes belong only to that session and are never written back to
+configuration. Reopening while the close animation is still running resumes
+the same session and its current zoom; opening after a completed close starts
+again from the configured value.
 
 ## Motion and input
 
@@ -64,7 +71,7 @@ intermediate full-size projection and its added latency. Interactive gestures
 continue to drive presentation progress directly and settle on completion.
 Closing remains animated. A manually panned current row returns to its live
 camera during the close motion; reopening during that motion settles the plane
-again.
+again without discarding the current session zoom.
 
 Discrete vertical navigation moves a bounded camera smoothly between workspace
 rows. Precise wheel or touchpad input moves the camera directly, without being
@@ -78,6 +85,31 @@ direction remains the same when natural scrolling is enabled. Horizontal
 discrete input selects and reveals the previous or next column. Rapid discrete
 input is coalesced, while a direction reversal cancels pending movement in the
 old direction.
+
+Hold `Ctrl` while using a vertical wheel to zoom around the pointer. Physical
+wheel up zooms in and physical wheel down zooms out, independently of the
+system's natural-scrolling setting. Precise pixel input previews continuously;
+discrete angle input advances in bounded steps. `Ctrl++` and `Ctrl+-` zoom
+around the current workspace row, and `Ctrl+0` restores the configured scale
+for this session.
+
+When touchpad gesture support is enabled, the effect's configured `3`- to
+`5`-finger count also controls KWin's pinch-to-zoom gesture on supported
+backends. A two-finger touchscreen pinch uses public Qt Pointer Handlers. Both
+preserve the workspace position under the gesture; keyboard and global
+touchpad zoom preserve the centered current-row position. Horizontal row
+offsets remain attached to desktop IDs and are clamped to their new finite
+bounds after each scale change.
+
+Zoom preview is transactional. Cancellation restores the exact scale and
+camera position from the start of the gesture. A changed session, model,
+output, workspace order, viewport size, or topology cancels stale input instead
+of applying it to a new context. Zoom does not take input ownership during a
+window drag, desktop reorder, viewport pan, close transition, topology refresh,
+or open `F1` help panel. Search remains compatible with the zoom controls.
+
+A passive percentage indicator appears while zoom is being changed or differs
+from the configured starting scale. It accepts no input and adds no timer.
 
 Adding, removing, or reordering desktops updates the visible workspace order
 from KWin's public desktop-list signal before later pointer or gesture input is
@@ -217,9 +249,10 @@ the control cancels; an exact guarded close is consumed without activating or
 dragging the window. Appearance options do not alter layout geometry or
 persistence, and the setting remains disabled by default.
 
-Backdrop color and zoom are configurable. Zoom accepts values from `0.2`
-through `0.75` and defaults to `0.5`. The pointer screen edge defaults to
-`none`, so the effect reserves no edge unless one is explicitly configured.
+Backdrop color and the fresh-session zoom are configurable. Zoom accepts values
+from `0.2` through `0.75` and defaults to `0.5`; interactive session changes do
+not update it. The pointer screen edge defaults to `none`, so the effect
+reserves no edge unless one is explicitly configured.
 
 ## Installation and configuration
 
