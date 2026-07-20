@@ -114,6 +114,10 @@ const columnShell = desktopCard.slice(
   desktopCard.indexOf("id: columnShell"),
   desktopCard.indexOf("id: emptyContentInput"),
 );
+const columnRepeaterLifecycle = desktopCard.slice(
+  desktopCard.indexOf("id: columnRepeater"),
+  desktopCard.indexOf("id: emptyContentInput"),
+);
 const windowRepeaterLifecycle = desktopCard.slice(
   desktopCard.indexOf("id: windowRepeater"),
   desktopCard.indexOf("id: windowPresentation"),
@@ -149,6 +153,14 @@ const columnEligibilityPublication = desktopCard.slice(
 const columnDropArea = desktopCard.slice(
   desktopCard.indexOf("id: columnDropArea"),
   desktopCard.indexOf("onCurrentChanged:"),
+);
+const workspaceGapPreviewSourceSignals = overviewScene.slice(
+  overviewScene.indexOf("target: root.workspaceGapPreviewSource"),
+  overviewScene.indexOf("target: root.spatialColumnDragSource"),
+);
+const spatialColumnDragSourceSignals = overviewScene.slice(
+  overviewScene.indexOf("target: root.spatialColumnDragSource"),
+  overviewScene.indexOf("target: root.spatialWindowDragSource"),
 );
 const columnLifecycle = desktopCard.slice(
   desktopCard.indexOf("function selectedWindowIdForColumn("),
@@ -836,7 +848,7 @@ describe("spatial overview column drag lifecycle", () => {
       "signal columnSpatialDragFinished(var source)",
     );
     expect(columnShell).toContain(
-      "readonly property string selectedWindowId: card.selectedWindowIdForColumn(modelData)",
+      "readonly property string selectedWindowId: card.selectedWindowIdForColumn(sourceColumn)",
     );
     expect(columnShell).toMatch(
       /readonly property bool dragHandleAvailable:\s*\{[\s\S]*indexedListHasBoundedLength\(column\.members, 1, 256\)[\s\S]*column\.members\[selectedMemberIndex\]\.windowId === selectedWindowId;/u,
@@ -862,6 +874,43 @@ describe("spatial overview column drag lifecycle", () => {
     );
     expect(`${columnShell}\n${columnLifecycle}`).not.toMatch(
       /selectedWindowId[^\n]*column\.id|windowId[^\n]*column\.id/u,
+    );
+  });
+
+  it("binds count-model delegates to the authoritative live column identity", () => {
+    expect(columnRepeaterLifecycle).toMatch(
+      /id: columnRepeater\s*model: card\.columns\.length\s*Item \{\s*id: columnShell\s*required property int index/u,
+    );
+    expect(columnShell).toMatch(
+      /readonly property var sourceColumn: Number\.isInteger\(index\)\s*&& index >= 0 && index < card\.columns\.length \? card\.columns\[index\] : null/u,
+    );
+    expect(columnShell).toContain("const column = sourceColumn;");
+    expect(columnShell).not.toContain("modelData");
+    expect(columnLifecycle).toContain(
+      "const column = source ? source.sourceColumn : null;",
+    );
+    expect(columnLifecycle).toContain("columns[source.index] === column");
+    expect(columnLifecycle).toContain(
+      "const expectedColumn = source.sourceColumn;",
+    );
+    expect(columnLifecycle).toContain(
+      "source.sourceColumn !== snapshot.column",
+    );
+    expect(columnLifecycle).not.toContain("source.modelData");
+  });
+
+  it("invalidates eligibility and owned previews when the live column identity changes", () => {
+    expect(columnShell).toContain(
+      "onSourceColumnChanged: card.scheduleColumnDragEligibilityRefresh()",
+    );
+    expect(columnDropArea).toMatch(
+      /target: card\.columnDropHoverSource[\s\S]*function onSourceColumnChanged\(\) \{\s*card\.clearInvalidColumnDropHover\(\);\s*\}/u,
+    );
+    expect(workspaceGapPreviewSourceSignals).toMatch(
+      /function onSourceColumnChanged\(\) \{\s*root\.clearInvalidWorkspaceGapPreview\(\);\s*\}/u,
+    );
+    expect(spatialColumnDragSourceSignals).toMatch(
+      /function onSourceColumnChanged\(\) \{\s*root\.cancelActiveColumnSpatialDrag\(\);\s*\}/u,
     );
   });
 
@@ -1164,7 +1213,7 @@ describe("spatial overview column drag lifecycle", () => {
       "function captureColumnDragSnapshot(source)",
     );
     expect(columnLifecycle).toContain(
-      "const expectedColumn = source.modelData",
+      "const expectedColumn = source.sourceColumn",
     );
     expect(columnLifecycle).toContain(
       "const selectedMemberIndex = expectedColumn.selectedMemberIndex",

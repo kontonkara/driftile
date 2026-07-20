@@ -764,6 +764,10 @@ Rectangle {
             root.clearInvalidWorkspaceGapPreview();
         }
 
+        function onSourceColumnChanged() {
+            root.clearInvalidWorkspaceGapPreview();
+        }
+
         function onSelectedWindowIdChanged() {
             root.clearInvalidWorkspaceGapPreview();
         }
@@ -825,7 +829,7 @@ Rectangle {
             root.cancelActiveColumnSpatialDrag();
         }
 
-        function onModelDataChanged() {
+        function onSourceColumnChanged() {
             root.cancelActiveColumnSpatialDrag();
         }
 

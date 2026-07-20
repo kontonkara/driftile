@@ -416,19 +416,20 @@ Item {
         Repeater {
             id: columnRepeater
 
-            model: card.columns
+            model: card.columns.length
 
             Item {
                 id: columnShell
 
-                required property var modelData
                 required property int index
 
+                readonly property var sourceColumn: Number.isInteger(index)
+                    && index >= 0 && index < card.columns.length ? card.columns[index] : null
                 readonly property var liveGeometryPlan: card.spatialLiveColumnPlan(index)
                 readonly property var frame: card.columnShellFrame(index, liveGeometryPlan)
-                readonly property string selectedWindowId: card.selectedWindowIdForColumn(modelData)
+                readonly property string selectedWindowId: card.selectedWindowIdForColumn(sourceColumn)
                 readonly property bool dragHandleAvailable: {
-                    const column = modelData;
+                    const column = sourceColumn;
                     const selectedMemberIndex = column ? column.selectedMemberIndex : -1;
                     return column && card.indexedListHasBoundedLength(column.members, 1, 256)
                         && (column.presentation === "stacked" || column.presentation === "tabbed")
@@ -471,7 +472,7 @@ Item {
                     card.releaseColumnPointerHover(columnShell);
                 }
                 onIndexChanged: card.scheduleColumnDragEligibilityRefresh()
-                onModelDataChanged: card.scheduleColumnDragEligibilityRefresh()
+                onSourceColumnChanged: card.scheduleColumnDragEligibilityRefresh()
                 onSelectedWindowIdChanged: card.scheduleColumnDragEligibilityRefresh()
 
                 function invalidateColumnDragEligibility() {
@@ -1771,7 +1772,7 @@ Item {
                 card.clearInvalidColumnDropHover();
             }
 
-            function onModelDataChanged() {
+            function onSourceColumnChanged() {
                 card.clearInvalidColumnDropHover();
             }
 
@@ -2486,7 +2487,7 @@ Item {
 
     function columnDragHandleIsEligible(source) {
         try {
-            const column = source ? source.modelData : null;
+            const column = source ? source.sourceColumn : null;
             const selectedPresentation = source ? source.selectedPresentation : null;
             const selectedWindowId = source ? source.selectedWindowId : "";
             const selectedMemberIndex = column ? column.selectedMemberIndex : -1;
@@ -2539,7 +2540,7 @@ Item {
 
             const expectedContext = context;
             const expectedColumns = columns;
-            const expectedColumn = source.modelData;
+            const expectedColumn = source.sourceColumn;
             const expectedColumnIndex = source.index;
             const expectedPresentations = tiledPresentations;
             const expectedDesktop = desktop;
@@ -2744,7 +2745,7 @@ Item {
                     || columnDragActiveSource !== source || !snapshot || !Object.isFrozen(snapshot)
                     || source.sourceContext !== context || source.sourceDesktop !== desktop
                     || source.sourceDesktopId !== desktopId || source.sourceScreen !== screen
-                    || source.modelData !== snapshot.column || source.index !== snapshot.columnIndex
+                    || source.sourceColumn !== snapshot.column || source.index !== snapshot.columnIndex
                     || source.selectedWindowId !== snapshot.selectedWindowId
                     || snapshot.context !== context || snapshot.columns !== columns
                     || !context || context.columns !== columns
