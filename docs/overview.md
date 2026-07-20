@@ -86,15 +86,17 @@ session wrapper. A definite raw-document miss is rejected before the live
 projection snapshot is built. After a newly validated projection is accepted,
 the active scene becomes available before its guarded deep cache copy runs on a
 later event-loop turn. A changed layout or live projection identity takes the
-existing validation path of two matching reads 325 ms apart, while malformed
+existing validation path of two matching reads 120 ms apart, while malformed
 state fails closed and is never replaced with a stale projection.
 
-Ordinary opening settles immediately into the spatial plane, avoiding an
-intermediate full-size projection and its added latency. Interactive gestures
-continue to drive presentation progress directly and settle on completion.
-Closing remains animated. A manually panned current row returns to its live
-camera during the close motion; reopening during that motion settles the plane
-again without discarding the current session zoom.
+Ordinary opening animates from the current full-size row into the spatial plane.
+The projected canvas fades with presentation progress, so neither asynchronous
+Desktop surfaces nor window thumbnails can expose a full-size intermediate
+flash. Interactive gestures continue to drive presentation progress directly
+and settle on completion. Closing uses the same bounded motion in reverse. A
+manually panned current row returns to its live camera during the close motion;
+reopening during that motion resumes from the current progress without
+discarding the current session zoom.
 
 Discrete vertical navigation moves a bounded camera smoothly between workspace
 rows. Precise wheel or touchpad input moves the camera directly, without being
@@ -191,15 +193,15 @@ minimized-state write. It includes the target identity, desktop, output, exact
 Overview rectangle, target frame, and session cameras and zoom. The visible
 scene then stays frozen while a public `KWin.WindowThumbnail` on only the target
 output morphs from the Overview rectangle to the target frame; workspace rows
-and chrome fade without a live reflow. During the close, the source surface
-stays opaque while an eligible asynchronous thumbnail is pending. A ready
-Loader promotes the thumbnail, a Loader error uses the safe monochrome path,
-and completion before either result closes from the still-opaque source rather
-than exposing an empty layer. Desktop selection and a minimized, deleted,
-stale, or topology-invalid window use a row-scale fallback instead. Input
-remains locked throughout the close. Reopening an interrupted close discards
-the stale target and restores the captured session cameras and zoom. This
-handoff adds no private API, geometry write, persistence, or auxiliary timer.
+and chrome fade without a live reflow. The source row always fades with close
+progress. While an eligible asynchronous thumbnail is pending, a single-window
+monochrome shell is already following the source-to-target morph;
+a ready Loader promotes the live thumbnail without ever retaining an opaque
+full-size row. Desktop selection and a minimized, deleted, stale, or
+topology-invalid window use a row-scale fallback instead. Input remains locked
+throughout the close. Reopening an interrupted close discards the stale target
+and restores the captured session cameras and zoom. This handoff adds no private
+API, geometry write, persistence, or auxiliary timer.
 
 Only the selected member of a tabbed column is a target in the spatial plane.
 Unselected tabbed members and minimized windows do not receive synthetic
@@ -219,15 +221,18 @@ and a long press never also activates the window. A touch over a visible close
 region does not fall through to activation or drag. Dragging a visible window
 can transfer it to another desktop or output after the source and destination
 are revalidated. Holding the dragged window over another workspace activates
-that workspace after a bounded dwell while keeping the drag active. On the same
-output, releasing over a window half
-inserts into that stack, releasing at a column boundary keeps a separate column,
-and an empty row accepts a new column. The same exact targets work across
-outputs for tiled windows; floating and non-exact sources retain Plasma's
-native output transfer. The active target is previewed before release. A rejected exact
-placement restores the prior output, desktop, focus, and layout state. Dragging
-the compact workspace number marker reorders eligible desktops. The protected
-final empty desktop is never reordered or crossed.
+that workspace after a bounded dwell while keeping the drag active. A
+scene-level proxy keeps the exact thumbnail under the pointer even while it
+crosses clipped rows. On the same output, releasing over a window half inserts
+into that stack, releasing at a column boundary keeps a separate column, and an
+empty row accepts a new column. The active target preview uses the same solved
+row geometry as the commit, so its highlighted frame represents the resulting
+window position and size rather than only the hit zone. The same exact targets
+work across outputs for tiled windows; floating and non-exact sources retain
+Plasma's native output transfer. A rejected exact placement restores the prior
+output, desktop, focus, and layout state. Dragging the compact workspace number
+marker reorders eligible desktops. The protected final empty desktop is never
+reordered or crossed.
 
 Dropping an eligible tiled window on the insertion line between two workspace
 rows creates one virtual desktop at that exact position and moves the window

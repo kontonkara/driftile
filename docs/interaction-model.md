@@ -91,20 +91,23 @@ activity, output topology, or window-context change discards stale input instead
 of redirecting it to another context.
 
 When the optional transition effect is enabled, deferred window geometry motion
-resumes after the desktop effect releases presentation. An incoming window that
-is still reported hidden receives one same-context successor transition after
-the initial animation completes while the later focus handoff settles.
-Activating the visible exact target settles that handoff after its deferred
-motion is replayed, so unrelated later hidden geometry cannot inherit it.
-Visibility or a desktop or activity change otherwise discards that one-shot
-continuity before use.
+resumes after the desktop effect releases presentation. If KWin still reports
+the outgoing window as active at release, the exact incoming replay remains a
+handoff candidate only while its animation is active. Its late activation
+advances that handoff once, allowing one immediate geometry-before-activation
+focus change to retain its baseline. The successor activation consumes the
+handoff, so unrelated later hidden geometry cannot inherit it. Animation end,
+visibility-context or transition-eligibility loss, deletion, configuration
+reload, or another fullscreen effect otherwise discards the one-shot
+continuation.
 
 ## Floating windows and native states
 
 `Meta+V` toggles an eligible normal window between tiled and manually floating.
 Driftile remembers the floating frame and a tiled reinsertion anchor. Returning
-to tiling restores a valid anchor when possible and otherwise inserts a new
-column through the normal admission path.
+to tiling is explicit through `Meta+V` or the direct tiling action. It restores
+a valid anchor when possible and otherwise inserts a new column through the
+normal admission path.
 
 Tiled and floating windows form separate focus layers. `Meta+Shift+V` switches
 between them. Directional movement nudges a manually floating window; width,
@@ -119,7 +122,9 @@ ownership and do not enter tiled or manual-floating commands.
 Once a window is confirmed as picture-in-picture, that automatic-floating
 ownership lasts for the lifetime of the window. Temporary role changes during
 an interactive drag do not admit it into the tiled layout; Driftile leaves its
-frame under KWin ownership.
+frame under KWin ownership. If the exact role arrives only after the user has
+manually floated and started moving the window, the same lifetime ownership
+takes over without changing KWin's accepted frame.
 
 If a member of a multi-window column enters native fullscreen or maximize,
 Driftile extracts it into a singleton column immediately to the right. Leaving
@@ -142,9 +147,11 @@ A tiled window can be dragged within its current layout:
 - dropping in an empty gutter before, between, or after columns keeps it in a
   separate column.
 
-An eligible manually floating window can use the same exact targets in its
-current context to return to tiling. Cross-desktop and cross-output exact
-placement remains limited to tiled sources.
+A manually floating window stays in its floating layer during an ordinary
+pointer move. Driftile shows no tiled drop target and accepts no implicit
+reinsertion; KWin owns the moved frame. Use `Meta+V` or the direct tiling action
+to return it to the layout. Cross-desktop and cross-output exact placement
+remains limited to tiled sources.
 
 Cross-desktop and cross-output drags preview the exact destination before
 release. A window target keeps the destination stack's width and presentation;
@@ -240,15 +247,18 @@ help panel; a context change cancels an active transaction. Search remains
 usable with zoom. A passive, non-interactive percentage indicator is visible
 while zoom changes or differs from the configured session start.
 
-Ordinary Overview opening settles directly into the spatial plane, avoiding an
-intermediate full-size projection. Closing remains animated, while interactive
-gestures continue to drive presentation progress directly. Reopening during
-that close motion keeps the current session zoom.
+Ordinary Overview opening animates from the current full-size row into the
+spatial plane while the canvas fades with presentation progress. Closing uses
+the same bounded motion in reverse. A single-window monochrome handoff follows
+that source-to-target morph while an asynchronous exit thumbnail loads, without
+retaining an opaque full-size row. Interactive gestures continue to drive
+presentation progress directly.
+Reopening during that close motion keeps the current session zoom.
 
 An unchanged persisted layout with an equivalent projection-relevant live
 snapshot can reuse the last accepted projection synchronously, so a warm
 Overview opens immediately with a fresh session wrapper. Changed identity stays
-on the existing fail-closed path of two matching reads 325 ms apart, and
+on the existing fail-closed path of two matching reads 120 ms apart, and
 malformed input never revives a stale projection.
 
 A one-finger touchscreen drag can start across the visible Overview canvas,
@@ -307,11 +317,13 @@ touchpad, and touchscreen input. Their touch target is modestly enlarged
 without changing layout, release outside cancels, and an exact guarded close
 cannot activate or drag the window.
 
-A visible window can be dragged to another workspace or output, into an exact
-stack position, or into a separate-column gutter. Dropping an eligible tiled
-window on the insertion line between two workspace rows creates a desktop at
-that position and moves the window there. Dragging a workspace number marker
-reorders eligible desktops; the protected empty tail cannot be moved.
+A visible tiled window can be dragged to another workspace or output, into an
+exact stack position, or into a separate-column gutter. Its thumbnail follows
+the pointer across row clipping, and the active zone previews the solved final
+position and size before release. Dropping an eligible tiled window on the
+insertion line between two workspace rows creates a desktop at that position
+and moves the window there. Dragging a workspace number marker reorders eligible
+desktops; the protected empty tail cannot be moved.
 
 Tabbed columns expose only their selected member in the spatial plane.
 Minimized windows use compact actionable placeholders instead of draggable

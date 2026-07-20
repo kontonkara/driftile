@@ -504,7 +504,7 @@ RuntimeState
   toggleGeometryTransitions: Map<WindowId, { contextKey, expectedFrame, settlementArmed }>
   desktopLifecycle: { ownedDesktopIds, pendingMutation }
   topologyBarrier: { revision, affectedOutputs, stableSample }
-  pointerMoveIntent: { contextKey, layoutSnapshot, participants, previewGeometry, finalCursor, sourceOutput, sourceDesktop, externalDrop, floating }
+  pointerMoveIntent: { contextKey, layoutSnapshot, participants, previewGeometry, finalCursor, sourceOutput, sourceDesktop, externalDrop }
   pointerResizeIntent: { contextKey, layoutSnapshot, participants, initialFrame, acceptedFrame, activeColumnId }
   pointerResizeSettlement: { contextKey, targets, rollbackFrames, phase, attempts, stableSamples }
 ```
@@ -579,7 +579,10 @@ A manually floating window tracks its live context separately from its original
 reinsertion anchor. When it is captured in another context, persistence derives
 a deterministic local fallback without mutating the runtime anchor. The
 historical cross-context anchor remains runtime-only and is not recovered across
-a reload made while the window is away.
+a reload made while the window is away. Its ordinary pointer move remains a
+native KWin operation and never creates a tiled pointer intent, preview, or
+implicit ownership transition. An explicit toggle or direct tiling action still
+uses the saved anchor.
 
 Directional movement and contextual centering share one guarded single-window
 frame transaction. It performs no window, column, or layout enumeration, accepts
@@ -708,13 +711,6 @@ inspected safely within the codec bound.
   unchanged while guarded geometry writes stage the attach preview. On commit,
   append and select the active window with automatic height while the target
   width and stacked or tabbed presentation win and focus remains active.
-- During a same-context drag of one manually floating window, preview the exact
-  tiled window half before any empty gutter. Attach only after KWin finishes the
-  move and the geometry lease settles; a gutter singleton restores the saved
-  width and presentation.
-  Compensate a failed transition only for frames that retain captured write
-  ownership; otherwise leave replacement state untouched and schedule
-  dirty-context recovery.
 - After KWin completes physical output and desktop movement, resolve one exact
   visible window first and otherwise one empty horizontal gutter. Exact targets
   retain midpoint insertion and destination width. A gutter inserts a fresh

@@ -26,8 +26,8 @@ The ownership rule is strict:
   exact-window-first adoption into a window or empty destination gutter after
   KWin moves the active tiled window to a selected desktop or another visible
   output.
-- Finish-only pointer tiling for one relation-free manually floating window in
-  the same context, with exact-window priority over empty gutters.
+- Native pointer movement for manually floating windows, with no implicit tiled
+  preview or reinsertion; returning to tiling requires an explicit action.
 - Finish-only horizontal column-width and vertical stacked-window-height
   pointer-resize adoption.
 - Vertical window stacks and tabbed presentation within columns.
@@ -534,6 +534,10 @@ Driftile must integrate with, not duplicate:
   window, its marker precedes unrelated visual targets. Keyboard and short
   touchscreen activation use the same guarded path as pointer activation;
   touchscreen long press remains reserved for an eligible window drag.
+- An eligible tiled-window drag presents one scene-level thumbnail proxy across
+  clipped workspace rows. Exact stack, column-boundary, and empty-row targets
+  preview the same solved final position and size used by the guarded drop
+  command. Floating sources remain outside this exact-placement path.
 - The disabled-by-default overview close-button option keeps controls visible
   only on eligible, sufficiently large previews and minimized placeholders.
   They accept mouse, touchpad, and touchscreen input. A modestly enlarged touch
