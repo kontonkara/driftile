@@ -5762,6 +5762,13 @@ let
         record_focus_state \
           "physical overview search input changed a query and closed without restarting KWin"
 
+        if ! activate_window "$xterm_title" \
+          || ! wait_for_active "$xterm_title"; then
+          overview_checkpoint_failure \
+            "the whole-column workspace-gap source could not be selected exactly"
+          return 1
+        fi
+
         spatial_drop_source_frame=$(
           capture_stable_window_frame_contains "$xterm_title" 2>/dev/null \
             || true
@@ -5830,9 +5837,20 @@ let
             "the workspace-gap drop did not move the exact XWayland window"
           return 1
         fi
-        if ! wait_for_window_desktop "$firefox_title" "$primary_desktop_id"; then
+        if ! wait_for_window_desktop \
+            "$firefox_title" \
+            "$workspace_gap_created_desktop_id"; then
           overview_checkpoint_failure \
-            "the workspace-gap drop changed the peer window desktop"
+            "the whole-column workspace-gap drop left one stack member behind"
+          return 1
+        fi
+        if ! wait_for_pointer_stack_order \
+            "$firefox_title" \
+            "$xterm_title" \
+            "$spatial_drop_target_width" \
+          || ! wait_for_active "$xterm_title"; then
+          overview_checkpoint_failure \
+            "the whole-column workspace-gap drop changed member order, width, or selection"
           return 1
         fi
         if [[ "$(effect_active_state "$overview_plugin_id" 2>/dev/null || true)" != true ]]; then
@@ -5860,7 +5878,7 @@ let
           return 1
         fi
 
-        if ! invoke_shortcut "driftile_move_window_to_previous_desktop" \
+        if ! invoke_shortcut "driftile_move_column_to_previous_desktop" \
           || ! wait_for_current_desktop "$primary_desktop_id" \
           || ! wait_for_window_desktop "$xterm_title" "$primary_desktop_id" \
           || ! wait_for_window_desktop "$firefox_title" "$primary_desktop_id" \
@@ -5869,7 +5887,7 @@ let
             "$secondary_desktop_id" \
           || ! wait_for_active "$xterm_title"; then
           overview_checkpoint_failure \
-            "workspace-gap cleanup did not return xterm and remove the created desktop"
+            "workspace-gap cleanup did not return the whole column and remove the created desktop"
           return 1
         fi
 
@@ -5886,40 +5904,16 @@ let
         }
         after_semantic_checkpoint="''${after_checkpoint#*"$checkpoint_separator"}"
         if [[ "$after_semantic_checkpoint" != "$baseline_semantic_checkpoint" \
-          || "$after_active_layout_digest" != "$baseline_active_layout_digest" ]]; then
-          if ! invoke_shortcut "driftile_move_window_left" \
-            || ! wait_for_pointer_stack_order \
-              "$firefox_title" \
-              "$xterm_title" \
-              "$spatial_drop_target_width"; then
-            overview_checkpoint_failure \
-              "workspace-gap cleanup did not restore the exact source stack"
-            return 1
-          fi
-          after_checkpoint=$(capture_overview_checkpoint "$@") || {
-            overview_checkpoint_failure \
-              "the restored workspace-gap source stack did not stabilize"
-            return 1
-          }
-          after_active_layout_digest=$(capture_stable_overview_active_semantic_digest \
-            "$workspace_gap_created_desktop_id") || {
-            overview_checkpoint_failure \
-              "the restored workspace-gap active layout snapshot did not stabilize or retained the removed workspace"
-            return 1
-          }
-          after_semantic_checkpoint="''${after_checkpoint#*"$checkpoint_separator"}"
-        fi
-        if [[ "$after_semantic_checkpoint" != "$baseline_semantic_checkpoint" \
           || "$after_active_layout_digest" != "$baseline_active_layout_digest" ]] \
           || ! overview_component_errors_after "$journal_cursor"; then
           overview_checkpoint_failure \
-            "workspace-gap cleanup did not restore the exact desktops, window, and layout"
+            "workspace-gap cleanup did not restore the exact desktops, whole column, and layout"
           return 1
         fi
         spatial_drop_checkpoint=$after_checkpoint
 
         record_focus_state \
-          "a physical Overview gap drop created one workspace, moved a real window, and cleaned up exactly"
+          "a physical Overview column-handle gap drop created one workspace, moved the whole stack, and cleaned up exactly"
 
         if ! unload_overview_effect \
           || ! wait_for_shortcut_registration_state "$overview_shortcut" true; then
@@ -10088,7 +10082,7 @@ let
         local ready_file=/tmp/shared/driftile-overview-window-drop-ready
         local sent_file=/tmp/shared/driftile-overview-window-drop-sent
         local source_frame=$1
-        local source_height
+        local _source_height
         local source_width
         local source_x
         local source_x_milli
@@ -10104,7 +10098,7 @@ let
           source_x \
           source_y \
           source_width \
-          source_height \
+          _source_height \
           <<< "$source_frame"
         IFS=, read -r \
           output_x \
@@ -10122,9 +10116,7 @@ let
         source_x_milli=$((output_x * 1000 + viewport_origin_x_milli \
           + (source_x - output_x) * zoom_milli \
           + source_width * zoom_milli / 2))
-        source_y_milli=$((output_y * 1000 + edge_margin_milli \
-          + (source_y - output_y) * zoom_milli \
-          + source_height * zoom_milli / 2))
+        source_y_milli=$((output_y * 1000 + edge_margin_milli + 13000))
         source_x=$(((source_x_milli + 500) / 1000))
         source_y=$(((source_y_milli + 500) / 1000))
         destination_x=$source_x
