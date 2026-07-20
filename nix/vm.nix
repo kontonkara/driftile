@@ -782,6 +782,31 @@ let
           | jq --exit-status --raw-output '.data | length'
       }
 
+      virtual_desktop_rows() {
+        busctl --user --json=short get-property \
+          org.kde.KWin \
+          /VirtualDesktopManager \
+          org.kde.KWin.VirtualDesktopManager \
+          rows 2>/dev/null \
+          | jq --exit-status --raw-output \
+            '.data | select(type == "number" and . >= 1 and . <= 25)'
+      }
+
+      wait_for_virtual_desktop_rows() {
+        local attempt
+        local expected=$1
+
+        for ((attempt = 0; attempt < 100; attempt += 1)); do
+          if [[ "$(virtual_desktop_rows 2>/dev/null || true)" == "$expected" ]]; then
+            return 0
+          fi
+
+          sleep 0.1
+        done
+
+        return 1
+      }
+
       virtual_desktop_id() {
         local index=$1
 
@@ -1004,6 +1029,7 @@ let
         done
 
         [[ -n "$secondary_desktop_id" ]] || return 1
+        wait_for_virtual_desktop_rows 2 || return 1
         set_current_desktop "$primary_desktop_id"
       }
 
@@ -4967,10 +4993,10 @@ let
           printf 'overview active: %s\n' \
             "$(effect_active_state "$overview_plugin_id" 2>/dev/null || true)"
           printf 'expected KWin process: %s\n' \
-            "''${kwin_horizontal_wheel_process_id:-unavailable}"
+            "''${kwin_overview_wheel_process_id:-unavailable}"
           printf 'KWin process: %s\n' "$kwin_id"
           printf 'pre-Escape active window: %s\n' \
-            "''${horizontal_wheel_active_caption:-unavailable}"
+            "''${overview_wheel_active_caption:-unavailable}"
           printf 'active window: %s\n' "$active_caption"
         } >> /tmp/shared/driftile-focus-diagnostics
 
@@ -4991,9 +5017,9 @@ let
         local firefox_title=$4
         local fixture_checkpoint
         local fixture_sequence
-        local horizontal_wheel_active_caption=""
+        local overview_wheel_active_caption=""
         local journal_cursor
-        local kwin_horizontal_wheel_process_id
+        local kwin_overview_wheel_process_id
         local kwin_live_camera_process_id
         local kwin_search_process_id
         local kwin_spatial_drop_process_id
@@ -5089,6 +5115,7 @@ let
             trailing_desktop_id \
             "$primary_desktop_id" \
             "$secondary_desktop_id" \
+          || ! wait_for_virtual_desktop_rows 3 \
           || [[ "$trailing_desktop_id" == "$primary_desktop_id" ]] \
           || [[ "$trailing_desktop_id" == "$secondary_desktop_id" ]] \
           || ! set_current_desktop "$primary_desktop_id" \
@@ -5196,18 +5223,18 @@ let
         record_focus_state \
           "the active overview survived a real current-row tiled frame change"
 
-        if ! kwin_horizontal_wheel_process_id=$(kwin_process_id) \
-          || ! request_physical_overview_horizontal_wheel "$output_frame"; then
+        if ! kwin_overview_wheel_process_id=$(kwin_process_id) \
+          || ! request_physical_overview_wheel_controls "$output_frame"; then
           overview_checkpoint_failure \
-            "the physical horizontal wheel controls were not delivered to the multi-column overview"
+            "the physical vertical and horizontal wheel controls were not delivered to the multi-column overview"
           return 1
         fi
         sleep 0.3
         if [[ "$(effect_active_state "$overview_plugin_id" 2>/dev/null || true)" != true ]] \
-          || ! kwin_process_is_unchanged "$kwin_horizontal_wheel_process_id" \
+          || ! kwin_process_is_unchanged "$kwin_overview_wheel_process_id" \
           || ! overview_component_errors_after "$journal_cursor"; then
           overview_checkpoint_failure \
-            "horizontal wheel controls did not preserve the active overview and KWin process"
+            "wheel controls did not preserve the active overview and KWin process"
           return 1
         fi
         if ! wait_for_current_desktop "$primary_desktop_id"; then
@@ -5215,30 +5242,30 @@ let
             "shifted horizontal wheel input leaked into vertical workspace navigation"
           return 1
         fi
-        horizontal_wheel_active_caption=$(
+        overview_wheel_active_caption=$(
           active_window_caption 2>/dev/null || printf unavailable
         )
 
         if ! request_physical_shortcut overview-escape; then
           overview_checkpoint_failure \
-            "physical Escape was not delivered to the horizontal-wheel overview checkpoint"
+            "physical Escape was not delivered to the overview wheel checkpoint"
           return 1
         fi
 
         if ! wait_for_effect_active_state "$overview_plugin_id" false; then
           if ! kwin_process_is_unchanged \
-              "$kwin_horizontal_wheel_process_id"; then
+              "$kwin_overview_wheel_process_id"; then
             overview_checkpoint_failure \
-              "the KWin process changed while waiting for physical Escape to close the horizontal-wheel overview checkpoint"
+              "the KWin process changed while waiting for physical Escape to close the overview wheel checkpoint"
           else
             overview_checkpoint_failure \
-              "physical Escape did not close the horizontal-wheel overview checkpoint"
+              "physical Escape did not close the overview wheel checkpoint"
           fi
           return 1
         fi
 
         if ! kwin_process_is_unchanged \
-            "$kwin_horizontal_wheel_process_id" \
+            "$kwin_overview_wheel_process_id" \
           || ! kwin_process_is_unchanged \
             "$kwin_live_camera_process_id"; then
           overview_checkpoint_failure \
@@ -5248,12 +5275,12 @@ let
 
         if ! wait_for_active "$xterm_title"; then
           if ! kwin_process_is_unchanged \
-              "$kwin_horizontal_wheel_process_id"; then
+              "$kwin_overview_wheel_process_id"; then
             overview_checkpoint_failure \
-              "the KWin process changed while restoring focus after the horizontal-wheel overview checkpoint"
+              "the KWin process changed while restoring focus after the overview wheel checkpoint"
           else
             overview_checkpoint_failure \
-              "physical Escape closed the horizontal-wheel overview checkpoint but did not restore the expected active window"
+              "physical Escape closed the overview wheel checkpoint but did not restore the expected active window"
           fi
           return 1
         fi
@@ -5261,25 +5288,25 @@ let
           "$@" \
           "$title_desktop_destination") || {
           overview_checkpoint_failure \
-            "the horizontal-wheel overview checkpoint did not stabilize after closing"
+            "the overview wheel checkpoint did not stabilize after closing"
           return 1
         }
         if [[ "$after_checkpoint" != "$fixture_checkpoint" ]] \
-          || ! kwin_process_is_unchanged "$kwin_horizontal_wheel_process_id" \
+          || ! kwin_process_is_unchanged "$kwin_overview_wheel_process_id" \
           || ! kwin_process_is_unchanged "$kwin_live_camera_process_id" \
           || ! overview_component_errors_after "$journal_cursor"; then
           overview_checkpoint_failure \
-            "live-camera and horizontal wheel controls changed applications, layout state, or the KWin process"
+            "live-camera and wheel controls changed applications, layout state, or the KWin process"
           return 1
         fi
 
         record_focus_state \
-          "a real current-row frame change and physical horizontal wheel controls closed cleanly without restarting KWin"
+          "a real current-row frame change and physical vertical and horizontal wheel controls closed cleanly without restarting KWin"
 
         if ! invoke_shortcut "$overview_shortcut" \
           || ! wait_for_effect_active_state "$overview_plugin_id" true; then
           overview_checkpoint_failure \
-            "the overview could not reopen after the horizontal-wheel checkpoint"
+            "the overview could not reopen after the wheel checkpoint"
           return 1
         fi
         sleep 0.3
@@ -5348,6 +5375,7 @@ let
             "$secondary_desktop_id" \
             "$primary_desktop_id" \
             "$trailing_desktop_id" \
+          || ! wait_for_virtual_desktop_rows 3 \
           || ! wait_for_current_desktop "$primary_desktop_id" \
           || ! wait_for_active "$xterm_title" \
           || ! wait_for_window_desktop \
@@ -5390,7 +5418,8 @@ let
           || ! wait_for_active "$xterm_title" \
           || ! wait_for_desktop_sequence \
             "$primary_desktop_id" \
-            "$secondary_desktop_id"; then
+            "$secondary_desktop_id" \
+          || ! wait_for_virtual_desktop_rows 2; then
           overview_checkpoint_failure \
             "the existing desktop shortcut and calculator cleanup did not restore the reorder fixture"
           return 1
@@ -9450,8 +9479,11 @@ let
         : > "/tmp/shared/driftile-wheel-control-$1-verified"
       }
 
-      request_physical_overview_horizontal_wheel() {
+      request_physical_overview_wheel_controls() {
         local attempt
+        local down_sent_file=/tmp/shared/driftile-overview-vertical-wheel-down-sent
+        local down_observed_file=/tmp/shared/driftile-overview-vertical-wheel-down-observed
+        local down_verified_file=/tmp/shared/driftile-overview-vertical-wheel-down-verified
         local output_frame=$1
         local output_height
         local output_width
@@ -9459,9 +9491,12 @@ let
         local output_y
         local pointer_x
         local pointer_y
-        local ready_file=/tmp/shared/driftile-overview-horizontal-wheel-ready
-        local sent_file=/tmp/shared/driftile-overview-horizontal-wheel-sent
+        local ready_file=/tmp/shared/driftile-overview-wheel-controls-ready
+        local sent_file=/tmp/shared/driftile-overview-wheel-controls-sent
         local temporary_file="$ready_file.tmp"
+        local up_sent_file=/tmp/shared/driftile-overview-vertical-wheel-up-sent
+        local up_observed_file=/tmp/shared/driftile-overview-vertical-wheel-up-observed
+        local up_verified_file=/tmp/shared/driftile-overview-vertical-wheel-up-verified
 
         frame_is_valid "$output_frame" || return 1
         IFS=, read -r \
@@ -9473,7 +9508,16 @@ let
         pointer_x=$((output_x + output_width / 2))
         pointer_y=$((output_y + output_height / 2))
 
-        rm -f "$ready_file" "$sent_file" "$temporary_file"
+        rm -f \
+          "$down_sent_file" \
+          "$down_observed_file" \
+          "$down_verified_file" \
+          "$ready_file" \
+          "$sent_file" \
+          "$temporary_file" \
+          "$up_sent_file" \
+          "$up_observed_file" \
+          "$up_verified_file"
         printf '%s %s %s %s %s %s\n' \
           "$pointer_x" \
           "$pointer_y" \
@@ -9483,6 +9527,30 @@ let
           "$output_height" \
           > "$temporary_file"
         mv "$temporary_file" "$ready_file"
+
+        wait_for_physical_wheel_control_file "$down_sent_file" \
+          || return 1
+        sleep 0.5
+        printf 'expected=%s actual=%s sequence=%s\n' \
+          "$secondary_desktop_id" \
+          "$(current_desktop_id 2>/dev/null || printf unavailable)" \
+          "$(virtual_desktop_sequence 2>/dev/null || printf unavailable)" \
+          > "$down_observed_file"
+        wait_for_current_desktop "$secondary_desktop_id" \
+          || return 1
+        : > "$down_verified_file"
+
+        wait_for_physical_wheel_control_file "$up_sent_file" \
+          || return 1
+        sleep 0.5
+        printf 'expected=%s actual=%s sequence=%s\n' \
+          "$primary_desktop_id" \
+          "$(current_desktop_id 2>/dev/null || printf unavailable)" \
+          "$(virtual_desktop_sequence 2>/dev/null || printf unavailable)" \
+          > "$up_observed_file"
+        wait_for_current_desktop "$primary_desktop_id" \
+          || return 1
+        : > "$up_verified_file"
 
         for ((attempt = 0; attempt < 100; attempt += 1)); do
           [[ -f "$sent_file" ]] && return 0
@@ -12627,8 +12695,8 @@ let
               <<< "$output_frame"
             source_x=$((firefox_x + (firefox_width / 2)))
             source_y=$((firefox_y + (firefox_height / 2)))
-            edge_x=$((output_x + output_width - 1))
-            edge_y=$source_y
+            edge_x=$source_x
+            edge_y=$((output_y + output_height - 1))
 
             if ((source_x >= output_x \
               && source_x < output_x + output_width \
@@ -13807,6 +13875,30 @@ let
       activity_xterm_title=""
       trap cleanup_temporary_windows EXIT
       : > /tmp/shared/driftile-focus-diagnostics
+      if [[ "$loaded" != true \
+        || "$shortcut_editor_verified" != true \
+        || "$desktops_ready" != true ]]; then
+        {
+          printf '\n[early VM readiness failed]\n'
+          printf 'script loaded: %s\n' "$loaded"
+          printf 'shortcut editor verified: %s\n' "$shortcut_editor_verified"
+          printf 'desktops ready: %s\n' "$desktops_ready"
+          printf 'desktop count: %s\n' \
+            "$(virtual_desktop_count 2>/dev/null || printf unavailable)"
+          printf 'desktop rows: %s\n' \
+            "$(virtual_desktop_rows 2>/dev/null || printf unavailable)"
+          printf 'recent user journal:\n'
+          journalctl --user -n 80 --no-pager -o cat 2>/dev/null || true
+          printf 'recent KWin journal:\n'
+          journalctl --user \
+            --unit plasma-kwin_wayland.service \
+            -n 160 \
+            --no-pager \
+            -o cat \
+            2>/dev/null \
+            || true
+        } >> /tmp/shared/driftile-focus-diagnostics
+      fi
 
       start_konsole_window first_window title_a "$base_title_a" \
         && wait_for_window "$title_a" \

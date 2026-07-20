@@ -169,9 +169,9 @@ monitor_guest() {
   local overview_desktop_drag_ready_file="$temporary_directory/xchg/driftile-overview-desktop-drag-ready"
   local overview_desktop_drag_sent=false
   local overview_desktop_drag_sent_file="$temporary_directory/xchg/driftile-overview-desktop-drag-sent"
-  local overview_horizontal_wheel_ready_file="$temporary_directory/xchg/driftile-overview-horizontal-wheel-ready"
-  local overview_horizontal_wheel_sent=false
-  local overview_horizontal_wheel_sent_file="$temporary_directory/xchg/driftile-overview-horizontal-wheel-sent"
+  local overview_wheel_controls_ready_file="$temporary_directory/xchg/driftile-overview-wheel-controls-ready"
+  local overview_wheel_controls_sent=false
+  local overview_wheel_controls_sent_file="$temporary_directory/xchg/driftile-overview-wheel-controls-sent"
   local overview_window_drop_ready_file="$temporary_directory/xchg/driftile-overview-window-drop-ready"
   local overview_window_drop_sent=false
   local overview_window_drop_sent_file="$temporary_directory/xchg/driftile-overview-window-drop-sent"
@@ -253,7 +253,7 @@ monitor_guest() {
     [same-stack]=false
   )
 
-  for ((attempt = 0; attempt < 1800; attempt += 1)); do
+  for ((attempt = 0; attempt < 3000; attempt += 1)); do
     for key_name in \
       bracket-right \
       close-window \
@@ -398,18 +398,18 @@ monitor_guest() {
       overview_window_drop_sent=true
     fi
 
-    if [[ "$overview_horizontal_wheel_sent" == false \
-      && -f "$overview_horizontal_wheel_ready_file" ]]; then
-      if ! send_physical_overview_horizontal_wheel \
-        "$overview_horizontal_wheel_ready_file"; then
-        printf 'Could not send the physical overview horizontal wheel controls.\n' >&2
+    if [[ "$overview_wheel_controls_sent" == false \
+      && -f "$overview_wheel_controls_ready_file" ]]; then
+      if ! send_physical_overview_wheel_controls \
+        "$overview_wheel_controls_ready_file"; then
+        printf 'Could not send the physical overview vertical and horizontal wheel controls.\n' >&2
         finish_full_vm_monitor || true
         return 1
       fi
 
-      printf 'The VM received the physical overview horizontal wheel controls.\n'
-      : > "$overview_horizontal_wheel_sent_file"
-      overview_horizontal_wheel_sent=true
+      printf 'The VM received the physical overview vertical and horizontal wheel controls.\n'
+      : > "$overview_wheel_controls_sent_file"
+      overview_wheel_controls_sent=true
     fi
 
     pointer_resize_ready_file="$temporary_directory/xchg/driftile-pointer-resize-horizontal-ready"
@@ -492,9 +492,9 @@ monitor_guest() {
       fi
 
       if [[ "$(<"$focus_file")" == true ]]; then
-        printf 'The VM verified physical shortcut and pointer routing, global wheel controls, physical Meta+Q close-window handling, desktop switching and reordering, same-output cross-desktop pointer adoption, minimized-slot navigation, column reordering, horizontal extraction, consume and expel past minimized peers, native fullscreen and maximize, stacked fullscreen and maximize extraction past minimized peers, borderless ownership, numbered dynamic desktops, whole-column desktop transfer past a minimized member, floating desktop transfers, output transfers, floating-layer navigation, focus, stack editing, pointer reinsertion and horizontal pointer-resize adoption, live touchpad-navigation settings, physical overview keyboard and horizontal-wheel navigation, advanced column view, column and window sizing, scrolling, mixed Konsole, Firefox, KDE Calculator, XWayland xterm, and fixed-size XWayland fixtures, plus repeated real-application lifecycles.\n'
+        printf 'The VM verified physical shortcut and pointer routing, global wheel controls, physical Meta+Q close-window handling, desktop switching and reordering, same-output cross-desktop pointer adoption, minimized-slot navigation, column reordering, horizontal extraction, consume and expel past minimized peers, native fullscreen and maximize, stacked fullscreen and maximize extraction past minimized peers, borderless ownership, numbered dynamic desktops, whole-column desktop transfer past a minimized member, floating desktop transfers, output transfers, floating-layer navigation, focus, stack editing, pointer reinsertion and horizontal pointer-resize adoption, live touchpad-navigation settings, physical overview keyboard plus vertical- and horizontal-wheel navigation, advanced column view, column and window sizing, scrolling, mixed Konsole, Firefox, KDE Calculator, XWayland xterm, and fixed-size XWayland fixtures, plus repeated real-application lifecycles.\n'
       else
-        printf 'The VM failed to verify physical shortcut or pointer routing, global wheel controls, physical Meta+Q close-window handling, desktop switching or reordering, same-output cross-desktop pointer adoption, minimized-slot navigation, column reordering, horizontal extraction, consume or expel past minimized peers, native fullscreen or maximize, stacked fullscreen or maximize extraction past minimized peers, borderless ownership, numbered dynamic desktops, whole-column desktop transfer past a minimized member, floating desktop transfers, output transfers, floating-layer navigation, focus, stack editing, pointer reinsertion or horizontal pointer-resize adoption, live touchpad-navigation settings, physical overview keyboard or horizontal-wheel navigation, advanced column view, column or window sizing, scrolling, mixed primary application fixtures, or the repeated real-application lifecycle pool.\n' >&2
+        printf 'The VM failed to verify physical shortcut or pointer routing, global wheel controls, physical Meta+Q close-window handling, desktop switching or reordering, same-output cross-desktop pointer adoption, minimized-slot navigation, column reordering, horizontal extraction, consume or expel past minimized peers, native fullscreen or maximize, stacked fullscreen or maximize extraction past minimized peers, borderless ownership, numbered dynamic desktops, whole-column desktop transfer past a minimized member, floating desktop transfers, output transfers, floating-layer navigation, focus, stack editing, pointer reinsertion or horizontal pointer-resize adoption, live touchpad-navigation settings, physical overview keyboard or vertical- and horizontal-wheel navigation, advanced column view, column or window sizing, scrolling, mixed primary application fixtures, or the repeated real-application lifecycle pool.\n' >&2
         failed=true
 
         if [[ -f "$diagnostics_file" ]]; then
@@ -516,7 +516,7 @@ monitor_guest() {
     sleep 0.2
   done
 
-  printf 'The VM did not report Driftile status within 360 seconds.\n' >&2
+  printf 'The VM did not report Driftile status within 600 seconds.\n' >&2
   set_physical_pointer_drag_state false >/dev/null 2>&1 || true
   finish_full_vm_monitor || true
   return 1
@@ -862,13 +862,15 @@ send_physical_wheel_control() {
   done
 }
 
-send_physical_overview_horizontal_wheel() {
+send_physical_overview_wheel_controls() {
   local absolute_x
   local absolute_y
   local capabilities='{"execute":"qmp_capabilities"}'
   local coordinate_file=$1
+  local exchange_directory
   local extra
   local horizontal_wheel_input='{"execute":"input-send-event","arguments":{"events":[{"type":"btn","data":{"down":true,"button":"wheel-right"}},{"type":"btn","data":{"down":false,"button":"wheel-right"}}]}}'
+  local marker_prefix
   local output_height
   local output_width
   local output_x
@@ -877,6 +879,8 @@ send_physical_overview_horizontal_wheel() {
   local shift_up_input='{"execute":"input-send-event","arguments":{"events":[{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"shift"}}}]}}'
   local shifted_wheel_input='{"execute":"input-send-event","arguments":{"events":[{"type":"btn","data":{"down":true,"button":"wheel-down"}},{"type":"btn","data":{"down":false,"button":"wheel-down"}}]}}'
   local settle_seconds=0.05
+  local vertical_wheel_down_input='{"execute":"input-send-event","arguments":{"events":[{"type":"btn","data":{"down":true,"button":"wheel-down"}},{"type":"btn","data":{"down":false,"button":"wheel-down"}}]}}'
+  local vertical_wheel_up_input='{"execute":"input-send-event","arguments":{"events":[{"type":"btn","data":{"down":true,"button":"wheel-up"}},{"type":"btn","data":{"down":false,"button":"wheel-up"}}]}}'
   local x
   local y
 
@@ -897,6 +901,35 @@ send_physical_overview_horizontal_wheel() {
   absolute_pointer_available || return 1
   send_absolute_pointer_position "$absolute_x" "$absolute_y" || return 1
   sleep 0.1
+
+  exchange_directory=$(dirname -- "$coordinate_file") || return 1
+  marker_prefix="$exchange_directory/driftile-overview-vertical-wheel"
+
+  send_qmp_commands "$capabilities" "$vertical_wheel_down_input" || return 1
+  : > "$marker_prefix-down-sent"
+  if ! wait_for_guest_exchange_file "$marker_prefix-down-verified"; then
+    if [[ -f "$marker_prefix-down-observed" ]]; then
+      printf 'The guest rejected physical overview wheel-down: %s\n' \
+        "$(<"$marker_prefix-down-observed")" >&2
+    else
+      printf 'The guest did not observe physical overview wheel-down.\n' >&2
+    fi
+    return 1
+  fi
+  sleep 0.2
+
+  send_qmp_commands "$capabilities" "$vertical_wheel_up_input" || return 1
+  : > "$marker_prefix-up-sent"
+  if ! wait_for_guest_exchange_file "$marker_prefix-up-verified"; then
+    if [[ -f "$marker_prefix-up-observed" ]]; then
+      printf 'The guest rejected physical overview wheel-up: %s\n' \
+        "$(<"$marker_prefix-up-observed")" >&2
+    else
+      printf 'The guest did not observe physical overview wheel-up.\n' >&2
+    fi
+    return 1
+  fi
+  sleep 0.2
 
   send_qmp_commands "$capabilities" "$horizontal_wheel_input" || return 1
   sleep "$settle_seconds"
