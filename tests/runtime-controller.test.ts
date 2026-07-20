@@ -1011,6 +1011,86 @@ function blockWindowFocus(
   });
 }
 
+interface WindowRemovalFocusRecoveryProbe {
+  activeWindowOwnsShellFocus(removedId: WindowId): boolean;
+  readonly pendingWindowRemovalFocusRecovery: {
+    readonly phase: "retry-scheduled" | "settling" | "waiting";
+  } | null;
+}
+
+function windowRemovalFocusRecoveryProbe(
+  controller: RuntimeController,
+): WindowRemovalFocusRecoveryProbe {
+  return controller as unknown as WindowRemovalFocusRecoveryProbe;
+}
+
+function createCloseFocusRecoveryFixture(
+  interimOverrides: Partial<KWinWindow>,
+  observeInterimAtStart = true,
+) {
+  const output = createOutput("DP-1", 0);
+  const desktop = { id: "desktop-1" };
+  const previous = createTrackedWindow("previous", output, desktop);
+  const removed = createTrackedWindow("removed", output, desktop);
+  const interim = createTrackedWindow("interim", output, desktop, {
+    normalWindow: false,
+    specialWindow: true,
+    ...interimOverrides,
+  });
+  const fixture = createWorkspace(
+    output,
+    desktop,
+    [output],
+    [desktop],
+    observeInterimAtStart
+      ? [previous.window, removed.window, interim.window]
+      : [previous.window, removed.window],
+  );
+  const scheduler = new ManualScheduler();
+  const controller = new RuntimeController(fixture.workspace, {
+    clientAreaOption: 2,
+    schedule: scheduler.schedule,
+  });
+
+  return {
+    controller,
+    desktop,
+    fixture,
+    interim,
+    output,
+    previous,
+    removed,
+    scheduler,
+  };
+}
+
+function advanceWindowRemovalFocusRecoveryToWaiting(
+  controller: RuntimeController,
+  scheduler: ManualScheduler,
+): void {
+  const probe = windowRemovalFocusRecoveryProbe(controller);
+
+  for (
+    let callbackCount = 0;
+    callbackCount < MAX_SCHEDULED_SETTLEMENT_CALLBACKS;
+    callbackCount += 1
+  ) {
+    if (probe.pendingWindowRemovalFocusRecovery?.phase === "waiting") {
+      return;
+    }
+    if (
+      !probe.pendingWindowRemovalFocusRecovery ||
+      scheduler.pendingCount === 0
+    ) {
+      break;
+    }
+
+    scheduler.flush();
+  }
+
+  throw new Error("window removal focus recovery did not enter waiting");
+}
+
 interface FullscreenControl {
   commitDeferred(): boolean;
   externalCommit(fullScreen: boolean): void;
@@ -2461,6 +2541,313 @@ describe("RuntimeController", () => {
     expect(fixture.workspace.activeWindow).toBe(previous.window);
     expect(fixture.activationCount).toBe(activationCount + 1);
     controller.stop();
+  });
+
+  it.each([
+    {
+      field: "desktopFileName",
+      identity: "org.kde.krunner",
+    },
+    {
+      field: "desktopFileName",
+      identity: "org.kde.plasmashell",
+    },
+    {
+      field: "resourceClass",
+      identity: "krunner",
+    },
+    {
+      field: "resourceName",
+      identity: "plasmashell",
+    },
+  ] as const)(
+    "does not steal focus from an active shell surface identified by $field=$identity",
+    ({ field, identity }) => {
+      const setup = createCloseFocusRecoveryFixture({
+        [field]: identity,
+      });
+
+      expect(setup.controller.start()).toBe(true);
+      setup.fixture.workspace.activeWindow = setup.previous.window;
+      setup.fixture.workspace.activeWindow = setup.removed.window;
+      flushManualScheduler(setup.scheduler);
+      setup.fixture.workspace.activeWindow = setup.interim.window;
+      const activationCount = setup.fixture.activationCount;
+
+      setup.fixture.windowRemoved.emit(setup.removed.window);
+
+      expect(
+        windowRemovalFocusRecoveryProbe(setup.controller)
+          .pendingWindowRemovalFocusRecovery,
+      ).toBeNull();
+      flushManualScheduler(setup.scheduler);
+
+      expect(setup.fixture.workspace.activeWindow).toBe(setup.interim.window);
+      expect(setup.fixture.activationCount).toBe(activationCount);
+      setup.controller.stop();
+    },
+  );
+
+  it.each(["after-added", "before-added"] as const)(
+    "keeps a shell activation received %s during removal settlement",
+    (activationOrder) => {
+      const setup = createCloseFocusRecoveryFixture(
+        { resourceClass: "krunner" },
+        false,
+      );
+
+      expect(setup.controller.start()).toBe(true);
+      setup.fixture.workspace.activeWindow = setup.previous.window;
+      setup.fixture.workspace.activeWindow = setup.removed.window;
+      setup.fixture.workspace.activeWindow = null;
+      flushManualScheduler(setup.scheduler);
+      setup.fixture.windowRemoved.emit(setup.removed.window);
+
+      expect(
+        windowRemovalFocusRecoveryProbe(setup.controller)
+          .pendingWindowRemovalFocusRecovery?.phase,
+      ).toBe("settling");
+
+      if (activationOrder === "after-added") {
+        setup.fixture.windowAdded.emit(setup.interim.window);
+        setup.fixture.workspace.activeWindow = setup.interim.window;
+      } else {
+        setup.fixture.workspace.activeWindow = setup.interim.window;
+        setup.fixture.windowAdded.emit(setup.interim.window);
+      }
+
+      expect(
+        windowRemovalFocusRecoveryProbe(setup.controller)
+          .pendingWindowRemovalFocusRecovery,
+      ).toBeNull();
+      const activationCount = setup.fixture.activationCount;
+      flushManualScheduler(setup.scheduler);
+
+      expect(setup.fixture.workspace.activeWindow).toBe(setup.interim.window);
+      expect(setup.fixture.activationCount).toBe(activationCount);
+      setup.controller.stop();
+    },
+  );
+
+  it.each([
+    {
+      invokeRecoveryCallback: false,
+      name: "before invoking the recovery callback",
+    },
+    {
+      invokeRecoveryCallback: true,
+      name: "after invoking the recovery callback",
+    },
+  ] as const)(
+    "permanently cancels recovery when scheduling focuses a shell and throws $name",
+    ({ invokeRecoveryCallback }) => {
+      const output = createOutput("DP-1", 0);
+      const desktop = { id: "desktop-1" };
+      const previous = createTrackedWindow("previous", output, desktop);
+      const removed = createTrackedWindow("removed", output, desktop);
+      const shell = createTrackedWindow("shell", output, desktop, {
+        desktopFileName: "org.kde.krunner",
+        normalWindow: false,
+        specialWindow: true,
+      });
+      const fixture = createWorkspace(
+        output,
+        desktop,
+        [output],
+        [desktop],
+        [previous.window, shell.window, removed.window],
+      );
+      const scheduler = new ManualScheduler();
+      let interceptRemovalRecoverySchedule = false;
+      let interceptedSchedules = 0;
+      let controller: RuntimeController | null = null;
+      const schedule = (callback: () => void): void => {
+        const recovery =
+          interceptRemovalRecoverySchedule && controller
+            ? windowRemovalFocusRecoveryProbe(controller)
+                .pendingWindowRemovalFocusRecovery
+            : null;
+
+        if (!recovery || recovery.phase !== "settling") {
+          scheduler.schedule(callback);
+          return;
+        }
+
+        interceptRemovalRecoverySchedule = false;
+        interceptedSchedules += 1;
+        fixture.workspace.activeWindow = shell.window;
+
+        if (invokeRecoveryCallback) {
+          callback();
+        }
+
+        throw new Error("removal recovery scheduling failed");
+      };
+      controller = new RuntimeController(fixture.workspace, {
+        clientAreaOption: 2,
+        schedule,
+      });
+
+      expect(controller.start()).toBe(true);
+      fixture.workspace.activeWindow = previous.window;
+      fixture.workspace.activeWindow = removed.window;
+      fixture.workspace.activeWindow = null;
+      flushManualScheduler(scheduler);
+      const removalActivations: Array<KWinWindow | null> = [];
+      fixture.windowActivated.connect((window) => {
+        removalActivations.push(window);
+      });
+      interceptRemovalRecoverySchedule = true;
+
+      fixture.windowRemoved.emit(removed.window);
+
+      expect(interceptedSchedules).toBe(1);
+      expect(removalActivations).toEqual([shell.window]);
+      expect(
+        windowRemovalFocusRecoveryProbe(controller)
+          .pendingWindowRemovalFocusRecovery,
+      ).toBeNull();
+      flushManualScheduler(scheduler);
+      expect(fixture.workspace.activeWindow).toBe(shell.window);
+      expect(removalActivations).toEqual([shell.window]);
+
+      fixture.workspace.activeWindow = null;
+      const activationCount = fixture.activationCount;
+      flushManualScheduler(scheduler);
+
+      expect(fixture.workspace.activeWindow).toBeNull();
+      expect(fixture.activationCount).toBe(activationCount);
+      expect(removalActivations.filter((window) => window !== null)).toEqual([
+        shell.window,
+      ]);
+      expect(
+        windowRemovalFocusRecoveryProbe(controller)
+          .pendingWindowRemovalFocusRecovery,
+      ).toBeNull();
+      controller.stop();
+    },
+  );
+
+  it("does not replay close focus after a waiting recovery sees shell focus and then null", () => {
+    const setup = createCloseFocusRecoveryFixture({
+      resourceName: "org.kde.plasmashell",
+    });
+
+    expect(setup.controller.start()).toBe(true);
+    setup.fixture.workspace.activeWindow = setup.previous.window;
+    setup.fixture.workspace.activeWindow = setup.removed.window;
+    setup.fixture.workspace.activeWindow = null;
+    flushManualScheduler(setup.scheduler);
+    setup.fixture.windowRemoved.emit(setup.removed.window);
+    advanceWindowRemovalFocusRecoveryToWaiting(
+      setup.controller,
+      setup.scheduler,
+    );
+
+    expect(setup.fixture.workspace.activeWindow).toBe(setup.previous.window);
+    setup.fixture.workspace.activeWindow = setup.interim.window;
+    expect(
+      windowRemovalFocusRecoveryProbe(setup.controller)
+        .pendingWindowRemovalFocusRecovery,
+    ).toBeNull();
+    setup.fixture.workspace.activeWindow = null;
+    const activationCount = setup.fixture.activationCount;
+    flushManualScheduler(setup.scheduler);
+
+    expect(setup.fixture.workspace.activeWindow).toBeNull();
+    expect(setup.fixture.activationCount).toBe(activationCount);
+    setup.controller.stop();
+  });
+
+  it.each([
+    {
+      field: "desktopFileName",
+      identity: "KRunner",
+    },
+    {
+      field: "resourceClass",
+      identity: "org.kde.krunner.runner",
+    },
+    {
+      field: "resourceName",
+      identity: " plasmashell",
+    },
+    {
+      field: "desktopFileName",
+      identity: "org.kde.PlasmaShell",
+    },
+  ] as const)(
+    "does not classify the inexact shell identity $field=$identity",
+    ({ field, identity }) => {
+      const setup = createCloseFocusRecoveryFixture({
+        [field]: identity,
+      });
+
+      expect(
+        windowRemovalFocusRecoveryProbe(
+          setup.controller,
+        ).activeWindowOwnsShellFocus(windowId("removed")),
+      ).toBe(false);
+    },
+  );
+
+  it("fails the shell-focus helper closed for null and unreadable identities", () => {
+    const setup = createCloseFocusRecoveryFixture({});
+    const probe = windowRemovalFocusRecoveryProbe(setup.controller);
+
+    Object.defineProperty(setup.interim.window, "desktopFileName", {
+      configurable: true,
+      get: () => {
+        throw new Error("identity unavailable");
+      },
+    });
+
+    expect(probe.activeWindowOwnsShellFocus(windowId("removed"))).toBe(false);
+    setup.fixture.workspace.activeWindow = null;
+    expect(probe.activeWindowOwnsShellFocus(windowId("removed"))).toBe(false);
+  });
+
+  it("does not classify the removed window itself as an external shell focus owner", () => {
+    const setup = createCloseFocusRecoveryFixture({
+      desktopFileName: "org.kde.krunner",
+    });
+
+    expect(
+      windowRemovalFocusRecoveryProbe(
+        setup.controller,
+      ).activeWindowOwnsShellFocus(windowId("interim")),
+    ).toBe(false);
+  });
+
+  it.each([
+    {
+      name: "desktop window with an exact plasmashell identity",
+      overrides: {
+        desktopFileName: "org.kde.plasmashell",
+        desktopWindow: true,
+      },
+    },
+    {
+      name: "generic special non-normal window",
+      overrides: {
+        desktopFileName: "org.example.Special",
+      },
+    },
+  ] as const)("preserves recovery past a $name", ({ overrides }) => {
+    const setup = createCloseFocusRecoveryFixture(overrides);
+
+    expect(setup.controller.start()).toBe(true);
+    setup.fixture.workspace.activeWindow = setup.previous.window;
+    setup.fixture.workspace.activeWindow = setup.removed.window;
+    setup.fixture.workspace.activeWindow = setup.interim.window;
+    const activationCount = setup.fixture.activationCount;
+
+    setup.fixture.windowRemoved.emit(setup.removed.window);
+    flushManualScheduler(setup.scheduler);
+
+    expect(setup.fixture.workspace.activeWindow).toBe(setup.previous.window);
+    expect(setup.fixture.activationCount).toBe(activationCount + 1);
+    setup.controller.stop();
   });
 
   it.each(["desktop-window", "ordinary-non-normal"] as const)(
