@@ -80,6 +80,7 @@ export type {
   OverviewSpatialWorkspaceSettlePlan,
 } from "./spatial-viewport";
 export {
+  normalizeOverviewPhysicalWheelAngleDelta,
   planOverviewSpatialWheelAxis,
   planOverviewSpatialWheel,
   planOverviewSpatialWorkspaceWheelTarget,

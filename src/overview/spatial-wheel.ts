@@ -71,6 +71,21 @@ const MAXIMUM_COORDINATE = Number.MAX_SAFE_INTEGER;
 const PIXEL_SCROLL_QUANTA_PER_UNIT = 64;
 const PIXEL_SCROLL_QUANTUM = 1 / PIXEL_SCROLL_QUANTA_PER_UNIT;
 
+export function normalizeOverviewPhysicalWheelAngleDelta(
+  angleDeltaY: unknown,
+  inverted: unknown,
+): number | null {
+  try {
+    if (!isAngleDelta(angleDeltaY) || typeof inverted !== "boolean") {
+      return null;
+    }
+
+    return normalizeZero(inverted ? angleDeltaY : -angleDeltaY);
+  } catch {
+    return null;
+  }
+}
+
 export function planOverviewSpatialWheelAxis(
   input: unknown,
 ): OverviewSpatialWheelAxisPlan | null {
@@ -216,7 +231,7 @@ export function planOverviewSpatialWheel(
 
     return Object.freeze({
       contentY: normalizeZero(boundedContentY),
-      direction: steps === 0 ? null : accumulated > 0 ? "previous" : "next",
+      direction: steps === 0 ? null : accumulated > 0 ? "next" : "previous",
       intent: "workspace",
       pixelRemainder: 0,
       remainder: normalizeZero(nextRemainder),

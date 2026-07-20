@@ -60,7 +60,7 @@ export function planOverviewWheelNavigation(
       Math.sign(accumulated) * steps * OVERVIEW_WHEEL_ANGLE_DELTA_PER_STEP;
 
     return {
-      direction: steps === 0 ? null : accumulated > 0 ? "previous" : "next",
+      direction: steps === 0 ? null : accumulated > 0 ? "next" : "previous",
       remainder: normalizeZero(nextRemainder),
       steps,
     };

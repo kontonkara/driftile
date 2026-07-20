@@ -24,6 +24,13 @@ const touchpadWorkspaceQml = readFileSync(
   ),
   "utf8",
 );
+const overviewTouchpadQml = readFileSync(
+  new URL(
+    "../packaging/kwin-effect/contents/runtime/ui/OverviewTouchpadGesture.qml",
+    import.meta.url,
+  ),
+  "utf8",
+);
 const configuration = readFileSync(
   new URL("../packaging/kwin-script/contents/config/main.xml", import.meta.url),
   "utf8",
@@ -306,6 +313,12 @@ describe("touchpad navigation", () => {
     );
     expect(touchpadQml.match(/Component\.on/gu)).toHaveLength(2);
     expect(touchpadQml.match(/console\.info\(/gu)).toHaveLength(2);
+  });
+
+  it("invalidates overview gestures on the public desktop-list signal", () => {
+    expect(overviewTouchpadQml).toMatch(
+      /function onDesktopsChanged\(\) \{\s*root\.invalidateGestureContext\(\);/u,
+    );
   });
 
   it("keeps vertical activation on one pointer output and desktop", () => {

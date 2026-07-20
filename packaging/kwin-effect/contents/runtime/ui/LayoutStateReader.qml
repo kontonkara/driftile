@@ -9,6 +9,7 @@ QtObject {
     readonly property int sampleInterval: 325
     property bool sampling: false
     property string firstSample: ""
+    property string stableSample: ""
     property int requestId: 0
 
     signal ready(int requestId, string document)
@@ -36,18 +37,18 @@ QtObject {
 
             Component.onCompleted: {
                 armed = true;
-                root.publicationDetected();
+                root.handlePublication();
             }
 
             onFileModifiedChanged: {
                 if (armed) {
-                    root.publicationDetected();
+                    root.handlePublication();
                 }
             }
 
             onFileSizeChanged: {
                 if (armed) {
-                    root.publicationDetected();
+                    root.handlePublication();
                 }
             }
         }
@@ -63,23 +64,56 @@ QtObject {
         repeat: false
 
         onTriggered: {
-            const requestId = root.requestId;
+            const completedRequestId = root.requestId;
             root.requestId = 0;
-            root.settings.sync();
-            const storedValue = root.settings.value("layout-v1", "");
-            const secondSample = typeof storedValue === "string" ? storedValue : "";
+            const secondSample = root.readSample();
             root.sampling = false;
+            const confirmed = root.firstSample.length > 0 && root.firstSample === secondSample;
+            root.firstSample = "";
 
-            if (requestId > 0) {
-                if (root.firstSample.length > 0 && root.firstSample === secondSample) {
-                    root.ready(requestId, secondSample);
-                } else {
-                    root.rejected(requestId);
+            if (confirmed) {
+                root.stableSample = secondSample;
+                if (completedRequestId > 0) {
+                    root.ready(completedRequestId, secondSample);
+                }
+            } else {
+                root.stableSample = "";
+                if (completedRequestId > 0) {
+                    root.rejected(completedRequestId);
                 }
             }
-
-            root.firstSample = "";
         }
+    }
+
+    Component.onCompleted: primeStableSample()
+
+    function readSample() {
+        settings.sync();
+        const storedValue = settings.value("layout-v1", "");
+        return typeof storedValue === "string" ? storedValue : "";
+    }
+
+    function beginDoubleSample(nextRequestId) {
+        firstSample = readSample();
+        requestId = nextRequestId;
+        sampling = true;
+        secondSampleTimer.start();
+    }
+
+    function primeStableSample() {
+        if (sampling || stableSample.length > 0) {
+            return;
+        }
+
+        beginDoubleSample(0);
+    }
+
+    function handlePublication() {
+        const pendingRequestId = sampling ? requestId : 0;
+        cancel();
+        stableSample = "";
+        beginDoubleSample(pendingRequestId);
+        publicationDetected();
     }
 
     function sample(requestId) {
@@ -89,9 +123,14 @@ QtObject {
             return;
         }
 
-        settings.sync();
-        const storedValue = settings.value("layout-v1", "");
-        firstSample = typeof storedValue === "string" ? storedValue : "";
+        const synchronousSample = readSample();
+        if (stableSample.length > 0 && synchronousSample === stableSample) {
+            ready(requestId, synchronousSample);
+            return;
+        }
+
+        stableSample = "";
+        firstSample = synchronousSample;
         root.requestId = requestId;
         sampling = true;
         secondSampleTimer.start();

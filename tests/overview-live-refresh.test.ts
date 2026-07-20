@@ -56,7 +56,7 @@ describe("overview live model refresh", () => {
     expect(reader.match(/\bTimer\s*\{/gu)).toHaveLength(1);
     expect(reader).toMatch(/interval: root\.sampleInterval\s*repeat: false/u);
     expect(reader).toMatch(
-      /function sample\(requestId\) \{\s*cancel\(\);[\s\S]*firstSample = [\s\S]*secondSampleTimer\.start\(\);/u,
+      /function sample\(requestId\) \{\s*cancel\(\);[\s\S]*const synchronousSample = readSample\(\);[\s\S]*synchronousSample === stableSample[\s\S]*stableSample = "";[\s\S]*secondSampleTimer\.start\(\);/u,
     );
   });
 
@@ -410,6 +410,15 @@ describe("overview live model refresh", () => {
   });
 
   it("observes persisted layout publications without polling", () => {
+    const prime = reader.slice(
+      reader.indexOf("function primeStableSample()"),
+      reader.indexOf("function handlePublication()"),
+    );
+    const publication = reader.slice(
+      reader.indexOf("function handlePublication()"),
+      reader.indexOf("function sample(requestId)"),
+    );
+
     expect(reader).toContain("import Qt.labs.folderlistmodel");
     expect(reader).toContain("import QtQml.Models");
     expect(reader).toContain("signal publicationDetected()");
@@ -420,13 +429,23 @@ describe("overview live model refresh", () => {
       /readonly property Instantiator stateFileObserver:[\s\S]*model: root\.stateFiles[\s\S]*required property date fileModified[\s\S]*required property double fileSize/u,
     );
     expect(reader).toMatch(
-      /Component\.onCompleted:[\s\S]*armed = true;[\s\S]*root\.publicationDetected\(\);/u,
+      /Component\.onCompleted:[\s\S]*armed = true;[\s\S]*root\.handlePublication\(\);/u,
     );
     expect(reader).toMatch(
-      /onFileModifiedChanged:[\s\S]*if \(armed\)[\s\S]*root\.publicationDetected\(\);/u,
+      /onFileModifiedChanged:[\s\S]*if \(armed\)[\s\S]*root\.handlePublication\(\);/u,
     );
     expect(reader).toMatch(
-      /onFileSizeChanged:[\s\S]*if \(armed\)[\s\S]*root\.publicationDetected\(\);/u,
+      /onFileSizeChanged:[\s\S]*if \(armed\)[\s\S]*root\.handlePublication\(\);/u,
+    );
+    expect(reader).toContain("Component.onCompleted: primeStableSample()");
+    expect(prime).toMatch(
+      /if \(sampling \|\| stableSample\.length > 0\) \{\s*return;\s*\}[\s\S]*beginDoubleSample\(0\);/u,
+    );
+    expect(publication).toMatch(
+      /const pendingRequestId = sampling \? requestId : 0;\s*cancel\(\);\s*stableSample = "";\s*beginDoubleSample\(pendingRequestId\);\s*publicationDetected\(\);/u,
+    );
+    expect(publication.indexOf('stableSample = "";')).toBeLessThan(
+      publication.indexOf("publicationDetected();"),
     );
     expect(reader.match(/\bTimer\s*\{/gu)).toHaveLength(1);
     expect(reader).not.toMatch(
@@ -457,7 +476,7 @@ describe("overview live model refresh", () => {
     );
 
     expect(workspaceLifecycle).toMatch(
-      /function onDesktopsChanged\(\) \{\s*root\.scheduleDesktopTopologyRefresh\(\);/u,
+      /function onDesktopsChanged\(\) \{\s*root\.handleDesktopTopologyChanged\(\);/u,
     );
     for (const signal of [
       "onCurrentActivityChanged",
@@ -472,6 +491,16 @@ describe("overview live model refresh", () => {
       );
     }
     expect(resetSession).toContain("invalidateDesktopTopologyRefresh();");
+    expect(scene).toContain("property int desktopTopologyRevision: 0");
+    expect(scene).toMatch(
+      /readonly property var desktopIds:[\s\S]*orderedDesktopIds\(desktopTopologyRevision\)/u,
+    );
+    expect(scene).toMatch(
+      /function handleDesktopTopologyChanged\(\)[\s\S]*desktopTopologyRevision = desktopTopologyRevision >= 2147483646[\s\S]*resetOverviewWheelState\(\);[\s\S]*scheduleDesktopTopologyRefresh\(\);/u,
+    );
+    expect(scene).toMatch(
+      /function orderedDesktopIds\(expectedTopologyRevision\)[\s\S]*Number\.isInteger\(expectedTopologyRevision\)[\s\S]*for \(const desktop of KWin\.Workspace\.desktops\)/u,
+    );
     expect(topologySchedule).toMatch(
       /if \(!effect \|\| effect\.active !== true \|\| spatialPresentationPhase === "closing"[\s\S]*!expectedModel \|\| expectedSessionId <= 0\) \{\s*return false;/u,
     );

@@ -52,7 +52,8 @@ Rectangle {
     readonly property var outputLabelPlan: outputLabelNeeded ? planOutputLabel(targetScreen) : null
     readonly property string outputName: outputLabelPlan ? outputLabelPlan.label : ""
     readonly property string outputId: outputIdForScreen()
-    readonly property var desktopIds: outputId.length > 0 ? orderedDesktopIds() : []
+    readonly property var desktopIds: outputId.length > 0
+        ? orderedDesktopIds(desktopTopologyRevision) : []
     readonly property int currentWorkspaceIndex: currentDesktop && currentDesktop.id !== undefined
         && currentDesktop.id !== null ? desktopIds.indexOf(String(currentDesktop.id)) : -1
     readonly property real overviewZoom: sceneEffect && Number.isFinite(sceneEffect.overviewZoom)
@@ -77,6 +78,7 @@ Rectangle {
     readonly property real cardX: overviewSpatialLayout.cardX
     readonly property real cardTop: overviewSpatialLayout.edgeMargin - spatialVisualContentY
     property bool desktopReorderAvailable: false
+    property int desktopTopologyRevision: 0
     property int desktopTopologyRefreshRequestId: 0
     property bool emptyDesktopAboveFirst: false
     property bool keyboardHelpVisible: false
@@ -382,7 +384,7 @@ Rectangle {
         ignoreUnknownSignals: true
 
         function onDesktopsChanged() {
-            root.scheduleDesktopTopologyRefresh();
+            root.handleDesktopTopologyChanged();
         }
 
         function onCurrentActivityChanged() {
@@ -1981,6 +1983,13 @@ Rectangle {
         spatialHorizontalViewportOffsets = [];
         spatialViewportSnapshot = null;
         refreshOverviewSpatialSession(false);
+    }
+
+    function handleDesktopTopologyChanged() {
+        desktopTopologyRevision = desktopTopologyRevision >= 2147483646
+            ? 0 : desktopTopologyRevision + 1;
+        resetOverviewWheelState();
+        return scheduleDesktopTopologyRefresh();
     }
 
     function scheduleDesktopTopologyRefresh() {
@@ -4643,7 +4652,15 @@ Rectangle {
             }
 
             const pixelDeltaY = event.pixelDelta.y;
-            const angleDeltaY = event.angleDelta.y;
+            const runtime = OverviewRuntime.DriftileOverview;
+            if (!runtime || typeof runtime.normalizeOverviewPhysicalWheelAngleDelta !== "function") {
+                return false;
+            }
+            const angleDeltaY = runtime.normalizeOverviewPhysicalWheelAngleDelta(
+                event.angleDelta.y, event.inverted === true);
+            if (!Number.isSafeInteger(angleDeltaY)) {
+                return false;
+            }
             if (pixelDeltaY === 0 && angleDeltaY === 0) {
                 return false;
             }
@@ -6984,8 +7001,9 @@ Rectangle {
                 && String(desktops[0].id) === expectedDesktopId;
     }
 
-    function orderedDesktopIds() {
-        if (!overviewModel) {
+    function orderedDesktopIds(expectedTopologyRevision) {
+        if (!Number.isInteger(expectedTopologyRevision) || expectedTopologyRevision < 0
+                || expectedTopologyRevision > 2147483646 || !overviewModel) {
             return [];
         }
 

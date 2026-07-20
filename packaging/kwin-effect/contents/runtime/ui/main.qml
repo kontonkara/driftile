@@ -898,7 +898,7 @@ QtObject {
         presentationAnimation.targetPhase = phase;
         presentationAnimation.targetProgress = target;
 
-        if (distance <= 0.000001) {
+        if (phase === "opening" || distance <= 0.000001) {
             presentationProgress = target;
             completePresentationTransition(token, sessionId, phase, target);
             return true;

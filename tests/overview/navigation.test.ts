@@ -17,7 +17,7 @@ describe("planOverviewWheelNavigation", () => {
       steps: 0,
     });
     expect(planOverviewWheelNavigation(partial?.remainder, 60)).toEqual({
-      direction: "previous",
+      direction: "next",
       remainder: 0,
       steps: 1,
     });
@@ -25,12 +25,12 @@ describe("planOverviewWheelNavigation", () => {
 
   it("caps multi-step events and resets on reversal", () => {
     expect(planOverviewWheelNavigation(119, 480)).toEqual({
-      direction: "previous",
+      direction: "next",
       remainder: 119,
       steps: 4,
     });
     expect(planOverviewWheelNavigation(90, -120)).toEqual({
-      direction: "next",
+      direction: "previous",
       remainder: 0,
       steps: 1,
     });

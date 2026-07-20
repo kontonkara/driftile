@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { LAYOUT_PERSISTENCE_LIMITS } from "../../src/core/layout-persistence";
 import {
+  normalizeOverviewPhysicalWheelAngleDelta,
   planOverviewSpatialWheelAxis,
   planOverviewSpatialWheel,
   planOverviewSpatialWorkspaceWheelTarget,
@@ -135,7 +136,57 @@ describe("planOverviewSpatialWheelAxis", () => {
   });
 });
 
+describe("normalizeOverviewPhysicalWheelAngleDelta", () => {
+  it.each([
+    [-120, false, 120],
+    [120, false, -120],
+    [120, true, 120],
+    [-120, true, -120],
+  ] as const)(
+    "normalizes angle %i with inverted=%s to physical delta %i",
+    (angleDeltaY, inverted, expected) => {
+      expect(
+        normalizeOverviewPhysicalWheelAngleDelta(angleDeltaY, inverted),
+      ).toBe(expected);
+    },
+  );
+
+  it.each([
+    [120, undefined],
+    [120, 1],
+    [0.5, false],
+    [1_000_001, false],
+  ])("fails closed for malformed input (%o, %o)", (angleDeltaY, inverted) => {
+    expect(
+      normalizeOverviewPhysicalWheelAngleDelta(angleDeltaY, inverted),
+    ).toBeNull();
+  });
+
+  it("normalizes negative zero", () => {
+    expect(
+      Object.is(normalizeOverviewPhysicalWheelAngleDelta(0, false), -0),
+    ).toBe(false);
+  });
+});
+
 describe("planOverviewSpatialWheel", () => {
+  it.each([
+    [120, "next"],
+    [-120, "previous"],
+  ] as const)(
+    "maps a normalized physical wheel delta of %i to %s workspace movement",
+    (angleDeltaY, direction) => {
+      expect(planOverviewSpatialWheel({ ...baseInput, angleDeltaY })).toEqual({
+        contentY: 600,
+        direction,
+        intent: "workspace",
+        pixelRemainder: 0,
+        remainder: 0,
+        steps: 1,
+      });
+    },
+  );
+
   it("accumulates bounded angle input into discrete workspace movement", () => {
     const partial = planOverviewSpatialWheel({
       ...baseInput,
@@ -158,7 +209,7 @@ describe("planOverviewSpatialWheel", () => {
       }),
     ).toEqual({
       contentY: 600,
-      direction: "previous",
+      direction: "next",
       intent: "workspace",
       pixelRemainder: 0,
       remainder: 0,
@@ -176,7 +227,7 @@ describe("planOverviewSpatialWheel", () => {
       }),
     ).toEqual({
       contentY: 600,
-      direction: "next",
+      direction: "previous",
       intent: "workspace",
       pixelRemainder: 0,
       remainder: -119,
@@ -203,7 +254,7 @@ describe("planOverviewSpatialWheel", () => {
       }),
     ).toEqual({
       contentY: 600,
-      direction: "previous",
+      direction: "next",
       intent: "workspace",
       pixelRemainder: 0,
       remainder: 0,
@@ -217,7 +268,7 @@ describe("planOverviewSpatialWheel", () => {
       }),
     ).toEqual({
       contentY: 600,
-      direction: "previous",
+      direction: "next",
       intent: "workspace",
       pixelRemainder: 0,
       remainder: 60,
@@ -231,7 +282,7 @@ describe("planOverviewSpatialWheel", () => {
       }),
     ).toEqual({
       contentY: 600,
-      direction: "next",
+      direction: "previous",
       intent: "workspace",
       pixelRemainder: 0,
       remainder: 0,
@@ -358,7 +409,7 @@ describe("planOverviewSpatialWheel", () => {
 
     expect(saturated).toEqual({
       contentY: 600,
-      direction: "next",
+      direction: "previous",
       intent: "workspace",
       pixelRemainder: 0,
       remainder: -90,

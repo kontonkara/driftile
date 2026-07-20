@@ -547,6 +547,9 @@ describe("overview effect package", () => {
       /presentationAnimation\.duration = Math\.max\(1, Math\.round\(220 \* distance\)\)/u,
     );
     expect(controller).toMatch(
+      /if \(phase === "opening" \|\| distance <= 0\.000001\) \{\s*presentationProgress = target;\s*completePresentationTransition\(token, sessionId, phase, target\);\s*return true;\s*\}[\s\S]*presentationAnimation\.duration = Math\.max\(1, Math\.round\(220 \* distance\)\);\s*presentationAnimation\.start\(\);/u,
+    );
+    expect(controller).toMatch(
       /completePresentationTransition[\s\S]*token !== pendingPresentationTransitionToken[\s\S]*sessionId !== activeSessionId/u,
     );
 
@@ -556,25 +559,63 @@ describe("overview effect package", () => {
     expect(controller).not.toMatch(/^\s*delegate\s*:/mu);
   });
 
-  it("samples the persisted layout exactly twice without writing", () => {
+  it("double-confirms persisted layout state before caching it", () => {
+    const timer = reader.slice(
+      reader.indexOf("readonly property Timer secondSampleTimer"),
+      reader.indexOf("Component.onCompleted: primeStableSample()"),
+    );
+    const beginDoubleSample = reader.slice(
+      reader.indexOf("function beginDoubleSample("),
+      reader.indexOf("function primeStableSample("),
+    );
+
     expect(reader).toContain('category: "Layout"');
     expect(reader).toContain('settings.value("layout-v1", "")');
     expect(reader.match(/settings\.value\("layout-v1", ""\)/gu)).toHaveLength(
-      2,
+      1,
     );
     expect(reader).toContain("readonly property int sampleInterval: 325");
     expect(reader).toContain("property int requestId: 0");
+    expect(reader).toContain('property string stableSample: ""');
     expect(reader).toContain("signal ready(int requestId, string document)");
     expect(reader).toContain("signal rejected(int requestId)");
-    expect(reader).toContain("function sample(requestId)");
-    expect(reader).toContain("root.requestId = requestId");
-    expect(reader).toContain("root.requestId = 0");
-    expect(reader).toMatch(
-      /function cancel\(\) \{[\s\S]*requestId = 0;[\s\S]*\}/u,
+    expect(beginDoubleSample).toMatch(
+      /firstSample = readSample\(\);[\s\S]*requestId = nextRequestId;[\s\S]*secondSampleTimer\.start\(\);/u,
     );
-    expect(reader).toContain("root.firstSample === secondSample");
-    expect(reader).toContain("root.firstSample.length > 0");
+    expect(timer).toContain("const secondSample = root.readSample();");
+    expect(timer).toMatch(
+      /const confirmed = root\.firstSample\.length > 0 && root\.firstSample === secondSample;[\s\S]*if \(confirmed\) \{\s*root\.stableSample = secondSample;/u,
+    );
+    expect(timer).toMatch(
+      /else \{\s*root\.stableSample = "";[\s\S]*root\.rejected\(completedRequestId\);/u,
+    );
+    expect(reader.match(/\bTimer\s*\{/gu)).toHaveLength(1);
     expect(reader).not.toMatch(/setValue|repeat:\s*true/u);
+  });
+
+  it("serves only a fresh exact stable-state cache hit immediately", () => {
+    const sample = reader.slice(
+      reader.indexOf("function sample(requestId)"),
+      reader.indexOf("function cancel()"),
+    );
+    const cancel = reader.slice(reader.indexOf("function cancel()"));
+
+    expect(sample).toMatch(
+      /cancel\(\);[\s\S]*Number\.isInteger\(requestId\)[\s\S]*const synchronousSample = readSample\(\);/u,
+    );
+    expect(sample).toMatch(
+      /if \(stableSample\.length > 0 && synchronousSample === stableSample\) \{\s*ready\(requestId, synchronousSample\);\s*return;\s*\}/u,
+    );
+    expect(sample).toMatch(
+      /stableSample = "";\s*firstSample = synchronousSample;[\s\S]*root\.requestId = requestId;[\s\S]*secondSampleTimer\.start\(\);/u,
+    );
+    expect(sample.indexOf("ready(requestId, synchronousSample);")).toBeLessThan(
+      sample.indexOf('stableSample = "";'),
+    );
+    expect(cancel).toMatch(
+      /secondSampleTimer\.stop\(\);[\s\S]*sampling = false;[\s\S]*firstSample = "";[\s\S]*requestId = 0;/u,
+    );
+    expect(cancel).not.toContain("stableSample");
   });
 
   it("reports only the current rejected activation through one passive OSD", () => {
@@ -3757,6 +3798,9 @@ describe("overview effect package", () => {
     );
     expect(wheelNavigation).toContain("event.modifiers !== Qt.NoModifier");
     expect(wheelNavigation).toContain("keyboardHelpVisible");
+    expect(wheelNavigation).toMatch(
+      /runtime\.normalizeOverviewPhysicalWheelAngleDelta\(\s*event\.angleDelta\.y, event\.inverted === true\);[\s\S]*Number\.isSafeInteger\(angleDeltaY\)/u,
+    );
     expect(scene).toMatch(
       /onKeyboardHelpVisibleChanged: \{\s*root\.resetOverviewWheelState\(\);\s*root\.resetWindowWorkspaceHover\(\);\s*\}/u,
     );
