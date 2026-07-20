@@ -12721,15 +12721,15 @@ describe("RuntimeController", () => {
     });
     pictureInPictureWindowRoleChanged.emit();
 
-    expect(controller.managedCount).toBe(2);
-    expect(controller.automaticFloatingCount).toBe(8);
+    expect(controller.managedCount).toBe(1);
+    expect(controller.automaticFloatingCount).toBe(9);
 
     Object.defineProperty(regular.window, "windowRole", {
       configurable: true,
       value: "",
     });
     lateWindowRoleChanged.emit();
-    expect(controller.automaticFloatingCount).toBe(8);
+    expect(controller.automaticFloatingCount).toBe(9);
 
     fixture.workspace.activeWindow = transientParent.window;
     fixture.windowRemoved.emit(regular.window);
@@ -12738,8 +12738,87 @@ describe("RuntimeController", () => {
     });
     fixture.windowAdded.emit(replacement.window);
 
-    expect(controller.managedCount).toBe(3);
-    expect(controller.automaticFloatingCount).toBe(7);
+    expect(controller.managedCount).toBe(2);
+    expect(controller.automaticFloatingCount).toBe(8);
+  });
+
+  it("keeps established picture-in-picture ownership through interactive role churn", () => {
+    const output = createOutput("DP-1", 0);
+    const desktop = { id: "desktop-1" };
+    const pictureInPictureWindowRoleChanged = new Signal<[]>();
+    const pictureInPicture = createTrackedWindow(
+      "picture-in-picture",
+      output,
+      desktop,
+      {
+        frameGeometry: { height: 180, width: 320, x: 640, y: 500 },
+        windowRole: "Toolkit:PictureInPicture",
+        windowRoleChanged: pictureInPictureWindowRoleChanged,
+      },
+    );
+    const tiled = createTrackedWindow("tiled", output, desktop);
+    const fixture = createWorkspace(
+      output,
+      desktop,
+      [output],
+      [desktop],
+      [pictureInPicture.window, tiled.window],
+    );
+    const controller = new RuntimeController(fixture.workspace, {
+      clientAreaOption: 2,
+      gap: 10,
+    });
+
+    expect(controller.start()).toBe(true);
+    expect(controller.managedCount).toBe(1);
+    expect(controller.automaticFloatingCount).toBe(1);
+    const layoutBefore = runtimeLayout(controller).snapshot(
+      outputId(output.name),
+      desktopId(desktop.id),
+      FALLBACK_ACTIVITY_ID,
+    );
+    const tiledFrame = { ...tiled.window.frameGeometry };
+    const tiledWrites = tiled.writeCount;
+    const movedFrame = {
+      ...pictureInPicture.window.frameGeometry,
+      x: 520,
+      y: 390,
+    };
+
+    fixture.workspace.activeWindow = pictureInPicture.window;
+    Object.defineProperty(pictureInPicture.window, "move", {
+      configurable: true,
+      value: true,
+    });
+    pictureInPicture.moveResizedChanged.emit();
+    pictureInPicture.interactiveMoveResizeStarted.emit();
+    Object.defineProperty(pictureInPicture.window, "windowRole", {
+      configurable: true,
+      value: "main",
+    });
+    pictureInPictureWindowRoleChanged.emit();
+    pictureInPicture.setFrameGeometry(movedFrame);
+    Object.defineProperty(pictureInPicture.window, "move", {
+      configurable: true,
+      value: false,
+    });
+    pictureInPicture.moveResizedChanged.emit();
+    pictureInPicture.interactiveMoveResizeFinished.emit();
+
+    expect(controller.managedCount).toBe(1);
+    expect(controller.floatingCount).toBe(0);
+    expect(controller.automaticFloatingCount).toBe(1);
+    expect(pictureInPicture.window.frameGeometry).toEqual(movedFrame);
+    expect(pictureInPicture.writeCount).toBe(0);
+    expect(tiled.window.frameGeometry).toEqual(tiledFrame);
+    expect(tiled.writeCount).toBe(tiledWrites);
+    expect(
+      runtimeLayout(controller).snapshot(
+        outputId(output.name),
+        desktopId(desktop.id),
+        FALLBACK_ACTIVITY_ID,
+      ),
+    ).toEqual(layoutBefore);
   });
 
   it("keeps matching applications outside layout ownership and persistence", () => {

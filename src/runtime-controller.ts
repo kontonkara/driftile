@@ -31843,13 +31843,7 @@ export class RuntimeController {
     const liveSource = this.observer.source(id) === source;
 
     if (liveSource && this.pictureInPictureRoleWindowIds.has(id)) {
-      const roleState = pictureInPictureWindowRoleState(source);
-
-      if (roleState !== "other") {
-        return true;
-      }
-
-      this.pictureInPictureRoleWindowIds.delete(id);
+      return true;
     }
 
     if (!hasAutomaticFloatingRole(source)) {
