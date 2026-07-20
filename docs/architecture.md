@@ -103,11 +103,21 @@ Events travel from KWin through the bridge into the runtime. Commands and result
   add or remove signal still owns it. Exact output, desktop, and activity scopes
   from one event-loop burst are deduplicated into one bounded generation. Empty
   desktop or activity membership means all; incomplete, ambiguous, or
-  over-budget identity becomes one global visible-surface refresh.
+  over-budget identity becomes one global resident-surface refresh.
 - Reloads only instantiated Desktop surfaces selected by that immutable
   generation. Each card owns its reload revision and token, so an unrelated
-  later event cannot strand a targeted card on its solid fallback. Off-screen
-  retained cards never instantiate or reload a surface.
+  later event cannot strand a targeted card on its solid fallback. A surface is
+  presented only at `Loader.Ready` and fades in over 90 ms above the solid
+  fallback. Context loss unloads it immediately.
+- Commits one contiguous Desktop-surface residency range per exact session,
+  output, activity, and desktop topology. The last exact range survives
+  transient invalid scene geometry. Panning, animated camera movement, zoom,
+  and live reflow union source and destination ranges when their combined span
+  fits the bound, so destination surfaces load before source surfaces are
+  released. A distant jump that exceeds the bound prioritizes its destination.
+- Limits residency to 12 rows and permits the current-row pin only within that
+  bound. Search- or drag-retained off-screen cards never instantiate a surface.
+  Residency is transient and performs no layout or persistence write.
 - Treats the configured zoom as a bounded fresh-session baseline. Interactive
   zoom mutates only controller-owned session state; a completed close discards
   it, while reopening during the same close transition preserves it.
@@ -117,8 +127,8 @@ Events travel from KWin through the bridge into the runtime. Commands and result
   restores the exact origin rather than reversing accumulated deltas.
 - Preserves horizontal cameras by desktop ID across scale and workspace
   reflow, then clamps each retained offset against its newly computed row
-  bounds. Off-screen Desktop surfaces remain lazy while the scale changes the
-  visible range.
+  bounds. Desktop surfaces outside the bounded source-to-destination residency
+  range remain lazy while scale changes the visible range.
 - Normalizes `Ctrl` plus wheel against KWin's system-inversion flag so physical
   up zooms in and physical down zooms out. Pixel deltas preview continuously,
   angle deltas advance by bounded steps, and `Ctrl++`, `Ctrl+-`, and `Ctrl+0`

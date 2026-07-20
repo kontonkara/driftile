@@ -192,19 +192,27 @@ opening after the effect has fully closed starts from the configured scale.
 
 Each instantiated visible-range row renders KWin's public Desktop surface for
 its exact output, virtual desktop, and current activity behind windows and input
-layers. An unavailable or inexact surface keeps a solid dark fallback. Ordinary
-visual row rendering stays within a bounded visible range, while search or drag
-state may retain an off-screen card without creating its Desktop surface.
-Panels, docks, and notifications are excluded from Desktop surface selection.
-A desktop-shell lifecycle burst clears only visible surfaces matching its exact
+layers. An unavailable or inexact surface keeps a solid dark fallback. A surface
+is shown only at `Loader.Ready`, then fades in over 90 ms; context loss
+unloads it immediately. The last exact surface range survives transient invalid
+geometry. Panning, animated camera movement, zoom, and live reflow preload
+destination rows before releasing their sources when the combined span stays
+bounded; a distant jump prioritizes its destination. This per-session, output,
+activity, and topology range is contiguous and limited to 12 rows, including
+any bounded current-row pin.
+Search or drag may retain an off-screen card without creating its Desktop
+surface. Surface residency never writes layout or persistence.
+
+Panels, docks, and notifications are excluded from Desktop surface selection. A
+desktop-shell lifecycle burst clears only resident surfaces matching its exact
 public output, desktop, and activity scope, then reacquires each replacement
 Desktop window once. Empty public desktop or activity membership means all in
-that dimension. Incomplete or ambiguous identity falls back to one global
-visible refresh; unrelated exact rows and every off-screen surface stay
-untouched. No polling is added. Normal wallpaper damage continues to update
-live. Neutral workspace-label backplates remain readable over the wallpaper,
-and a subtle output-area outline identifies the current row without changing
-its geometry.
+that dimension. An exact scoped refresh leaves unrelated resident rows
+untouched. Incomplete or ambiguous identity falls back to one global resident
+refresh; nonresident off-screen surfaces stay untouched. No polling is added.
+Normal wallpaper damage continues to update live. Neutral workspace-label
+backplates remain readable over the wallpaper, and a subtle output-area outline
+identifies the current row without changing its geometry.
 
 Vertical input moves between workspace rows, while horizontal input pans or
 selects within a row. Precise wheel or touchpad input drives the camera

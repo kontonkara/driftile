@@ -27,18 +27,31 @@ Each instantiated visible-range row shows KWin's public Desktop surface for its
 exact output, virtual desktop, and current activity inside the projected output
 area. The surface stays behind window thumbnails and every input layer. Missing
 or inexact identity, or an unavailable surface, leaves a solid dark fallback
-visible. Desktop surfaces are virtualized separately from cards, so a retained
-off-screen card does not create one. KWin's Desktop selection excludes panels,
-docks, and notifications. If the desktop shell restarts while Overview is open,
-only visible rows matching the public output, desktop, and activity identity
-discard the stale surface immediately, expose the solid fallback, and reconnect
-when the replacement Desktop window appears. One event-loop burst produces one
-bounded refresh generation. Incomplete or ambiguous public identity safely
-refreshes every visible surface, while unrelated exact rows remain live.
-Ordinary wallpaper damage remains live without polling. Compact neutral
-backplates keep the workspace number and optional name readable on arbitrary
-wallpapers, while a subtle output-area outline identifies the current row
-without changing its geometry.
+visible. A ready surface fades in over 90 ms above that fallback; losing its
+exact context unloads it immediately. Surface admission is independent from
+card admission, so a search- or drag-retained off-screen card does not create a
+Desktop surface. KWin's Desktop selection excludes panels, docks, and
+notifications.
+
+Surface residency keeps the last exact bounded range through a transiently
+invalid scene geometry. During panning, animated camera movement, zoom, and live
+reflow, destination rows load before rows leaving the range are released when
+their combined span stays bounded. A distant jump prioritizes its destination.
+The range stays contiguous, contains at most 12 rows, and can pin the current
+row only within that bound. Residency belongs to one session, output, activity,
+and desktop topology and never changes layout or persistence.
+
+If the desktop shell restarts while Overview is open, only resident rows
+matching the public output, desktop, and activity identity discard the stale
+surface immediately, expose the solid fallback, and reconnect when the
+replacement Desktop window appears. One event-loop burst produces one bounded
+refresh generation. An exact scoped refresh leaves unrelated resident rows
+live. Incomplete or ambiguous public identity safely refreshes every resident
+surface; nonresident off-screen surfaces remain untouched. Ordinary wallpaper
+damage remains live without polling. Compact neutral backplates keep the
+workspace number and optional name readable on arbitrary wallpapers, while a
+subtle output-area outline identifies the current row without changing its
+geometry.
 
 Every row uses the normal layout solver for its usable work area, pixel grid,
 gaps, horizontal camera, columns, and member frames. Captured rows preserve

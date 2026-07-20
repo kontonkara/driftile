@@ -525,9 +525,10 @@ Driftile must integrate with, not duplicate:
 - Public Desktop-window add and remove bursts refresh only instantiated
   Overview surfaces matching their exact output, desktop, and activity scope.
   Empty desktop or activity membership means all in that dimension. Incomplete,
-  ambiguous, or over-budget identity safely triggers one global visible refresh;
-  unrelated exact and off-screen surfaces remain untouched. A per-card revision
-  guard prevents an unrelated later event from leaving a surface on fallback.
+  ambiguous, or over-budget identity safely triggers one global resident refresh;
+  unrelated exact and nonresident off-screen surfaces remain untouched. A
+  per-card revision guard prevents an unrelated later event from leaving a
+  surface on fallback.
 - Overview keyboard navigation selects only actionable targets with a visible
   intersection and never wraps. If the current desktop has no actionable
   window, its marker precedes unrelated visual targets. Keyboard and short
