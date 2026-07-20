@@ -192,6 +192,9 @@ monitor_guest() {
   local overview_desktop_drag_ready_file="$temporary_directory/xchg/driftile-overview-desktop-drag-ready"
   local overview_desktop_drag_sent=false
   local overview_desktop_drag_sent_file="$temporary_directory/xchg/driftile-overview-desktop-drag-sent"
+  local overview_tab_restore_ready_file="$temporary_directory/xchg/driftile-overview-tab-restore-ready"
+  local overview_tab_restore_sent=false
+  local overview_tab_restore_sent_file="$temporary_directory/xchg/driftile-overview-tab-restore-sent"
   local overview_wheel_controls_ready_file="$temporary_directory/xchg/driftile-overview-wheel-controls-ready"
   local overview_wheel_controls_sent=false
   local overview_wheel_controls_sent_file="$temporary_directory/xchg/driftile-overview-wheel-controls-sent"
@@ -422,6 +425,19 @@ monitor_guest() {
       overview_window_drop_sent=true
     fi
 
+    if [[ "$overview_tab_restore_sent" == false \
+      && -f "$overview_tab_restore_ready_file" ]]; then
+      if ! send_plain_pointer_click "$overview_tab_restore_ready_file"; then
+        printf 'Could not click the physical Overview minimized-tab control.\n' >&2
+        finish_full_vm_monitor || true
+        return 1
+      fi
+
+      printf 'The VM received the physical Overview minimized-tab click.\n'
+      : > "$overview_tab_restore_sent_file"
+      overview_tab_restore_sent=true
+    fi
+
     if [[ "$overview_wheel_controls_sent" == false \
       && -f "$overview_wheel_controls_ready_file" ]]; then
       if ! send_physical_overview_wheel_controls \
@@ -516,9 +532,9 @@ monitor_guest() {
       fi
 
       if [[ "$(<"$focus_file")" == true ]]; then
-        printf 'The VM verified physical shortcut and pointer routing, global wheel controls, physical Meta+Q close-window handling, desktop switching and reordering, same-output cross-desktop pointer adoption, minimized-slot navigation, column reordering, horizontal extraction, consume and expel past minimized peers, native fullscreen and maximize, stacked fullscreen and maximize extraction past minimized peers, borderless ownership, numbered dynamic desktops, whole-column desktop transfer past a minimized member, floating desktop transfers, manual-floating pointer retention, output transfers, floating-layer navigation, focus, stack editing, pointer reinsertion and horizontal pointer-resize adoption, live touchpad-navigation settings, physical overview keyboard, session zoom, and vertical- and horizontal-wheel navigation, advanced column view, column and window sizing, scrolling, mixed Konsole, Firefox, KDE Calculator, XWayland xterm, and fixed-size XWayland fixtures, plus repeated real-application lifecycles.\n'
+        printf 'The VM verified physical shortcut and pointer routing, global wheel controls, physical Meta+Q close-window handling, desktop switching and reordering, same-output cross-desktop pointer adoption, minimized-slot navigation, column reordering, horizontal extraction, consume and expel past minimized peers, native fullscreen and maximize, stacked fullscreen and maximize extraction past minimized peers, borderless ownership, numbered dynamic desktops, whole-column desktop transfer past a minimized member, floating desktop transfers, manual-floating pointer retention, output transfers, floating-layer navigation, focus, stack editing, pointer reinsertion and horizontal pointer-resize adoption, live touchpad-navigation settings, physical overview keyboard, minimized-tab restoration, session zoom, and vertical- and horizontal-wheel navigation, advanced column view, column and window sizing, scrolling, mixed Konsole, Firefox, KDE Calculator, XWayland xterm, and fixed-size XWayland fixtures, plus repeated real-application lifecycles.\n'
       else
-        printf 'The VM failed to verify physical shortcut or pointer routing, global wheel controls, physical Meta+Q close-window handling, desktop switching or reordering, same-output cross-desktop pointer adoption, minimized-slot navigation, column reordering, horizontal extraction, consume or expel past minimized peers, native fullscreen or maximize, stacked fullscreen or maximize extraction past minimized peers, borderless ownership, numbered dynamic desktops, whole-column desktop transfer past a minimized member, floating desktop transfers, manual-floating pointer retention, output transfers, floating-layer navigation, focus, stack editing, pointer reinsertion or horizontal pointer-resize adoption, live touchpad-navigation settings, physical overview keyboard, session zoom, or vertical- and horizontal-wheel navigation, advanced column view, column or window sizing, scrolling, mixed primary application fixtures, or the repeated real-application lifecycle pool.\n' >&2
+        printf 'The VM failed to verify physical shortcut or pointer routing, global wheel controls, physical Meta+Q close-window handling, desktop switching or reordering, same-output cross-desktop pointer adoption, minimized-slot navigation, column reordering, horizontal extraction, consume or expel past minimized peers, native fullscreen or maximize, stacked fullscreen or maximize extraction past minimized peers, borderless ownership, numbered dynamic desktops, whole-column desktop transfer past a minimized member, floating desktop transfers, manual-floating pointer retention, output transfers, floating-layer navigation, focus, stack editing, pointer reinsertion or horizontal pointer-resize adoption, live touchpad-navigation settings, physical overview keyboard, minimized-tab restoration, session zoom, or vertical- and horizontal-wheel navigation, advanced column view, column or window sizing, scrolling, mixed primary application fixtures, or the repeated real-application lifecycle pool.\n' >&2
         failed=true
 
         if [[ -f "$diagnostics_file" ]]; then
@@ -1781,6 +1797,47 @@ send_physical_pointer_drag() {
 send_plain_pointer_drag() {
   set_physical_meta_key_state false || return 1
   send_physical_pointer_drag "$1" true
+}
+
+send_plain_pointer_click() {
+  local absolute_x
+  local absolute_y
+  local coordinate_file=$1
+  local extra
+  local output_height
+  local output_width
+  local output_x
+  local output_y
+  local result=0
+  local x
+  local y
+
+  IFS=' ' read -r \
+    x \
+    y \
+    output_x \
+    output_y \
+    output_width \
+    output_height \
+    extra < "$coordinate_file" || return 1
+  [[ -z "${extra:-}" ]] || return 1
+
+  absolute_x=$(absolute_pointer_coordinate \
+    "$x" "$output_x" "$output_width") || return 1
+  absolute_y=$(absolute_pointer_coordinate \
+    "$y" "$output_y" "$output_height") || return 1
+
+  absolute_pointer_available || return 1
+  set_physical_pointer_drag_state false || return 1
+  send_absolute_pointer_position "$absolute_x" "$absolute_y" || result=1
+  sleep 0.1
+
+  if ((result == 0)) && ! set_physical_left_button_state true; then
+    result=1
+  fi
+  sleep 0.1
+  set_physical_left_button_state false || result=1
+  return "$result"
 }
 
 send_physical_pointer_resize() {
