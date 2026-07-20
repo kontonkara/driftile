@@ -34,6 +34,7 @@ export type OverviewActivationCacheLookupResult<Model extends object> =
 
 export interface OverviewActivationCache<Model extends object> {
   clear(): void;
+  hasExactDocument(document: unknown): boolean;
   lookup(
     document: unknown,
     liveSnapshot: unknown,
@@ -78,6 +79,24 @@ export function createOverviewActivationCache<
 
   const clear = (): void => {
     entry = null;
+  };
+
+  const hasExactDocument = (document: unknown): boolean => {
+    if (!isCacheableDocument(document)) {
+      clear();
+      return false;
+    }
+
+    if (entry === null) {
+      return false;
+    }
+
+    if (document !== entry.document) {
+      clear();
+      return false;
+    }
+
+    return true;
   };
 
   const miss = (
@@ -146,7 +165,7 @@ export function createOverviewActivationCache<
     return cacheHit(frozenModel);
   };
 
-  return Object.freeze({ clear, lookup, store });
+  return Object.freeze({ clear, hasExactDocument, lookup, store });
 }
 
 function cacheHit<Model extends object>(

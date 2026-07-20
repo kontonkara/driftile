@@ -702,7 +702,7 @@ describe("overview effect package", () => {
     );
     expect(accept).toContain("attemptId !== pendingActivationAttemptId");
     expect(accept).toMatch(
-      /if \(plasmaOverviewIsActive\(\)\) \{\s*cancelPendingActivation\(attemptId\);\s*return;\s*\}[\s\S]*runtime\.loadOverviewModel\(document, snapshot\)[\s\S]*if \(plasmaOverviewIsActive\(\)\) \{\s*cancelPendingActivation\(attemptId\);\s*return;\s*\}[\s\S]*storeActivationCache\(document, snapshot, result\.value\)[\s\S]*acceptActivationModel\(attemptId, model \? model : result\.value\)/u,
+      /if \(plasmaOverviewIsActive\(\)\) \{\s*cancelPendingActivation\(attemptId\);\s*return;\s*\}[\s\S]*runtime\.loadOverviewModel\(document, snapshot\)[\s\S]*if \(plasmaOverviewIsActive\(\)\) \{\s*cancelPendingActivation\(attemptId\);\s*return;\s*\}[\s\S]*if \(acceptActivationModel\(attemptId, result\.value\)\) \{\s*scheduleActivationCacheStore\(attemptId, document, snapshot,\s*result\.value\);\s*\}/u,
     );
     expect(accept).toMatch(
       /function acceptActivationModel\(attemptId, model\)[\s\S]*pendingActivationAttemptId = 0;[\s\S]*overviewModel = model;[\s\S]*loading = false;[\s\S]*active = true;/u,

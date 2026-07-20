@@ -1370,9 +1370,7 @@ QtObject {
         presentationProgress = 0;
         presentationPhase = "closed";
         const synchronousDocument = layoutStateReader.readSample();
-        const synchronousLiveSnapshot = liveSnapshot();
-        const cachedModel = lookupActivationCache(synchronousDocument,
-                                                  synchronousLiveSnapshot);
+        const cachedModel = lookupActivationCache(synchronousDocument);
         if (cachedModel) {
             acceptActivationModel(attemptId, cachedModel);
             return;
@@ -1597,8 +1595,10 @@ QtObject {
                 return;
             }
 
-            const model = storeActivationCache(document, snapshot, result.value);
-            acceptActivationModel(attemptId, model ? model : result.value);
+            if (acceptActivationModel(attemptId, result.value)) {
+                scheduleActivationCacheStore(attemptId, document, snapshot,
+                                             result.value);
+            }
         } catch (error) {
             rejectLayoutState(attemptId, "runtime-error");
         }
@@ -1640,17 +1640,45 @@ QtObject {
         }
     }
 
-    function lookupActivationCache(document, snapshot) {
+    function lookupActivationCache(document) {
         const cache = overviewActivationCache;
-        if (!cache || typeof cache.lookup !== "function") {
+        if (!cache || typeof cache.hasExactDocument !== "function"
+                || typeof cache.lookup !== "function") {
             return null;
         }
 
         try {
+            if (!cache.hasExactDocument(document)) {
+                return null;
+            }
+            const snapshot = liveSnapshot();
             const result = cache.lookup(document, snapshot);
             return result && result.ok === true && result.value ? result.value : null;
         } catch (error) {
             return null;
+        }
+    }
+
+    function scheduleActivationCacheStore(sessionId, document, snapshot, model) {
+        if (!Number.isInteger(sessionId) || sessionId <= 0
+                || !active || loading || activeSessionId !== sessionId
+                || pendingActivationAttemptId !== 0 || overviewModel !== model) {
+            return false;
+        }
+
+        try {
+            Qt.callLater(function() {
+                if (!controller.active || controller.loading
+                        || controller.activeSessionId !== sessionId
+                        || controller.pendingActivationAttemptId !== 0
+                        || controller.overviewModel !== model) {
+                    return;
+                }
+                controller.storeActivationCache(document, snapshot, model);
+            });
+            return true;
+        } catch (error) {
+            return false;
         }
     }
 

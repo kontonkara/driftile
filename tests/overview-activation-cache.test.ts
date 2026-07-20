@@ -14,6 +14,20 @@ interface TestOverviewModel {
 }
 
 describe("createOverviewActivationCache", () => {
+  it("checks the exact raw document before live snapshot construction", () => {
+    const cache = createOverviewActivationCache<TestOverviewModel>();
+
+    expect(cache.hasExactDocument("raw-layout")).toBe(false);
+    requireHit(cache.store("raw-layout", liveSnapshot(), testModel()));
+    expect(cache.hasExactDocument("raw-layout")).toBe(true);
+
+    expect(cache.hasExactDocument("changed-layout")).toBe(false);
+    expect(cache.lookup("raw-layout", liveSnapshot())).toEqual({
+      ok: false,
+      reason: "empty",
+    });
+  });
+
   it("detaches and deeply freezes one validated model", () => {
     const cache = createOverviewActivationCache<TestOverviewModel>();
     const model = testModel();
