@@ -317,13 +317,32 @@ touchpad, and touchscreen input. Their touch target is modestly enlarged
 without changing layout, release outside cancels, and an exact guarded close
 cannot activate or drag the window.
 
-A visible tiled window can be dragged to another workspace or output, into an
-exact stack position, or into a separate-column gutter. Its thumbnail follows
-the pointer across row clipping, and the active zone previews the solved final
-position and size before release. Dropping an eligible tiled window on the
-insertion line between two workspace rows creates a desktop at that position
-and moves the window there. Dragging a workspace number marker reorders eligible
-desktops; the protected empty tail cannot be moved.
+A visible tiled window can be dragged by its window body to another workspace
+or output, into an exact stack position, or into a separate-column gutter. This
+remains an individual-window operation. Its thumbnail follows the pointer
+across row clipping, and the active zone previews the solved final position and
+size before release. Dropping an eligible tiled window on the insertion line
+between two workspace rows creates a desktop at that position and moves the
+window there. Dragging a workspace number marker reorders eligible desktops;
+the protected empty tail cannot be moved.
+
+An eligible exact tiled column or stack exposes a compact top-center handle
+over its window content. Dragging this handle moves the complete column rather
+than extracting the selected member. The scene uses a single-color proxy for
+the group, while the active target previews every member's exact solved
+position and size before release. An exact boundary in the same row reorders
+the column; dropping on itself or on an adjacent boundary that would preserve
+the existing order is a safe no-op. On the same output, a handle can transfer
+the complete column to an exact boundary or empty gutter in another visible
+workspace row. An eligible insertion gap between workspace rows creates the
+destination at that exact position and moves the complete column there.
+
+Whole-column Overview placement preserves member order, the selected member,
+stacked or tabbed presentation, column width, and per-member height state. A
+cancelled drag, stale source or target, invalid context, or unsupported target
+clears the preview and leaves the layout unchanged. This slice deliberately
+does not offer whole-column placement across outputs; window-body dragging
+retains its existing individual-window cross-output path.
 
 Tabbed columns expose only their selected member in the spatial plane.
 Minimized windows use compact actionable placeholders instead of draggable
