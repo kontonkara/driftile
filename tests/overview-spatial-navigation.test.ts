@@ -15,6 +15,14 @@ const collection = desktopCard.slice(
   desktopCard.indexOf("function collectNavigationTargets("),
   desktopCard.indexOf("function viewportPointHitsWindow("),
 );
+const navigationVisual = desktopCard.slice(
+  desktopCard.indexOf("function navigationVisualForPresentation("),
+  desktopCard.indexOf("function windowSnapshotCanActivateMinimizedWindow("),
+);
+const viewportHitTest = desktopCard.slice(
+  desktopCard.indexOf("function viewportPointHitsWindow("),
+  desktopCard.indexOf("function visualContainsViewportPoint("),
+);
 const windowClip = desktopCard.slice(
   desktopCard.indexOf("function clippedNavigationRect("),
   desktopCard.indexOf("function clippedCardNavigationRect("),
@@ -194,6 +202,67 @@ describe("spatial overview navigation geometry", () => {
       `${collection}\n${windowClip}\n${cardClip}\n${validation}`,
     ).not.toMatch(
       /KWin\.Workspace\.(?:stackingOrder|windows)|\.setValue\s*\(|\b(?:MouseArea|Timer|WheelHandler|TapHandler|DragHandler)\s*\{/u,
+    );
+  });
+
+  it("projects one primary navigation visual for every actionable window", () => {
+    expect(navigationVisual).toContain(
+      "function navigationVisualForPresentation(presentation)",
+    );
+    expect(navigationVisual).toMatch(
+      /presentation\.selectedThumbnail[\s\S]*presentation\.thumbnailTarget[\s\S]*presentation\.thumbnailTarget\.visible[\s\S]*return presentation\.thumbnailTarget;/u,
+    );
+    expect(navigationVisual).toMatch(
+      /presentation\.minimizedWindow[\s\S]*presentation\.minimizedPlaceholderTarget[\s\S]*presentation\.minimizedPlaceholderTarget\.visible[\s\S]*return presentation\.minimizedPlaceholderTarget;/u,
+    );
+    expect(navigationVisual).toMatch(
+      /presentation\.tabTarget[\s\S]*presentation\.tabTarget\.visible[\s\S]*return presentation\.tabTarget;/u,
+    );
+    expect(navigationVisual).toMatch(/return null;/u);
+
+    const thumbnail = navigationVisual.indexOf(
+      "return presentation.thumbnailTarget;",
+    );
+    const placeholder = navigationVisual.indexOf(
+      "return presentation.minimizedPlaceholderTarget;",
+    );
+    const tab = navigationVisual.indexOf("return presentation.tabTarget;");
+    expect(thumbnail).toBeGreaterThanOrEqual(0);
+    expect(placeholder).toBeGreaterThan(thumbnail);
+    expect(tab).toBeGreaterThan(placeholder);
+
+    expect(collection).toContain(
+      "const visual = navigationVisualForPresentation(presentation);",
+    );
+    expect(collection.match(/targets\.push\(\{/gu)).toHaveLength(2);
+    expect(
+      collection.match(/id: navigationTargetId\(presentation\.windowId\)/gu),
+    ).toHaveLength(1);
+    expect(collection).not.toMatch(
+      /presentation\.minimizedWindow\s*\?\s*presentation\.minimizedPlaceholderTarget/u,
+    );
+  });
+
+  it("keeps tab chips in hit testing without bypassing search filtering", () => {
+    expect(viewportHitTest).toContain(
+      "visualContainsViewportPoint(presentation.tabTarget, point)",
+    );
+    expect(viewportHitTest).toContain(
+      "visualContainsViewportPoint(presentation.thumbnailTarget, point)",
+    );
+    expect(viewportHitTest).toContain(
+      "visualContainsViewportPoint(presentation.minimizedPlaceholderTarget, point)",
+    );
+    expect(collection).toContain(
+      "!presentation.matchesSearch || !windowCanNavigate(presentation)",
+    );
+    expect(collection.indexOf("!presentation.matchesSearch")).toBeLessThan(
+      collection.indexOf("navigationVisualForPresentation(presentation)"),
+    );
+    expect(
+      `${navigationVisual}\n${collection}\n${viewportHitTest}`,
+    ).not.toMatch(
+      /org\.kde\.kwin\.private|KWin\.Workspace\.(?:stackingOrder|windows)|\.setValue\s*\(/u,
     );
   });
 

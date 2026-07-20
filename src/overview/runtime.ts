@@ -51,6 +51,13 @@ export type { OverviewOutputLabelPlan } from "./output-label";
 export { planOverviewDesktopDrop } from "./desktop-drop";
 export { planOverviewMinimizedPlaceholder } from "./minimized-placeholder";
 export type { OverviewMinimizedPlaceholderRect } from "./minimized-placeholder";
+export { planOverviewTabRail } from "./tab-rail";
+export type {
+  OverviewTabRailChipFrame,
+  OverviewTabRailInput,
+  OverviewTabRailPlan,
+  OverviewTabRailRect,
+} from "./tab-rail";
 export { planOverviewWindowDesktopDrop } from "./window-drop";
 export { planOverviewWindowLabel } from "./window-label";
 export type { OverviewWindowLabelPlan } from "./window-label";

@@ -757,7 +757,7 @@ describe("overview effect package", () => {
     expect(desktopCard).toContain("KWin.WindowThumbnail");
     expect(desktopCard.match(/KWin\.WindowModel\s*\{/gu)).toHaveLength(1);
     expect(desktopCard.match(/KWin\.WindowFilterModel\s*\{/gu)).toHaveLength(1);
-    expect(desktopCard).toContain("minimizedWindows: false");
+    expect(desktopCard).toContain("minimizedWindows: true");
     expect(
       qmlSources.join("\n").match(/KWin\.DesktopBackground\s*\{/gu) ?? [],
     ).toHaveLength(1);
@@ -3151,6 +3151,10 @@ describe("overview effect package", () => {
   });
 
   it("loads bounded application icons only for eligible static window labels", () => {
+    const tab = desktopCard.slice(
+      desktopCard.indexOf("id: tabShell"),
+      desktopCard.indexOf("id: thumbnailShell"),
+    );
     const thumbnail = desktopCard.slice(
       desktopCard.indexOf("id: thumbnailShell"),
       desktopCard.indexOf("id: minimizedPlaceholderShell"),
@@ -3170,7 +3174,7 @@ describe("overview effect package", () => {
     expect(desktopCard).toContain(
       "required property bool showApplicationIcons",
     );
-    expect(desktopCard.match(/WindowApplicationIcon \{/gu)).toHaveLength(2);
+    expect(desktopCard.match(/WindowApplicationIcon \{/gu)).toHaveLength(3);
     expect(desktopCard).not.toContain("candidate.icon");
 
     expect(windowApplicationIcon).toContain(
@@ -3213,6 +3217,13 @@ describe("overview effect package", () => {
         /anchors\.leftMargin: thumbnailApplicationIcon\.iconAvailable \? 28 : 6/gu,
       ),
     ).toHaveLength(2);
+
+    expect(tab).toMatch(
+      /id: tabApplicationIcon[\s\S]*width: Math\.max\(10, Math\.min\(14, tabShell\.height - 6\)\)\s*height: width[\s\S]*candidate: windowPresentation\.candidate[\s\S]*presentationEligible: card\.showApplicationIcons && tabShell\.visible\s*&& tabShell\.width >= 72 && tabShell\.height >= 20/u,
+    );
+    expect(tab).toContain(
+      "tabApplicationIcon.x + tabApplicationIcon.width + 4",
+    );
 
     expect(placeholder).toMatch(
       /id: minimizedPlaceholderApplicationIcon[\s\S]*width: Math\.max\(10, Math\.min\(16, minimizedPlaceholderShell\.height - 8\)\)\s*height: width[\s\S]*candidate: windowPresentation\.candidate[\s\S]*presentationEligible: card\.showApplicationIcons && minimizedPlaceholderShell\.visible\s*&& minimizedPlaceholderShell\.width >= 120\s*&& minimizedPlaceholderShell\.height >= 20/u,
@@ -3338,6 +3349,10 @@ describe("overview effect package", () => {
     );
     const windowPresentation = desktopCard.slice(
       desktopCard.indexOf("id: windowPresentation"),
+      desktopCard.indexOf("id: thumbnailShell"),
+    );
+    const tab = desktopCard.slice(
+      desktopCard.indexOf("id: tabShell"),
       desktopCard.indexOf("id: thumbnailShell"),
     );
     const thumbnail = desktopCard.slice(
@@ -3493,13 +3508,17 @@ describe("overview effect package", () => {
     expect(cardTargets).toContain(
       "!presentation.matchesSearch || !windowCanNavigate(presentation)",
     );
-    expect(cardTargets).toMatch(
-      /const visual = presentation\.minimizedWindow\s*\? presentation\.minimizedPlaceholderTarget : presentation\.thumbnailTarget/u,
+    expect(cardTargets).toContain(
+      "const visual = navigationVisualForPresentation(presentation);",
     );
     expect(cardTargets).toContain("presentation.minimizedPlaceholderTarget");
     expect(cardTargets).toContain("presentation.thumbnailTarget");
+    expect(cardTargets).toContain("presentation.tabTarget");
     expect(cardTargets).toContain(
       "visualContainsViewportPoint(presentation.minimizedPlaceholderTarget, point)",
+    );
+    expect(cardTargets).toContain(
+      "visualContainsViewportPoint(presentation.tabTarget, point)",
     );
     expect(cardTargets).toContain(
       "id: navigationTargetId(presentation.windowId)",
@@ -3529,10 +3548,10 @@ describe("overview effect package", () => {
     expect(cardTargets).toContain("width: sceneItem.width");
     expect(cardTargets).toContain("right <= left || bottom <= top");
 
-    expect(thumbnail).toContain("!windowPresentation.tiledPresentation");
     expect(thumbnail).toContain(
-      "windowPresentation.tiledPresentation.selected",
+      "card.navigationVisualForPresentation(windowPresentation) === thumbnailShell",
     );
+    expect(thumbnail).toContain("windowPresentation.selectedThumbnail");
     expect(thumbnail).toContain("!windowPresentation.minimizedWindow");
     for (const condition of [
       "presentation.matchesSearch !== true",
@@ -3564,7 +3583,7 @@ describe("overview effect package", () => {
     expect(minimizedActivation).not.toMatch(
       /\b(?:Timer|Behavior|Animation|ShortcutHandler)\s*\{|org\.kde\.kwin\.private|\bsequence\s*:|(?:candidate|snapshot|presentation)\.[A-Za-z0-9_]+\s*=(?!=)/u,
     );
-    for (const visual of [thumbnail, placeholder]) {
+    for (const visual of [thumbnail, placeholder, tab]) {
       expect(visual).toContain(
         "card.keyboardSelectionId === card.navigationTargetId(windowPresentation.windowId)",
       );
@@ -5449,6 +5468,9 @@ describe("overview effect package", () => {
     expect(windowHitTest).toContain(
       "visualContainsViewportPoint(presentation.minimizedPlaceholderTarget, point)",
     );
+    expect(windowHitTest).toContain(
+      "visualContainsViewportPoint(presentation.tabTarget, point)",
+    );
     expect(visualHitTest).toContain("!visual.visible");
     expect(visualHitTest).toContain(
       "visual.mapFromItem(emptyContentInput, point.x, point.y)",
@@ -5535,21 +5557,126 @@ describe("overview effect package", () => {
       /id: thumbnailShell[\s\S]*visible: windowPresentation\.selectedThumbnail && windowPresentation\.frame !== null[\s\S]*KWin\.WindowThumbnail \{[\s\S]*wId: windowPresentation\.windowId/u,
     );
     expect(desktopCard.match(/KWin\.WindowThumbnail \{/gu)).toHaveLength(1);
-    for (const syntheticTabUi of [
-      "id: tabShell",
-      "tabTarget",
-      "tabFrameForPresentation",
-      "spatialLiveTabbedDisplayFrame",
-      "boundedTabStripHeight",
-      "tabFrames",
-      "tabStripHeight",
-      "stripBodyGap",
-      "tabApplicationIcon",
-      "tabAttentionBadge",
-      "tabCloseButton",
+    expect(desktopCard).toContain("id: tabRailLayer");
+    expect(desktopCard).toContain("id: tabShell");
+    expect(desktopCard).toContain("readonly property var tabTarget: tabShell");
+    expect(desktopCard).toContain("card.tabFrameForPresentation(");
+  });
+
+  it("overlays compact guarded controls for every real tabbed member", () => {
+    const viewportStart = desktopCard.indexOf("id: viewport");
+    const railLayerStart = desktopCard.indexOf("id: tabRailLayer");
+    const columnRepeaterStart = desktopCard.indexOf("id: columnRepeater");
+    const windowPresentationStart = desktopCard.indexOf(
+      "id: windowPresentation",
+    );
+    const thumbnailStart = desktopCard.indexOf("id: thumbnailShell");
+    const tabStart = desktopCard.indexOf("id: tabShell");
+    const plannerStart = desktopCard.indexOf("function buildTabRailPlans(");
+    const frameLookupStart = desktopCard.indexOf(
+      "function tabFrameForPresentation(",
+    );
+    const filterStart = desktopCard.indexOf("KWin.WindowFilterModel {");
+    const filter = desktopCard.slice(
+      filterStart,
+      desktopCard.indexOf("windowType:", filterStart),
+    );
+
+    expect(viewportStart).toBeGreaterThanOrEqual(0);
+    expect(railLayerStart).toBeGreaterThan(viewportStart);
+    expect(columnRepeaterStart).toBeGreaterThan(viewportStart);
+    expect(windowPresentationStart).toBeGreaterThan(columnRepeaterStart);
+    expect(thumbnailStart).toBeGreaterThan(windowPresentationStart);
+    expect(tabStart).toBeGreaterThan(windowPresentationStart);
+    expect(plannerStart).toBeGreaterThanOrEqual(0);
+    expect(frameLookupStart).toBeGreaterThanOrEqual(0);
+    expect(filter).toContain("minimizedWindows: true");
+    expect(filter).not.toContain("minimizedWindows: false");
+
+    const railLayer = desktopCard.slice(railLayerStart, railLayerStart + 260);
+    const thumbnail = desktopCard.slice(thumbnailStart, thumbnailStart + 2_400);
+    const tab = desktopCard.slice(tabStart, thumbnailStart);
+    const planner = desktopCard.slice(plannerStart, frameLookupStart);
+    const frameLookup = desktopCard.slice(
+      frameLookupStart,
+      desktopCard.indexOf(
+        "function buildSpatialColumnFrames(",
+        frameLookupStart,
+      ),
+    );
+
+    expect(railLayer).toContain("anchors.fill: parent");
+    expect(railLayer).toContain("clip: true");
+    expect(railLayer).toContain("z: 8000");
+    expect(desktopCard).toMatch(/id: columnShell[\s\S]*z: 9000/u);
+    expect(tab).toContain("parent: tabRailLayer");
+
+    for (const geometry of [
+      "x: windowPresentation.frame ? windowPresentation.frame.x : 0",
+      "y: windowPresentation.frame ? windowPresentation.frame.y : 0",
+      "width: windowPresentation.frame ? Math.max(1, windowPresentation.frame.width) : 0",
+      "height: windowPresentation.frame ? Math.max(1, windowPresentation.frame.height) : 0",
     ]) {
-      expect(desktopCard).not.toContain(syntheticTabUi);
+      expect(thumbnail).toContain(geometry);
     }
+    expect(thumbnail).not.toMatch(/tab(?:Frame|Rail|Shell)/u);
+
+    expect(tab).toContain(
+      "readonly property var frame: windowPresentation.tabFrame",
+    );
+    expect(tab).toContain("windowPresentation.matchesSearch");
+    expect(tab).toContain("windowPresentation.minimizedWindow");
+    expect(tab).toContain("windowPresentation.attentionRequested");
+    expect(tab).toContain(
+      "readonly property bool selectedTab: frame !== null && frame.selected === true",
+    );
+    expect(tab).toMatch(/`Tab \$\{[^}]*memberIndex \+ 1 : ""\}`/u);
+    expect(tab).toContain("elide: Text.ElideRight");
+    expect(tab).toContain("textFormat: Text.PlainText");
+
+    expect(tab).toContain("acceptedButtons: Qt.LeftButton");
+    expect(tab).toContain(
+      "acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad | PointerDevice.TouchScreen",
+    );
+    expect(tab).toContain("gesturePolicy: TapHandler.DragThreshold");
+    expect(tab).toContain(
+      "card.windowTapped(windowPresentation.candidate, windowPresentation.windowId,",
+    );
+    expect(tab).toContain("windowPresentation.sourceDesktopId,");
+    expect(tab).toContain("windowPresentation.sourceScreen)");
+    expect(tab).toContain("acceptedButtons: Qt.MiddleButton");
+    expect(tab).toContain(
+      "acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad",
+    );
+    expect(tab).toContain("windowPresentation.closeEligible");
+    expect(tab).toContain("!card.spatialDirectDragBlocked");
+    expect(tab).toContain(
+      "card.windowCloseRequested(windowPresentation.candidate,",
+    );
+
+    expect(planner).toContain("OverviewRuntime.DriftileOverview");
+    expect(planner).toContain(
+      'typeof runtime.planOverviewTabRail !== "function"',
+    );
+    expect(planner).toContain('column.presentation !== "tabbed"');
+    expect(planner).toContain(
+      "!indexedListHasBoundedLength(column.members, 2, 256)",
+    );
+    expect(planner).toContain("tabRailPlanIsExact(");
+    expect(desktopCard).toContain("Object.isFrozen(plan)");
+    expect(desktopCard).toContain("Object.isFrozen(plan.railFrame)");
+    expect(desktopCard).toContain("Object.isFrozen(plan.chipFrames)");
+    expect(desktopCard).toContain("Object.isFrozen(chip)");
+    expect(frameLookup).toContain("tabRailPlanIsExact(");
+    expect(frameLookup).toContain("tiled.memberIndex");
+    expect(frameLookup).toContain(
+      "tiledPresentations[expectedWindowId] !== tiled",
+    );
+    expect(frameLookup).toContain("member.windowId !== expectedWindowId");
+    expect(frameLookup).toMatch(/catch \(error\) \{\s*return null;/u);
+    expect(`${railLayer}\n${tab}\n${planner}\n${frameLookup}`).not.toMatch(
+      /org\.kde\.kwin\.private|\.setValue\s*\(|KWin\.Workspace\.(?:stackingOrder|windows)/u,
+    );
   });
 
   it("loads the runtime through the fail-closed adapter boundary", () => {

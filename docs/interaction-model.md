@@ -344,9 +344,26 @@ clears the preview and leaves the layout unchanged. This slice deliberately
 does not offer whole-column placement across outputs; window-body dragging
 retains its existing individual-window cross-output path.
 
-Tabbed columns expose only their selected member in the spatial plane.
-Minimized windows use compact actionable placeholders instead of draggable
-thumbnails. Window and desktop changes refresh the active scene. Activity or
+Multi-member tabbed columns keep the selected member at its full projected
+size and add a compact tab rail over the column; the controls do not shrink or
+reflow the selected preview. Each tab shows selected, minimized, and attention
+state. Its bounded plain-text label uses the available application or window
+identity and falls back to `Tab N` when no safe label is available.
+
+Windows that were already minimized when Overview opened remain represented,
+and minimized windows use compact actionable placeholders instead of draggable
+thumbnails. Hidden tab members and minimized windows participate in search and
+keyboard navigation. Each window contributes exactly one navigation target:
+its selected preview, minimized placeholder, or tab control. `Enter`, `Return`,
+and `Space` activate that target through the same guarded path.
+
+A primary mouse click, touchpad tap, or touchscreen tap on a tab control
+activates its exact window. A middle mouse or touchpad click closes an eligible
+window only while the same exact close checks still pass. Stale column
+membership, geometry, output, desktop, activity, or window identity disables
+the control instead of falling through to another action.
+
+Window and desktop changes refresh the active scene. Activity or
 output-topology changes close a stale scene so later input cannot target an
 outdated layout.
 

@@ -108,6 +108,7 @@ Item {
     readonly property var columnFrames: buildColumnFrames()
     readonly property var tiledPresentations: buildTiledPresentations()
     readonly property var spatialLiveColumnFrames: buildSpatialLiveColumnFrames(spatialLiveGeometryRevision)
+    readonly property var tabRailPlans: buildTabRailPlans()
     readonly property var floatingWindowIds: buildFloatingWindowIds()
     property int spatialLiveGeometryRevision: 0
     property int attentionRevision: 0
@@ -411,6 +412,14 @@ Item {
                 radius: 2
                 z: 2
             }
+        }
+
+        Item {
+            id: tabRailLayer
+
+            anchors.fill: parent
+            clip: true
+            z: 8000
         }
 
         Repeater {
@@ -765,7 +774,7 @@ Item {
                 desktop: card.desktop
                 screenName: card.screen ? String(card.screen.name) : ""
                 windowModel: KWin.WindowModel {}
-                minimizedWindows: false
+                minimizedWindows: true
                 windowType: ~KWin.WindowFilterModel.Dock & ~KWin.WindowFilterModel.Desktop &
                             ~KWin.WindowFilterModel.Notification & ~KWin.WindowFilterModel.CriticalNotification
             }
@@ -805,9 +814,11 @@ Item {
                     && card.windowSnapshotCanActivateMinimizedWindow(windowPresentation)
                 readonly property var minimizedPlaceholderFrame: minimizedActivationEligible
                     ? card.planMinimizedPlaceholderFrame(frame) : null
+                readonly property var tabFrame: card.tabFrameForPresentation(tiledPresentation, windowId)
                 readonly property var windowLabel: card.planWindowLabel(candidate, matchesSearch && model.window
                     && ((!minimizedWindow && selectedThumbnail && frame !== null && frame !== undefined)
-                        || (minimizedPlaceholderFrame !== null && minimizedPlaceholderFrame !== undefined)))
+                        || (minimizedPlaceholderFrame !== null && minimizedPlaceholderFrame !== undefined)
+                        || (tabFrame !== null && tabFrame !== undefined)))
                 readonly property bool dragEligible: card.windowSnapshotCanDrag(windowPresentation)
                     && card.windowDropSourceTiledPresentationIsExact(windowPresentation)
                 readonly property bool closeEligible: card.windowSnapshotCanRequestClose(windowPresentation)
@@ -817,6 +828,7 @@ Item {
                 readonly property var sourceCard: card
                 readonly property var thumbnailTarget: thumbnailShell
                 readonly property var minimizedPlaceholderTarget: minimizedPlaceholderShell
+                readonly property var tabTarget: tabShell
                 property bool spatialDragLifecycleActive: false
                 property bool touchSpatialDragArmed: false
 
@@ -831,6 +843,7 @@ Item {
                 }
                 onAttentionRequestedChanged: card.attentionRevision += 1
                 onMinimizedPlaceholderFrameChanged: card.navigationTargetsChanged()
+                onTabFrameChanged: card.navigationTargetsChanged()
                 onWindowStateChanged: card.navigationTargetsChanged()
 
                 Component.onCompleted: refreshActionSnapshot()
@@ -918,12 +931,168 @@ Item {
                     }
                 }
 
+                Rectangle {
+                    id: tabShell
+
+                    parent: tabRailLayer
+
+                    readonly property var frame: windowPresentation.tabFrame
+                    readonly property bool selectedTab: frame !== null && frame.selected === true
+                    readonly property bool minimizedTab: windowPresentation.minimizedWindow
+                    readonly property bool attentionTab: windowPresentation.attentionRequested
+                    readonly property bool activeTab: KWin.Workspace.activeWindow === windowPresentation.candidate
+                    readonly property bool activationEligible: frame !== null
+                        && windowPresentation.matchesSearch && card.windowCanNavigate(windowPresentation)
+                    readonly property bool keyboardTarget: activationEligible
+                        && card.navigationVisualForPresentation(windowPresentation) === tabShell
+                    readonly property bool keyboardSelected: keyboardTarget
+                        && card.keyboardSelectionId === card.navigationTargetId(windowPresentation.windowId)
+
+                    function frameIsExact() {
+                        return frame !== null
+                            && card.tabFrameForPresentation(windowPresentation.tiledPresentation,
+                                                            windowPresentation.windowId) === frame;
+                    }
+
+                    function activationIsExact() {
+                        return tabShell.visible && tabShell.frameIsExact()
+                            && windowPresentation.matchesSearch
+                            && card.windowCanNavigate(windowPresentation);
+                    }
+
+                    function closeIsExact() {
+                        return tabShell.visible && tabShell.frameIsExact()
+                            && windowPresentation.closeEligible
+                            && card.windowSnapshotCanRequestClose(windowPresentation);
+                    }
+
+                    x: frame ? frame.x : 0
+                    y: frame ? frame.y : 0
+                    width: frame ? frame.width : 0
+                    height: frame ? frame.height : 0
+                    visible: frame !== null && model.window && windowPresentation.matchesSearch
+                    opacity: windowPresentation.opacity
+                    color: selectedTab ? "#e63a4960"
+                                       : minimizedTab ? "#dc252e3d" : "#dc111824"
+                    border.width: keyboardSelected || activeTab ? 2 : 1
+                    border.color: keyboardSelected ? "#ffd166"
+                                                   : attentionTab ? "#e2556f"
+                                                                  : activeTab ? "#f4f8ff"
+                                                                              : selectedTab ? "#86aee8"
+                                                                                            : "#66758b"
+                    radius: 3
+                    clip: true
+                    z: 5000 + index
+
+                    WindowApplicationIcon {
+                        id: tabApplicationIcon
+
+                        anchors.left: parent.left
+                        anchors.leftMargin: tabShell.attentionTab ? 8 : 5
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: Math.max(10, Math.min(14, tabShell.height - 6))
+                        height: width
+                        candidate: windowPresentation.candidate
+                        presentationEligible: card.showApplicationIcons && tabShell.visible
+                            && tabShell.width >= 72 && tabShell.height >= 20
+                    }
+
+                    Text {
+                        anchors.fill: parent
+                        anchors.leftMargin: tabApplicationIcon.iconAvailable
+                            ? tabApplicationIcon.x + tabApplicationIcon.width + 4
+                            : tabShell.attentionTab ? 8 : 5
+                        anchors.rightMargin: tabMinimizedMarker.visible ? 13 : 5
+                        text: card.showWindowLabels && windowPresentation.windowLabel !== null
+                            ? windowPresentation.windowLabel.primary
+                            : `Tab ${tabShell.frame ? tabShell.frame.memberIndex + 1 : ""}`
+                        color: tabShell.minimizedTab ? "#aebbd0" : "#f3f7ff"
+                        font.bold: tabShell.selectedTab || tabShell.activeTab
+                        font.pixelSize: Math.max(7, Math.min(10, tabShell.height * 0.46))
+                        horizontalAlignment: Text.AlignLeft
+                        verticalAlignment: Text.AlignVCenter
+                        elide: Text.ElideRight
+                        textFormat: Text.PlainText
+                    }
+
+                    Rectangle {
+                        anchors.left: parent.left
+                        anchors.top: parent.top
+                        anchors.bottom: parent.bottom
+                        width: 3
+                        visible: tabShell.attentionTab
+                        color: "#e2556f"
+                        z: 1
+                    }
+
+                    Rectangle {
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        anchors.bottom: parent.bottom
+                        height: 2
+                        visible: tabShell.selectedTab
+                        color: "#86aee8"
+                        z: 1
+                    }
+
+                    Rectangle {
+                        id: tabMinimizedMarker
+
+                        anchors.right: parent.right
+                        anchors.rightMargin: 5
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: 6
+                        height: 2
+                        visible: tabShell.minimizedTab && tabShell.width >= 36
+                        color: "#aebbd0"
+                        radius: 1
+                        z: 1
+                    }
+
+                    TapHandler {
+                        acceptedButtons: Qt.LeftButton
+                        acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad | PointerDevice.TouchScreen
+                        gesturePolicy: TapHandler.DragThreshold
+                        enabled: tabShell.activationEligible && card.interactionEligible
+                            && card.desktop && card.screen && card.columnDragActiveSource === null
+                            && card.columnPointerHoverSource === null
+                            && card.columnPointerPressSource === null && !card.spatialDirectDragBlocked
+                        onTapped: {
+                            if (!tabShell.activationIsExact()) {
+                                return;
+                            }
+                            card.windowTapped(windowPresentation.candidate, windowPresentation.windowId,
+                                              windowPresentation.sourceDesktop,
+                                              windowPresentation.sourceDesktopId,
+                                              windowPresentation.sourceScreen);
+                        }
+                    }
+
+                    TapHandler {
+                        acceptedButtons: Qt.MiddleButton
+                        acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
+                        enabled: tabShell.visible && windowPresentation.closeEligible
+                            && card.interactionEligible && card.columnDragActiveSource === null
+                            && card.columnPointerHoverSource === null
+                            && card.columnPointerPressSource === null && !card.spatialDirectDragBlocked
+                        onTapped: {
+                            if (!tabShell.closeIsExact()) {
+                                return;
+                            }
+                            card.windowCloseRequested(windowPresentation.candidate,
+                                                      windowPresentation.windowId,
+                                                      windowPresentation.sourceDesktop,
+                                                      windowPresentation.sourceDesktopId,
+                                                      windowPresentation.sourceScreen);
+                        }
+                    }
+                }
+
                 Item {
                     id: thumbnailShell
 
                     readonly property bool keyboardTarget: windowPresentation.matchesSearch
-                        && !windowPresentation.minimizedWindow
-                        && (!windowPresentation.tiledPresentation || windowPresentation.tiledPresentation.selected)
+                        && card.navigationVisualForPresentation(windowPresentation) === thumbnailShell
                     readonly property bool keyboardSelected: keyboardTarget
                         && card.keyboardSelectionId === card.navigationTargetId(windowPresentation.windowId)
                     readonly property bool closeButtonLargeEnough: width >= 52 && height >= 40
@@ -1357,6 +1526,7 @@ Item {
                     readonly property var frame: windowPresentation.minimizedPlaceholderFrame
                     readonly property bool activationEligible: windowPresentation.minimizedActivationEligible
                     readonly property bool keyboardTarget: activationEligible && windowPresentation.matchesSearch
+                        && card.navigationVisualForPresentation(windowPresentation) === minimizedPlaceholderShell
                     readonly property bool keyboardSelected: keyboardTarget
                         && card.keyboardSelectionId === card.navigationTargetId(windowPresentation.windowId)
                     readonly property bool closeButtonLargeEnough: width >= 72 && height >= 20
@@ -1864,6 +2034,7 @@ Item {
         card.clearInvalidColumnDropHover();
         card.cancelInvalidActiveColumnSpatialDrag();
     }
+    onTabRailPlansChanged: card.navigationTargetsChanged()
     onSpatialRowGeometryPlanChanged: {
         card.clearInvalidWindowDropHover();
         card.clearInvalidColumnDropHover();
@@ -2048,8 +2219,7 @@ Item {
                 continue;
             }
 
-            const visual = presentation.minimizedWindow
-                ? presentation.minimizedPlaceholderTarget : presentation.thumbnailTarget;
+            const visual = navigationVisualForPresentation(presentation);
             const rect = clippedNavigationRect(visual, sceneItem, includeOffscreen);
             if (!rect) {
                 continue;
@@ -2078,7 +2248,8 @@ Item {
                 continue;
             }
             if (visualContainsViewportPoint(presentation.thumbnailTarget, point)
-                    || visualContainsViewportPoint(presentation.minimizedPlaceholderTarget, point)) {
+                    || visualContainsViewportPoint(presentation.minimizedPlaceholderTarget, point)
+                    || visualContainsViewportPoint(presentation.tabTarget, point)) {
                 return true;
             }
         }
@@ -4642,6 +4813,29 @@ Item {
                                 || windowSnapshotCanActivateMinimizedWindow(presentation));
     }
 
+    function navigationVisualForPresentation(presentation) {
+        try {
+            if (!presentation || presentation.matchesSearch !== true
+                    || !windowCanNavigate(presentation)) {
+                return null;
+            }
+            if (presentation.minimizedWindow !== true && presentation.selectedThumbnail === true
+                    && presentation.thumbnailTarget && presentation.thumbnailTarget.visible) {
+                return presentation.thumbnailTarget;
+            }
+            if (presentation.minimizedWindow === true && presentation.minimizedPlaceholderTarget
+                    && presentation.minimizedPlaceholderTarget.visible) {
+                return presentation.minimizedPlaceholderTarget;
+            }
+            if (presentation.tabTarget && presentation.tabTarget.visible) {
+                return presentation.tabTarget;
+            }
+            return null;
+        } catch (error) {
+            return null;
+        }
+    }
+
     function windowSnapshotCanActivateMinimizedWindow(presentation) {
         try {
             const snapshot = presentation ? presentation.actionSnapshot : null;
@@ -5196,6 +5390,208 @@ Item {
     function buildColumnFrames() {
         const plannedFrames = buildSpatialColumnFrames();
         return plannedFrames !== null ? plannedFrames : buildLegacyColumnFrames();
+    }
+
+    function buildTabRailPlans() {
+        const plans = [];
+        try {
+            if (!context || context.columns !== columns || !indexedListHasBoundedLength(columns, 0, 512)
+                    || !viewport || !Number.isFinite(viewport.width) || viewport.width <= 0
+                    || !Number.isFinite(viewport.height) || viewport.height <= 0) {
+                return Object.freeze(plans);
+            }
+
+            const runtime = OverviewRuntime.DriftileOverview;
+            if (!runtime || typeof runtime.planOverviewTabRail !== "function") {
+                return Object.freeze(plans);
+            }
+
+            for (let columnIndex = 0; columnIndex < columns.length; columnIndex += 1) {
+                const column = columns[columnIndex];
+                if (!column || column.presentation !== "tabbed"
+                        || !indexedListHasBoundedLength(column.members, 2, 256)) {
+                    plans.push(null);
+                    continue;
+                }
+                if (!Number.isInteger(column.selectedMemberIndex)
+                        || column.selectedMemberIndex < 0
+                        || column.selectedMemberIndex >= column.members.length) {
+                    plans.push(null);
+                    continue;
+                }
+
+                const sourceFrame = tabRailColumnFrame(column, columnIndex);
+                if (sourceFrame === null) {
+                    plans.push(null);
+                    continue;
+                }
+
+                const planned = runtime.planOverviewTabRail({
+                    columnFrame: sourceFrame,
+                    memberCount: column.members.length,
+                    presentation: "tabbed",
+                    selectedIndex: column.selectedMemberIndex,
+                    viewport: {
+                        height: viewport.height,
+                        width: viewport.width,
+                        x: 0,
+                        y: 0
+                    }
+                });
+                plans.push(tabRailPlanIsExact(planned, column, columnIndex, sourceFrame)
+                           ? planned : null);
+            }
+
+            return Object.freeze(plans);
+        } catch (error) {
+            return Object.freeze([]);
+        }
+    }
+
+    function tabRailColumnFrame(column, columnIndex) {
+        try {
+            if (!column || !Number.isInteger(columnIndex) || columnIndex < 0
+                    || columnIndex >= columns.length || columns[columnIndex] !== column
+                    || column.presentation !== "tabbed"
+                    || !indexedListHasBoundedLength(column.members, 2, 256)
+                    || !Number.isInteger(column.selectedMemberIndex)
+                    || column.selectedMemberIndex < 0
+                    || column.selectedMemberIndex >= column.members.length) {
+                return null;
+            }
+
+            const selectedMember = column.members[column.selectedMemberIndex];
+            const selectedWindowId = selectedMember ? selectedMember.windowId : "";
+            const tiled = typeof selectedWindowId === "string" && selectedWindowId.length > 0
+                ? tiledPresentations[selectedWindowId] : null;
+            if (!tiled || tiledPresentations[selectedWindowId] !== tiled
+                    || tiled.columnIndex !== columnIndex
+                    || tiled.memberIndex !== column.selectedMemberIndex || tiled.selected !== true
+                    || !tiled.thumbnailFrame
+                    || !projectionGeometryScalarsAreValid(tiled.thumbnailFrame.x,
+                                                          tiled.thumbnailFrame.y,
+                                                          tiled.thumbnailFrame.width,
+                                                          tiled.thumbnailFrame.height)) {
+                return null;
+            }
+
+            const livePlan = spatialLiveColumnPlan(columnIndex);
+            let selectedFrame = tiled.thumbnailFrame;
+            let shellFrame = columnFrame(columnIndex);
+            if (livePlan !== null) {
+                if (!spatialLiveColumnPlanIsExact(livePlan, columnIndex)) {
+                    return null;
+                }
+                selectedFrame = livePlan.memberFrames[column.selectedMemberIndex];
+                shellFrame = livePlan;
+            }
+            if (!selectedFrame
+                    || !projectionGeometryScalarsAreValid(shellFrame.x, selectedFrame.y,
+                                                          shellFrame.width, selectedFrame.height)) {
+                return null;
+            }
+
+            return {
+                height: selectedFrame.height,
+                width: shellFrame.width,
+                x: shellFrame.x,
+                y: selectedFrame.y
+            };
+        } catch (error) {
+            return null;
+        }
+    }
+
+    function tabRailPlanIsExact(plan, column, columnIndex, sourceFrame) {
+        try {
+            if (!plan || Array.isArray(plan) || !Object.isFrozen(plan)
+                    || !Object.isFrozen(plan.railFrame) || !Array.isArray(plan.chipFrames)
+                    || !Object.isFrozen(plan.chipFrames) || !column
+                    || !Number.isInteger(columnIndex) || columnIndex < 0
+                    || columnIndex >= columns.length || columns[columnIndex] !== column
+                    || column.presentation !== "tabbed"
+                    || !indexedListHasBoundedLength(column.members, 2, 256)
+                    || plan.chipFrames.length !== column.members.length
+                    || !tabRailRectIsValid(sourceFrame) || !tabRailRectIsValid(plan.railFrame)) {
+                return false;
+            }
+
+            const visibleLeft = Math.max(0, sourceFrame.x);
+            const visibleTop = Math.max(0, sourceFrame.y);
+            const visibleRight = Math.min(viewport.width, sourceFrame.x + sourceFrame.width);
+            const visibleBottom = Math.min(viewport.height, sourceFrame.y + sourceFrame.height);
+            const rail = plan.railFrame;
+            const epsilon = Math.max(1, viewport.width, viewport.height, Math.abs(rail.x),
+                                     Math.abs(rail.y), rail.width, rail.height) * 0.000000001;
+            if (visibleRight <= visibleLeft || visibleBottom <= visibleTop
+                    || rail.x < visibleLeft - epsilon || rail.y < visibleTop - epsilon
+                    || rail.x + rail.width > visibleRight + epsilon
+                    || rail.y + rail.height > visibleBottom + epsilon
+                    || rail.height < 16 - epsilon || rail.height > 24 + epsilon) {
+                return false;
+            }
+
+            let selectedCount = 0;
+            let previousRight = rail.x;
+            for (let memberIndex = 0; memberIndex < plan.chipFrames.length; memberIndex += 1) {
+                const chip = plan.chipFrames[memberIndex];
+                const member = column.members[memberIndex];
+                if (!chip || Array.isArray(chip) || !Object.isFrozen(chip) || !member
+                        || typeof member.windowId !== "string" || member.windowId.length === 0
+                        || chip.memberIndex !== memberIndex
+                        || chip.selected !== (memberIndex === column.selectedMemberIndex)
+                        || !tabRailRectIsValid(chip)
+                        || chip.width < 28 - epsilon || chip.width > 120 + epsilon
+                        || Math.abs(chip.y - rail.y) > epsilon
+                        || Math.abs(chip.height - rail.height) > epsilon
+                        || chip.x < previousRight - epsilon || chip.x < rail.x - epsilon
+                        || chip.x + chip.width > rail.x + rail.width + epsilon) {
+                    return false;
+                }
+                if (chip.selected) {
+                    selectedCount += 1;
+                }
+                previousRight = chip.x + chip.width;
+            }
+
+            const firstChip = plan.chipFrames[0];
+            const lastChip = plan.chipFrames[plan.chipFrames.length - 1];
+            return selectedCount === 1 && Math.abs(firstChip.x - rail.x) <= epsilon
+                && Math.abs(lastChip.x + lastChip.width - (rail.x + rail.width)) <= epsilon;
+        } catch (error) {
+            return false;
+        }
+    }
+
+    function tabRailRectIsValid(frame) {
+        return frame && !Array.isArray(frame) && typeof frame === "object"
+            && projectionGeometryScalarsAreValid(frame.x, frame.y, frame.width, frame.height);
+    }
+
+    function tabFrameForPresentation(tiled, expectedWindowId) {
+        try {
+            if (!tiled || typeof expectedWindowId !== "string" || expectedWindowId.length === 0
+                    || tiledPresentations[expectedWindowId] !== tiled
+                    || !Number.isInteger(tiled.columnIndex) || tiled.columnIndex < 0
+                    || tiled.columnIndex >= columns.length || !Number.isInteger(tiled.memberIndex)
+                    || !Object.isFrozen(tabRailPlans) || tiled.columnIndex >= tabRailPlans.length) {
+                return null;
+            }
+
+            const column = columns[tiled.columnIndex];
+            const member = column && column.members && tiled.memberIndex >= 0
+                && tiled.memberIndex < column.members.length ? column.members[tiled.memberIndex] : null;
+            const sourceFrame = tabRailColumnFrame(column, tiled.columnIndex);
+            const plan = tabRailPlans[tiled.columnIndex];
+            if (!member || member.windowId !== expectedWindowId || sourceFrame === null
+                    || !tabRailPlanIsExact(plan, column, tiled.columnIndex, sourceFrame)) {
+                return null;
+            }
+
+            return plan.chipFrames[tiled.memberIndex];
+        } catch (error) {
+            return null;
+        }
     }
 
     function buildSpatialColumnFrames() {
