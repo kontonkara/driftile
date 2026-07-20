@@ -49,6 +49,12 @@ KWin.SceneEffect {
         && controller.activeSessionId > 0 ? controller.activeSessionId : 0
     readonly property bool loading: controller ? controller.loading : false
     readonly property var overviewModel: controller ? controller.overviewModel : null
+    readonly property var overviewExitHandoffPromotion: controller
+        ? controller.overviewExitHandoffPromotion : null
+    readonly property var overviewExitHandoffState: controller
+        ? controller.overviewExitHandoffState : null
+    readonly property var overviewExitHandoffWindow: controller
+        ? controller.overviewExitHandoffWindow : null
     readonly property real presentationProgress: controller
         && typeof controller.presentationProgress === "number"
         && Number.isFinite(controller.presentationProgress)
@@ -105,6 +111,26 @@ KWin.SceneEffect {
         if (controller && typeof controller.deactivateImmediately === "function") {
             controller.deactivateImmediately();
         }
+    }
+
+    function beginOverviewExitHandoff(windowCandidate, input) {
+        return controller && typeof controller.beginOverviewExitHandoff === "function"
+            ? controller.beginOverviewExitHandoff(windowCandidate, input) : 0;
+    }
+
+    function settleOverviewExitHandoff(token, windowCandidate) {
+        return controller && typeof controller.settleOverviewExitHandoff === "function"
+            ? controller.settleOverviewExitHandoff(token, windowCandidate) === true : false;
+    }
+
+    function invalidateOverviewExitHandoff(reason) {
+        return controller && typeof controller.invalidateOverviewExitHandoff === "function"
+            ? controller.invalidateOverviewExitHandoff(reason) === true : false;
+    }
+
+    function cancelOverviewExitHandoff(type) {
+        return controller && typeof controller.cancelOverviewExitHandoff === "function"
+            ? controller.cancelOverviewExitHandoff(type) === true : false;
     }
 
     function submitSpatialDropCommand(source, target) {

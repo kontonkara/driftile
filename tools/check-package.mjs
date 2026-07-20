@@ -47,6 +47,7 @@ const expectedOverviewRuntimeEntries = [
   "ui/KeyboardHelpHint.qml",
   "ui/LayoutStateReader.qml",
   "ui/OutputIdentityBadge.qml",
+  "ui/OverviewExitHandoff.qml",
   "ui/OverviewScene.qml",
   "ui/OverviewSpatialDropWriter.qml",
   "ui/OverviewTouchpadGesture.qml",

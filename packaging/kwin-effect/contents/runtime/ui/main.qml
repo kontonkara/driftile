@@ -16,6 +16,12 @@ QtObject {
     property bool desktopSurfaceLifecycleFlushQueued: false
     property bool loading: false
     property var overviewModel: null
+    readonly property var overviewActivationCache: createActivationCache()
+    property var overviewExitHandoffPromotion: null
+    property var overviewExitHandoffState: null
+    property var overviewExitHandoffWindow: null
+    property int overviewExitHandoffLastToken: 0
+    property int overviewTopologyGeneration: 1
     property int lastActivationAttemptId: 0
     property int lastLiveRefreshAttemptId: 0
     property int lastPresentationTransitionToken: 0
@@ -199,11 +205,14 @@ QtObject {
         }
 
         function onWindowRemoved(window) {
+            controller.handleOverviewExitWindowRemoved(window);
             controller.queueDesktopSurfaceLifecycleEvent(window);
             controller.requestLiveModelRefresh();
         }
 
         function onDesktopsChanged() {
+            controller.advanceOverviewTopologyGeneration();
+            controller.invalidateOverviewExitHandoff("topology");
             controller.invalidateOverviewZoomGestureContext();
             controller.requestLiveModelRefresh();
         }
@@ -213,18 +222,26 @@ QtObject {
         }
 
         function onCurrentActivityChanged() {
+            controller.advanceOverviewTopologyGeneration();
+            controller.invalidateOverviewExitHandoff("topology");
             controller.invalidateOverviewZoomGestureContext();
         }
 
         function onActivitiesChanged() {
+            controller.advanceOverviewTopologyGeneration();
+            controller.invalidateOverviewExitHandoff("topology");
             controller.invalidateOverviewZoomGestureContext();
         }
 
         function onScreensChanged() {
+            controller.advanceOverviewTopologyGeneration();
+            controller.invalidateOverviewExitHandoff("topology");
             controller.invalidateOverviewZoomGestureContext();
         }
 
         function onVirtualScreenGeometryChanged() {
+            controller.advanceOverviewTopologyGeneration();
+            controller.invalidateOverviewExitHandoff("topology");
             controller.invalidateOverviewZoomGestureContext();
         }
     }
@@ -1328,6 +1345,7 @@ QtObject {
         if (active) {
             if ((presentationPhase === "closing" || interruptedTouchpadGesture)
                     && activeSessionId > 0 && overviewModel) {
+                cancelOverviewExitHandoff("reopen");
                 startPresentationTransition("opening", 1, activeSessionId);
             }
             return;
@@ -1351,6 +1369,14 @@ QtObject {
         loading = true;
         presentationProgress = 0;
         presentationPhase = "closed";
+        const synchronousDocument = layoutStateReader.readSample();
+        const synchronousLiveSnapshot = liveSnapshot();
+        const cachedModel = lookupActivationCache(synchronousDocument,
+                                                  synchronousLiveSnapshot);
+        if (cachedModel) {
+            acceptActivationModel(attemptId, cachedModel);
+            return;
+        }
         layoutStateReader.sample(attemptId);
     }
 
@@ -1388,6 +1414,7 @@ QtObject {
         touchpadGestureDispatching = false;
         clearPendingDesktopSurfaceLifecycleEvent();
         desktopSurfaceLifecycleEvent = null;
+        clearOverviewExitHandoff();
         invalidatePresentationTransition();
         pendingActivationAttemptId = 0;
         clearPendingLiveModelRefresh();
@@ -1499,6 +1526,9 @@ QtObject {
         }
 
         presentationPhase = "open";
+        if (overviewExitHandoffState && overviewExitHandoffState.phase === "canceled") {
+            clearOverviewExitHandoff();
+        }
         if (pendingPostTransitionLiveRefresh) {
             pendingPostTransitionLiveRefresh = false;
             requestLiveModelRefresh();
@@ -1555,7 +1585,8 @@ QtObject {
                 return;
             }
 
-            const result = runtime.loadOverviewModel(document, liveSnapshot());
+            const snapshot = liveSnapshot();
+            const result = runtime.loadOverviewModel(document, snapshot);
             if (!result || result.ok !== true || !result.value) {
                 rejectLayoutState(attemptId, result && result.error ? String(result.error) : "invalid-model");
                 return;
@@ -1566,22 +1597,310 @@ QtObject {
                 return;
             }
 
-            pendingActivationAttemptId = 0;
-            activeSessionId = attemptId;
-            overviewModel = result.value;
-            loading = false;
-            active = true;
-            if (touchpadGestureOwner === "open") {
-                invalidatePresentationTransition();
-                presentationPhase = "opening";
-                presentationProgress = touchpadGestureTarget("open", touchpadGestureProgress);
-            } else {
-                presentationProgress = 0;
-                startPresentationTransition("opening", 1, attemptId);
-            }
+            const model = storeActivationCache(document, snapshot, result.value);
+            acceptActivationModel(attemptId, model ? model : result.value);
         } catch (error) {
             rejectLayoutState(attemptId, "runtime-error");
         }
+    }
+
+    function acceptActivationModel(attemptId, model) {
+        if (!loading || active || !model || attemptId <= 0
+                || attemptId !== pendingActivationAttemptId) {
+            return false;
+        }
+        if (plasmaOverviewIsActive()) {
+            cancelPendingActivation(attemptId);
+            return false;
+        }
+
+        pendingActivationAttemptId = 0;
+        activeSessionId = attemptId;
+        overviewModel = model;
+        loading = false;
+        active = true;
+        if (touchpadGestureOwner === "open") {
+            invalidatePresentationTransition();
+            presentationPhase = "opening";
+            presentationProgress = touchpadGestureTarget("open", touchpadGestureProgress);
+        } else {
+            presentationProgress = 0;
+            startPresentationTransition("opening", 1, attemptId);
+        }
+        return true;
+    }
+
+    function createActivationCache() {
+        try {
+            const runtime = OverviewRuntime.DriftileOverview;
+            return runtime && typeof runtime.createOverviewActivationCache === "function"
+                ? runtime.createOverviewActivationCache() : null;
+        } catch (error) {
+            return null;
+        }
+    }
+
+    function lookupActivationCache(document, snapshot) {
+        const cache = overviewActivationCache;
+        if (!cache || typeof cache.lookup !== "function") {
+            return null;
+        }
+
+        try {
+            const result = cache.lookup(document, snapshot);
+            return result && result.ok === true && result.value ? result.value : null;
+        } catch (error) {
+            return null;
+        }
+    }
+
+    function storeActivationCache(document, snapshot, model) {
+        const cache = overviewActivationCache;
+        if (!cache || typeof cache.store !== "function") {
+            return null;
+        }
+
+        try {
+            const result = cache.store(document, snapshot, model);
+            return result && result.ok === true && result.value ? result.value : null;
+        } catch (error) {
+            return null;
+        }
+    }
+
+    function beginOverviewExitHandoff(windowCandidate, input) {
+        if (!active || loading || presentationPhase !== "open" || presentationProgress < 1
+                || activeSessionId <= 0 || !overviewModel || !input
+                || overviewExitHandoffIsActive()) {
+            return 0;
+        }
+
+        const runtime = OverviewRuntime.DriftileOverview;
+        if (!runtime || typeof runtime.captureOverviewExitHandoff !== "function") {
+            return 0;
+        }
+
+        const targetKind = input.targetKind;
+        const targetWindowId = input.targetWindowId === undefined
+            || input.targetWindowId === null ? null : String(input.targetWindowId);
+        if (targetKind === "window") {
+            try {
+                if (!windowCandidate || windowCandidate.deleted === true
+                        || windowCandidate.internalId === undefined
+                        || windowCandidate.internalId === null
+                        || String(windowCandidate.internalId) !== targetWindowId) {
+                    return 0;
+                }
+            } catch (error) {
+                return 0;
+            }
+        } else if (targetKind !== "desktop-fallback" || targetWindowId !== null) {
+            return 0;
+        }
+
+        const token = nextOverviewExitHandoffToken();
+        let state = null;
+        try {
+            state = runtime.captureOverviewExitHandoff({
+                                                           camera: input.camera,
+                                                           generation: overviewTopologyGeneration,
+                                                           sessionId: activeSessionId,
+                                                           sourceDesktopId: input.sourceDesktopId,
+                                                           sourceOutputId: input.sourceOutputId,
+                                                           sourceRect: input.sourceRect,
+                                                           targetDesktopId: input.targetDesktopId,
+                                                           targetFrame: input.targetFrame,
+                                                           targetKind,
+                                                           targetMinimized: input.targetMinimized === true,
+                                                           targetOutputId: input.targetOutputId,
+                                                           targetWindowId,
+                                                           token
+                                                       });
+        } catch (error) {
+            state = null;
+        }
+        if (!state || state.phase !== "captured" || !state.capture
+                || state.capture.sessionId !== activeSessionId
+                || state.capture.generation !== overviewTopologyGeneration
+                || state.capture.token !== token) {
+            return 0;
+        }
+
+        if (pendingLiveRefreshAttemptId > 0) {
+            pendingPostTransitionLiveRefresh = true;
+        }
+        clearPendingLiveModelRefresh();
+        layoutStateReader.cancel();
+        overviewExitHandoffPromotion = null;
+        overviewExitHandoffWindow = targetKind === "window" ? windowCandidate : null;
+        overviewExitHandoffState = state;
+        return token;
+    }
+
+    function settleOverviewExitHandoff(token, windowCandidate) {
+        const state = overviewExitHandoffState;
+        const capture = state ? state.capture : null;
+        if (!overviewExitHandoffIsActive() || !capture
+                || !Number.isInteger(token) || token <= 0 || token !== capture.token) {
+            return false;
+        }
+
+        let targetFrame = capture.targetFrame;
+        let targetMinimized = false;
+        let targetWindowId = null;
+        if (capture.targetKind === "window") {
+            try {
+                if (!windowCandidate || windowCandidate !== overviewExitHandoffWindow
+                        || windowCandidate.deleted === true
+                        || windowCandidate.internalId === undefined
+                        || windowCandidate.internalId === null) {
+                    return invalidateOverviewExitHandoff("stale");
+                }
+                targetWindowId = String(windowCandidate.internalId);
+                targetMinimized = windowCandidate.minimized === true;
+                targetFrame = overviewExitRect(windowCandidate.frameGeometry);
+            } catch (error) {
+                return invalidateOverviewExitHandoff("stale");
+            }
+            if (!targetFrame) {
+                return invalidateOverviewExitHandoff("stale");
+            }
+        }
+
+        const plan = planOverviewExitHandoff({
+                                                 generation: capture.generation,
+                                                 sessionId: capture.sessionId,
+                                                 targetDesktopId: capture.targetDesktopId,
+                                                 targetFrame,
+                                                 targetMinimized,
+                                                 targetOutputId: capture.targetOutputId,
+                                                 targetWindowId,
+                                                 token: capture.token,
+                                                 topologyGeneration: overviewTopologyGeneration,
+                                                 type: "settle"
+                                             });
+        return applyOverviewExitHandoffPlan(plan, windowCandidate);
+    }
+
+    function invalidateOverviewExitHandoff(reason) {
+        const state = overviewExitHandoffState;
+        const capture = state ? state.capture : null;
+        if (!overviewExitHandoffIsActive() || !capture
+                || (reason !== "stale" && reason !== "topology")) {
+            return false;
+        }
+
+        const plan = planOverviewExitHandoff({
+                                                 generation: capture.generation,
+                                                 reason,
+                                                 sessionId: capture.sessionId,
+                                                 token: capture.token,
+                                                 type: "invalidate"
+                                             });
+        return applyOverviewExitHandoffPlan(plan, null);
+    }
+
+    function cancelOverviewExitHandoff(type) {
+        const state = overviewExitHandoffState;
+        const capture = state ? state.capture : null;
+        if (!overviewExitHandoffIsActive() || !capture
+                || (type !== "interrupt" && type !== "reopen")) {
+            return false;
+        }
+
+        const plan = planOverviewExitHandoff({
+                                                 generation: capture.generation,
+                                                 sessionId: capture.sessionId,
+                                                 token: capture.token,
+                                                 type
+                                             });
+        return applyOverviewExitHandoffPlan(plan, null);
+    }
+
+    function planOverviewExitHandoff(event) {
+        const runtime = OverviewRuntime.DriftileOverview;
+        if (!runtime || typeof runtime.planOverviewExitHandoffTransition !== "function"
+                || !overviewExitHandoffState) {
+            return null;
+        }
+
+        try {
+            return runtime.planOverviewExitHandoffTransition({
+                                                                 event,
+                                                                 state: overviewExitHandoffState
+                                                             });
+        } catch (error) {
+            return null;
+        }
+    }
+
+    function applyOverviewExitHandoffPlan(plan, windowCandidate) {
+        if (!plan || !plan.state || (plan.disposition !== "promote"
+                && plan.disposition !== "fallback" && plan.disposition !== "cancel"
+                && plan.disposition !== "none")) {
+            clearOverviewExitHandoff();
+            return false;
+        }
+
+        overviewExitHandoffState = plan.state;
+        overviewExitHandoffPromotion = plan.disposition === "promote"
+            && plan.promotion ? plan.promotion : null;
+        overviewExitHandoffWindow = overviewExitHandoffPromotion && windowCandidate
+            ? windowCandidate : null;
+        if (plan.disposition === "cancel" && presentationPhase === "open"
+                && pendingPostTransitionLiveRefresh) {
+            pendingPostTransitionLiveRefresh = false;
+            requestLiveModelRefresh();
+        }
+        return plan.disposition === "promote" || plan.disposition === "fallback"
+            || plan.disposition === "cancel" || plan.disposition === "none";
+    }
+
+    function overviewExitHandoffIsActive() {
+        const state = overviewExitHandoffState;
+        const capture = state ? state.capture : null;
+        return active && capture && capture.sessionId === activeSessionId
+            && (state.phase === "captured" || state.phase === "promoted"
+                || state.phase === "fallback");
+    }
+
+    function handleOverviewExitWindowRemoved(window) {
+        return overviewExitHandoffIsActive() && window
+            && window === overviewExitHandoffWindow
+            ? invalidateOverviewExitHandoff("stale") : false;
+    }
+
+    function clearOverviewExitHandoff() {
+        overviewExitHandoffPromotion = null;
+        overviewExitHandoffWindow = null;
+        overviewExitHandoffState = null;
+    }
+
+    function advanceOverviewTopologyGeneration() {
+        overviewTopologyGeneration = overviewTopologyGeneration >= 2147483647
+            ? 1 : overviewTopologyGeneration + 1;
+        return overviewTopologyGeneration;
+    }
+
+    function nextOverviewExitHandoffToken() {
+        const token = overviewExitHandoffLastToken >= 2147483647
+            ? 1 : overviewExitHandoffLastToken + 1;
+        overviewExitHandoffLastToken = token;
+        return token;
+    }
+
+    function overviewExitRect(rect) {
+        if (!rect) {
+            return null;
+        }
+        const x = Number(rect.x);
+        const y = Number(rect.y);
+        const width = Number(rect.width);
+        const height = Number(rect.height);
+        return Number.isFinite(x) && Number.isFinite(y)
+            && Number.isFinite(width) && width > 0
+            && Number.isFinite(height) && height > 0
+            ? { x, y, width, height } : null;
     }
 
     function rejectLayoutState(attemptId, reason) {
@@ -1605,7 +1924,7 @@ QtObject {
     }
 
     function requestLiveModelRefresh() {
-        if (presentationPhase !== "open") {
+        if (presentationPhase !== "open" || overviewExitHandoffIsActive()) {
             pendingPostTransitionLiveRefresh = true;
             return;
         }
@@ -1665,7 +1984,8 @@ QtObject {
                 return;
             }
 
-            const result = runtime.loadOverviewModel(document, liveSnapshot());
+            const snapshot = liveSnapshot();
+            const result = runtime.loadOverviewModel(document, snapshot);
             if (!result || result.ok !== true || !result.value) {
                 controller.rejectLiveModelRefresh(attemptId);
                 return;
@@ -1681,7 +2001,8 @@ QtObject {
             rollbackActiveOverviewLocalZoom();
             clearPendingLiveModelRefresh();
             overviewZoomLiveRefreshDeferred = false;
-            overviewModel = result.value;
+            const model = storeActivationCache(document, snapshot, result.value);
+            overviewModel = model ? model : result.value;
         } catch (error) {
             controller.rejectLiveModelRefresh(attemptId);
         }

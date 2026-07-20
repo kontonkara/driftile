@@ -4,6 +4,12 @@ import {
   type OverviewLiveLayout,
 } from "./layout-view";
 
+export { createOverviewActivationCache } from "./activation-cache";
+export {
+  captureOverviewExitHandoff,
+  planOverviewExitHandoffTransition,
+} from "./exit-handoff";
+
 export { hasAutomaticFloatingRole } from "../core/window-classification";
 export {
   countOverviewWindowNavigationTargets,
