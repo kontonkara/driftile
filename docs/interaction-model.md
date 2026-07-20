@@ -339,6 +339,9 @@ destination at that exact position and moves the complete column there.
 
 Whole-column Overview placement preserves member order, the selected member,
 stacked or tabbed presentation, column width, and per-member height state. A
+settled minimized non-selected member remains a passive part of the group, so
+it does not disable the column handle or receive a geometry write; restoring
+or otherwise changing that member during the gesture cancels the stale drag. A
 cancelled drag, stale source or target, invalid context, or unsupported target
 clears the preview and leaves the layout unchanged. This slice deliberately
 does not offer whole-column placement across outputs; window-body dragging

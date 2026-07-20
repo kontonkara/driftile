@@ -2357,6 +2357,51 @@ Item {
         }
     }
 
+    function windowSnapshotCanJoinColumnDrag(presentation, selectedMember) {
+        if (selectedMember === true) {
+            return windowSnapshotCanDrag(presentation);
+        }
+        return windowSnapshotCanDrag(presentation)
+            || windowSnapshotIsExactPassiveMinimizedMember(presentation);
+    }
+
+    function windowSnapshotIsExactPassiveMinimizedMember(presentation) {
+        try {
+            const snapshot = presentation ? presentation.actionSnapshot : null;
+            const candidate = presentation ? presentation.candidate : null;
+            const sourceDesktop = presentation ? presentation.sourceDesktop : null;
+            const sourceDesktopId = presentation ? presentation.sourceDesktopId : "";
+            const sourceScreen = presentation ? presentation.sourceScreen : null;
+            if (!snapshot || !candidate || presentation.matchesSearch !== true
+                    || presentation.minimizedWindow !== true || snapshot.deleted
+                    || snapshot.minimized !== true || snapshot.managed !== true
+                    || snapshot.normalWindow !== true || snapshot.moveable !== true
+                    || snapshot.wantsInput !== true || snapshot.modal !== false
+                    || snapshot.transient !== false || snapshot.transientFor !== null
+                    || snapshot.windowId.length === 0 || snapshot.windowId !== presentation.windowId
+                    || candidate.deleted === true || candidate.minimized !== true
+                    || candidate.managed !== true || candidate.normalWindow !== true
+                    || candidate.moveable !== true || candidate.wantsInput !== true
+                    || candidate.modal !== false || candidate.transient !== false
+                    || candidate.transientFor !== null || candidate.internalId === undefined
+                    || candidate.internalId === null || String(candidate.internalId) !== snapshot.windowId
+                    || !sourceDesktop || typeof sourceDesktopId !== "string" || sourceDesktopId.length === 0
+                    || !sourceScreen || snapshot.output !== sourceScreen || candidate.output !== sourceScreen
+                    || !snapshot.desktops || snapshot.desktops.length !== 1
+                    || snapshot.desktopIds.length !== 1 || snapshot.desktops[0] !== sourceDesktop
+                    || snapshot.desktopIds[0] !== sourceDesktopId) {
+                return false;
+            }
+
+            const candidateDesktops = candidate.desktops;
+            return candidateDesktops && candidateDesktops.length === 1
+                && candidateDesktops[0] === sourceDesktop
+                && String(candidateDesktops[0].id) === sourceDesktopId;
+        } catch (error) {
+            return false;
+        }
+    }
+
     function windowSnapshotCanRequestClose(presentation) {
         try {
             const snapshot = presentation ? presentation.actionSnapshot : null;
@@ -2595,12 +2640,14 @@ Item {
                 const tiled = presentation ? presentation.tiledPresentation : null;
                 const expectedSelected = column.presentation !== "tabbed"
                     || memberIndex === column.selectedMemberIndex;
+                const selectedMember = memberIndex === column.selectedMemberIndex;
                 if (matchedMemberIndexes[memberIndex] === true || !tiled
                         || presentation.sourceCard !== card || presentation.sourceDesktop !== desktop
                         || presentation.sourceDesktopId !== desktopId || presentation.sourceScreen !== screen
                         || tiledPresentations[windowId] !== tiled
                         || tiled.columnIndex !== expectedColumnIndex || tiled.memberIndex !== memberIndex
-                        || tiled.selected !== expectedSelected || !windowSnapshotCanDrag(presentation)) {
+                        || tiled.selected !== expectedSelected
+                        || !windowSnapshotCanJoinColumnDrag(presentation, selectedMember)) {
                     return false;
                 }
                 matchedMemberIndexes[memberIndex] = true;
@@ -2776,7 +2823,9 @@ Item {
                         || presentation.sourceCard !== card || presentation.windowId !== windowId
                         || presentation.tiledPresentation !== tiled
                         || tiled.columnIndex !== expectedColumnIndex || tiled.memberIndex !== memberIndex
-                        || tiled.selected !== expectedSelected || !windowSnapshotCanDrag(presentation)) {
+                        || tiled.selected !== expectedSelected
+                        || !windowSnapshotCanJoinColumnDrag(presentation,
+                                                            memberIndex === selectedMemberIndex)) {
                     return null;
                 }
                 records.push(Object.freeze({
@@ -2952,7 +3001,9 @@ Item {
                         || presentation.sourceDesktopId !== desktopId || presentation.sourceScreen !== screen
                         || tiledPresentations[record.windowId] !== tiled
                         || tiled.columnIndex !== snapshot.columnIndex || tiled.memberIndex !== memberIndex
-                        || tiled.selected !== expectedSelected || !windowSnapshotCanDrag(presentation)) {
+                        || tiled.selected !== expectedSelected
+                        || !windowSnapshotCanJoinColumnDrag(presentation,
+                                                            memberIndex === snapshot.selectedMemberIndex)) {
                     return false;
                 }
             }

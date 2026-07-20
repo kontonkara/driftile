@@ -150,6 +150,10 @@ const columnEligibilityPublication = desktopCard.slice(
   desktopCard.indexOf("function invalidateColumnDragEligibility()"),
   desktopCard.indexOf("function storeColumnDragHotSpot("),
 );
+const passiveColumnMemberSnapshot = desktopCard.slice(
+  desktopCard.indexOf("function windowSnapshotCanJoinColumnDrag("),
+  desktopCard.indexOf("function windowSnapshotCanRequestClose("),
+);
 const columnDropArea = desktopCard.slice(
   desktopCard.indexOf("id: columnDropArea"),
   desktopCard.indexOf("onCurrentChanged:"),
@@ -1207,7 +1211,7 @@ describe("spatial overview column drag lifecycle", () => {
       "columnDragMemberSnapshotsAreEligible(column, source.index)",
     );
     expect(columnLifecycle).toMatch(
-      /function columnDragMemberSnapshotsAreEligible[\s\S]*!windowSnapshotCanDrag\(presentation\)[\s\S]*return matchCount === column\.members\.length/u,
+      /function columnDragMemberSnapshotsAreEligible[\s\S]*!windowSnapshotCanJoinColumnDrag\(presentation, selectedMember\)[\s\S]*return matchCount === column\.members\.length/u,
     );
     expect(columnLifecycle).toContain(
       "function captureColumnDragSnapshot(source)",
@@ -1251,6 +1255,53 @@ describe("spatial overview column drag lifecycle", () => {
     );
     expect(columnLifecycle).not.toMatch(
       /Object\.freeze\((?:expectedColumn|expectedContext|expectedDesktop|expectedScreen|presentation|candidate)\)/u,
+    );
+  });
+
+  it("keeps settled minimized non-selected members in exact whole-column drags", () => {
+    expect(passiveColumnMemberSnapshot).toMatch(
+      /function windowSnapshotCanJoinColumnDrag\(presentation, selectedMember\) \{\s*if \(selectedMember === true\) \{\s*return windowSnapshotCanDrag\(presentation\);\s*\}\s*return windowSnapshotCanDrag\(presentation\)\s*\|\| windowSnapshotIsExactPassiveMinimizedMember\(presentation\);/u,
+    );
+    for (const exactState of [
+      "presentation.minimizedWindow !== true",
+      "snapshot.minimized !== true",
+      "snapshot.managed !== true",
+      "snapshot.normalWindow !== true",
+      "snapshot.moveable !== true",
+      "snapshot.wantsInput !== true",
+      "snapshot.modal !== false",
+      "snapshot.transient !== false",
+      "snapshot.transientFor !== null",
+      "snapshot.output !== sourceScreen",
+      "candidate.output !== sourceScreen",
+      "snapshot.desktops.length !== 1",
+      "snapshot.desktopIds.length !== 1",
+      "snapshot.desktops[0] !== sourceDesktop",
+      "snapshot.desktopIds[0] !== sourceDesktopId",
+    ]) {
+      expect(passiveColumnMemberSnapshot).toContain(exactState);
+    }
+    expect(passiveColumnMemberSnapshot).toContain(
+      "candidateDesktops[0] === sourceDesktop",
+    );
+    expect(passiveColumnMemberSnapshot).toContain(
+      "String(candidateDesktops[0].id) === sourceDesktopId",
+    );
+    expect(
+      columnLifecycle.match(/windowSnapshotCanJoinColumnDrag\(/gu),
+    ).toHaveLength(3);
+    expect(columnLifecycle).toContain(
+      "memberIndex === column.selectedMemberIndex",
+    );
+    expect(columnLifecycle).toContain("memberIndex === selectedMemberIndex");
+    expect(columnLifecycle).toContain(
+      "memberIndex === snapshot.selectedMemberIndex",
+    );
+    expect(columnLifecycle).toContain(
+      "presentation.actionSnapshot !== record.actionSnapshot",
+    );
+    expect(`${passiveColumnMemberSnapshot}\n${columnLifecycle}`).not.toMatch(
+      /org\.kde\.kwin\.private|KWin\.Workspace\.(?:stackingOrder|windows)|\.setValue\s*\(|candidate\.[A-Za-z0-9_]+\s*=(?!=)/u,
     );
   });
 
