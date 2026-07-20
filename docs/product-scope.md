@@ -521,6 +521,12 @@ Driftile must integrate with, not duplicate:
   window, its marker precedes unrelated visual targets. Keyboard and short
   touchscreen activation use the same guarded path as pointer activation;
   touchscreen long press remains reserved for an eligible window drag.
+- The disabled-by-default overview close-button option keeps controls visible
+  only on eligible, sufficiently large previews and minimized placeholders.
+  They accept mouse, touchpad, and touchscreen input. A modestly enlarged touch
+  target changes no layout; release outside cancels, and an exact guarded close
+  never activates or drags the window. The option adds no persistence field,
+  layout write, or private API.
 - Reordering moves one whole active column left, right, first, or last inside its context without changing focus or widths.
 - Column-width resizing changes one whole active column, translates client limits to decorated frame bounds, respects every member's width constraints, and preserves focus and grouping.
 - A newly admitted or explicitly resized width that reaches a hard minimum or maximum is stored at that fixed logical-pixel boundary, so work-area changes cannot scale it past the same constraint.

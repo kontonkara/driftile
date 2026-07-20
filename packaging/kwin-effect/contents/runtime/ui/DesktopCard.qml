@@ -749,7 +749,6 @@ Item {
                         height: 18
                         settingEnabled: card.showWindowCloseButtons
                         closeEligible: windowPresentation.closeEligible
-                        surfaceHovered: thumbnailHoverHandler.hovered
                         keyboardSelected: thumbnailShell.keyboardSelected
                         surfaceLargeEnough: thumbnailShell.closeButtonLargeEnough
                         z: 4
@@ -758,12 +757,6 @@ Item {
                                                                     windowPresentation.sourceDesktop,
                                                                     windowPresentation.sourceDesktopId,
                                                                     windowPresentation.sourceScreen)
-                    }
-
-                    HoverHandler {
-                        id: thumbnailHoverHandler
-
-                        acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
                     }
 
                     TapHandler {
@@ -1060,7 +1053,6 @@ Item {
                         height: 14
                         settingEnabled: card.showWindowCloseButtons
                         closeEligible: windowPresentation.closeEligible
-                        surfaceHovered: minimizedPlaceholderHoverHandler.hovered
                         keyboardSelected: minimizedPlaceholderShell.keyboardSelected
                         surfaceLargeEnough: minimizedPlaceholderShell.closeButtonLargeEnough
                         z: 4
@@ -1069,12 +1061,6 @@ Item {
                                                                     windowPresentation.sourceDesktop,
                                                                     windowPresentation.sourceDesktopId,
                                                                     windowPresentation.sourceScreen)
-                    }
-
-                    HoverHandler {
-                        id: minimizedPlaceholderHoverHandler
-
-                        acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
                     }
 
                     TapHandler {
@@ -1433,9 +1419,13 @@ Item {
 
         try {
             const localPoint = button.mapFromItem(surface, point.x, point.y);
+            const margin = button.hitMargin;
+            if (!Number.isFinite(margin) || margin < 0) {
+                return true;
+            }
             return Number.isFinite(localPoint.x) && Number.isFinite(localPoint.y)
-                && localPoint.x >= 0 && localPoint.y >= 0
-                && localPoint.x < button.width && localPoint.y < button.height;
+                && localPoint.x >= -margin && localPoint.y >= -margin
+                && localPoint.x < button.width + margin && localPoint.y < button.height + margin;
         } catch (error) {
             return true;
         }

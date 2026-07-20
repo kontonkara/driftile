@@ -175,9 +175,13 @@ disabled by default and can be enabled independently:
 - window state badges.
 
 Invalid or non-boolean values fall back to disabled. Search fields remain
-available when their visual labels are hidden. Appearance options do not alter
-layout geometry or persistence; close buttons only expose the existing guarded
-close request.
+available when their visual labels are hidden. When window close buttons are
+enabled, eligible sufficiently large previews and minimized placeholders keep
+their close controls visible for mouse, touchpad, and touchscreen input. The
+touch target is modestly enlarged without changing layout. Releasing outside
+the control cancels; an exact guarded close is consumed without activating or
+dragging the window. Appearance options do not alter layout geometry or
+persistence, and the setting remains disabled by default.
 
 Backdrop color and zoom are configurable. Zoom accepts values from `0.2`
 through `0.75` and defaults to `0.5`. The pointer screen edge defaults to

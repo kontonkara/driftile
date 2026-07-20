@@ -113,6 +113,11 @@ Events travel from KWin through the bridge into the runtime. Commands and result
   immutable presentation and width already in the projected model. It performs
   one direct column and delegate lookup, clips to the visible column span, and
   hides rather than truncating or guessing invalid state.
+- Keeps the optional close controls visible only for eligible, sufficiently
+  large previews and minimized placeholders. Their shared mouse, touchpad, and
+  touchscreen target is modestly enlarged without changing delegate layout.
+  Releasing outside cancels; the exact guarded close path consumes the gesture
+  before window activation or drag.
 - Selects a non-current card through public `KWin.SceneView.currentDesktop`, or
   the guarded single-output `KWin.Workspace.currentDesktop` fallback, and
   requires an exact confirmation. Selecting the exact current card instead

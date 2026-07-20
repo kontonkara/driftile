@@ -206,7 +206,7 @@
       <string>Show close buttons on window previews</string>
      </property>
      <property name="toolTip">
-      <string>Show a close button when a window preview is hovered or selected from the keyboard.</string>
+      <string>Keep exact close controls visible on eligible, sufficiently large previews and minimized placeholders. Mouse, touchpad, and touchscreen targets are enlarged without changing layout; release outside cancels without activating or dragging the window.</string>
      </property>
      <property name="checked">
       <bool>false</bool>

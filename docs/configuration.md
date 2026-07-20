@@ -31,6 +31,13 @@ names. See [Spatial Overview](overview.md) for interaction details. Use a
 different finger count from Driftile's desktop navigation and Plasma's built-in
 Overview, or disable the overlapping gesture, so each direction has one owner.
 
+Window close buttons remain disabled by default. When enabled, eligible,
+sufficiently large previews and minimized placeholders keep a close control
+visible for mouse, touchpad, and touchscreen input. Its touch target is
+modestly enlarged without changing layout. Releasing outside cancels; an exact
+guarded close never activates or drags the window and changes no persisted
+layout state.
+
 Home Manager leaves these KConfig values unmanaged by default. It can manage
 them independently of package installation:
 
@@ -56,7 +63,7 @@ programs.driftile.overview.touchpadGesture = {
 with an effect default of `0.5`. The seven `show*` options default to `false`.
 Every nullable Home Manager option leaves the existing per-user KConfig value
 unmanaged when set to `null`. Use `screenEdge = "none"` to manage and disable
-screen-edge activation explicitly.
+screen-edge activation explicitly. These appearance options add no private API.
 
 ## Optional transitions
 

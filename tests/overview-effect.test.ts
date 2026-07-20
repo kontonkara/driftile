@@ -2389,13 +2389,19 @@ describe("overview effect package", () => {
       desktopCard.indexOf("function planMinimizedPlaceholderFrame("),
       desktopCard.indexOf("function boundedWindowCaption("),
     );
-    const placeholderTapStart = placeholder.indexOf(
-      "acceptedButtons: Qt.LeftButton",
-      placeholder.indexOf("id: minimizedPlaceholderHoverHandler"),
+    const placeholderTapDevice = placeholder.indexOf(
+      "acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad | PointerDevice.TouchScreen",
+    );
+    const placeholderTapStart = placeholder.lastIndexOf(
+      "TapHandler {",
+      placeholderTapDevice,
     );
     const placeholderTap = placeholder.slice(
       placeholderTapStart,
-      placeholder.indexOf("TapHandler {", placeholderTapStart),
+      placeholder.indexOf(
+        "\n                    TapHandler {",
+        placeholderTapDevice,
+      ),
     );
 
     expect(overviewRuntimeIndex).toContain(
@@ -4612,7 +4618,7 @@ describe("overview effect package", () => {
     );
   });
 
-  it("offers exact close buttons without activating or dragging their windows", () => {
+  it("offers touch-safe exact close buttons without activating or dragging their windows", () => {
     const thumbnail = desktopCard.slice(
       desktopCard.indexOf("id: thumbnailShell"),
       desktopCard.indexOf("id: minimizedPlaceholderShell"),
@@ -4621,24 +4627,78 @@ describe("overview effect package", () => {
       desktopCard.indexOf("id: minimizedPlaceholderShell"),
       desktopCard.indexOf("id: windowDropArea"),
     );
+    const thumbnailTouchActivation = thumbnail.slice(
+      thumbnail.indexOf("id: thumbnailTouchHoldHandler"),
+      thumbnail.lastIndexOf(
+        "DragHandler {",
+        thumbnail.indexOf("id: thumbnailTouchDragHandler"),
+      ),
+    );
+    const placeholderTouchDevice = placeholder.indexOf(
+      "acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad | PointerDevice.TouchScreen",
+    );
+    const placeholderTouchActivation = placeholder.slice(
+      placeholder.lastIndexOf("TapHandler {", placeholderTouchDevice),
+      placeholder.indexOf(
+        "\n                    TapHandler {",
+        placeholderTouchDevice,
+      ),
+    );
+    const closeTapHandler = windowCloseButton.slice(
+      windowCloseButton.lastIndexOf(
+        "TapHandler {",
+        windowCloseButton.indexOf("id: closeTapHandler"),
+      ),
+    );
+    const hitMarginLiteral = windowCloseButton.match(
+      /readonly property real hitMargin:\s*([+-]?(?:\d+(?:\.\d*)?|\.\d+))/u,
+    )?.[1];
+    const hitMargin = Number(hitMarginLiteral ?? Number.NaN);
 
     expect(desktopCard).toContain(
       "required property bool showWindowCloseButtons",
     );
-    expect(windowCloseButton).toMatch(
-      /required property bool closeEligible[\s\S]*required property bool keyboardSelected[\s\S]*required property bool settingEnabled[\s\S]*required property bool surfaceHovered[\s\S]*required property bool surfaceLargeEnough/u,
+    expect(windowCloseButton).toContain("required property bool closeEligible");
+    expect(windowCloseButton).toContain(
+      "required property bool settingEnabled",
     );
     expect(windowCloseButton).toContain(
-      "visible: settingEnabled && closeEligible && surfaceLargeEnough && (surfaceHovered || keyboardSelected)",
+      "required property bool surfaceLargeEnough",
     );
+    const visibility = windowCloseButton.match(
+      /^\s*visible:\s*([^\n]+)$/mu,
+    )?.[1];
+    expect(visibility?.trim()).toBe(
+      "settingEnabled && closeEligible && surfaceLargeEnough",
+    );
+    expect(visibility).not.toMatch(/surfaceHovered|keyboardSelected/u);
+
+    expect(hitMarginLiteral).toBeDefined();
+    expect(Number.isFinite(hitMargin)).toBe(true);
+    expect(hitMargin).toBeGreaterThan(0);
     expect(windowCloseButton).toMatch(
-      /acceptedButtons: Qt\.LeftButton[\s\S]*acceptedDevices: PointerDevice\.Mouse \| PointerDevice\.TouchPad[\s\S]*gesturePolicy: TapHandler\.ReleaseWithinBounds[\s\S]*grabPermissions: PointerHandler\.CanTakeOverFromAnything[\s\S]*onTapped: button\.closeRequested\(\)/u,
+      /HoverHandler \{[\s\S]*acceptedDevices: PointerDevice\.Mouse \| PointerDevice\.TouchPad[\s\S]*cursorShape: Qt\.PointingHandCursor[\s\S]*margin: button\.hitMargin/u,
+    );
+    expect(closeTapHandler).toContain("acceptedButtons: Qt.LeftButton");
+    expect(closeTapHandler).toContain(
+      "acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad | PointerDevice.TouchScreen",
+    );
+    expect(closeTapHandler).toContain("enabled: button.visible");
+    expect(closeTapHandler).toContain("margin: button.hitMargin");
+    expect(closeTapHandler).toContain(
+      "gesturePolicy: TapHandler.ReleaseWithinBounds",
+    );
+    expect(closeTapHandler).toContain(
+      "grabPermissions: PointerHandler.CanTakeOverFromAnything",
+    );
+    expect(closeTapHandler).toContain("onTapped: button.closeRequested()");
+    expect(closeTapHandler).not.toMatch(
+      /windowTapped|touchSpatialDragArmed|DragHandler|KWin\.|\.setValue\s*\(/u,
     );
 
     for (const visual of [
       {
         buttonId: "thumbnailCloseButton",
-        hoverId: "thumbnailHoverHandler",
         keyboardSelection: "thumbnailShell.keyboardSelected",
         minimum: "width >= 52 && height >= 40",
         source: thumbnail,
@@ -4646,7 +4706,6 @@ describe("overview effect package", () => {
       },
       {
         buttonId: "minimizedPlaceholderCloseButton",
-        hoverId: "minimizedPlaceholderHoverHandler",
         keyboardSelection: "minimizedPlaceholderShell.keyboardSelected",
         minimum: "width >= 72 && height >= 20",
         source: placeholder,
@@ -4664,9 +4723,6 @@ describe("overview effect package", () => {
         "closeEligible: windowPresentation.closeEligible",
       );
       expect(visual.source).toContain(
-        `surfaceHovered: ${visual.hoverId}.hovered`,
-      );
-      expect(visual.source).toContain(
         `keyboardSelected: ${visual.keyboardSelection}`,
       );
       expect(visual.source).toContain(
@@ -4678,7 +4734,6 @@ describe("overview effect package", () => {
           "u",
         ),
       );
-      expect(visual.source).toContain(`id: ${visual.hoverId}`);
       expect(visual.source).toMatch(
         new RegExp(
           `onTapped: point => \\{[\\s\\S]*card\\.closeButtonContainsPoint\\(${visual.buttonId},[\\s\\S]*point\\.position\\)[\\s\\S]*return;[\\s\\S]*card\\.windowTapped\\(`,
@@ -4686,15 +4741,36 @@ describe("overview effect package", () => {
         ),
       );
       const buttonStart = visual.source.indexOf(`id: ${visual.buttonId}`);
-      const buttonEnd = visual.source.indexOf(
-        `id: ${visual.hoverId}`,
-        buttonStart,
-      );
+      const buttonEnd = visual.source.indexOf("TapHandler {", buttonStart);
       const button = visual.source.slice(buttonStart, buttonEnd);
       expect(button).not.toMatch(
-        /\b(?:Timer|Behavior|Animation|DragHandler)\s*\{|windowTapped|activeWindow\s*=|candidate\.minimized\s*=|\.setValue\s*\(|org\.kde\.kwin\.private/u,
+        /\b(?:Timer|Behavior|Animation|DragHandler|Settings)\s*\{|windowTapped|activeWindow\s*=|candidate\.[A-Za-z0-9_]+\s*=(?!=)|\.setValue\s*\(|org\.kde\.kwin\.private|KWin\.|layoutStateReader|overviewSpatialLayout|requestDesktopReorder/u,
       );
     }
+
+    for (const activation of [
+      {
+        buttonId: "thumbnailCloseButton",
+        source: thumbnailTouchActivation,
+        surfaceId: "thumbnailShell",
+      },
+      {
+        buttonId: "minimizedPlaceholderCloseButton",
+        source: placeholderTouchActivation,
+        surfaceId: "minimizedPlaceholderShell",
+      },
+    ] as const) {
+      expect(activation.source).toContain("PointerDevice.TouchScreen");
+      expect(activation.source).toMatch(
+        new RegExp(
+          `onTapped: point => \\{[\\s\\S]*card\\.closeButtonContainsPoint\\(${activation.buttonId},[\\s\\S]*${activation.surfaceId},\\s*point\\.position\\)[\\s\\S]*return;[\\s\\S]*card\\.windowTapped\\(`,
+          "u",
+        ),
+      );
+    }
+    expect(thumbnailTouchActivation).toMatch(
+      /onLongPressed:\s*\{[\s\S]*card\.closeButtonContainsPoint\(thumbnailCloseButton, thumbnailShell,[\s\S]*point\.pressPosition\)\)\s*\{\s*return;\s*\}[\s\S]*windowPresentation\.touchSpatialDragArmed = true;/u,
+    );
 
     expect(thumbnail).toContain("anchors.rightMargin: 5");
     expect(thumbnail).not.toContain(
@@ -4717,7 +4793,18 @@ describe("overview effect package", () => {
       ) + 6,
     );
     expect(containmentGuard).toContain("button.mapFromItem(surface");
+    expect(containmentGuard).toContain("const margin = button.hitMargin;");
+    expect(containmentGuard).toContain("!Number.isFinite(margin)");
+    expect(containmentGuard).toContain("margin < 0");
+    expect(containmentGuard).toMatch(
+      /localPoint\.x >= -margin && localPoint\.y >= -margin\s*&& localPoint\.x < button\.width \+ margin && localPoint\.y < button\.height \+ margin/u,
+    );
     expect(containmentGuard).toContain("return true;");
+    expect(
+      `${windowCloseButton}\n${containmentGuard}\n${thumbnailTouchActivation}\n${placeholderTouchActivation}`,
+    ).not.toMatch(
+      /\b(?:Timer|Settings|Behavior|Animation|DragHandler|DropArea|WheelHandler)\s*\{|org\.kde\.kwin\.private|\.setValue\s*\(|KWin\.|layoutStateReader|overviewSpatialLayout|requestDesktopReorder|desktopReorderSource/u,
+    );
   });
 
   it("activates exact current and non-current desktops from the workspace surface", () => {

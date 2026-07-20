@@ -203,6 +203,12 @@ gesture. Movement before the hold cancels the tap, a long press never also
 activates the window, and the visible close region cannot fall through to
 activation or drag.
 
+The optional close-button setting keeps close controls visible on eligible,
+sufficiently large previews and minimized placeholders. They accept mouse,
+touchpad, and touchscreen input. Their touch target is modestly enlarged
+without changing layout, release outside cancels, and an exact guarded close
+cannot activate or drag the window.
+
 A visible window can be dragged to another workspace or output, into an exact
 stack position, or into a separate-column gutter. Dropping an eligible tiled
 window on the insertion line between two workspace rows creates a desktop at

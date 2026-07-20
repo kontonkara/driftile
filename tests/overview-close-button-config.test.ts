@@ -17,7 +17,7 @@ const scene = readFileSync(
 );
 
 describe("overview close button configuration", () => {
-  it("defaults the native setting and control to enabled", () => {
+  it("defaults the native setting and control to disabled", () => {
     const entry = configuration.match(
       /<entry name="ShowWindowCloseButtons"[\s\S]*?<\/entry>/u,
     )?.[0];
@@ -30,7 +30,7 @@ describe("overview close button configuration", () => {
     expect(control).toContain("<bool>false</bool>");
   });
 
-  it("accepts only live boolean values and otherwise keeps buttons enabled", () => {
+  it("accepts only live boolean values and otherwise keeps buttons disabled", () => {
     expect(main).toContain(
       "readonly property bool showWindowCloseButtons: showWindowCloseButtonsFromConfig()",
     );
