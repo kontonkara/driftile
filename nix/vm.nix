@@ -10115,14 +10115,19 @@ let
       request_physical_cross_desktop_pointer_hold() {
         local armed_file=/tmp/shared/driftile-cross-desktop-pointer-armed
         local attempt
+        local current_desktop=""
         local current_source_frame=""
         local edge_x=$3
         local edge_y=$4
         local edge_ready_file=/tmp/shared/driftile-cross-desktop-pointer-edge-ready
         local edge_rejected_file=/tmp/shared/driftile-cross-desktop-pointer-edge-rejected
+        local frame_exact=false
+        local frame_failures=0
         local held_file=/tmp/shared/driftile-cross-desktop-pointer-held
         local interactive_state=""
         local interactive_state_variable=$7
+        local membership_exact=false
+        local membership_failures=0
         local moving_file=/tmp/shared/driftile-cross-desktop-pointer-moving
         local output_frame=$5
         local output_height
@@ -10130,12 +10135,21 @@ let
         local output_x
         local output_y
         local pointer_location=""
+        local pointer_exact=false
+        local pointer_failures=0
         local pointer_location_variable=$8
         local positioned_file=/tmp/shared/driftile-cross-desktop-pointer-positioned
+        local pre_arm_ready=false
+        local pre_arm_samples=0
+        local pre_arm_stable_samples=0
         local ready_file=/tmp/shared/driftile-cross-desktop-pointer-hold-ready
         local ready_exposed_variable=$6
+        local source_active=false
+        local active_failures=0
         local source_x=$1
         local source_y=$2
+        local desktop_exact=false
+        local desktop_failures=0
         local source_desktop_id=''${11}
         local source_frame=''${10}
         local source_frame_height
@@ -10188,23 +10202,87 @@ let
         done
         [[ -f "$positioned_file" ]] || return 1
 
-        current_source_frame=$(
-          capture_stable_window_frame_contains "$source_title" 2>/dev/null \
-            || true
-        )
-        pointer_location=$(kdotool getmouselocation 2>/dev/null || true)
-        printf -v "$pointer_location_variable" '%s' "$pointer_location"
-        if [[ "$current_source_frame" != "$source_frame" \
-          || "$(current_desktop_id 2>/dev/null || true)" \
-            != "$source_desktop_id" ]] \
-          || ! window_is_active "$source_title" \
-          || ! window_is_on_desktop "$source_title" "$source_desktop_id" \
-          || [[ ! "$pointer_location" \
+        for ((attempt = 0; attempt < 20; attempt += 1)); do
+          pre_arm_samples=$((pre_arm_samples + 1))
+          current_source_frame=$(window_frame_contains \
+            "$source_title" 2>/dev/null || true)
+          current_desktop=$(current_desktop_id 2>/dev/null || true)
+          pointer_location=$(kdotool getmouselocation 2>/dev/null || true)
+
+          frame_exact=false
+          desktop_exact=false
+          source_active=false
+          membership_exact=false
+          pointer_exact=false
+
+          if [[ "$current_source_frame" == "$source_frame" ]]; then
+            frame_exact=true
+          else
+            frame_failures=$((frame_failures + 1))
+          fi
+          if [[ "$current_desktop" == "$source_desktop_id" ]]; then
+            desktop_exact=true
+          else
+            desktop_failures=$((desktop_failures + 1))
+          fi
+          if window_is_active "$source_title"; then
+            source_active=true
+          else
+            active_failures=$((active_failures + 1))
+          fi
+          if window_is_on_desktop "$source_title" "$source_desktop_id"; then
+            membership_exact=true
+          else
+            membership_failures=$((membership_failures + 1))
+          fi
+          if [[ "$pointer_location" \
             =~ ^x:([0-9]+)[[:space:]]y:([0-9]+)[[:space:]] ]] \
-          || ((BASH_REMATCH[1] < source_x - 2 \
-            || BASH_REMATCH[1] > source_x + 2 \
-            || BASH_REMATCH[2] < source_y - 2 \
-            || BASH_REMATCH[2] > source_y + 2)); then
+            && ((BASH_REMATCH[1] >= source_x - 2 \
+              && BASH_REMATCH[1] <= source_x + 2 \
+              && BASH_REMATCH[2] >= source_y - 2 \
+              && BASH_REMATCH[2] <= source_y + 2)); then
+            pointer_exact=true
+          else
+            pointer_failures=$((pointer_failures + 1))
+          fi
+
+          if [[ "$frame_exact" == true \
+            && "$desktop_exact" == true \
+            && "$source_active" == true \
+            && "$membership_exact" == true \
+            && "$pointer_exact" == true ]]; then
+            pre_arm_stable_samples=$((pre_arm_stable_samples + 1))
+            if ((pre_arm_stable_samples >= 2)); then
+              pre_arm_ready=true
+              break
+            fi
+          else
+            pre_arm_stable_samples=0
+          fi
+
+          sleep 0.1
+        done
+
+        printf -v "$pointer_location_variable" '%s' "$pointer_location"
+        if [[ "$pre_arm_ready" != true ]]; then
+          {
+            printf '\n[cross-desktop pointer pre-arm rejected]\n'
+            printf 'samples: %s; consecutive exact: %s\n' \
+              "$pre_arm_samples" "$pre_arm_stable_samples"
+            printf 'frame exact: %s; failures: %s; expected: %s; observed: %s\n' \
+              "$frame_exact" "$frame_failures" "$source_frame" \
+              "''${current_source_frame:-unavailable}"
+            printf 'desktop exact: %s; failures: %s; expected: %s; observed: %s\n' \
+              "$desktop_exact" "$desktop_failures" "$source_desktop_id" \
+              "''${current_desktop:-unavailable}"
+            printf 'active exact: %s; failures: %s\n' \
+              "$source_active" "$active_failures"
+            printf 'membership exact: %s; failures: %s\n' \
+              "$membership_exact" "$membership_failures"
+            printf 'pointer exact: %s; failures: %s; expected: %s,%s; observed: %s\n' \
+              "$pointer_exact" "$pointer_failures" "$source_x" "$source_y" \
+              "''${pointer_location:-unavailable}"
+          } >> /tmp/shared/driftile-focus-diagnostics
           : > "$edge_rejected_file" || return 1
 
           for ((attempt = 0; attempt < 200; attempt += 1)); do
