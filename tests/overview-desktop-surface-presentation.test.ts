@@ -183,10 +183,12 @@ describe("overview desktop surface presentation", () => {
       "onOutputIdChanged:",
       "onOverviewActivityIdChanged:",
       "onOverviewContextGenerationChanged:",
-      "Component.onCompleted: card.synchronizeDesktopSurfaceContext()",
     ]) {
       expect(desktopCard).toContain(handler);
     }
+    expect(desktopCard).toMatch(
+      /Component\.onCompleted:\s*\{\s*card\.synchronizeDesktopSurfaceContext\(\);[\s\S]*card\.resetPresentationMotionAfterDrift\(\);/u,
+    );
     expect(generationHandler).toMatch(
       /card\.synchronizeDesktopSurfaceContext\(\);[\s\S]*card\.cancelActiveWindowSpatialDrag\(\);/u,
     );

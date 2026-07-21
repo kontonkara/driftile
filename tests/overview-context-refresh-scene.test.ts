@@ -111,7 +111,9 @@ describe("overview context refresh scene", () => {
       expect(block).toContain("root.beginOverviewContextRefreshBarrier();");
       expect(block).not.toContain("root.closeStaleOverview();");
     }
-    expect(modelChanged).toContain("root.refreshOverviewSpatialSession(true);");
+    expect(modelChanged).toContain(
+      "root.refreshOverviewSpatialSession(true, root.spatialPresentationSettled);",
+    );
     expect(modelChanged).toContain("root.restartDesktopSurfaceResidency();");
     expect(modelChanged).not.toMatch(
       /searchQuery = ""|keyboardHelpVisible = false|sceneEffect\.deactivate/u,

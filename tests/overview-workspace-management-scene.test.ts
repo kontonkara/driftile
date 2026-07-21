@@ -217,10 +217,10 @@ describe("Overview workspace management scene", () => {
       /deactivate(?:Immediately)?\(|requestLiveModelRefresh|\bTimer\s*\{|setInterval|setTimeout|org\.kde\.kwin\.private/u,
     );
     expect(scene).toMatch(
-      /function beginOverviewContextRefreshBarrier\(\) \{\s*cancelWorkspaceRename\(\);/u,
+      /function beginOverviewContextRefreshBarrier\(\) \{\s*cancelSpatialHorizontalCameraMotion\(\);\s*cancelWorkspaceRename\(\);/u,
     );
     expect(scene).toMatch(
-      /function resetOverviewSession\(\) \{\s*cancelWorkspaceRename\(\);/u,
+      /function resetOverviewSession\(\) \{\s*cancelSpatialHorizontalCameraMotion\(\);\s*cancelWorkspaceRename\(\);/u,
     );
   });
 });

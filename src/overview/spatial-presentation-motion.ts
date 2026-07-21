@@ -65,7 +65,8 @@ interface ParsedPresentationSnapshot {
 }
 
 const MAXIMUM_GEOMETRY_MAGNITUDE = LAYOUT_PERSISTENCE_LIMITS.numericMagnitude;
-const trustedMotionTracks = new WeakSet();
+const MAXIMUM_TRUSTED_MOTION_TRACKS = LAYOUT_PERSISTENCE_LIMITS.windows;
+const trustedMotionTracks = new Set<object>();
 
 export function planOverviewSpatialPresentationMotion(
   input: unknown,
@@ -364,6 +365,13 @@ function freezeTrustedTrack(
   track: OverviewSpatialPresentationMotionTrack,
 ): OverviewSpatialPresentationMotionTrack {
   const frozen = Object.freeze(track);
+  while (trustedMotionTracks.size >= MAXIMUM_TRUSTED_MOTION_TRACKS) {
+    const oldest = trustedMotionTracks.values().next();
+    if (oldest.done) {
+      break;
+    }
+    trustedMotionTracks.delete(oldest.value);
+  }
   trustedMotionTracks.add(frozen);
   return frozen;
 }
