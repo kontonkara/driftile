@@ -513,11 +513,7 @@ export class DesktopLifecycle {
     );
 
     if (!removed) {
-      if (
-        after &&
-        !sameStrings(after.desktopIds, confirmation.desktopIds) &&
-        !this.dirty
-      ) {
+      if (after && !sameStrings(after.desktopIds, confirmation.desktopIds)) {
         this.publishChanged();
       }
 
