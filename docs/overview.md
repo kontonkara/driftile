@@ -236,8 +236,9 @@ scene then stays frozen while an exact public `KWin.WindowThumbnail` preloads in
 the captured target output's render path at sub-visible opacity. In parallel, an
 exact public Desktop surface for the target desktop, activity, and output is
 staged for two rendered frames. If promotion arrives first, two bounded promoted
-frames choose the thumbnail or monochrome shell once; stale window identity
-chooses the desktop-only path. The committed window mode may only downgrade. The
+frames choose the thumbnail or desktop-only path once. Stale window identity or
+late thumbnail readiness stays on the real canvas without drawing a synthetic
+window rectangle. The committed window mode may only downgrade. The
 Desktop surface expands from its row to the output and replaces the fading
 spatial canvas only after it is ready and has reached exact full-output geometry.
 Its immutable source is the projected Desktop surface, not the surrounding

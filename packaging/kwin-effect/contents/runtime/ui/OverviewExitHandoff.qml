@@ -84,9 +84,8 @@ Item {
         || !desktopBridgeCoversOutput ? 1 : 0
     readonly property real chromeOpacity: 1 - boundedProgress
     readonly property real thumbnailOpacity: revealOpacity
-    readonly property real fallbackOpacity: revealOpacity * (1 - boundedProgress)
     readonly property real windowOverlayOpacity: visualMode === "thumbnail"
-        ? thumbnailOpacity : visualMode === "monochrome" ? fallbackOpacity : 0
+        ? thumbnailOpacity : 0
     readonly property bool terminalCoverageOpaque: terminalCoverageMode === "canvas"
         ? surfaceOpacity >= 1 && desktopBridgeOpacity <= 0
         : terminalCoverageMode === "bridge" && desktopBridgeReady
@@ -747,7 +746,7 @@ Item {
 
         const nextMode = !promotionResolved ? "desktop"
             : liveThumbnailReady && preloadIdentityIsTracked()
-              ? "thumbnail" : "monochrome";
+              ? "thumbnail" : "desktop";
         return commitVisualMode(nextMode);
     }
 
@@ -773,7 +772,7 @@ Item {
             return "desktop";
         }
         if (currentMode === "thumbnail" && !liveThumbnailReady) {
-            return "monochrome";
+            return "desktop";
         }
 
         return currentMode;
@@ -787,8 +786,7 @@ Item {
     }
 
     function commitVisualMode(nextMode) {
-        if (nextMode !== "thumbnail" && nextMode !== "monochrome"
-                && nextMode !== "desktop") {
+        if (nextMode !== "thumbnail" && nextMode !== "desktop") {
             return false;
         }
 
@@ -991,15 +989,9 @@ Item {
         width: root.animatedRect.width
         height: root.animatedRect.height
         visible: root.preloadStagingVisible || root.visualMode === "thumbnail"
-            || root.visualMode === "monochrome"
         opacity: root.preloadStagingVisible ? 0.001 : root.windowOverlayOpacity
         clip: true
         z: 10
-
-        Rectangle {
-            anchors.fill: parent
-            color: "#202936"
-        }
 
         Loader {
             id: exitThumbnailLoader

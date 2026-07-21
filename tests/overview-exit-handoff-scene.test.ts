@@ -95,6 +95,7 @@ describe("overview exit handoff scene", () => {
     expect(windowShell).toMatch(
       /visible: root\.preloadStagingVisible \|\| root\.visualMode === "thumbnail"/u,
     );
+    expect(windowShell).not.toContain('color: "#202936"');
     expect(handoff).toMatch(
       /readonly property var liveThumbnailItem: liveThumbnailLoaderStatus === Loader\.Ready[\s\S]*exitThumbnailLoader\.item/u,
     );
@@ -154,7 +155,7 @@ describe("overview exit handoff scene", () => {
     expect(candidateGuard).not.toContain("windowCandidate.output");
   });
 
-  it("commits one visual mode and permits downgrade-only fallback", () => {
+  it("commits one visual mode and downgrades late thumbnails to the canvas", () => {
     const initialPlanner = sourceBetween(
       "function planInitialVisualMode()",
       "function planDowngradedVisualMode(currentMode)",
@@ -187,8 +188,9 @@ describe("overview exit handoff scene", () => {
     expect(downgradePlanner).toContain(
       'if (currentMode === "thumbnail" && !liveThumbnailReady)',
     );
-    expect(downgradePlanner).toContain('return "monochrome";');
+    expect(downgradePlanner).toContain('return "desktop";');
     expect(downgradePlanner).not.toMatch(/return\s+"thumbnail"/u);
+    expect(handoff).not.toContain('"monochrome"');
     expect(synchronization).toMatch(
       /if \(!visualModeCommitted\) \{[\s\S]*planInitialVisualMode\(\)[\s\S]*commitVisualMode\(initialMode\)[\s\S]*return;[\s\S]*planDowngradedVisualMode\(committedVisualMode\)/u,
     );
@@ -245,7 +247,7 @@ describe("overview exit handoff scene", () => {
     );
     expect(advance).toContain("if (preloadPromotedFrameCount < 2");
     expect(advance).toMatch(
-      /const nextMode = !promotionResolved \? "desktop"[\s\S]*liveThumbnailReady && preloadIdentityIsTracked\(\)[\s\S]*\? "thumbnail" : "monochrome";[\s\S]*return commitVisualMode\(nextMode\);/u,
+      /const nextMode = !promotionResolved \? "desktop"[\s\S]*liveThumbnailReady && preloadIdentityIsTracked\(\)[\s\S]*\? "thumbnail" : "desktop";[\s\S]*return commitVisualMode\(nextMode\);/u,
     );
     expect(handoff).not.toMatch(/Qt\.callLater|\bTimer\s*\{/u);
   });
@@ -281,9 +283,7 @@ describe("overview exit handoff scene", () => {
     expect(handoff).toContain(
       "readonly property real thumbnailOpacity: revealOpacity",
     );
-    expect(handoff).toContain(
-      "readonly property real fallbackOpacity: revealOpacity * (1 - boundedProgress)",
-    );
+    expect(handoff).not.toContain("fallbackOpacity");
     expect(handoff).toMatch(
       /readonly property bool terminalCoverageOpaque: terminalCoverageMode === "canvas"[\s\S]*surfaceOpacity >= 1 && desktopBridgeOpacity <= 0[\s\S]*terminalCoverageMode === "bridge" && desktopBridgeReady[\s\S]*desktopBridgeCoversOutput && surfaceOpacity <= 0/u,
     );

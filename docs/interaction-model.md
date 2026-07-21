@@ -259,11 +259,12 @@ before replacement coverage exists. The controller applies easing once and the
 scene consumes that progress directly. Exact public exit thumbnail and Desktop
 surface bridges preload in the captured output's render path. Two matching
 frames latch each ready bridge; otherwise the spatial canvas remains opaque.
-Two bounded promoted frames still choose the thumbnail or monochrome window
-shell once, and that window mode can only downgrade. The Desktop bridge tracks
-the exact projected surface of the target row, reaches full-output geometry,
-then replaces the canvas at terminal progress; the one-color row-scale fallback
-is not part of the normal close path.
+Two bounded promoted frames still choose the thumbnail or desktop-only path
+once, and that window mode can only downgrade. An unavailable or late thumbnail
+does not draw a synthetic window rectangle. The Desktop bridge tracks the exact
+projected surface of the target row, reaches full-output geometry, then replaces
+the canvas at terminal progress; one-color fallbacks are not part of the normal
+close path.
 Interactive gestures continue to drive presentation progress directly.
 Reopening during that close motion reverses the same visible session from its
 current progress and keeps the current session zoom.
@@ -324,7 +325,8 @@ only the target output while an exact public Desktop surface expands from the
 target row beneath it. Rows and chrome fade without live reflow only after that
 surface has rendered twice; otherwise the complete spatial canvas is retained.
 Desktop selection uses the same surface bridge, while minimized, deleted,
-stale, or topology-invalid window targets use a safe desktop-only close. Input
+stale, late-thumbnail, or topology-invalid window targets use a safe
+desktop-only close without an extra window-shaped shell. Input
 stays locked during the close. At terminal progress an opaque bridge or retained
 canvas remains rendered until every exact output has supplied two matching
 frame callbacks for the frozen session, model, topology, and handoff. Reopening

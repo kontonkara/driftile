@@ -173,12 +173,13 @@ Events travel from KWin through the bridge into the runtime. Commands and result
   `KWin.DesktopBackground` on the captured output before visible promotion.
   Sub-visible staging keeps them in the render path and latches readiness only
   after two exact frames. If the thumbnail latch is not ready at promotion, two
-  bounded promoted frames choose the thumbnail or monochrome window shell once.
-  Minimized, removed, stale, desktop-only, or topology-invalid window targets
-  remain on the desktop-only path.
-- Commits the visible exit mode once at promotion. An exact ready thumbnail,
-  single-window monochrome shell, or desktop-only mode can only downgrade after
-  that point; late thumbnail readiness never upgrades the committed view. The
+  bounded promoted frames choose the thumbnail or desktop-only path once.
+  Minimized, removed, stale, late-thumbnail, desktop-only, or topology-invalid
+  window targets remain on the desktop-only path without drawing a synthetic
+  window rectangle.
+- Commits the visible exit mode once at promotion. An exact ready thumbnail or
+  desktop-only mode can only downgrade after that point; late thumbnail
+  readiness never upgrades the committed view. The
   controller owns the easing once, and the scene consumes its bounded progress
   directly. The exact Desktop surface expands from its row beneath the target
   window and remains opaque at terminal progress. Until it is ready, the current
