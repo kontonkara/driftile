@@ -567,7 +567,7 @@ describe("overview live model refresh", () => {
       ["onActivitiesChanged", "onScreensChanged"],
       ["onScreensChanged", "onVirtualScreenGeometryChanged"],
       ["onVirtualScreenGeometryChanged", "onWindowActivated"],
-    ]) {
+    ] as const) {
       const handler = workspaceLifecycle.slice(
         workspaceLifecycle.indexOf(`function ${signal}()`),
         workspaceLifecycle.indexOf(`function ${nextSignal}()`),
