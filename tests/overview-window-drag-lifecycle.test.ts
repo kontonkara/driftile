@@ -107,8 +107,8 @@ describe("overview window drag ownership lifecycle", () => {
     expect(presentation).toContain(
       "onDragEligibleChanged: card.scheduleWindowSpatialDragValidation(windowPresentation)",
     );
-    expect(presentation).toContain(
-      "onTiledPresentationChanged: card.scheduleWindowSpatialDragValidation(windowPresentation)",
+    expect(presentation).toMatch(
+      /onTiledPresentationChanged: \{\s*card\.scheduleWindowSpatialDragValidation\(windowPresentation\);\s*card\.schedulePresentationMotion\(\);\s*\}/u,
     );
     expect(desktopCard).toMatch(
       /onTiledPresentationsChanged:[\s\S]*card\.scheduleWindowSpatialDragValidation\(card\.windowDragActiveSource\);/u,
@@ -129,8 +129,8 @@ describe("overview window drag ownership lifecycle", () => {
     expect(presentation).toMatch(
       /onCandidateChanged:[\s\S]*card\.cancelInvalidWindowSpatialDragSource\(windowPresentation\);/u,
     );
-    expect(presentation).toContain(
-      "onMinimizedWindowChanged: card.cancelInvalidWindowSpatialDragSource(windowPresentation)",
+    expect(presentation).toMatch(
+      /onMinimizedWindowChanged: \{\s*card\.cancelInvalidWindowSpatialDragSource\(windowPresentation\);\s*card\.schedulePresentationMotion\(\);\s*\}/u,
     );
     expect(presentation).toContain(
       "Component.onDestruction: card.cancelWindowSpatialDragSource(windowPresentation)",

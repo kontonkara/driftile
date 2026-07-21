@@ -18,6 +18,7 @@ Item {
     required property bool liveGeometryEnabled
     required property bool overviewAlwaysCenterSingleColumn
     required property int overviewContextGeneration
+    required property int overviewSessionId
     required property real overviewGap
     required property string overviewActivityId
     required property string outputId
@@ -28,6 +29,8 @@ Item {
     required property int searchResultCount
     required property var spatialDropBasisProvider
     required property bool spatialDirectDragBlocked
+    required property bool spatialMotionEligible
+    required property bool spatialMotionStartEligible
     required property bool showApplicationIcons
     required property bool showApplicationIdentity
     required property bool showDesktopNames
@@ -154,8 +157,35 @@ Item {
     property var windowDropHoverTarget: null
     property var windowDropHoverPreview: null
     property bool windowDropHoverCrossWorkspace: false
+    property string presentationMotionPhase: "invalid"
+    property int presentationMotionRequestId: 0
+    property int presentationMotionSeedRequestId: -1
+    property bool presentationMotionValidationPending: false
+    property real presentationMotionProgress: 1
+    property var presentationMotionCandidateSnapshot: null
+    property var presentationMotionFromSnapshot: null
+    property var presentationMotionTargetSnapshot: null
+    property var presentationMotionTracksByWindowId: Object.create(null)
+    property var presentationMotionOwner: null
+    readonly property bool internalMotionActive: presentationMotionPhase === "validating"
+        || presentationMotionPhase === "animating"
+    readonly property var presentationMotionSamplesByWindowId: buildPresentationMotionSamples(
+        presentationMotionProgress, presentationMotionTracksByWindowId,
+        presentationMotionPhase, presentationMotionOwner)
 
     opacity: searchDeemphasized ? 0.42 : 1
+
+    NumberAnimation {
+        id: presentationMotionAnimation
+
+        target: card
+        property: "presentationMotionProgress"
+        from: 0
+        to: 1
+        duration: 150
+        easing.type: Easing.OutCubic
+        onFinished: card.completePresentationMotion()
+    }
 
     Item {
         id: numberGutter
@@ -722,6 +752,7 @@ Item {
                         onGrabChanged: (transition, point) => {
                             if (transition === PointerDevice.GrabExclusive) {
                                 if (!columnShell.touchColumnDragArmed
+                                        || !card.settlePresentationMotion()
                                         || !columnShell.storeColumnDragHotSpot(point.scenePosition)) {
                                     columnShell.cancelColumnDrag();
                                     return;
@@ -769,7 +800,8 @@ Item {
                         }
                         onGrabChanged: (transition, point) => {
                             if (transition === PointerDevice.GrabExclusive) {
-                                if (!columnShell.storeColumnDragHotSpot(point.scenePosition)) {
+                                if (!card.settlePresentationMotion()
+                                        || !columnShell.storeColumnDragHotSpot(point.scenePosition)) {
                                     columnShell.cancelColumnDrag();
                                     return;
                                 }
@@ -810,6 +842,7 @@ Item {
                 gesturePolicy: TapHandler.DragThreshold
                 enabled: card.desktop && card.screen
                     && card.searchQuery.trim().length === 0 && !card.spatialDirectDragBlocked
+                    && !card.internalMotionActive
                 onTapped: point => {
                     if (!card.viewportPointHitsWindow(point.position)) {
                         card.desktopTapped(card.desktop, card.desktopId, card.screen);
@@ -848,12 +881,14 @@ Item {
                 card.attentionRevision += 1;
                 card.spatialLiveGeometryRevision += 1;
                 card.scheduleColumnDragEligibilityRefresh();
+                card.schedulePresentationMotion();
             }
             onItemRemoved: {
                 card.navigationTargetsChanged();
                 card.attentionRevision += 1;
                 card.spatialLiveGeometryRevision += 1;
                 card.scheduleColumnDragEligibilityRefresh();
+                card.schedulePresentationMotion();
             }
 
             Item {
@@ -907,6 +942,7 @@ Item {
                 z: frame && frame.floating ? 1000 + index : 100 + index
 
                 onCandidateChanged: {
+                    card.schedulePresentationMotion();
                     card.cancelInvalidWindowSpatialDragSource(windowPresentation);
                     refreshActionSnapshot();
                     card.attentionRevision += 1;
@@ -915,15 +951,33 @@ Item {
                 onActionSnapshotChanged: card.cancelInvalidWindowSpatialDragSource(windowPresentation)
                 onDragEligibleChanged: card.scheduleWindowSpatialDragValidation(windowPresentation)
                 onFrameChanged: card.scheduleWindowSpatialDragValidation(windowPresentation)
-                onMinimizedPlaceholderFrameChanged: card.navigationTargetsChanged()
-                onMinimizedWindowChanged: card.cancelInvalidWindowSpatialDragSource(windowPresentation)
-                onPrimaryVisualKindChanged: card.navigationTargetsChanged()
+                onMinimizedPlaceholderFrameChanged: {
+                    card.navigationTargetsChanged();
+                    card.schedulePresentationMotion();
+                }
+                onMinimizedWindowChanged: {
+                    card.cancelInvalidWindowSpatialDragSource(windowPresentation);
+                    card.schedulePresentationMotion();
+                }
+                onPrimaryVisualKindChanged: {
+                    card.navigationTargetsChanged();
+                    card.schedulePresentationMotion();
+                }
                 onSourceDesktopChanged: card.cancelInvalidWindowSpatialDragSource(windowPresentation)
                 onSourceDesktopIdChanged: card.cancelInvalidWindowSpatialDragSource(windowPresentation)
                 onSourceScreenChanged: card.cancelInvalidWindowSpatialDragSource(windowPresentation)
-                onTabFrameChanged: card.navigationTargetsChanged()
-                onTiledPresentationChanged: card.scheduleWindowSpatialDragValidation(windowPresentation)
-                onWindowIdChanged: card.cancelInvalidWindowSpatialDragSource(windowPresentation)
+                onTabFrameChanged: {
+                    card.navigationTargetsChanged();
+                    card.schedulePresentationMotion();
+                }
+                onTiledPresentationChanged: {
+                    card.scheduleWindowSpatialDragValidation(windowPresentation);
+                    card.schedulePresentationMotion();
+                }
+                onWindowIdChanged: {
+                    card.cancelInvalidWindowSpatialDragSource(windowPresentation);
+                    card.schedulePresentationMotion();
+                }
                 onWindowStateChanged: card.navigationTargetsChanged()
 
                 Component.onCompleted: refreshActionSnapshot()
@@ -1025,10 +1079,34 @@ Item {
                     parent: tabRailLayer
 
                     readonly property var frame: windowPresentation.tabFrame
+                    readonly property var visualFrame: card.presentationMotionTabVisualFrame(
+                        windowPresentation.windowId, frame)
+                    readonly property var visualBaseFrame: frame !== null ? frame : visualFrame
+                    readonly property real visualOpacity: card.presentationMotionTabOpacity(
+                        windowPresentation.windowId, frame)
                     readonly property bool selectedTab: frame !== null && frame.selected === true
+                    readonly property real selectedVisualProgress: card.presentationMotionSelectedProgress(
+                        windowPresentation.windowId, selectedTab)
                     readonly property bool minimizedTab: windowPresentation.minimizedWindow
+                    readonly property real minimizedVisualProgress: card.presentationMotionMinimizedProgress(
+                        windowPresentation.windowId, minimizedTab)
                     readonly property bool attentionTab: windowPresentation.attentionRequested
                     readonly property bool activeTab: KWin.Workspace.activeWindow === windowPresentation.candidate
+                    readonly property color restingColor: Qt.rgba(
+                        (17 + 20 * minimizedVisualProgress) / 255,
+                        (24 + 22 * minimizedVisualProgress) / 255,
+                        (36 + 25 * minimizedVisualProgress) / 255,
+                        220 / 255)
+                    readonly property color labelColor: Qt.rgba(
+                        (243 - 69 * minimizedVisualProgress) / 255,
+                        (247 - 60 * minimizedVisualProgress) / 255,
+                        (255 - 47 * minimizedVisualProgress) / 255,
+                        1)
+                    readonly property color selectionBorderColor: Qt.rgba(
+                        (102 + 32 * selectedVisualProgress) / 255,
+                        (117 + 57 * selectedVisualProgress) / 255,
+                        (139 + 93 * selectedVisualProgress) / 255,
+                        1)
                     readonly property bool activationEligible: windowPresentation.primaryVisualKind === "tab"
                         && frame !== null
                         && windowPresentation.matchesSearch
@@ -1254,25 +1332,43 @@ Item {
                             && card.windowSnapshotCanRequestClose(windowPresentation);
                     }
 
-                    x: frame ? frame.x : 0
-                    y: frame ? frame.y : 0
-                    width: frame ? frame.width : 0
-                    height: frame ? frame.height : 0
-                    visible: frame !== null && model.window && windowPresentation.matchesSearch
-                    opacity: windowPresentation.opacity
+                    x: visualFrame ? visualFrame.x : 0
+                    y: visualFrame ? visualFrame.y : 0
+                    width: visualBaseFrame ? visualBaseFrame.width : 0
+                    height: visualBaseFrame ? visualBaseFrame.height : 0
+                    visible: visualFrame !== null && visualOpacity > 0.0001
+                        && model.window && windowPresentation.matchesSearch
+                    opacity: windowPresentation.opacity * visualOpacity
                     color: tabActivationHandler.pressed ? "#f24b6482"
                         : tabHoverHandler.hovered ? "#e641526b"
-                        : selectedTab ? "#e63a4960"
-                        : minimizedTab ? "#dc252e3d" : "#dc111824"
+                        : restingColor
                     border.width: keyboardSelected || activeTab ? 2 : 1
                     border.color: keyboardSelected ? "#ffd166"
                                                    : attentionTab ? "#e2556f"
                                                                   : activeTab ? "#f4f8ff"
-                                                                              : selectedTab ? "#86aee8"
-                                                                                            : "#66758b"
+                                                                              : selectionBorderColor
                     radius: 3
                     clip: true
                     z: 5000 + index
+                    transform: Scale {
+                        origin.x: 0
+                        origin.y: 0
+                        xScale: tabShell.visualFrame && tabShell.visualBaseFrame
+                            && tabShell.visualBaseFrame.width > 0
+                            ? tabShell.visualFrame.width / tabShell.visualBaseFrame.width : 1
+                        yScale: tabShell.visualFrame && tabShell.visualBaseFrame
+                            && tabShell.visualBaseFrame.height > 0
+                            ? tabShell.visualFrame.height / tabShell.visualBaseFrame.height : 1
+                    }
+
+                    Rectangle {
+                        anchors.fill: parent
+                        visible: opacity > 0.0001
+                        opacity: tabShell.selectedVisualProgress
+                        color: "#e63a4960"
+                        radius: tabShell.radius
+                        enabled: false
+                    }
 
                     WindowApplicationIcon {
                         id: tabApplicationIcon
@@ -1293,13 +1389,13 @@ Item {
                             ? tabApplicationIcon.x + tabApplicationIcon.width + 4
                             : tabShell.attentionTab ? 8 : 5
                         anchors.rightMargin: tabCloseButton.visible
-                            ? (tabMinimizedMarker.visible ? 34 : 22)
-                            : tabMinimizedMarker.visible ? 13 : 5
+                            ? 22 + 12 * tabShell.minimizedVisualProgress
+                            : 5 + 8 * tabShell.minimizedVisualProgress
                         text: windowPresentation.windowLabel !== null
                             ? windowPresentation.windowLabel.primary
                             : `Tab ${tabShell.frame ? tabShell.frame.memberIndex + 1 : ""}`
-                        color: tabShell.minimizedTab ? "#aebbd0" : "#f3f7ff"
-                        font.bold: tabShell.selectedTab || tabShell.activeTab
+                        color: tabShell.labelColor
+                        font.bold: tabShell.activeTab
                         font.pixelSize: Math.max(7, Math.min(10, tabShell.height * 0.46))
                         horizontalAlignment: Text.AlignLeft
                         verticalAlignment: Text.AlignVCenter
@@ -1322,7 +1418,8 @@ Item {
                         anchors.right: parent.right
                         anchors.bottom: parent.bottom
                         height: 2
-                        visible: tabShell.selectedTab
+                        visible: opacity > 0.0001
+                        opacity: tabShell.selectedVisualProgress
                         color: "#86aee8"
                         z: 1
                     }
@@ -1335,7 +1432,8 @@ Item {
                         anchors.verticalCenter: parent.verticalCenter
                         width: 6
                         height: 2
-                        visible: tabShell.minimizedTab && tabShell.width >= 36
+                        visible: opacity > 0.0001 && tabShell.width >= 36
+                        opacity: tabShell.minimizedVisualProgress
                         color: "#aebbd0"
                         radius: 1
                         z: 1
@@ -1346,7 +1444,7 @@ Item {
 
                         anchors.right: parent.right
                         anchors.verticalCenter: parent.verticalCenter
-                        anchors.rightMargin: tabShell.minimizedTab ? 16 : 4
+                        anchors.rightMargin: 4 + 12 * tabShell.minimizedVisualProgress
                         width: 14
                         height: 14
                         settingEnabled: card.showWindowCloseButtons
@@ -1447,6 +1545,16 @@ Item {
                 Item {
                     id: thumbnailShell
 
+                    readonly property var visualFrame: card.presentationMotionVisualFrame(
+                        windowPresentation.windowId, "thumbnail", windowPresentation.frame,
+                        windowPresentation.tiledPresentation !== null
+                            && windowPresentation.tiledPresentation !== undefined)
+                    readonly property var visualBaseFrame: windowPresentation.frame !== null
+                        ? windowPresentation.frame : visualFrame
+                    readonly property real visualOpacity: card.presentationMotionVisualOpacity(
+                        windowPresentation.windowId, "thumbnail", windowPresentation.primaryVisualKind,
+                        windowPresentation.tiledPresentation !== null
+                            && windowPresentation.tiledPresentation !== undefined)
                     readonly property bool keyboardTarget: visible
                         && windowPresentation.primaryVisualKind === "thumbnail"
                     readonly property bool keyboardSelected: keyboardTarget
@@ -1476,14 +1584,23 @@ Item {
                         }
                     }
 
-                    x: windowPresentation.frame ? windowPresentation.frame.x : 0
-                    y: windowPresentation.frame ? windowPresentation.frame.y : 0
-                    width: windowPresentation.frame ? Math.max(1, windowPresentation.frame.width) : 0
-                    height: windowPresentation.frame ? Math.max(1, windowPresentation.frame.height) : 0
-                    visible: windowPresentation.selectedThumbnail && windowPresentation.frame !== null
-                             && windowPresentation.frame !== undefined && model.window
-                             && !windowPresentation.minimizedWindow && windowPresentation.matchesSearch
+                    x: visualFrame ? visualFrame.x : 0
+                    y: visualFrame ? visualFrame.y : 0
+                    width: visualBaseFrame ? Math.max(1, visualBaseFrame.width) : 0
+                    height: visualBaseFrame ? Math.max(1, visualBaseFrame.height) : 0
+                    visible: visualFrame !== null && visualOpacity > 0.0001 && model.window
+                    opacity: visualOpacity
                     clip: true
+                    transform: Scale {
+                        origin.x: 0
+                        origin.y: 0
+                        xScale: thumbnailShell.visualFrame && thumbnailShell.visualBaseFrame
+                            && thumbnailShell.visualBaseFrame.width > 0
+                            ? thumbnailShell.visualFrame.width / thumbnailShell.visualBaseFrame.width : 1
+                        yScale: thumbnailShell.visualFrame && thumbnailShell.visualBaseFrame
+                            && thumbnailShell.visualBaseFrame.height > 0
+                            ? thumbnailShell.visualFrame.height / thumbnailShell.visualBaseFrame.height : 1
+                    }
 
                     Drag.active: false
                     Drag.source: windowPresentation
@@ -1791,7 +1908,8 @@ Item {
                                 if (!windowPresentation.touchSpatialDragArmed) {
                                     return;
                                 }
-                                if (!thumbnailShell.storeSpatialDragHotSpot(point.scenePosition)) {
+                                if (!card.settlePresentationMotion()
+                                        || !thumbnailShell.storeSpatialDragHotSpot(point.scenePosition)) {
                                     thumbnailTouchDragHandler.cancelSpatialDrag();
                                     return;
                                 }
@@ -1845,7 +1963,8 @@ Item {
 
                         onGrabChanged: (transition, point) => {
                             if (transition === PointerDevice.GrabExclusive) {
-                                if (!thumbnailShell.storeSpatialDragHotSpot(point.scenePosition)) {
+                                if (!card.settlePresentationMotion()
+                                        || !thumbnailShell.storeSpatialDragHotSpot(point.scenePosition)) {
                                     card.cancelWindowSpatialDragSource(windowPresentation);
                                     return;
                                 }
@@ -1888,6 +2007,15 @@ Item {
                     id: minimizedPlaceholderShell
 
                     readonly property var frame: windowPresentation.minimizedPlaceholderFrame
+                    readonly property var visualFrame: card.presentationMotionVisualFrame(
+                        windowPresentation.windowId, "placeholder", frame,
+                        windowPresentation.tiledPresentation !== null
+                            && windowPresentation.tiledPresentation !== undefined)
+                    readonly property var visualBaseFrame: frame !== null ? frame : visualFrame
+                    readonly property real visualOpacity: card.presentationMotionVisualOpacity(
+                        windowPresentation.windowId, "placeholder", windowPresentation.primaryVisualKind,
+                        windowPresentation.tiledPresentation !== null
+                            && windowPresentation.tiledPresentation !== undefined)
                     readonly property bool activationEligible: windowPresentation.primaryVisualKind === "placeholder"
                         && windowPresentation.minimizedActivationEligible
                     readonly property bool keyboardTarget: visible && activationEligible
@@ -1903,12 +2031,12 @@ Item {
                             && card.windowSnapshotCanActivateMinimizedWindow(windowPresentation);
                     }
 
-                    x: frame ? frame.x : 0
-                    y: frame ? frame.y : 0
-                    width: frame ? frame.width : 0
-                    height: frame ? frame.height : 0
-                    visible: frame !== null && model.window && windowPresentation.minimizedWindow
-                             && windowPresentation.matchesSearch
+                    x: visualFrame ? visualFrame.x : 0
+                    y: visualFrame ? visualFrame.y : 0
+                    width: visualBaseFrame ? visualBaseFrame.width : 0
+                    height: visualBaseFrame ? visualBaseFrame.height : 0
+                    visible: visualFrame !== null && visualOpacity > 0.0001 && model.window
+                    opacity: visualOpacity
                     color: minimizedPlaceholderActivationHandler.pressed ? "#f23e4d65"
                         : minimizedPlaceholderHoverHandler.hovered ? "#e6323e52"
                         : "#dc252e3d"
@@ -1916,6 +2044,20 @@ Item {
                     border.color: "#66758b"
                     radius: 3
                     clip: true
+                    transform: Scale {
+                        origin.x: 0
+                        origin.y: 0
+                        xScale: minimizedPlaceholderShell.visualFrame
+                            && minimizedPlaceholderShell.visualBaseFrame
+                            && minimizedPlaceholderShell.visualBaseFrame.width > 0
+                            ? minimizedPlaceholderShell.visualFrame.width
+                                / minimizedPlaceholderShell.visualBaseFrame.width : 1
+                        yScale: minimizedPlaceholderShell.visualFrame
+                            && minimizedPlaceholderShell.visualBaseFrame
+                            && minimizedPlaceholderShell.visualBaseFrame.height > 0
+                            ? minimizedPlaceholderShell.visualFrame.height
+                                / minimizedPlaceholderShell.visualBaseFrame.height : 1
+                    }
 
                     WindowApplicationIcon {
                         id: minimizedPlaceholderApplicationIcon
@@ -2386,15 +2528,22 @@ Item {
         z: 9999
     }
 
-    onCurrentChanged: card.navigationTargetsChanged()
+    onCurrentChanged: {
+        if (card.presentationMotionStructuralDriftShouldReset()) {
+            card.resetPresentationMotionAfterDrift();
+        }
+        card.navigationTargetsChanged();
+    }
     onContextChanged: {
         card.scheduleColumnDragEligibilityRefresh();
         card.clearInvalidWindowDropHover();
         card.clearInvalidColumnDropHover();
         card.cancelInvalidActiveWindowSpatialDrag();
         card.cancelInvalidActiveColumnSpatialDrag();
+        card.schedulePresentationMotion();
     }
     onDesktopChanged: {
+        card.resetPresentationMotionAfterDrift();
         card.synchronizeDesktopSurfaceContext();
         card.scheduleColumnDragEligibilityRefresh();
         card.clearWindowDropHover();
@@ -2403,6 +2552,7 @@ Item {
         card.cancelActiveColumnSpatialDrag();
     }
     onDesktopIdChanged: {
+        card.resetPresentationMotionAfterDrift();
         card.synchronizeDesktopSurfaceContext();
         card.scheduleColumnDragEligibilityRefresh();
         card.clearWindowDropHover();
@@ -2424,6 +2574,7 @@ Item {
         }
     }
     onScreenChanged: {
+        card.resetPresentationMotionAfterDrift();
         card.synchronizeDesktopSurfaceContext();
         card.scheduleColumnDragEligibilityRefresh();
         card.clearWindowDropHover();
@@ -2432,6 +2583,7 @@ Item {
         card.cancelActiveColumnSpatialDrag();
     }
     onOutputIdChanged: {
+        card.resetPresentationMotionAfterDrift();
         card.synchronizeDesktopSurfaceContext();
         card.scheduleColumnDragEligibilityRefresh();
         card.clearInvalidWindowDropHover();
@@ -2456,25 +2608,32 @@ Item {
         card.clearInvalidColumnDropHover();
         card.cancelInvalidActiveColumnSpatialDrag();
     }
-    onTabRailPlansChanged: card.navigationTargetsChanged()
+    onTabRailPlansChanged: {
+        card.navigationTargetsChanged();
+        card.schedulePresentationMotion();
+    }
     onSpatialRowGeometryPlanChanged: {
         card.clearInvalidWindowDropHover();
         card.clearInvalidColumnDropHover();
         card.cancelInvalidActiveColumnSpatialDrag();
+        card.schedulePresentationMotion();
     }
     onWidthChanged: {
+        card.resetPresentationMotionAfterDrift();
         card.clearInvalidWindowDropHover();
         card.clearInvalidColumnDropHover();
         card.cancelActiveWindowSpatialDrag();
         card.cancelInvalidActiveColumnSpatialDrag();
     }
     onHeightChanged: {
+        card.resetPresentationMotionAfterDrift();
         card.clearInvalidWindowDropHover();
         card.clearInvalidColumnDropHover();
         card.cancelActiveWindowSpatialDrag();
         card.cancelInvalidActiveColumnSpatialDrag();
     }
     onSearchQueryChanged: {
+        card.resetPresentationMotionAfterDrift();
         card.scheduleColumnDragEligibilityRefresh();
         card.navigationTargetsChanged();
         if (searchQuery.trim().length > 0) {
@@ -2487,6 +2646,7 @@ Item {
     onColumnsChanged: {
         card.scheduleColumnDragEligibilityRefresh();
         card.cancelInvalidActiveWindowSpatialDrag();
+        card.schedulePresentationMotion();
     }
     onInteractionEligibleChanged: {
         card.scheduleColumnDragEligibilityRefresh();
@@ -2494,24 +2654,1104 @@ Item {
             card.cancelActiveWindowSpatialDrag();
         }
     }
+    onLiveGeometryEnabledChanged: {
+        if (card.presentationMotionStructuralDriftShouldReset()) {
+            card.resetPresentationMotionAfterDrift();
+        }
+    }
     onOverviewActivityIdChanged: {
+        card.resetPresentationMotionAfterDrift();
         card.synchronizeDesktopSurfaceContext();
         card.scheduleColumnDragEligibilityRefresh();
         card.cancelInvalidActiveWindowSpatialDrag();
     }
     onOverviewContextGenerationChanged: {
+        card.resetPresentationMotionAfterDrift();
         card.synchronizeDesktopSurfaceContext();
         card.cancelActiveWindowSpatialDrag();
     }
+    onOverviewSessionIdChanged: card.resetPresentationMotionAfterDrift()
+    onPreviewViewportOffsetChanged: card.resetPresentationMotionAfterDrift()
+    onSpatialDirectDragBlockedChanged: {
+        if (spatialDirectDragBlocked) {
+            card.resetPresentationMotionAfterDrift();
+        }
+    }
+    onSpatialMotionEligibleChanged: {
+        if (!spatialMotionEligible) {
+            card.resetPresentationMotionAfterDrift();
+        } else if (presentationMotionPhase === "invalid") {
+            card.resetPresentationMotionAfterDrift();
+        }
+    }
 
-    Component.onCompleted: card.synchronizeDesktopSurfaceContext()
+    Component.onCompleted: {
+        card.synchronizeDesktopSurfaceContext();
+        card.resetPresentationMotionAfterDrift();
+    }
 
     Component.onDestruction: {
+        card.invalidatePresentationMotion();
         card.rejectDesktopSurfaceLoad();
         card.clearWindowDropHover();
         card.clearColumnDropHover();
         card.cancelActiveWindowSpatialDrag();
         card.cancelActiveColumnSpatialDrag();
+    }
+
+    function presentationMotionKindIsValid(kind) {
+        return kind === "thumbnail" || kind === "tab" || kind === "placeholder";
+    }
+
+    function presentationMotionRectSnapshot(frame) {
+        try {
+            if (!frame || Array.isArray(frame) || !Number.isFinite(frame.x)
+                    || !Number.isFinite(frame.y) || !Number.isFinite(frame.width)
+                    || !Number.isFinite(frame.height) || frame.width <= 0 || frame.height <= 0
+                    || Math.abs(frame.x) > 1000000 || Math.abs(frame.y) > 1000000
+                    || frame.width > 1000000 || frame.height > 1000000
+                    || !Number.isFinite(frame.x + frame.width)
+                    || !Number.isFinite(frame.y + frame.height)) {
+                return null;
+            }
+            return Object.freeze({
+                height: Number(frame.height),
+                width: Number(frame.width),
+                x: Object.is(frame.x, -0) ? 0 : Number(frame.x),
+                y: Object.is(frame.y, -0) ? 0 : Number(frame.y)
+            });
+        } catch (error) {
+            return null;
+        }
+    }
+
+    function presentationMotionLogicalFrame(presentation, kind) {
+        if (!presentationMotionKindIsValid(kind) || !presentation) {
+            return null;
+        }
+        if (kind === "thumbnail") {
+            const tiled = presentation.tiledPresentation;
+            if (liveGeometryEnabled && current && tiled
+                    && spatialLiveWindowPlanIsExact(presentation.spatialLiveFrame,
+                                                    presentation.windowId, tiled)
+                    && tiled.thumbnailFrame) {
+                return tiled.thumbnailFrame;
+            }
+            return presentation.frame;
+        }
+        if (kind === "placeholder") {
+            return presentation.minimizedPlaceholderFrame;
+        }
+        return presentation.tabFrame;
+    }
+
+    function presentationMotionProjectedLiveCandidateFrame(candidate, windowId) {
+        try {
+            if (!liveGeometryEnabled || !current || !candidate || !screen
+                    || candidate.deleted !== false || candidate.minimized !== false
+                    || candidate.output !== screen
+                    || candidate.internalId === undefined || candidate.internalId === null
+                    || String(candidate.internalId) !== windowId) {
+                return null;
+            }
+            const geometry = candidate.frameGeometry;
+            const screenGeometry = screen.geometry;
+            if (!projectionGeometryIsValid(geometry) || !projectionGeometryIsValid(screenGeometry)) {
+                return null;
+            }
+            return presentationMotionRectSnapshot({
+                height: geometry.height * projectionScale,
+                width: geometry.width * projectionScale,
+                x: viewportOriginX + (geometry.x - screenGeometry.x) * projectionScale,
+                y: viewportOriginY + (geometry.y - screenGeometry.y) * projectionScale
+            });
+        } catch (error) {
+            return null;
+        }
+    }
+
+    function presentationMotionNativeThumbnailFrame(presentation, kind) {
+        const tiled = presentation ? presentation.tiledPresentation : null;
+        if (!presentation || kind !== "thumbnail" || !liveGeometryEnabled || !current
+                || !tiled || !spatialLiveWindowPlanIsExact(
+                    presentation.spatialLiveFrame, presentation.windowId, tiled)) {
+            return null;
+        }
+        return presentationMotionRectSnapshot(presentation.frame);
+    }
+
+    function presentationMotionColumnSnapshot(presentation, snapshotsByColumnIndex = null) {
+        try {
+            const tiled = presentation ? presentation.tiledPresentation : null;
+            if (!tiled || !Number.isInteger(tiled.columnIndex)
+                    || !Number.isInteger(tiled.memberIndex) || tiled.columnIndex < 0
+                    || tiled.columnIndex >= columns.length || tiled.memberIndex < 0) {
+                return null;
+            }
+            const column = columns[tiled.columnIndex];
+            const cached = snapshotsByColumnIndex
+                ? snapshotsByColumnIndex[tiled.columnIndex] : undefined;
+            if (cached !== undefined) {
+                return cached && cached.memberIds[tiled.memberIndex] === presentation.windowId
+                    ? cached : null;
+            }
+            if (!column || !indexedListHasBoundedLength(column.members, 1, 256)
+                    || !Number.isInteger(column.selectedMemberIndex)
+                    || column.selectedMemberIndex < 0
+                    || column.selectedMemberIndex >= column.members.length) {
+                return null;
+            }
+            const memberIds = [];
+            const seen = Object.create(null);
+            for (const member of column.members) {
+                const memberId = member && typeof member.windowId === "string"
+                    ? member.windowId : "";
+                if (memberId.length === 0 || seen[memberId] === true) {
+                    return null;
+                }
+                seen[memberId] = true;
+                memberIds.push(memberId);
+            }
+            const selectedWindowId = memberIds[column.selectedMemberIndex];
+            if (presentation.windowId.length === 0
+                    || memberIds[tiled.memberIndex] !== presentation.windowId
+                    || typeof selectedWindowId !== "string" || selectedWindowId.length === 0) {
+                return null;
+            }
+            Object.freeze(memberIds);
+            const snapshot = Object.freeze({ memberIds, selectedWindowId });
+            if (snapshotsByColumnIndex) {
+                snapshotsByColumnIndex[tiled.columnIndex] = snapshot;
+            }
+            return snapshot;
+        } catch (error) {
+            return null;
+        }
+    }
+
+    function presentationMotionVisualStateSnapshot(state) {
+        try {
+            if (!state || Array.isArray(state)) {
+                return null;
+            }
+            const keys = ["minimizedProgress", "placeholderOpacity", "selectedProgress",
+                          "tabOpacity", "thumbnailOpacity"];
+            const snapshot = Object.create(null);
+            for (const key of keys) {
+                const value = state[key];
+                if (typeof value !== "number" || !Number.isFinite(value)
+                        || value < 0 || value > 1) {
+                    return null;
+                }
+                snapshot[key] = Object.is(value, -0) ? 0 : value;
+            }
+            return Object.freeze(snapshot);
+        } catch (error) {
+            return null;
+        }
+    }
+
+    function presentationMotionZeroVisualState() {
+        return Object.freeze({
+            minimizedProgress: 0,
+            placeholderOpacity: 0,
+            selectedProgress: 0,
+            tabOpacity: 0,
+            thumbnailOpacity: 0
+        });
+    }
+
+    function interpolatePresentationMotionVisualState(fromState, targetState, progress) {
+        const source = fromState || presentationMotionZeroVisualState();
+        const target = targetState || presentationMotionZeroVisualState();
+        if (!Number.isFinite(progress)) {
+            return null;
+        }
+        const bounded = Math.max(0, Math.min(1, progress));
+        return presentationMotionVisualStateSnapshot({
+            minimizedProgress: source.minimizedProgress
+                + (target.minimizedProgress - source.minimizedProgress) * bounded,
+            placeholderOpacity: source.placeholderOpacity
+                + (target.placeholderOpacity - source.placeholderOpacity) * bounded,
+            selectedProgress: source.selectedProgress
+                + (target.selectedProgress - source.selectedProgress) * bounded,
+            tabOpacity: source.tabOpacity + (target.tabOpacity - source.tabOpacity) * bounded,
+            thumbnailOpacity: source.thumbnailOpacity
+                + (target.thumbnailOpacity - source.thumbnailOpacity) * bounded
+        });
+    }
+
+    function freezePresentationMotionSnapshot(records, candidatesByWindowId,
+                                              nativeThumbnailFramesByWindowId,
+                                              tabFramesByWindowId, visualFramesByWindowId,
+                                              visualStatesByWindowId, viewportOffset) {
+        try {
+            const recordsByWindowId = Object.create(null);
+            const nativeThumbnailRecords = [];
+            const tabRecords = [];
+            const visualRecords = [];
+            for (const record of records) {
+                if (!record || recordsByWindowId[record.windowId] !== undefined) {
+                    return null;
+                }
+                recordsByWindowId[record.windowId] = record;
+                const visualState = presentationMotionVisualStateSnapshot(
+                    visualStatesByWindowId[record.windowId]);
+                const visualFrame = presentationMotionRectSnapshot(
+                    visualFramesByWindowId[record.windowId]);
+                if (!visualState || !visualFrame) {
+                    return null;
+                }
+                visualFramesByWindowId[record.windowId] = visualFrame;
+                visualStatesByWindowId[record.windowId] = visualState;
+                visualRecords.push(Object.freeze({
+                    frame: visualFrame,
+                    state: visualState,
+                    windowId: record.windowId
+                }));
+                const tabFrame = tabFramesByWindowId[record.windowId];
+                if (tabFrame !== undefined) {
+                    tabRecords.push(Object.freeze({ frame: tabFrame, windowId: record.windowId }));
+                }
+            }
+            for (const windowId of Object.keys(nativeThumbnailFramesByWindowId)) {
+                const record = recordsByWindowId[windowId];
+                const nativeFrame = presentationMotionRectSnapshot(
+                    nativeThumbnailFramesByWindowId[windowId]);
+                if (!record || record.kind !== "thumbnail" || !nativeFrame
+                        || !presentationMotionFramesEqual(
+                            nativeFrame, visualFramesByWindowId[windowId])) {
+                    return null;
+                }
+                nativeThumbnailFramesByWindowId[windowId] = nativeFrame;
+                nativeThumbnailRecords.push(Object.freeze({ frame: nativeFrame, windowId }));
+            }
+            nativeThumbnailRecords.sort((left, right) => left.windowId < right.windowId
+                ? -1 : left.windowId > right.windowId ? 1 : 0);
+            Object.freeze(records);
+            Object.freeze(recordsByWindowId);
+            Object.freeze(candidatesByWindowId);
+            Object.freeze(nativeThumbnailFramesByWindowId);
+            Object.freeze(nativeThumbnailRecords);
+            Object.freeze(tabRecords);
+            Object.freeze(tabFramesByWindowId);
+            Object.freeze(visualFramesByWindowId);
+            Object.freeze(visualRecords);
+            Object.freeze(visualStatesByWindowId);
+            const fingerprint = JSON.stringify({
+                nativeThumbnailRecords,
+                records,
+                tabRecords,
+                visualRecords
+            });
+            if (typeof fingerprint !== "string" || fingerprint.length > 8388608) {
+                return null;
+            }
+            return Object.freeze({
+                candidatesByWindowId,
+                fingerprint,
+                nativeThumbnailFramesByWindowId,
+                records,
+                recordsByWindowId,
+                tabFramesByWindowId,
+                visualFramesByWindowId,
+                visualStatesByWindowId,
+                viewportOffset
+            });
+        } catch (error) {
+            return null;
+        }
+    }
+
+    function capturePresentationMotionSnapshot() {
+        try {
+            if (!Number.isInteger(windowRepeater.count) || windowRepeater.count < 0
+                    || windowRepeater.count > 131072 || !Number.isFinite(previewViewportOffset)) {
+                return null;
+            }
+            const records = [];
+            const candidatesByWindowId = Object.create(null);
+            const columnSnapshotsByIndex = Object.create(null);
+            const nativeThumbnailFramesByWindowId = Object.create(null);
+            const tabFramesByWindowId = Object.create(null);
+            const visualFramesByWindowId = Object.create(null);
+            const visualStatesByWindowId = Object.create(null);
+            for (let index = 0; index < windowRepeater.count; index += 1) {
+                const presentation = windowRepeater.itemAt(index);
+                const candidate = presentation ? presentation.candidate : null;
+                const windowId = presentation ? presentation.windowId : "";
+                const tiled = presentation ? presentation.tiledPresentation : null;
+                if (!presentation || !candidate || typeof windowId !== "string"
+                        || windowId.length === 0 || windowId.length > 4096
+                        || candidate.internalId === undefined || candidate.internalId === null
+                        || String(candidate.internalId) !== windowId) {
+                    return null;
+                }
+                if (!tiled) {
+                    continue;
+                }
+                if (candidatesByWindowId[windowId] !== undefined) {
+                    return null;
+                }
+                const kind = presentation.primaryVisualKind;
+                const frame = presentationMotionRectSnapshot(
+                    presentationMotionLogicalFrame(presentation, kind));
+                const nativeThumbnailFrame = presentationMotionNativeThumbnailFrame(
+                    presentation, kind);
+                const visualFrame = nativeThumbnailFrame || frame;
+                const column = presentationMotionColumnSnapshot(presentation,
+                                                                 columnSnapshotsByIndex);
+                const tabFrame = presentationMotionRectSnapshot(presentation.tabFrame);
+                if (!presentationMotionKindIsValid(kind) || !frame || !visualFrame || !column) {
+                    return null;
+                }
+                const record = Object.freeze({
+                    column,
+                    frame,
+                    kind,
+                    minimized: presentation.minimizedWindow === true,
+                    windowId
+                });
+                candidatesByWindowId[windowId] = candidate;
+                if (tabFrame) {
+                    tabFramesByWindowId[windowId] = tabFrame;
+                }
+                if (nativeThumbnailFrame) {
+                    nativeThumbnailFramesByWindowId[windowId] = nativeThumbnailFrame;
+                }
+                visualFramesByWindowId[windowId] = visualFrame;
+                visualStatesByWindowId[windowId] = Object.freeze({
+                    minimizedProgress: presentation.minimizedWindow === true ? 1 : 0,
+                    placeholderOpacity: kind === "placeholder" ? 1 : 0,
+                    selectedProgress: column.selectedWindowId === windowId ? 1 : 0,
+                    tabOpacity: tabFrame ? 1 : 0,
+                    thumbnailOpacity: kind === "thumbnail" ? 1 : 0
+                });
+                records.push(record);
+            }
+            records.sort((left, right) => left.windowId < right.windowId
+                ? -1 : left.windowId > right.windowId ? 1 : 0);
+            return freezePresentationMotionSnapshot(
+                records, candidatesByWindowId, nativeThumbnailFramesByWindowId,
+                tabFramesByWindowId, visualFramesByWindowId, visualStatesByWindowId,
+                Number(previewViewportOffset));
+        } catch (error) {
+            return null;
+        }
+    }
+
+    function presentationMotionSnapshotsAreExact(first, second) {
+        if (!first || !second || first.fingerprint !== second.fingerprint
+                || first.viewportOffset !== second.viewportOffset
+                || first.records.length !== second.records.length) {
+            return false;
+        }
+        for (const record of first.records) {
+            if (second.recordsByWindowId[record.windowId] === undefined
+                    || first.candidatesByWindowId[record.windowId]
+                        !== second.candidatesByWindowId[record.windowId]) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    function presentationMotionTabFramesAreExact(first, second) {
+        if (!first || !second) {
+            return false;
+        }
+        for (const record of second.records) {
+            const firstFrame = first.tabFramesByWindowId[record.windowId];
+            const secondFrame = second.tabFramesByWindowId[record.windowId];
+            if (firstFrame === undefined && secondFrame === undefined) {
+                continue;
+            }
+            if (!presentationMotionFramesEqual(firstFrame, secondFrame)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    function presentationMotionVisualStatesAreExact(first, second) {
+        if (!first || !second) {
+            return false;
+        }
+        const keys = ["minimizedProgress", "placeholderOpacity", "selectedProgress",
+                      "tabOpacity", "thumbnailOpacity"];
+        for (const record of second.records) {
+            const firstState = first.visualStatesByWindowId[record.windowId];
+            const secondState = second.visualStatesByWindowId[record.windowId];
+            if (!firstState || !secondState) {
+                return false;
+            }
+            for (const key of keys) {
+                if (firstState[key] !== secondState[key]) {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
+    function presentationMotionVisualFramesAreExact(first, second) {
+        if (!first || !second) {
+            return false;
+        }
+        for (const record of second.records) {
+            if (!presentationMotionFramesEqual(
+                    first.visualFramesByWindowId[record.windowId],
+                    second.visualFramesByWindowId[record.windowId])) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    function presentationMotionTrackSample(track, progress = presentationMotionProgress) {
+        try {
+            const runtime = OverviewRuntime.DriftileOverview;
+            return runtime && typeof runtime.sampleOverviewSpatialPresentationMotion === "function"
+                ? runtime.sampleOverviewSpatialPresentationMotion(track, progress) : null;
+        } catch (error) {
+            return null;
+        }
+    }
+
+    function buildPresentationMotionSamples(progress, tracks, phase, owner) {
+        const samples = Object.create(null);
+        if (phase !== "animating" || owner === null || !presentationMotionOwnerIsExact()) {
+            return Object.freeze(samples);
+        }
+        for (const windowId of Object.keys(tracks)) {
+            const sample = presentationMotionTrackSample(tracks[windowId], progress);
+            if (!sample) {
+                return Object.freeze(Object.create(null));
+            }
+            samples[windowId] = sample;
+        }
+        return Object.freeze(samples);
+    }
+
+    function captureReadyRenderedPresentationMotionSnapshot(source) {
+        const records = [];
+        const candidatesByWindowId = Object.create(null);
+        const nativeThumbnailFramesByWindowId = Object.create(null);
+        const tabFramesByWindowId = Object.create(null);
+        const visualFramesByWindowId = Object.create(null);
+        const visualStatesByWindowId = Object.create(null);
+        for (const sourceRecord of source.records) {
+            const windowId = sourceRecord.windowId;
+            const candidate = source.candidatesByWindowId[windowId];
+            const liveFrame = sourceRecord.kind === "thumbnail"
+                    && source.nativeThumbnailFramesByWindowId[windowId] !== undefined
+                ? presentationMotionProjectedLiveCandidateFrame(candidate, windowId) : null;
+            const renderedFrame = liveFrame || source.visualFramesByWindowId[windowId];
+            if (!renderedFrame) {
+                return null;
+            }
+            records.push(presentationMotionFramesEqual(renderedFrame, sourceRecord.frame)
+                ? sourceRecord : Object.freeze({
+                    column: sourceRecord.column,
+                    frame: renderedFrame,
+                    kind: sourceRecord.kind,
+                    minimized: sourceRecord.minimized,
+                    windowId
+                }));
+            candidatesByWindowId[windowId] = candidate;
+            const tabFrame = source.tabFramesByWindowId[windowId];
+            if (tabFrame !== undefined) {
+                tabFramesByWindowId[windowId] = tabFrame;
+            }
+            visualFramesByWindowId[windowId] = renderedFrame;
+            visualStatesByWindowId[windowId] = source.visualStatesByWindowId[windowId];
+        }
+        return freezePresentationMotionSnapshot(
+            records, candidatesByWindowId, nativeThumbnailFramesByWindowId,
+            tabFramesByWindowId, visualFramesByWindowId, visualStatesByWindowId,
+            source.viewportOffset);
+    }
+
+    function captureRenderedPresentationMotionSnapshot() {
+        const source = presentationMotionPhase === "animating"
+            ? presentationMotionTargetSnapshot : presentationMotionFromSnapshot;
+        if (!source) {
+            return capturePresentationMotionSnapshot();
+        }
+        if (presentationMotionPhase === "ready") {
+            return captureReadyRenderedPresentationMotionSnapshot(source);
+        }
+        if (presentationMotionPhase !== "animating") {
+            return source;
+        }
+
+        const records = [];
+        const candidatesByWindowId = Object.create(null);
+        const nativeThumbnailFramesByWindowId = Object.create(null);
+        const tabFramesByWindowId = Object.create(null);
+        const visualFramesByWindowId = Object.create(null);
+        const visualStatesByWindowId = Object.create(null);
+        for (const targetRecord of source.records) {
+            const track = presentationMotionTracksByWindowId[targetRecord.windowId];
+            const cachedSample = track ? presentationMotionSamplesByWindowId[targetRecord.windowId] : null;
+            const sample = cachedSample || (track
+                ? presentationMotionTrackSample(track, presentationMotionProgress) : null);
+            const fromVisualFrame = presentationMotionFromSnapshot
+                ? presentationMotionFromSnapshot.visualFramesByWindowId[targetRecord.windowId] : null;
+            const targetVisualFrame = source.visualFramesByWindowId[targetRecord.windowId];
+            let renderedFrame = fromVisualFrame && targetVisualFrame
+                ? presentationMotionInterpolatedFrame(
+                    fromVisualFrame, targetVisualFrame, presentationMotionProgress)
+                : targetVisualFrame || fromVisualFrame || (sample ? sample.frame : targetRecord.frame);
+            renderedFrame = presentationMotionRectSnapshot(renderedFrame);
+            if (!renderedFrame) {
+                return null;
+            }
+            const record = Object.freeze({
+                column: targetRecord.column,
+                frame: renderedFrame,
+                kind: targetRecord.kind,
+                minimized: targetRecord.minimized,
+                windowId: targetRecord.windowId
+            });
+            records.push(record);
+            visualFramesByWindowId[record.windowId] = renderedFrame;
+            candidatesByWindowId[record.windowId] = source.candidatesByWindowId[record.windowId];
+            const targetTabFrame = source.tabFramesByWindowId[record.windowId];
+            const fromTabFrame = presentationMotionFromSnapshot
+                ? presentationMotionFromSnapshot.tabFramesByWindowId[record.windowId] : undefined;
+            if (fromTabFrame !== undefined && targetTabFrame !== undefined) {
+                tabFramesByWindowId[record.windowId] = presentationMotionInterpolatedFrame(
+                    fromTabFrame, targetTabFrame, presentationMotionProgress);
+            } else if (targetTabFrame !== undefined) {
+                tabFramesByWindowId[record.windowId] = targetTabFrame;
+            } else if (fromTabFrame !== undefined && presentationMotionProgress < 1) {
+                tabFramesByWindowId[record.windowId] = fromTabFrame;
+            }
+            const fromVisualState = presentationMotionFromSnapshot
+                ? presentationMotionFromSnapshot.visualStatesByWindowId[record.windowId] : null;
+            const targetVisualState = source.visualStatesByWindowId[record.windowId];
+            const visualState = interpolatePresentationMotionVisualState(
+                fromVisualState, targetVisualState, presentationMotionProgress);
+            if (!visualState) {
+                return null;
+            }
+            visualStatesByWindowId[record.windowId] = visualState;
+        }
+        return freezePresentationMotionSnapshot(
+            records, candidatesByWindowId, nativeThumbnailFramesByWindowId,
+            tabFramesByWindowId, visualFramesByWindowId, visualStatesByWindowId,
+            source.viewportOffset);
+    }
+
+    function advancePresentationMotionRequestId() {
+        presentationMotionRequestId = presentationMotionRequestId >= 2147483646
+            ? 0 : presentationMotionRequestId + 1;
+        return presentationMotionRequestId;
+    }
+
+    function invalidatePresentationMotion() {
+        advancePresentationMotionRequestId();
+        presentationMotionAnimation.stop();
+        presentationMotionPhase = "invalid";
+        presentationMotionSeedRequestId = -1;
+        presentationMotionValidationPending = false;
+        presentationMotionProgress = 1;
+        presentationMotionCandidateSnapshot = null;
+        presentationMotionFromSnapshot = null;
+        presentationMotionTargetSnapshot = null;
+        presentationMotionTracksByWindowId = Object.create(null);
+        presentationMotionOwner = null;
+        return true;
+    }
+
+    function presentationMotionContextEligible() {
+        return spatialMotionEligible && searchQuery.trim().length === 0
+            && !spatialDirectDragBlocked && windowDragActiveSource === null
+            && columnDragActiveSource === null && !windowDropHoverOwned
+            && !columnDropHoverOwned && context && screen
+            && overviewSessionId > 0 && overviewContextGeneration > 0;
+    }
+
+    function presentationMotionStructuralDriftShouldReset() {
+        return spatialMotionStartEligible || !spatialMotionEligible;
+    }
+
+    function resetPresentationMotionAfterDrift() {
+        const alreadyInvalid = presentationMotionPhase === "invalid"
+            && presentationMotionCandidateSnapshot === null
+            && presentationMotionFromSnapshot === null
+            && presentationMotionTargetSnapshot === null
+            && presentationMotionOwner === null
+            && !presentationMotionValidationPending;
+        if (!alreadyInvalid) {
+            invalidatePresentationMotion();
+        }
+        if (presentationMotionContextEligible()
+                && presentationMotionSeedRequestId !== presentationMotionRequestId) {
+            presentationMotionSeedRequestId = presentationMotionRequestId;
+            Qt.callLater(card.seedPresentationMotion, presentationMotionRequestId);
+        }
+        return true;
+    }
+
+    function seedPresentationMotion(expectedRequestId = -1) {
+        if (expectedRequestId >= 0) {
+            if (expectedRequestId !== presentationMotionRequestId
+                    || presentationMotionPhase !== "invalid") {
+                return false;
+            }
+            presentationMotionSeedRequestId = -1;
+        } else {
+            invalidatePresentationMotion();
+        }
+        if (!presentationMotionContextEligible()) {
+            return false;
+        }
+        const snapshot = capturePresentationMotionSnapshot();
+        if (!snapshot) {
+            return false;
+        }
+        presentationMotionFromSnapshot = snapshot;
+        presentationMotionTargetSnapshot = snapshot;
+        presentationMotionPhase = "ready";
+        return true;
+    }
+
+    function schedulePresentationMotion() {
+        if (!presentationMotionContextEligible()) {
+            resetPresentationMotionAfterDrift();
+            return false;
+        }
+        if (!spatialMotionStartEligible) {
+            return false;
+        }
+        if (presentationMotionPhase === "validating" && presentationMotionValidationPending) {
+            return true;
+        }
+
+        const fromSnapshot = captureRenderedPresentationMotionSnapshot();
+        if (!fromSnapshot) {
+            resetPresentationMotionAfterDrift();
+            return false;
+        }
+        const requestId = advancePresentationMotionRequestId();
+        presentationMotionAnimation.stop();
+        presentationMotionPhase = "validating";
+        presentationMotionProgress = 0;
+        presentationMotionCandidateSnapshot = null;
+        presentationMotionFromSnapshot = fromSnapshot;
+        presentationMotionTargetSnapshot = null;
+        presentationMotionTracksByWindowId = Object.create(null);
+        presentationMotionOwner = null;
+        presentationMotionSeedRequestId = -1;
+        presentationMotionValidationPending = true;
+        Qt.callLater(card.capturePresentationMotionCandidate, requestId);
+        return true;
+    }
+
+    function capturePresentationMotionCandidate(requestId) {
+        if (requestId !== presentationMotionRequestId
+                || presentationMotionPhase !== "validating") {
+            return false;
+        }
+        presentationMotionValidationPending = false;
+        if (!presentationMotionContextEligible()) {
+            resetPresentationMotionAfterDrift();
+            return false;
+        }
+        const candidate = capturePresentationMotionSnapshot();
+        if (!candidate) {
+            seedPresentationMotion();
+            return false;
+        }
+        presentationMotionCandidateSnapshot = candidate;
+        Qt.callLater(card.commitPresentationMotionCandidate, requestId, candidate);
+        return true;
+    }
+
+    function commitPresentationMotionCandidate(requestId, candidate) {
+        if (requestId !== presentationMotionRequestId
+                || presentationMotionPhase !== "validating"
+                || presentationMotionCandidateSnapshot !== candidate) {
+            return false;
+        }
+        if (!presentationMotionContextEligible()) {
+            resetPresentationMotionAfterDrift();
+            return false;
+        }
+        const confirmed = capturePresentationMotionSnapshot();
+        if (!presentationMotionSnapshotsAreExact(candidate, confirmed)) {
+            seedPresentationMotion();
+            return false;
+        }
+
+        const runtime = OverviewRuntime.DriftileOverview;
+        let plan = null;
+        try {
+            plan = runtime && typeof runtime.planOverviewSpatialPresentationMotion === "function"
+                ? runtime.planOverviewSpatialPresentationMotion({
+                    current: presentationMotionFromSnapshot.records,
+                    next: confirmed.records
+                }) : null;
+        } catch (error) {
+            plan = null;
+        }
+        const tracks = presentationMotionTracks(plan, presentationMotionFromSnapshot, confirmed);
+        if (tracks === null) {
+            seedPresentationMotion();
+            return false;
+        }
+        if (Object.keys(tracks).length === 0
+                && presentationMotionTabFramesAreExact(presentationMotionFromSnapshot, confirmed)
+                && presentationMotionVisualFramesAreExact(presentationMotionFromSnapshot, confirmed)
+                && presentationMotionVisualStatesAreExact(presentationMotionFromSnapshot, confirmed)) {
+            presentationMotionAnimation.stop();
+            presentationMotionProgress = 1;
+            presentationMotionCandidateSnapshot = null;
+            presentationMotionFromSnapshot = confirmed;
+            presentationMotionTargetSnapshot = confirmed;
+            presentationMotionTracksByWindowId = tracks;
+            presentationMotionOwner = null;
+            presentationMotionPhase = "ready";
+            navigationTargetsChanged();
+            return true;
+        }
+
+        presentationMotionTargetSnapshot = confirmed;
+        presentationMotionTracksByWindowId = tracks;
+        presentationMotionOwner = Object.freeze({
+            activityId: overviewActivityId,
+            cardHeight: height,
+            cardWidth: width,
+            context,
+            desktop,
+            desktopId,
+            generation: overviewContextGeneration,
+            outputId,
+            requestId,
+            rowGeometryPlan: spatialRowGeometryPlan,
+            screen,
+            sessionId: overviewSessionId,
+            targetSnapshot: confirmed,
+            viewportOffset: previewViewportOffset
+        });
+        presentationMotionCandidateSnapshot = null;
+        presentationMotionProgress = 0;
+        presentationMotionPhase = "animating";
+        presentationMotionAnimation.duration = presentationMotionDuration(
+            tracks, presentationMotionFromSnapshot, confirmed);
+        presentationMotionAnimation.start();
+        if (!presentationMotionOwnerIsExact()) {
+            seedPresentationMotion();
+            return false;
+        }
+        return true;
+    }
+
+    function presentationMotionTracks(plan, fromSnapshot, targetSnapshot) {
+        try {
+            if (!plan || !Object.isFrozen(plan) || !Array.isArray(plan.survivors)
+                    || !Object.isFrozen(plan.survivors) || !Array.isArray(plan.entries)
+                    || !Object.isFrozen(plan.entries) || !fromSnapshot || !targetSnapshot
+                    || plan.survivors.length + plan.entries.length > targetSnapshot.records.length) {
+                return null;
+            }
+            const tracks = Object.create(null);
+            for (const track of [...plan.survivors, ...plan.entries]) {
+                const targetRecord = track && typeof track.windowId === "string"
+                    ? targetSnapshot.recordsByWindowId[track.windowId] : null;
+                const sourceRecord = track && typeof track.windowId === "string"
+                    ? fromSnapshot.recordsByWindowId[track.windowId] : null;
+                if (!presentationMotionTrackIsExact(track, sourceRecord, targetRecord)
+                        || tracks[track.windowId] !== undefined
+                        || targetSnapshot.candidatesByWindowId[track.windowId] === undefined
+                        || (track.disposition === "survivor"
+                            && fromSnapshot.candidatesByWindowId[track.windowId]
+                                !== targetSnapshot.candidatesByWindowId[track.windowId])) {
+                    return null;
+                }
+                const fromSample = presentationMotionTrackSample(track, 0);
+                const targetSample = presentationMotionTrackSample(track, 1);
+                if (!fromSample || !targetSample
+                        || !presentationMotionFramesEqual(fromSample.frame, track.fromFrame)
+                        || !presentationMotionFramesEqual(targetSample.frame, track.toFrame)) {
+                    return null;
+                }
+                tracks[track.windowId] = track;
+            }
+            for (const targetRecord of targetSnapshot.records) {
+                const sourceRecord = fromSnapshot.recordsByWindowId[targetRecord.windowId];
+                if (presentationMotionRecordNeedsTrack(sourceRecord, targetRecord)
+                        !== (tracks[targetRecord.windowId] !== undefined)) {
+                    return null;
+                }
+            }
+            Object.freeze(tracks);
+            return tracks;
+        } catch (error) {
+            return null;
+        }
+    }
+
+    function presentationMotionRecordNeedsTrack(sourceRecord, targetRecord) {
+        return sourceRecord === undefined
+            || !presentationMotionFramesEqual(sourceRecord.frame, targetRecord.frame)
+            || sourceRecord.kind !== targetRecord.kind
+            || sourceRecord.minimized !== targetRecord.minimized
+            || presentationMotionRecordMarkerProgress(sourceRecord)
+                !== presentationMotionRecordMarkerProgress(targetRecord);
+    }
+
+    function presentationMotionTrackIsExact(track, sourceRecord, targetRecord) {
+        if (!track || !Object.isFrozen(track) || !targetRecord
+                || track.windowId !== targetRecord.windowId
+                || track.toKind !== targetRecord.kind
+                || track.toMinimized !== targetRecord.minimized
+                || track.toMarkerProgress !== presentationMotionRecordMarkerProgress(targetRecord)
+                || !presentationMotionFramesEqual(track.toFrame, targetRecord.frame)) {
+            return false;
+        }
+        if (track.disposition === "entry") {
+            return sourceRecord === undefined && track.column === null
+                && track.fromKind === track.toKind
+                && track.fromMinimized === track.toMinimized
+                && track.fromMarkerProgress === 0
+                && presentationMotionFramesEqual(track.fromFrame, track.toFrame);
+        }
+        if (track.disposition !== "survivor" || !sourceRecord
+                || track.fromMarkerProgress !== presentationMotionRecordMarkerProgress(sourceRecord)) {
+            return false;
+        }
+        const exactColumn = presentationMotionColumnIdentitiesEqual(sourceRecord.column,
+                                                                    targetRecord.column)
+            ? targetRecord.column : null;
+        return (track.column === null && exactColumn === null
+                || track.column !== null && exactColumn !== null
+                    && presentationMotionColumnIdentitiesEqual(track.column, exactColumn))
+            && track.fromKind === sourceRecord.kind
+            && track.fromMinimized === sourceRecord.minimized
+            && presentationMotionFramesEqual(track.fromFrame, sourceRecord.frame);
+    }
+
+    function presentationMotionRecordMarkerProgress(record) {
+        return record && record.column && record.column.selectedWindowId === record.windowId ? 1 : 0;
+    }
+
+    function presentationMotionColumnIdentitiesEqual(first, second) {
+        if (!first || !second || first.selectedWindowId !== second.selectedWindowId
+                || first.memberIds.length !== second.memberIds.length) {
+            return false;
+        }
+        for (let index = 0; index < first.memberIds.length; index += 1) {
+            if (first.memberIds[index] !== second.memberIds[index]) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    function presentationMotionFramesEqual(first, second) {
+        return first && second && first.x === second.x && first.y === second.y
+            && first.width === second.width && first.height === second.height;
+    }
+
+    function presentationMotionDuration(tracks, fromSnapshot, targetSnapshot) {
+        let maximumDistance = 0;
+        for (const windowId of Object.keys(tracks)) {
+            const track = tracks[windowId];
+            maximumDistance = Math.max(maximumDistance,
+                Math.abs(track.toFrame.x - track.fromFrame.x),
+                Math.abs(track.toFrame.y - track.fromFrame.y),
+                Math.abs(track.toFrame.width - track.fromFrame.width),
+                Math.abs(track.toFrame.height - track.fromFrame.height));
+        }
+        if (fromSnapshot && targetSnapshot) {
+            const tabWindowIds = Object.create(null);
+            for (const windowId of Object.keys(fromSnapshot.tabFramesByWindowId)) {
+                tabWindowIds[windowId] = true;
+            }
+            for (const windowId of Object.keys(targetSnapshot.tabFramesByWindowId)) {
+                tabWindowIds[windowId] = true;
+            }
+            for (const windowId of Object.keys(tabWindowIds)) {
+                const fromFrame = fromSnapshot.tabFramesByWindowId[windowId];
+                const targetFrame = targetSnapshot.tabFramesByWindowId[windowId];
+                if (!fromFrame || !targetFrame) {
+                    continue;
+                }
+                maximumDistance = Math.max(maximumDistance,
+                    Math.abs(targetFrame.x - fromFrame.x),
+                    Math.abs(targetFrame.y - fromFrame.y),
+                    Math.abs(targetFrame.width - fromFrame.width),
+                    Math.abs(targetFrame.height - fromFrame.height));
+            }
+            for (const record of targetSnapshot.records) {
+                const fromFrame = fromSnapshot.visualFramesByWindowId[record.windowId];
+                const targetFrame = targetSnapshot.visualFramesByWindowId[record.windowId];
+                if (!fromFrame || !targetFrame) {
+                    continue;
+                }
+                maximumDistance = Math.max(maximumDistance,
+                    Math.abs(targetFrame.x - fromFrame.x),
+                    Math.abs(targetFrame.y - fromFrame.y),
+                    Math.abs(targetFrame.width - fromFrame.width),
+                    Math.abs(targetFrame.height - fromFrame.height));
+            }
+        }
+        const extent = Math.max(1, width, height);
+        return Math.max(110, Math.min(180, Math.round(120 + 48 * Math.min(1.25,
+            maximumDistance / extent))));
+    }
+
+    function presentationMotionOwnerIsExact() {
+        const owner = presentationMotionOwner;
+        return presentationMotionPhase === "animating" && owner
+            && spatialMotionEligible && presentationMotionRequestId === owner.requestId
+            && overviewSessionId === owner.sessionId
+            && overviewContextGeneration === owner.generation
+            && overviewActivityId === owner.activityId && outputId === owner.outputId
+            && desktopId === owner.desktopId && desktop === owner.desktop
+            && context === owner.context && spatialRowGeometryPlan === owner.rowGeometryPlan
+            && screen === owner.screen && width === owner.cardWidth && height === owner.cardHeight
+            && previewViewportOffset === owner.viewportOffset
+            && presentationMotionTargetSnapshot === owner.targetSnapshot
+            && !spatialDirectDragBlocked && windowDragActiveSource === null
+            && columnDragActiveSource === null && !windowDropHoverOwned && !columnDropHoverOwned;
+    }
+
+    function completePresentationMotion() {
+        if (!presentationMotionOwnerIsExact() || presentationMotionProgress < 0.999999) {
+            seedPresentationMotion();
+            return false;
+        }
+        const settled = presentationMotionTargetSnapshot;
+        presentationMotionAnimation.stop();
+        presentationMotionProgress = 1;
+        presentationMotionFromSnapshot = settled;
+        presentationMotionTracksByWindowId = Object.create(null);
+        presentationMotionOwner = null;
+        presentationMotionPhase = "ready";
+        navigationTargetsChanged();
+        return true;
+    }
+
+    function settlePresentationMotion() {
+        if (presentationMotionPhase === "ready") {
+            return true;
+        }
+        return seedPresentationMotion();
+    }
+
+    function presentationMotionInterpolatedFrame(fromFrame, toFrame, progress) {
+        if (!fromFrame || !toFrame || !Number.isFinite(progress)) {
+            return null;
+        }
+        const bounded = Math.max(0, Math.min(1, progress));
+        return {
+            height: fromFrame.height + (toFrame.height - fromFrame.height) * bounded,
+            width: fromFrame.width + (toFrame.width - fromFrame.width) * bounded,
+            x: fromFrame.x + (toFrame.x - fromFrame.x) * bounded,
+            y: fromFrame.y + (toFrame.y - fromFrame.y) * bounded
+        };
+    }
+
+    function presentationMotionVisualValue(windowId, key, fallback, tracked = true) {
+        if (!internalMotionActive || typeof windowId !== "string") {
+            return fallback;
+        }
+        const fromState = presentationMotionFromSnapshot
+            ? presentationMotionFromSnapshot.visualStatesByWindowId[windowId] : null;
+        if (presentationMotionPhase === "validating") {
+            return fromState ? fromState[key] : !tracked ? fallback : 0;
+        }
+        if (!presentationMotionOwnerIsExact()) {
+            return fromState ? fromState[key] : !tracked ? fallback : 0;
+        }
+        const targetState = presentationMotionTargetSnapshot
+            ? presentationMotionTargetSnapshot.visualStatesByWindowId[windowId] : null;
+        if (!targetState) {
+            return fallback;
+        }
+        const fromValue = fromState ? fromState[key] : 0;
+        return fromValue + (targetState[key] - fromValue) * presentationMotionProgress;
+    }
+
+    function presentationMotionVisualFrame(windowId, kind, logicalFrame, tracked = true) {
+        if (!internalMotionActive || typeof windowId !== "string"
+                || !presentationMotionKindIsValid(kind)) {
+            return logicalFrame;
+        }
+        const fromFrame = presentationMotionFromSnapshot
+            ? presentationMotionFromSnapshot.visualFramesByWindowId[windowId] : null;
+        if (presentationMotionPhase === "validating") {
+            const opacityKey = kind === "thumbnail" ? "thumbnailOpacity" : "placeholderOpacity";
+            const opacity = presentationMotionVisualValue(windowId, opacityKey,
+                                                          kind === "thumbnail" ? 1 : 0, tracked);
+            return fromFrame && opacity > 0 ? fromFrame : !tracked ? logicalFrame : null;
+        }
+        if (!presentationMotionOwnerIsExact()) {
+            return fromFrame || (!tracked ? logicalFrame : null);
+        }
+        const targetFrame = presentationMotionTargetSnapshot
+            ? presentationMotionTargetSnapshot.visualFramesByWindowId[windowId] : null;
+        const track = presentationMotionTracksByWindowId[windowId];
+        if (track && fromFrame && targetFrame
+                && presentationMotionFramesEqual(fromFrame, track.fromFrame)
+                && presentationMotionFramesEqual(targetFrame, track.toFrame)) {
+            const cachedSample = presentationMotionSamplesByWindowId[windowId];
+            const sample = cachedSample || presentationMotionTrackSample(
+                track, presentationMotionProgress);
+            if (sample) {
+                return sample.frame;
+            }
+        }
+        if (fromFrame && targetFrame) {
+            return presentationMotionInterpolatedFrame(
+                fromFrame, targetFrame, presentationMotionProgress) || fromFrame;
+        }
+        return targetFrame || fromFrame || (!tracked ? logicalFrame : null);
+    }
+
+    function presentationMotionVisualOpacity(windowId, kind, logicalKind, tracked = true) {
+        const key = kind === "thumbnail" ? "thumbnailOpacity" : "placeholderOpacity";
+        return presentationMotionVisualValue(windowId, key,
+                                             kind === logicalKind ? 1 : 0, tracked);
+    }
+
+    function presentationMotionTabVisualFrame(windowId, logicalFrame) {
+        if (!internalMotionActive || typeof windowId !== "string") {
+            return logicalFrame;
+        }
+        const fromFrame = presentationMotionFromSnapshot
+            ? presentationMotionFromSnapshot.tabFramesByWindowId[windowId] : null;
+        if (presentationMotionPhase === "validating") {
+            return fromFrame || logicalFrame;
+        }
+        if (!presentationMotionOwnerIsExact()) {
+            return fromFrame || logicalFrame;
+        }
+        const toFrame = presentationMotionTargetSnapshot
+            ? presentationMotionTargetSnapshot.tabFramesByWindowId[windowId] : null;
+        if (fromFrame && toFrame) {
+            return presentationMotionInterpolatedFrame(fromFrame, toFrame,
+                                                       presentationMotionProgress);
+        }
+        return toFrame || fromFrame || logicalFrame;
+    }
+
+    function presentationMotionTabOpacity(windowId, logicalFrame) {
+        return presentationMotionVisualValue(windowId, "tabOpacity", logicalFrame ? 1 : 0);
+    }
+
+    function presentationMotionSelectedProgress(windowId, selected) {
+        return presentationMotionVisualValue(windowId, "selectedProgress",
+                                             selected === true ? 1 : 0);
+    }
+
+    function presentationMotionMinimizedProgress(windowId, minimized) {
+        return presentationMotionVisualValue(windowId, "minimizedProgress",
+                                             minimized === true ? 1 : 0);
     }
 
     function scheduleDesktopSurfaceReload() {
@@ -3614,6 +4854,7 @@ Item {
         try {
             if (!source || source.columnSpatialDragLifecycleActive === true
                     || !spatialDragScenePointIsFinite(scenePosition)
+                    || !settlePresentationMotion()
                     || !refreshColumnDragEligibilityAtPointer(source)) {
                 return;
             }
@@ -3874,7 +5115,8 @@ Item {
                     || columnPointerPressSource !== null) {
                 return;
             }
-            if (!spatialDragScenePointIsFinite(scenePosition)) {
+            if (!spatialDragScenePointIsFinite(scenePosition)
+                    || !settlePresentationMotion()) {
                 return false;
             }
             const snapshot = captureWindowDragSnapshot(source);

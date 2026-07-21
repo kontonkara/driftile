@@ -248,6 +248,21 @@ export type {
   OverviewSpatialLiveGeometryInput,
   OverviewSpatialLiveGeometryPlan,
 } from "./spatial-live-geometry";
+export {
+  planOverviewSpatialPresentationMotion,
+  sampleOverviewSpatialPresentationMotion,
+} from "./spatial-presentation-motion";
+export type {
+  OverviewSpatialPresentationKind,
+  OverviewSpatialPresentationMotionColumnIdentity,
+  OverviewSpatialPresentationMotionDisposition,
+  OverviewSpatialPresentationMotionFrame,
+  OverviewSpatialPresentationMotionInput,
+  OverviewSpatialPresentationMotionPlan,
+  OverviewSpatialPresentationMotionSample,
+  OverviewSpatialPresentationMotionSnapshot,
+  OverviewSpatialPresentationMotionTrack,
+} from "./spatial-presentation-motion";
 
 export type OverviewModelLoadResult =
   | OverviewLayoutProjectionResult

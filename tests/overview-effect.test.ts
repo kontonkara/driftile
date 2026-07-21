@@ -1301,7 +1301,12 @@ describe("overview effect package", () => {
     expect(thumbnail).toContain(
       "enabled: thumbnailShell.visible && card.desktop && card.screen",
     );
-    expect(thumbnail).toContain("!windowPresentation.minimizedWindow");
+    expect(thumbnail).toContain(
+      'windowPresentation.primaryVisualKind === "thumbnail"',
+    );
+    expect(thumbnail).toContain(
+      "visible: visualFrame !== null && visualOpacity > 0.0001 && model.window",
+    );
     expect(thumbnail).not.toContain("enabled: card.current");
     expect(thumbnail).toContain(
       "card.windowTapped(model.window, windowPresentation.windowId, card.desktop,",
@@ -1547,7 +1552,7 @@ describe("overview effect package", () => {
       "Component.onCompleted: refreshActionSnapshot()",
     );
     expect(presentation).toMatch(
-      /onCandidateChanged: \{\s*card\.cancelInvalidWindowSpatialDragSource\(windowPresentation\);\s*refreshActionSnapshot\(\);\s*card\.attentionRevision \+= 1;\s*\}/u,
+      /onCandidateChanged: \{\s*card\.schedulePresentationMotion\(\);\s*card\.cancelInvalidWindowSpatialDragSource\(windowPresentation\);\s*refreshActionSnapshot\(\);\s*card\.attentionRevision \+= 1;\s*\}/u,
     );
     for (const signal of [
       "Closeable",
@@ -2905,8 +2910,8 @@ describe("overview effect package", () => {
     expect(presentation).toMatch(
       /readonly property string primaryVisualKind:[\s\S]*"thumbnail"[\s\S]*"placeholder"[\s\S]*"tab"/u,
     );
-    expect(presentation).toContain(
-      "onMinimizedPlaceholderFrameChanged: card.navigationTargetsChanged()",
+    expect(presentation).toMatch(
+      /onMinimizedPlaceholderFrameChanged: \{\s*card\.navigationTargetsChanged\(\);\s*card\.schedulePresentationMotion\(\);\s*\}/u,
     );
 
     expect(planner).toContain(
@@ -2944,7 +2949,10 @@ describe("overview effect package", () => {
       "card.keyboardSelectionId === card.navigationTargetId(windowPresentation.windowId)",
     );
     expect(placeholder).toContain(
-      "visible: frame !== null && model.window && windowPresentation.minimizedWindow",
+      "visible: visualFrame !== null && visualOpacity > 0.0001 && model.window",
+    );
+    expect(placeholder).toContain(
+      'windowPresentation.primaryVisualKind === "placeholder"',
     );
     expect(placeholder).toContain("&& windowPresentation.matchesSearch");
     expect(placeholder).toContain(
@@ -3691,7 +3699,12 @@ describe("overview effect package", () => {
       "readonly property bool keyboardTarget: visible",
     );
     expect(thumbnail).toContain("windowPresentation.selectedThumbnail");
-    expect(thumbnail).toContain("!windowPresentation.minimizedWindow");
+    expect(thumbnail).toContain(
+      'windowPresentation.primaryVisualKind === "thumbnail"',
+    );
+    expect(thumbnail).toContain(
+      "visible: visualFrame !== null && visualOpacity > 0.0001 && model.window",
+    );
     for (const condition of [
       "presentation.matchesSearch !== true",
       "presentation.minimizedWindow !== true",
@@ -3752,7 +3765,7 @@ describe("overview effect package", () => {
     for (const signal of ["ItemAdded", "ItemRemoved"]) {
       expect(windowRepeaterHeader).toMatch(
         new RegExp(
-          `on${signal}: \\{\\s*card\\.navigationTargetsChanged\\(\\);\\s*card\\.attentionRevision \\+= 1;\\s*card\\.spatialLiveGeometryRevision \\+= 1;\\s*card\\.scheduleColumnDragEligibilityRefresh\\(\\);\\s*\\}`,
+          `on${signal}: \\{\\s*card\\.navigationTargetsChanged\\(\\);\\s*card\\.attentionRevision \\+= 1;\\s*card\\.spatialLiveGeometryRevision \\+= 1;\\s*card\\.scheduleColumnDragEligibilityRefresh\\(\\);\\s*card\\.schedulePresentationMotion\\(\\);\\s*\\}`,
           "u",
         ),
       );
@@ -3761,7 +3774,7 @@ describe("overview effect package", () => {
       "readonly property bool attentionRequested: card.windowDemandsAttention(candidate)",
     );
     expect(windowPresentation).toMatch(
-      /onCandidateChanged: \{\s*card\.cancelInvalidWindowSpatialDragSource\(windowPresentation\);\s*refreshActionSnapshot\(\);\s*card\.attentionRevision \+= 1;\s*\}/u,
+      /onCandidateChanged: \{\s*card\.schedulePresentationMotion\(\);\s*card\.cancelInvalidWindowSpatialDragSource\(windowPresentation\);\s*refreshActionSnapshot\(\);\s*card\.attentionRevision \+= 1;\s*\}/u,
     );
     expect(windowPresentation).toContain(
       "onAttentionRequestedChanged: card.attentionRevision += 1",
@@ -4570,8 +4583,8 @@ describe("overview effect package", () => {
       scene.indexOf("function navigationTargetPrecedes("),
     );
 
-    expect(desktopCard).toContain(
-      "onCurrentChanged: card.navigationTargetsChanged()",
+    expect(desktopCard).toMatch(
+      /onCurrentChanged: \{\s*if \(card\.presentationMotionStructuralDriftShouldReset\(\)\) \{\s*card\.resetPresentationMotionAfterDrift\(\);\s*\}\s*card\.navigationTargetsChanged\(\);\s*\}/u,
     );
     expect(cardTargets).toContain("if (searchQuery.trim().length === 0)");
     expect(cardTargets).not.toContain("if (!current &&");
@@ -5696,8 +5709,17 @@ describe("overview effect package", () => {
     expect(desktopCard).toContain(
       "readonly property bool selectedThumbnail: !tiledPresentation || tiledPresentation.selected",
     );
-    expect(desktopCard).toMatch(
-      /id: thumbnailShell[\s\S]*visible: windowPresentation\.selectedThumbnail && windowPresentation\.frame !== null[\s\S]*KWin\.WindowThumbnail \{[\s\S]*wId: windowPresentation\.windowId/u,
+    const thumbnail = desktopCard.slice(
+      desktopCard.indexOf("id: thumbnailShell"),
+      desktopCard.indexOf("id: minimizedPlaceholderShell"),
+    );
+    expect(thumbnail).toContain("card.presentationMotionVisualFrame(");
+    expect(thumbnail).toContain('"thumbnail", windowPresentation.frame,');
+    expect(thumbnail).toContain(
+      "visible: visualFrame !== null && visualOpacity > 0.0001 && model.window",
+    );
+    expect(thumbnail).toMatch(
+      /KWin\.WindowThumbnail \{[\s\S]*wId: windowPresentation\.windowId/u,
     );
     expect(desktopCard.match(/KWin\.WindowThumbnail \{/gu)).toHaveLength(1);
     expect(desktopCard).toContain("id: tabRailLayer");
@@ -5737,7 +5759,10 @@ describe("overview effect package", () => {
     expect(filter).not.toContain("minimizedWindows: false");
 
     const railLayer = desktopCard.slice(railLayerStart, railLayerStart + 260);
-    const thumbnail = desktopCard.slice(thumbnailStart, thumbnailStart + 2_400);
+    const thumbnail = desktopCard.slice(
+      thumbnailStart,
+      desktopCard.indexOf("id: minimizedPlaceholderShell", thumbnailStart),
+    );
     const tab = desktopCard.slice(tabStart, thumbnailStart);
     const planner = desktopCard.slice(plannerStart, frameLookupStart);
     const frameLookup = desktopCard.slice(
@@ -5755,10 +5780,10 @@ describe("overview effect package", () => {
     expect(tab).toContain("parent: tabRailLayer");
 
     for (const geometry of [
-      "x: windowPresentation.frame ? windowPresentation.frame.x : 0",
-      "y: windowPresentation.frame ? windowPresentation.frame.y : 0",
-      "width: windowPresentation.frame ? Math.max(1, windowPresentation.frame.width) : 0",
-      "height: windowPresentation.frame ? Math.max(1, windowPresentation.frame.height) : 0",
+      "x: visualFrame ? visualFrame.x : 0",
+      "y: visualFrame ? visualFrame.y : 0",
+      "width: visualBaseFrame ? Math.max(1, visualBaseFrame.width) : 0",
+      "height: visualBaseFrame ? Math.max(1, visualBaseFrame.height) : 0",
     ]) {
       expect(thumbnail).toContain(geometry);
     }

@@ -634,7 +634,7 @@ describe("overview live model refresh", () => {
       /function onWindowRemoved\(window\)[\s\S]*requestLiveModelRefresh|function onWindowRemoved\(window\)[\s\S]*closeStaleOverview/u,
     );
     expect(scene).toMatch(
-      /onOverviewModelChanged: \{\s*root\.cancelSpatialHorizontalCameraMotion\(\);\s*if \(root\.abortPendingWindowFocus\("stale"\)\) \{\s*return;\s*\}\s*root\.cancelWorkspaceRenameOnDrift\(\);\s*root\.cancelActiveWindowSpatialDrag\(\);\s*root\.cancelActiveColumnSpatialDrag\(\);\s*if \(spatialExitHandoffActive\) \{\s*root\.invalidateSpatialExitHandoff\("stale"\);\s*return;\s*\}\s*root\.cancelSpatialZoomTransaction\(\);\s*root\.discardSpatialZoomTransaction\(\);\s*root\.refreshOverviewSpatialSession\(true\);\s*root\.restartDesktopSurfaceResidency\(\);\s*root\.synchronizeSpatialZoomInputState\(\);\s*\}/u,
+      /onOverviewModelChanged: \{\s*root\.cancelSpatialHorizontalCameraMotion\(\);\s*if \(root\.abortPendingWindowFocus\("stale"\)\) \{\s*return;\s*\}\s*root\.cancelWorkspaceRenameOnDrift\(\);\s*root\.cancelActiveWindowSpatialDrag\(\);\s*root\.cancelActiveColumnSpatialDrag\(\);\s*if \(spatialExitHandoffActive\) \{\s*root\.invalidateSpatialExitHandoff\("stale"\);\s*return;\s*\}\s*root\.cancelSpatialZoomTransaction\(\);\s*root\.discardSpatialZoomTransaction\(\);\s*root\.refreshOverviewSpatialSession\(true, root\.spatialPresentationSettled\);\s*root\.restartDesktopSurfaceResidency\(\);\s*root\.synchronizeSpatialZoomInputState\(\);\s*\}/u,
     );
     expect(scene).toMatch(
       /function refreshOverviewSpatialSession\(preserveViewport, animateViewport = false\)[\s\S]*Qt\.callLater\(root\.repairKeyboardSelection\);/u,

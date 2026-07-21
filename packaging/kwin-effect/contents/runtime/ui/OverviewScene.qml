@@ -213,6 +213,22 @@ Rectangle {
         ? spatialColumnDragSource : spatialWindowDragSource
     readonly property bool spatialDirectDragActive: spatialDirectDragSource !== null
     readonly property bool spatialHorizontalRowDragActive: spatialHorizontalRowDragHandler.active
+    readonly property bool spatialInternalMotionPresentationEligible:
+        spatialPresentationSettled
+        || (spatialPresentationVisible && spatialPresentationPhase === "closing")
+    readonly property bool spatialInternalMotionEligible:
+        spatialInternalMotionPresentationEligible
+        && !overviewContextRefreshPending && overviewContextModelExact
+        && searchQuery.length === 0 && !keyboardHelpVisible && !workspaceRenameEditing
+        && !desktopReorderActive && !spatialDirectDragActive && !spatialExitHandoffActive
+        && !spatialTouchPanDragHandler.active && !spatialViewportDragHandler.active
+        && !spatialHorizontalViewportDragHandler.active && !spatialHorizontalRowDragHandler.active
+        && spatialZoomOwner.length === 0 && spatialExternalZoomTransaction === null
+        && !spatialExternalZoomActive
+        && spatialHorizontalCameraMotionContext === null && !keyboardBoundaryNavigationPending
+        && sceneEffect && sceneEffect.overviewModel === overviewModel
+    readonly property bool spatialInternalMotionStartEligible:
+        spatialInternalMotionEligible && spatialPresentationSettled
     readonly property bool spatialZoomContextEligible:
         spatialPresentationSettled && !desktopTopologyRefreshPending
         && sceneEffect && sceneEffect.active === true
@@ -491,7 +507,7 @@ Rectangle {
         }
         root.cancelSpatialZoomTransaction();
         root.discardSpatialZoomTransaction();
-        root.refreshOverviewSpatialSession(true);
+        root.refreshOverviewSpatialSession(true, root.spatialPresentationSettled);
         root.restartDesktopSurfaceResidency();
         root.synchronizeSpatialZoomInputState();
     }
@@ -1707,6 +1723,7 @@ Rectangle {
                                                  root.outputId, desktopCardLoader.modelData)
                         overviewAlwaysCenterSingleColumn: root.overviewAlwaysCenterSingleColumn
                         overviewContextGeneration: root.overviewContextGeneration
+                        overviewSessionId: root.activeOverviewSessionId
                         overviewGap: root.overviewGap
                         overviewActivityId: root.activeOverviewActivityId
                         outputId: root.outputId
@@ -1725,6 +1742,8 @@ Rectangle {
                         screen: root.targetScreen
                         spatialDropBasisProvider: root.captureSpatialDropBasisFingerprint
                         spatialDirectDragBlocked: root.spatialDirectDragActive
+                        spatialMotionEligible: root.spatialInternalMotionEligible
+                        spatialMotionStartEligible: root.spatialInternalMotionStartEligible
                         showApplicationIdentity: root.showApplicationIdentity
                         showApplicationIcons: root.showApplicationIcons
                         showWindowCloseButtons: root.showWindowCloseButtons
@@ -2952,6 +2971,26 @@ Rectangle {
         }
 
         return loader.item;
+    }
+
+    function settleLoadedDesktopCardMotions() {
+        if (!Number.isInteger(desktopRepeater.count) || desktopRepeater.count < 0
+                || desktopRepeater.count > 512) {
+            return false;
+        }
+        for (let index = 0; index < desktopRepeater.count; index += 1) {
+            const loader = desktopRepeater.itemAt(index);
+            if (!loader || loader.active !== true || !loader.item) {
+                continue;
+            }
+            const item = loader.item;
+            if (loader.index !== index || loader.modelData !== item.desktopId
+                    || typeof item.settlePresentationMotion !== "function"
+                    || !item.settlePresentationMotion()) {
+                return false;
+            }
+        }
+        return true;
     }
 
     function beginWindowSpatialEdgePan(source, expectedDesktopId, sceneX, sceneY) {
@@ -8817,6 +8856,9 @@ Rectangle {
 
     function prepareOverviewWindowExitHandoff(candidate, expectedWindowId,
                                               expectedDesktopId, expectedScreen) {
+        if (!settleLoadedDesktopCardMotions()) {
+            return 0;
+        }
         const target = overviewExitNavigationTarget("window", candidate, expectedWindowId,
                                                     expectedDesktopId, expectedScreen);
         const targetFrame = overviewExitWindowFrame(candidate);
@@ -8845,6 +8887,9 @@ Rectangle {
 
     function prepareOverviewDesktopExitHandoff(candidate, expectedDesktopId,
                                                expectedScreen) {
+        if (!settleLoadedDesktopCardMotions()) {
+            return 0;
+        }
         const target = overviewExitNavigationTarget("desktop", candidate, null,
                                                     expectedDesktopId, expectedScreen);
         const sourceRect = target
