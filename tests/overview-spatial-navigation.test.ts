@@ -357,6 +357,21 @@ describe("spatial overview navigation geometry", () => {
       tabShell.lastIndexOf("TapHandler {", activationId),
       tabShell.indexOf("\n                    TapHandler {", activationId),
     );
+    const touchActivationId = tabShell.indexOf("id: tabTouchHoldHandler");
+    const touchActivationHandler = tabShell.slice(
+      tabShell.lastIndexOf("TapHandler {", touchActivationId),
+      tabShell.indexOf(
+        "\n                    DragHandler {",
+        touchActivationId,
+      ),
+    );
+    const activationTapHelperId = tabShell.indexOf(
+      "function handleActivationTap(point)",
+    );
+    const activationTapHelper = tabShell.slice(
+      activationTapHelperId,
+      tabShell.indexOf("function cancelSpatialDrag()", activationTapHelperId),
+    );
 
     expect(Number.isFinite(tabRailZ)).toBe(true);
     expect(Number.isFinite(columnShellZ)).toBe(true);
@@ -389,9 +404,14 @@ describe("spatial overview navigation geometry", () => {
     expect(tabShell).toContain(
       "const threshold = tabActivationHandler.dragThreshold;",
     );
-    expect(tabShell).toMatch(
-      /onTapped:[\s\S]*activationTappedSerial = serial;[\s\S]*minimizedActivationSnapshot = null;[\s\S]*dispatchExactActivation\(serial, snapshot\)/u,
+    expect(activationTapHelper).toMatch(
+      /const serial = activationGestureSerial;\s*const snapshot = minimizedActivationSnapshot;\s*activationTappedSerial = serial;\s*if \(snapshot && snapshot\.serial === serial\) \{\s*minimizedActivationSnapshot = null;\s*\}\s*return dispatchExactActivation\(serial, snapshot\);/u,
     );
+    for (const handler of [activationHandler, touchActivationHandler]) {
+      expect(handler).toContain(
+        "onTapped: point => tabShell.handleActivationTap(point)",
+      );
+    }
     expect(tabShell.indexOf("activationConsumedSerial = serial;")).toBeLessThan(
       tabShell.indexOf("card.windowTapped("),
     );
