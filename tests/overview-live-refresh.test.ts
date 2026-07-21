@@ -560,7 +560,7 @@ describe("overview live model refresh", () => {
     );
 
     expect(workspaceLifecycle).toMatch(
-      /function onDesktopsChanged\(\) \{\s*if \(root\.spatialPresentationPhase === "retiring"\) \{\s*return;\s*\}\s*root\.cancelActiveWindowSpatialDrag\(\);\s*root\.cancelActiveColumnSpatialDrag\(\);\s*if \(root\.spatialExitHandoffActive\) \{[\s\S]*root\.handleDesktopTopologyChanged\(\);/u,
+      /function onDesktopsChanged\(\) \{\s*if \(root\.spatialPresentationPhase === "retiring"\) \{\s*return;\s*\}\s*if \(root\.abortPendingWindowFocus\("topology"\)\) \{\s*return;\s*\}\s*root\.cancelActiveWindowSpatialDrag\(\);\s*root\.cancelActiveColumnSpatialDrag\(\);\s*if \(root\.spatialExitHandoffActive\) \{[\s\S]*root\.handleDesktopTopologyChanged\(\);/u,
     );
     for (const [signal, nextSignal] of [
       ["onCurrentActivityChanged", "onActivitiesChanged"],
@@ -571,6 +571,14 @@ describe("overview live model refresh", () => {
       const handler = workspaceLifecycle.slice(
         workspaceLifecycle.indexOf(`function ${signal}()`),
         workspaceLifecycle.indexOf(`function ${nextSignal}()`),
+      );
+      expect(handler).toContain(
+        'if (root.abortPendingWindowFocus("topology"))',
+      );
+      expect(
+        handler.indexOf('root.abortPendingWindowFocus("topology")'),
+      ).toBeLessThan(
+        handler.indexOf("root.beginOverviewContextRefreshBarrier()"),
       );
       expect(handler).toContain("root.beginOverviewContextRefreshBarrier();");
       expect(handler).not.toContain("closeStaleOverview");
@@ -620,13 +628,13 @@ describe("overview live model refresh", () => {
     );
     expect(workspaceLifecycle).not.toContain("function onWindowAdded");
     expect(workspaceLifecycle).toMatch(
-      /function onWindowRemoved\(window\) \{\s*if \(root\.spatialPresentationPhase !== "retiring"\) \{\s*root\.handleSpatialLiveCameraWindowRemoved\(window\);/u,
+      /function onWindowRemoved\(window\) \{\s*if \(root\.pendingWindowFocusCandidate === window\) \{\s*root\.abortPendingWindowFocus\("stale"\);\s*return;\s*\}\s*if \(root\.spatialPresentationPhase !== "retiring"\) \{\s*root\.handleSpatialLiveCameraWindowRemoved\(window\);/u,
     );
     expect(workspaceLifecycle).not.toMatch(
       /function onWindowRemoved\(window\)[\s\S]*requestLiveModelRefresh|function onWindowRemoved\(window\)[\s\S]*closeStaleOverview/u,
     );
     expect(scene).toMatch(
-      /onOverviewModelChanged: \{\s*root\.cancelWorkspaceRenameOnDrift\(\);\s*root\.cancelActiveWindowSpatialDrag\(\);\s*root\.cancelActiveColumnSpatialDrag\(\);\s*if \(spatialExitHandoffActive\) \{\s*root\.invalidateSpatialExitHandoff\("stale"\);\s*return;\s*\}\s*root\.cancelSpatialZoomTransaction\(\);\s*root\.discardSpatialZoomTransaction\(\);\s*root\.refreshOverviewSpatialSession\(true\);\s*root\.restartDesktopSurfaceResidency\(\);\s*root\.synchronizeSpatialZoomInputState\(\);\s*\}/u,
+      /onOverviewModelChanged: \{\s*if \(root\.abortPendingWindowFocus\("stale"\)\) \{\s*return;\s*\}\s*root\.cancelWorkspaceRenameOnDrift\(\);\s*root\.cancelActiveWindowSpatialDrag\(\);\s*root\.cancelActiveColumnSpatialDrag\(\);\s*if \(spatialExitHandoffActive\) \{\s*root\.invalidateSpatialExitHandoff\("stale"\);\s*return;\s*\}\s*root\.cancelSpatialZoomTransaction\(\);\s*root\.discardSpatialZoomTransaction\(\);\s*root\.refreshOverviewSpatialSession\(true\);\s*root\.restartDesktopSurfaceResidency\(\);\s*root\.synchronizeSpatialZoomInputState\(\);\s*\}/u,
     );
     expect(scene).toMatch(
       /function refreshOverviewSpatialSession\(preserveViewport, animateViewport = false\)[\s\S]*Qt\.callLater\(root\.repairKeyboardSelection\);/u,

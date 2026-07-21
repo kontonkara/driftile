@@ -34,6 +34,11 @@ const gapControls = scene.slice(
 
 describe("Overview workspace management scene", () => {
   it("keeps rename ownership and stale-context cancellation on the scene root", () => {
+    const topologyHandler = scene.slice(
+      scene.indexOf("onDesktopTopologyRevisionChanged:"),
+      scene.indexOf("onSpatialZoomInputEligibleChanged:"),
+    );
+
     for (const state of [
       "workspaceRenameEditing",
       "workspaceRenameActivityId",
@@ -55,8 +60,8 @@ describe("Overview workspace management scene", () => {
       /function workspaceRenameEditorIsExact[\s\S]*sceneEffect === workspaceRenameEffect[\s\S]*activeOverviewSessionId === workspaceRenameSessionId[\s\S]*overviewContextGeneration === workspaceRenameGeneration[\s\S]*overviewModel === workspaceRenameModel[\s\S]*activeOverviewActivityId === workspaceRenameActivityId[\s\S]*outputId === workspaceRenameOutputId[\s\S]*desktopTopologyRevision === workspaceRenameTopologyRevision[\s\S]*sameStringList\(desktopIds, workspaceRenameDesktopIds\)[\s\S]*workspaceDesktopName[\s\S]*workspaceRenameExpectedName/u,
     );
     expect(scene).toContain("onOverviewModelChanged: {");
-    expect(scene).toContain(
-      "onDesktopTopologyRevisionChanged: root.cancelWorkspaceRenameOnDrift()",
+    expect(topologyHandler).toMatch(
+      /root\.abortPendingWindowFocus\("topology"\)[\s\S]*root\.cancelWorkspaceRenameOnDrift\(\);[\s\S]*root\.cancelActiveWindowSpatialDrag\(\);/u,
     );
     expect(scene).toContain("target: root.workspaceRenameDesktop");
     expect(scene).toMatch(

@@ -45004,6 +45004,7 @@ describe("RuntimeController", () => {
 
   it("preserves the target full-width restore when merging an exact stack", () => {
     const setup = createExternalPointerDropRuntimeFixture();
+    const layout = runtimeLayout(setup.controller);
     const sourceKey = [
       setup.sourceOutput.name,
       setup.sourceDesktop.id,
@@ -45020,9 +45021,24 @@ describe("RuntimeController", () => {
         Map<ReturnType<typeof columnId>, { kind: string; value: number }>
       >;
     };
+    expect(
+      layout.setActiveColumnWidth(windowId("dragged"), {
+        kind: "proportion",
+        value: 1,
+      }),
+    ).toEqual({ kind: "proportion", value: 0.5 });
+    expect(
+      layout.setActiveColumnWidth(windowId("target"), {
+        kind: "proportion",
+        value: 1,
+      }),
+    ).toEqual({ kind: "fixed", value: 360 });
+    setup.controller.reconcile();
     state.columnFullWidthRestore.set(
       sourceKey,
-      new Map([[columnId("column:dragged"), { kind: "fixed", value: 300 }]]),
+      new Map([
+        [columnId("column:dragged"), { kind: "proportion", value: 0.5 }],
+      ]),
     );
     state.columnFullWidthRestore.set(
       targetKey,

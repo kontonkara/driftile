@@ -158,6 +158,10 @@ describe("overview desktop surface presentation", () => {
       "function desktopSurfaceLoadedItemIsExact(",
       "function desktopSurfaceLifecycleEventRevision(",
     );
+    const generationHandler = sourceBetween(
+      "onOverviewContextGenerationChanged:",
+      "Component.onCompleted:",
+    );
 
     expect(desktopCard).toContain(
       "required property int overviewContextGeneration",
@@ -171,11 +175,14 @@ describe("overview desktop surface presentation", () => {
       "onScreenChanged:",
       "onOutputIdChanged:",
       "onOverviewActivityIdChanged:",
-      "onOverviewContextGenerationChanged: card.scheduleDesktopSurfaceContextReload()",
+      "onOverviewContextGenerationChanged:",
       "Component.onCompleted: card.scheduleDesktopSurfaceContextReload()",
     ]) {
       expect(desktopCard).toContain(handler);
     }
+    expect(generationHandler).toMatch(
+      /card\.scheduleDesktopSurfaceContextReload\(\);[\s\S]*card\.cancelActiveWindowSpatialDrag\(\);/u,
+    );
     expect(contextReload).toMatch(
       /desktopSurfaceReloadToken = desktopSurfaceReloadToken >= 2147483647\s*\? 1 : desktopSurfaceReloadToken \+ 1;[\s\S]*desktopSurfaceReady = false;[\s\S]*desktopSurfaceReadyToken = 0;[\s\S]*desktopSurfaceLoadedToken = 0;/u,
     );
