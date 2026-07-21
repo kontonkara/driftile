@@ -25,6 +25,7 @@ const configUi = readFileSync(
   new URL("contents/ui/config.ui", effectRoot),
   "utf8",
 );
+const overviewEffectId = "io.github.kontonkara.driftile.overview";
 
 interface Rect {
   readonly x: number;
@@ -40,6 +41,7 @@ interface Signal<Arguments extends unknown[]> {
 
 interface WindowStub {
   geometry: Rect;
+  opacity: number;
   readonly windowFrameGeometryChanged: Signal<[WindowStub, Rect]>;
   readonly windowHiddenChanged: Signal<[WindowStub]>;
   readonly windowDesktopsChanged: Signal<[WindowStub]>;
@@ -83,6 +85,7 @@ interface Animation {
 interface AnimationRequest {
   readonly window: WindowStub;
   readonly duration: number;
+  readonly keepAlive?: boolean;
   readonly animations: readonly Animation[];
 }
 
@@ -109,6 +112,7 @@ function createSignal<Arguments extends unknown[]>(): Signal<Arguments> {
 function createWindow(overrides: Partial<WindowStub> = {}): WindowStub {
   return {
     geometry: { x: 20, y: 30, width: 300, height: 200 },
+    opacity: 1,
     windowFrameGeometryChanged: createSignal<[WindowStub, Rect]>(),
     windowHiddenChanged: createSignal<[WindowStub]>(),
     windowDesktopsChanged: createSignal<[WindowStub]>(),
@@ -167,7 +171,10 @@ function createHarness(
   const configChanged = createSignal<[]>();
   const animationEnded = createSignal<[WindowStub, number]>();
   const animationRequests: AnimationRequest[] = [];
+  const ownershipProbeRequests: AnimationRequest[] = [];
   const activeAnimations = new Map<number, WindowStub>();
+  const ownershipProbeAnimations = new Map<number, WindowStub>();
+  const ownershipProbeCancellations: number[] = [];
   const endingAnimations = new Map<number, WindowStub>();
   const cancelledAnimations: unknown[] = [];
   const retargetCalls: RetargetCall[] = [];
@@ -196,7 +203,9 @@ function createHarness(
         : options.windowRoleExclusions,
   };
   let nextAnimationId = 1;
+  let nextOwnershipProbeAnimationId = 1_000_000;
   const effects = {
+    activeEffects: [] as string[],
     activeWindow: null as WindowStub | null,
     currentActivity: "activity-1",
     hasActiveFullScreenEffect: false,
@@ -211,6 +220,7 @@ function createHarness(
 
   runInNewContext(script, {
     Effect: {
+      Opacity: "opacity",
       Position: "position",
       Size: "size",
       Translation: "translation",
@@ -224,6 +234,17 @@ function createHarness(
       OutExpo: "out-expo",
     },
     animate(request: AnimationRequest) {
+      const ownershipProbe =
+        request.duration === 1 &&
+        request.animations.length === 1 &&
+        request.animations[0]?.type === "opacity" &&
+        request.animations[0].from === request.animations[0].to;
+      if (ownershipProbe) {
+        ownershipProbeRequests.push(request);
+        const animationId = nextOwnershipProbeAnimationId++;
+        ownershipProbeAnimations.set(animationId, request.window);
+        return [animationId];
+      }
       animationRequests.push(request);
       return request.animations.map(() => {
         const animationId = nextAnimationId++;
@@ -236,6 +257,13 @@ function createHarness(
       return options.scaledDuration ?? duration;
     },
     cancel(animation: unknown) {
+      if (
+        typeof animation === "number" &&
+        ownershipProbeAnimations.delete(animation)
+      ) {
+        ownershipProbeCancellations.push(animation);
+        return true;
+      }
       cancelledAnimations.push(animation);
       if (typeof animation !== "number") {
         return false;
@@ -299,12 +327,25 @@ function createHarness(
         animationEnded.emit(window, 0);
       }
     },
+    finishOwnershipProbes() {
+      const probes = [...ownershipProbeAnimations];
+      ownershipProbeAnimations.clear();
+      for (const [, animationWindow] of probes) {
+        animationEnded.emit(animationWindow, 0);
+      }
+      return probes.length;
+    },
+    ownershipProbeRequests,
+    ownershipProbeCancellations,
     retargetCalls,
     setConfiguredDuration(duration: number) {
       configuredValues.Duration = duration;
     },
     setConfiguredValue(name: string, value: unknown) {
       configuredValues[name] = value;
+    },
+    setActiveEffects(effectIds: readonly string[]) {
+      effects.activeEffects = [...effectIds];
     },
     setFullScreenEffectActive(active: boolean) {
       effects.hasActiveFullScreenEffect = active;
@@ -911,6 +952,358 @@ describe("transition effect package", () => {
     expect(script).not.toMatch(/window\.(?:resourceClass|resourceName)/u);
   });
 
+  it("does not replay geometry already presented by Overview", () => {
+    const harness = createHarness();
+    const target = createWindow({
+      geometry: { x: 340, y: 30, width: 300, height: 200 },
+    });
+    harness.effects.windowAdded.emit(target);
+    harness.effects.activeWindow = harness.window;
+    harness.setFullScreenEffectActive(true);
+    harness.setActiveEffects([overviewEffectId]);
+
+    changeGeometry(harness.window, {
+      x: 60,
+      y: 70,
+      width: 500,
+      height: 300,
+    });
+    changeGeometry(target, {
+      x: 460,
+      y: 70,
+      width: 500,
+      height: 300,
+    });
+    harness.effects.activeWindow = target;
+    harness.effects.windowActivated.emit(target);
+    changeGeometry(target, {
+      x: 480,
+      y: 90,
+      width: 520,
+      height: 320,
+    });
+
+    harness.setActiveEffects([]);
+    harness.setFullScreenEffectActive(false);
+
+    expect(harness.animationRequests).toHaveLength(0);
+    expect("driftileDeferredTransition" in harness.window).toBe(false);
+    expect("driftileDeferredTransition" in target).toBe(false);
+
+    changeGeometry(target, {
+      x: 500,
+      y: 110,
+      width: 540,
+      height: 340,
+    });
+
+    expect(harness.animationRequests).toHaveLength(1);
+    expect(harness.animationRequests[0]).toMatchObject({
+      window: target,
+      animations: [
+        {
+          type: "size",
+          from: { value1: 520, value2: 320 },
+          to: { value1: 540, value2: 340 },
+        },
+        {
+          type: "position",
+          from: { value1: 740, value2: 250 },
+          to: { value1: 770, value2: 280 },
+        },
+      ],
+    });
+  });
+
+  it("drains both sides of a cross-desktop Overview handoff", () => {
+    const harness = createHarness();
+    const target = createWindow({
+      geometry: { x: 340, y: 30, width: 300, height: 200 },
+      onCurrentDesktop: false,
+      visible: false,
+    });
+    harness.effects.windowAdded.emit(target);
+    harness.effects.activeWindow = harness.window;
+    harness.setFullScreenEffectActive(true);
+    harness.setActiveEffects([overviewEffectId]);
+
+    changeGeometry(harness.window, {
+      x: 60,
+      y: 70,
+      width: 500,
+      height: 300,
+    });
+    changeGeometry(target, {
+      x: 460,
+      y: 70,
+      width: 500,
+      height: 300,
+    });
+    harness.window.onCurrentDesktop = false;
+    harness.window.visible = false;
+    target.onCurrentDesktop = true;
+    harness.effects.desktopChanged.emit(null, null, null, null);
+    harness.effects.activeWindow = target;
+    harness.effects.windowActivated.emit(target);
+
+    harness.setActiveEffects([]);
+    harness.setFullScreenEffectActive(false);
+
+    expect(harness.animationRequests).toHaveLength(0);
+    expect("driftileDeferredTransition" in harness.window).toBe(false);
+    expect("driftileDeferredTransition" in target).toBe(false);
+    expect(harness.activeAnimationIds()).toEqual([]);
+  });
+
+  it("consumes same-window motion after Overview becomes observable", () => {
+    const harness = createHarness({ window: createWindow({ opacity: 0.4 }) });
+    harness.effects.activeWindow = harness.window;
+
+    changeGeometry(harness.window, {
+      x: 60,
+      y: 70,
+      width: 500,
+      height: 300,
+    });
+    expect(harness.animationRequests).toHaveLength(1);
+
+    harness.setFullScreenEffectActive(true);
+    expect(harness.ownershipProbeRequests).toHaveLength(1);
+    expect(harness.ownershipProbeRequests[0]).toMatchObject({
+      duration: 1,
+      keepAlive: false,
+      window: harness.window,
+      animations: [
+        {
+          curve: "linear",
+          from: 1,
+          to: 1,
+          type: "opacity",
+        },
+      ],
+    });
+    harness.setActiveEffects([overviewEffectId]);
+    expect(harness.finishOwnershipProbes()).toBe(1);
+    harness.setActiveEffects([]);
+    harness.setFullScreenEffectActive(false);
+
+    expect(harness.animationRequests).toHaveLength(1);
+    expect(harness.cancelledAnimations).toEqual([1, 2]);
+    expect("driftileDeferredTransition" in harness.window).toBe(false);
+    expect(harness.activeAnimationIds()).toEqual([]);
+  });
+
+  it("waits for asynchronously incubated Overview views before classifying ownership", () => {
+    const harness = createHarness();
+    harness.effects.activeWindow = harness.window;
+
+    changeGeometry(harness.window, {
+      x: 60,
+      y: 70,
+      width: 500,
+      height: 300,
+    });
+    harness.setFullScreenEffectActive(true);
+
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      harness.setActiveEffects([]);
+      expect(harness.finishOwnershipProbes()).toBe(1);
+    }
+    expect(harness.ownershipProbeRequests).toHaveLength(4);
+
+    harness.setActiveEffects([overviewEffectId]);
+    expect(harness.finishOwnershipProbes()).toBe(1);
+    harness.setActiveEffects([]);
+    harness.setFullScreenEffectActive(false);
+
+    expect(harness.animationRequests).toHaveLength(1);
+    expect("driftileDeferredTransition" in harness.window).toBe(false);
+  });
+
+  it("uses a visible idle window to classify hidden handoff motion", () => {
+    const carrier = createWindow({ caption: "Carrier" });
+    const movingWindow = createWindow({
+      caption: "Moving",
+      geometry: { x: 340, y: 30, width: 300, height: 200 },
+    });
+    const harness = createHarness({ window: carrier });
+    harness.effects.windowAdded.emit(movingWindow);
+    harness.effects.activeWindow = movingWindow;
+
+    changeGeometry(movingWindow, {
+      x: 460,
+      y: 70,
+      width: 500,
+      height: 300,
+    });
+    movingWindow.visible = false;
+    harness.setFullScreenEffectActive(true);
+
+    expect(harness.ownershipProbeRequests).toHaveLength(1);
+    expect(harness.ownershipProbeRequests[0]?.window).toBe(carrier);
+    harness.setActiveEffects([overviewEffectId]);
+    expect(harness.finishOwnershipProbes()).toBe(1);
+    harness.setActiveEffects([]);
+    harness.setFullScreenEffectActive(false);
+
+    expect(harness.animationRequests).toHaveLength(1);
+    expect("driftileDeferredTransition" in movingWindow).toBe(false);
+    expect(harness.activeAnimationIds()).toEqual([]);
+  });
+
+  it("bounds ownership observation for ordinary fullscreen effects", () => {
+    const harness = createHarness();
+    harness.effects.activeWindow = harness.window;
+
+    changeGeometry(harness.window, {
+      x: 60,
+      y: 70,
+      width: 500,
+      height: 300,
+    });
+    harness.setFullScreenEffectActive(true);
+    harness.setActiveEffects(["slide"]);
+
+    for (let attempt = 0; attempt < 32; attempt += 1) {
+      expect(harness.finishOwnershipProbes()).toBe(1);
+    }
+    expect(harness.finishOwnershipProbes()).toBe(0);
+    expect(harness.ownershipProbeRequests).toHaveLength(32);
+
+    harness.setActiveEffects([]);
+    harness.setFullScreenEffectActive(false);
+
+    expect(harness.animationRequests).toHaveLength(2);
+    expect(harness.animationRequests[1]).toMatchObject({
+      window: harness.window,
+      animations: [
+        {
+          type: "size",
+          from: { value1: 300, value2: 200 },
+          to: { value1: 500, value2: 300 },
+        },
+        {
+          type: "position",
+          from: { value1: 170, value2: 130 },
+          to: { value1: 310, value2: 220 },
+        },
+      ],
+    });
+  });
+
+  it("replays interrupted motion when the deferred owner is not Overview", () => {
+    const harness = createHarness();
+    harness.effects.activeWindow = harness.window;
+
+    changeGeometry(harness.window, {
+      x: 60,
+      y: 70,
+      width: 500,
+      height: 300,
+    });
+    harness.setFullScreenEffectActive(true);
+    harness.setActiveEffects([
+      "io.github.kontonkara.driftile.overview.preview",
+    ]);
+    expect(harness.finishOwnershipProbes()).toBe(1);
+    harness.setActiveEffects([]);
+    harness.setFullScreenEffectActive(false);
+
+    expect(harness.animationRequests).toHaveLength(2);
+    expect(harness.animationRequests[1]).toMatchObject({
+      window: harness.window,
+      animations: [
+        {
+          type: "size",
+          from: { value1: 300, value2: 200 },
+          to: { value1: 500, value2: 300 },
+        },
+        {
+          type: "position",
+          from: { value1: 170, value2: 130 },
+          to: { value1: 310, value2: 220 },
+        },
+      ],
+    });
+  });
+
+  it.each(["io.github.kontonkara.driftile.overview.preview", "slide"])(
+    "keeps deferred replay for non-Overview effect %s",
+    (activeEffectId) => {
+      const harness = createHarness();
+      harness.effects.activeWindow = harness.window;
+      harness.setFullScreenEffectActive(true);
+      harness.setActiveEffects([activeEffectId]);
+
+      changeGeometry(harness.window, {
+        x: 60,
+        y: 70,
+        width: 500,
+        height: 300,
+      });
+      harness.setActiveEffects([]);
+      harness.setFullScreenEffectActive(false);
+
+      expect(harness.animationRequests).toHaveLength(1);
+      expect(harness.animationRequests[0]).toMatchObject({
+        window: harness.window,
+        animations: [
+          {
+            type: "size",
+            from: { value1: 300, value2: 200 },
+            to: { value1: 500, value2: 300 },
+          },
+          {
+            type: "position",
+            from: { value1: 170, value2: 130 },
+            to: { value1: 310, value2: 220 },
+          },
+        ],
+      });
+    },
+  );
+
+  it("rebases an Overview deferral when fullscreen ownership changes", () => {
+    const harness = createHarness();
+    harness.effects.activeWindow = harness.window;
+    harness.setFullScreenEffectActive(true);
+    harness.setActiveEffects([overviewEffectId]);
+
+    changeGeometry(harness.window, {
+      x: 40,
+      y: 50,
+      width: 400,
+      height: 250,
+    });
+    harness.setActiveEffects(["slide"]);
+    changeGeometry(harness.window, {
+      x: 60,
+      y: 70,
+      width: 500,
+      height: 300,
+    });
+    harness.setActiveEffects([]);
+    harness.setFullScreenEffectActive(false);
+
+    expect(harness.animationRequests).toHaveLength(1);
+    expect(harness.animationRequests[0]).toMatchObject({
+      window: harness.window,
+      animations: [
+        {
+          type: "size",
+          from: { value1: 400, value2: 250 },
+          to: { value1: 500, value2: 300 },
+        },
+        {
+          type: "position",
+          from: { value1: 240, value2: 175 },
+          to: { value1: 310, value2: 220 },
+        },
+      ],
+    });
+    expect("driftileDeferredTransition" in harness.window).toBe(false);
+  });
+
   it("replays the earliest baseline once after fullscreen ownership ends", () => {
     const harness = createHarness();
     harness.setFullScreenEffectActive(true);
@@ -993,11 +1386,13 @@ describe("transition effect package", () => {
 
     harness.setFullScreenEffectActive(true);
     expect(harness.cancelledAnimations).toEqual([1, 2]);
+    expect(harness.ownershipProbeRequests).toHaveLength(1);
 
     expect(harness.animationRequests).toHaveLength(1);
 
     harness.setFullScreenEffectActive(false);
     harness.setFullScreenEffectActive(false);
+    expect(harness.ownershipProbeCancellations).toHaveLength(1);
     expect(harness.animationRequests).toHaveLength(2);
     expect(harness.animationRequests[1]).toMatchObject({
       animations: [

@@ -10,6 +10,9 @@ const MAXIMUM_RESIZE_ANIMATION_THRESHOLD = 64;
 const MAXIMUM_EXCLUSION_COUNT = 128;
 const MAXIMUM_EXCLUSION_BYTES = 255;
 const MAXIMUM_EXCLUSION_CONFIG_BYTES = 33024;
+const DRIFTILE_OVERVIEW_EFFECT_ID = "io.github.kontonkara.driftile.overview";
+const FULL_SCREEN_OWNER_PROBE_DURATION = 1;
+const MAXIMUM_FULL_SCREEN_OWNER_PROBE_ATTEMPTS = 32;
 const SHELL_WINDOW_CLASSES = new Set(["krunner", "org.kde.krunner"]);
 const MANAGED_PROPERTY = "driftileTransitionsManaged";
 const ANIMATION_PROPERTY = "driftileTransitionAnimation";
@@ -42,6 +45,9 @@ class DriftileTransitionsEffect {
     this.observedWindowGeometries = new Map();
     this.activeAnimationWindows = new Set();
     this.deferredWindows = new Set();
+    this.overviewDeferredWindows = new Set();
+    this.fullScreenOwnershipGeneration = 0;
+    this.fullScreenOwnershipProbes = new Map();
     this.visibilityLeasedWindows = new Set();
     this.continuityLeasedWindows = new Set();
     this.fullScreenEffectActive = effects.hasActiveFullScreenEffect;
@@ -153,6 +159,7 @@ class DriftileTransitionsEffect {
     }
 
     this.clearWindowTransitions(window);
+    this.discardFullScreenOwnershipProbes(window);
     this.observedWindowGeometries.delete(window);
     this.windowClassifications.delete(window);
     if (this.visibilityHandoffAnchor === window) {
@@ -240,8 +247,11 @@ class DriftileTransitionsEffect {
       return;
     }
     this.fullScreenEffectActive = active;
+    this.advanceFullScreenOwnershipGeneration();
+    this.cancelFullScreenOwnershipProbes();
 
     if (active) {
+      const ownershipProbeWindow = this.fullScreenOwnershipProbeWindow();
       this.clearVisibilityHandoff();
       this.visibilityLeasedWindows.clear();
       this.continuityLeasedWindows.clear();
@@ -250,9 +260,11 @@ class DriftileTransitionsEffect {
       for (const window of this.activeAnimationWindows) {
         this.deferActiveWindowTransition(window);
       }
+      this.beginFullScreenOwnershipProbe(ownershipProbeWindow);
       return;
     }
 
+    this.discardOverviewDeferredTransitions();
     const visibilityHandoffAnchor = effects.activeWindow;
     this.visibilityHandoffPending = this.duration > 0;
     this.visibilityHandoffAnchor = visibilityHandoffAnchor;
@@ -271,6 +283,7 @@ class DriftileTransitionsEffect {
   }
 
   onWindowActivated(window) {
+    this.captureOverviewPresentationHandoff(window);
     if (
       effects.hasActiveFullScreenEffect &&
       window &&
@@ -394,12 +407,212 @@ class DriftileTransitionsEffect {
     this.visibilityHandoffReplayCandidates.clear();
   }
 
+  activeEffectState(effectId) {
+    const activeEffects = effects.activeEffects;
+    if (
+      !activeEffects ||
+      !Number.isInteger(activeEffects.length) ||
+      activeEffects.length < 0
+    ) {
+      return null;
+    }
+
+    for (let index = 0; index < activeEffects.length; index += 1) {
+      if (activeEffects[index] === effectId) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  advanceFullScreenOwnershipGeneration() {
+    this.fullScreenOwnershipGeneration =
+      this.fullScreenOwnershipGeneration >= 2147483646
+        ? 1
+        : this.fullScreenOwnershipGeneration + 1;
+    return this.fullScreenOwnershipGeneration;
+  }
+
+  fullScreenOwnershipProbeWindow() {
+    const activeWindow = effects.activeWindow;
+    if (
+      this.activeAnimationWindows.has(activeWindow) &&
+      this.fullScreenOwnershipProbeWindowIsUsable(activeWindow)
+    ) {
+      return activeWindow;
+    }
+    for (const window of this.activeAnimationWindows) {
+      if (this.fullScreenOwnershipProbeWindowIsUsable(window)) {
+        return window;
+      }
+    }
+    if (this.fullScreenOwnershipProbeWindowIsUsable(activeWindow)) {
+      return activeWindow;
+    }
+    for (const window of this.managedWindows) {
+      if (this.fullScreenOwnershipProbeWindowIsUsable(window)) {
+        return window;
+      }
+    }
+    return null;
+  }
+
+  fullScreenOwnershipProbeWindowIsUsable(window) {
+    return (
+      window &&
+      window[MANAGED_PROPERTY] === true &&
+      window.deleted !== true &&
+      window.visible === true
+    );
+  }
+
+  beginFullScreenOwnershipProbe(window, attempt = 1) {
+    if (
+      !this.fullScreenOwnershipProbeWindowIsUsable(window) ||
+      !effect.animationEnded ||
+      !Number.isInteger(attempt) ||
+      attempt < 1 ||
+      attempt > MAXIMUM_FULL_SCREEN_OWNER_PROBE_ATTEMPTS
+    ) {
+      return false;
+    }
+    if (this.fullScreenOwnershipProbes.has(window)) {
+      return true;
+    }
+
+    let animationIds;
+    try {
+      animationIds = animate({
+        window,
+        duration: FULL_SCREEN_OWNER_PROBE_DURATION,
+        keepAlive: false,
+        animations: [
+          {
+            type: Effect.Opacity,
+            from: 1,
+            to: 1,
+            curve: QEasingCurve.Linear,
+          },
+        ],
+      });
+    } catch (error) {
+      return false;
+    }
+
+    const animationId =
+      animationIds && Number.isInteger(animationIds.length)
+        ? animationIds[0]
+        : undefined;
+    if (!Number.isSafeInteger(animationId) || animationId <= 0) {
+      return false;
+    }
+    this.fullScreenOwnershipProbes.set(window, {
+      animationId,
+      attempt,
+      generation: this.fullScreenOwnershipGeneration,
+    });
+    return true;
+  }
+
+  completeFullScreenOwnershipProbe(window) {
+    const probe = this.fullScreenOwnershipProbes.get(window);
+    if (!probe) {
+      return false;
+    }
+    this.fullScreenOwnershipProbes.delete(window);
+    const ownershipState = this.activeEffectState(DRIFTILE_OVERVIEW_EFFECT_ID);
+    if (
+      probe.generation !== this.fullScreenOwnershipGeneration ||
+      !this.fullScreenEffectActive ||
+      !effects.hasActiveFullScreenEffect
+    ) {
+      return true;
+    }
+
+    if (ownershipState === true) {
+      for (const deferredWindow of this.deferredWindows) {
+        this.overviewDeferredWindows.add(deferredWindow);
+      }
+      return true;
+    }
+
+    if (
+      probe.attempt < MAXIMUM_FULL_SCREEN_OWNER_PROBE_ATTEMPTS &&
+      this.deferredWindows.size > 0
+    ) {
+      this.beginFullScreenOwnershipProbe(window, probe.attempt + 1);
+    }
+    return true;
+  }
+
+  discardFullScreenOwnershipProbes(window) {
+    const probe = this.fullScreenOwnershipProbes.get(window);
+    if (!probe) {
+      return false;
+    }
+    this.fullScreenOwnershipProbes.delete(window);
+    try {
+      cancel(probe.animationId);
+    } catch (error) {}
+    return true;
+  }
+
+  cancelFullScreenOwnershipProbes() {
+    for (const window of [...this.fullScreenOwnershipProbes.keys()]) {
+      this.discardFullScreenOwnershipProbes(window);
+    }
+  }
+
+  captureOverviewPresentationHandoff(window) {
+    if (
+      !effects.hasActiveFullScreenEffect ||
+      this.activeEffectState(DRIFTILE_OVERVIEW_EFFECT_ID) !== true ||
+      !window ||
+      window === this.visibilityHandoffAnchor ||
+      !this.isDeferredTransitionEligible(window) ||
+      !this.isWindowInCurrentVisibilityContext(window)
+    ) {
+      return;
+    }
+
+    for (const deferredWindow of this.deferredWindows) {
+      this.overviewDeferredWindows.add(deferredWindow);
+    }
+  }
+
+  discardOverviewDeferredTransitions() {
+    for (const window of this.overviewDeferredWindows) {
+      delete window[DEFERRED_PROPERTY];
+      this.deferredWindows.delete(window);
+      this.visibilityLeasedWindows.delete(window);
+      this.continuityLeasedWindows.delete(window);
+      this.discardVisibilityHandoffReplayCandidate(window);
+    }
+    this.overviewDeferredWindows.clear();
+  }
+
   deferWindowTransition(window, oldGeometry) {
-    const deferredGeometry = window[DEFERRED_PROPERTY];
+    const overviewEffectState = effects.hasActiveFullScreenEffect
+      ? this.activeEffectState(DRIFTILE_OVERVIEW_EFFECT_ID)
+      : false;
+    let deferredGeometry = window[DEFERRED_PROPERTY];
+    if (
+      deferredGeometry !== undefined &&
+      this.overviewDeferredWindows.has(window) &&
+      overviewEffectState === false
+    ) {
+      deferredGeometry = this.copyGeometry(oldGeometry);
+      window[DEFERRED_PROPERTY] = deferredGeometry;
+      this.overviewDeferredWindows.delete(window);
+    } else if (overviewEffectState === true) {
+      this.overviewDeferredWindows.add(window);
+    }
+
     if (deferredGeometry !== undefined) {
       if (!this.geometryChanged(deferredGeometry, window.geometry)) {
         delete window[DEFERRED_PROPERTY];
         this.deferredWindows.delete(window);
+        this.overviewDeferredWindows.delete(window);
         this.visibilityLeasedWindows.delete(window);
         return;
       }
@@ -411,6 +624,9 @@ class DriftileTransitionsEffect {
     this.cancelWindowAnimation(window);
     window[DEFERRED_PROPERTY] = this.copyGeometry(oldGeometry);
     this.deferredWindows.add(window);
+    if (overviewEffectState === true) {
+      this.overviewDeferredWindows.add(window);
+    }
     this.rememberVisibilityLease(window);
   }
 
@@ -452,6 +668,7 @@ class DriftileTransitionsEffect {
     const oldGeometry = window[DEFERRED_PROPERTY];
     if (oldGeometry === undefined) {
       this.deferredWindows.delete(window);
+      this.overviewDeferredWindows.delete(window);
       return;
     }
 
@@ -473,6 +690,7 @@ class DriftileTransitionsEffect {
     if (!this.geometryChanged(oldGeometry, newGeometry)) {
       delete window[DEFERRED_PROPERTY];
       this.deferredWindows.delete(window);
+      this.overviewDeferredWindows.delete(window);
       this.visibilityLeasedWindows.delete(window);
       return;
     }
@@ -489,6 +707,7 @@ class DriftileTransitionsEffect {
     const visibilityLeaseUsed = this.visibilityLeasedWindows.has(window);
     delete window[DEFERRED_PROPERTY];
     this.deferredWindows.delete(window);
+    this.overviewDeferredWindows.delete(window);
     this.continuityLeasedWindows.delete(window);
     this.animateWindowTransition(window, oldGeometry, newGeometry);
     if (continuesVisibilityHandoff && this.hasActiveWindowAnimation(window)) {
@@ -578,6 +797,9 @@ class DriftileTransitionsEffect {
   }
 
   onAnimationEnded(window) {
+    if (this.completeFullScreenOwnershipProbe(window)) {
+      return;
+    }
     const state = window && window[ANIMATION_PROPERTY];
     if (!this.activeAnimationWindows.has(window)) {
       this.continuityLeasedWindows.delete(window);
@@ -1155,6 +1377,7 @@ class DriftileTransitionsEffect {
     this.cancelWindowAnimation(window);
     delete window[DEFERRED_PROPERTY];
     this.deferredWindows.delete(window);
+    this.overviewDeferredWindows.delete(window);
     this.visibilityLeasedWindows.delete(window);
     this.continuityLeasedWindows.delete(window);
     this.discardVisibilityHandoffReplayCandidate(window);
