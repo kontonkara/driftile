@@ -173,6 +173,17 @@ export type {
   SpatialDropTarget,
 } from "./spatial-drop-command";
 export {
+  decodeOverviewWorkspaceCommand,
+  encodeOverviewWorkspaceCommand,
+} from "./workspace-command";
+export type {
+  OverviewWorkspaceAction,
+  OverviewWorkspaceCommand,
+  OverviewWorkspaceCreateAction,
+  OverviewWorkspaceRemoveAction,
+  OverviewWorkspaceRenameAction,
+} from "./workspace-command";
+export {
   buildOverviewSpatialWindowDropPlan,
   hitTestOverviewSpatialWindowDrop,
 } from "./spatial-window-drop";

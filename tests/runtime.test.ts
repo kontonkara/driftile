@@ -5,8 +5,15 @@ import {
   type SpatialDropCommand,
 } from "../src/overview/spatial-drop-command";
 import {
+  encodeOverviewWorkspaceCommand,
+  OVERVIEW_WORKSPACE_COMMAND_VERSION,
+  type OverviewWorkspaceCommand,
+} from "../src/overview/workspace-command";
+import {
   applyOverviewSpatialDrop,
+  applyOverviewWorkspaceCommand,
   OVERVIEW_SPATIAL_DROP_COMMAND_TTL_MILLISECONDS,
+  OVERVIEW_WORKSPACE_COMMAND_TTL_MILLISECONDS,
 } from "../src/runtime";
 
 const CREATED_AT = 1_751_000_000_000;
@@ -101,5 +108,116 @@ describe("applyOverviewSpatialDrop", () => {
     expect(
       applyOverviewSpatialDrop(documentFor(maximum), CREATED_AT, 0),
     ).toEqual({ applied: false, consumed: true, requestId: maximum });
+  });
+});
+
+function workspaceCommand(
+  requestId = 41,
+  createdAt = CREATED_AT,
+): OverviewWorkspaceCommand {
+  return {
+    action: {
+      adjacentDesktopId: "desktop-a",
+      anchorDesktopId: "desktop-b",
+      kind: "create",
+      position: 1,
+    },
+    activityId: "activity-a",
+    createdAt,
+    desktopIds: ["desktop-a", "desktop-b"],
+    format: "driftile-overview-workspace-command",
+    outputId: "output-a",
+    requestId,
+    version: OVERVIEW_WORKSPACE_COMMAND_VERSION,
+  };
+}
+
+function workspaceDocumentFor(requestId = 41, createdAt = CREATED_AT): string {
+  const document = encodeOverviewWorkspaceCommand(
+    workspaceCommand(requestId, createdAt),
+  );
+
+  if (document === null) {
+    throw new Error("could not encode overview workspace test command");
+  }
+
+  return document;
+}
+
+describe("applyOverviewWorkspaceCommand", () => {
+  it("consumes a fresh command even when no controller can apply it", () => {
+    const result = applyOverviewWorkspaceCommand(
+      workspaceDocumentFor(),
+      CREATED_AT,
+      40,
+    );
+
+    expect(result).toEqual({ applied: false, consumed: true, requestId: 41 });
+    expect(Object.isFrozen(result)).toBe(true);
+  });
+
+  it("rejects malformed, future, stale, and replayed transport values", () => {
+    const boundary = workspaceDocumentFor(41, CREATED_AT);
+
+    expect(applyOverviewWorkspaceCommand("{}", CREATED_AT, 40)).toBeNull();
+    expect(applyOverviewWorkspaceCommand(boundary, "now", 40)).toBeNull();
+    expect(applyOverviewWorkspaceCommand(boundary, CREATED_AT, -0)).toBeNull();
+    expect(
+      applyOverviewWorkspaceCommand(boundary, CREATED_AT - 1, 40),
+    ).toBeNull();
+    expect(
+      applyOverviewWorkspaceCommand(
+        boundary,
+        CREATED_AT + OVERVIEW_WORKSPACE_COMMAND_TTL_MILLISECONDS + 1,
+        40,
+      ),
+    ).toBeNull();
+    expect(applyOverviewWorkspaceCommand(boundary, CREATED_AT, 41)).toBeNull();
+    expect(applyOverviewWorkspaceCommand(boundary, CREATED_AT, 42)).toBeNull();
+    expect(
+      applyOverviewWorkspaceCommand(
+        boundary,
+        CREATED_AT + OVERVIEW_WORKSPACE_COMMAND_TTL_MILLISECONDS,
+        40,
+      ),
+    ).toEqual({ applied: false, consumed: true, requestId: 41 });
+  });
+
+  it("orders wrapped request ids with the spatial command half-range policy", () => {
+    const maximum = Number.MAX_SAFE_INTEGER;
+    const halfRange = Math.floor(maximum / 2);
+
+    expect(
+      applyOverviewWorkspaceCommand(
+        workspaceDocumentFor(1),
+        CREATED_AT,
+        maximum - 1,
+      ),
+    ).toEqual({ applied: false, consumed: true, requestId: 1 });
+    expect(
+      applyOverviewWorkspaceCommand(
+        workspaceDocumentFor(maximum),
+        CREATED_AT,
+        1,
+      ),
+    ).toBeNull();
+    expect(
+      applyOverviewWorkspaceCommand(
+        workspaceDocumentFor(1 + halfRange),
+        CREATED_AT,
+        1,
+      ),
+    ).toEqual({
+      applied: false,
+      consumed: true,
+      requestId: 1 + halfRange,
+    });
+    expect(
+      applyOverviewWorkspaceCommand(
+        workspaceDocumentFor(1 + halfRange + 1),
+        CREATED_AT,
+        1,
+      ),
+    ).toBeNull();
   });
 });

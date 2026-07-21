@@ -1,6 +1,7 @@
 import type { Rect } from "./core/geometry";
 import type { ColumnWidth } from "./core/layout-engine";
 import { decodeSpatialDropCommand } from "./overview/spatial-drop-command";
+import { decodeOverviewWorkspaceCommand } from "./overview/workspace-command";
 import type { KWinWorkspace } from "./platform/kwin/api";
 import type { KWinRectFactory } from "./platform/kwin/geometry-adapter";
 import { RuntimeController } from "./runtime-controller";
@@ -18,6 +19,7 @@ const STARTUP_STABILIZATION_PROBES = 20;
 const LAYOUT_HYDRATION_RETRY_PROBES = 100;
 const LAYOUT_HYDRATION_QUIET_SAMPLES = 2;
 export const OVERVIEW_SPATIAL_DROP_COMMAND_TTL_MILLISECONDS = 5_000;
+export const OVERVIEW_WORKSPACE_COMMAND_TTL_MILLISECONDS = 5_000;
 
 const MAXIMUM_SPATIAL_DROP_REQUEST_ID = Number.MAX_SAFE_INTEGER;
 const MAXIMUM_UNAMBIGUOUS_SPATIAL_DROP_REQUEST_DISTANCE = Math.floor(
@@ -25,6 +27,12 @@ const MAXIMUM_UNAMBIGUOUS_SPATIAL_DROP_REQUEST_DISTANCE = Math.floor(
 );
 
 export interface OverviewSpatialDropApplicationResult {
+  readonly applied: boolean;
+  readonly consumed: true;
+  readonly requestId: number;
+}
+
+export interface OverviewWorkspaceCommandApplicationResult {
   readonly applied: boolean;
   readonly consumed: true;
   readonly requestId: number;
@@ -376,6 +384,40 @@ export function applyOverviewSpatialDrop(
 
   const activeController = controller;
   const applied = activeController?.executeSpatialDrop(command) === true;
+
+  if (applied) {
+    activeController.flushLayoutStatePublication();
+  }
+
+  return Object.freeze({
+    applied,
+    consumed: true as const,
+    requestId: command.requestId,
+  });
+}
+
+export function applyOverviewWorkspaceCommand(
+  document: unknown,
+  observedAt: unknown,
+  lastConsumedRequestId: unknown,
+): Readonly<OverviewWorkspaceCommandApplicationResult> | null {
+  const command = decodeOverviewWorkspaceCommand(document);
+
+  if (
+    command === null ||
+    !isNonNegativeSafeInteger(observedAt) ||
+    !isNonNegativeSafeInteger(lastConsumedRequestId) ||
+    command.createdAt > observedAt ||
+    observedAt - command.createdAt >
+      OVERVIEW_WORKSPACE_COMMAND_TTL_MILLISECONDS ||
+    !isNewerSpatialDropRequestId(command.requestId, lastConsumedRequestId)
+  ) {
+    return null;
+  }
+
+  const activeController = controller;
+  const applied =
+    activeController?.executeOverviewWorkspaceCommand(command) === true;
 
   if (applied) {
     activeController.flushLayoutStatePublication();

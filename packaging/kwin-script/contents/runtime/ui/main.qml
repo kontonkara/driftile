@@ -34,6 +34,10 @@ QtObject {
         applyCommand: Runtime.DriftileRuntime.applyOverviewSpatialDrop
     }
 
+    readonly property OverviewWorkspaceCommandReceiver overviewWorkspaceCommandReceiver: OverviewWorkspaceCommandReceiver {
+        applyCommand: Runtime.DriftileRuntime.applyOverviewWorkspaceCommand
+    }
+
     readonly property DBusCall tabIndicatorCall: DBusCall {
         service: "org.kde.plasmashell"
         path: "/org/kde/osdService"

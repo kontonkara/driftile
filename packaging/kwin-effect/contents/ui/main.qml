@@ -148,6 +148,12 @@ KWin.SceneEffect {
             : false;
     }
 
+    function submitWorkspaceCommand(context, action) {
+        return controller && typeof controller.submitWorkspaceCommand === "function"
+            ? controller.submitWorkspaceCommand(context, action) === true
+            : false;
+    }
+
     function applyOverviewZoomInputState(sessionId, outputId, sceneToken, eligible) {
         return controller && typeof controller.applyOverviewZoomInputState === "function" ? controller.applyOverviewZoomInputState(sessionId, outputId, sceneToken, eligible) === true : false;
     }

@@ -191,6 +191,7 @@ import {
   type PointerVerticalResizeEdge,
 } from "./core/pointer-resize";
 import type { SpatialDropCommand } from "./overview/spatial-drop-command";
+import type { OverviewWorkspaceCommand } from "./overview/workspace-command";
 import type {
   KWinOutput,
   KWinVirtualDesktop,
@@ -3350,6 +3351,194 @@ export class RuntimeController {
     }
 
     return this.executeResolvedSpatialDrop({ ...command, target });
+  }
+
+  executeOverviewWorkspaceCommand(command: OverviewWorkspaceCommand): boolean {
+    try {
+      if (!this.overviewWorkspaceCommandCanExecute()) {
+        return false;
+      }
+
+      const baseline = this.overviewWorkspaceCommandSnapshot(command);
+      const confirmation = this.overviewWorkspaceCommandSnapshot(command);
+
+      if (
+        !baseline ||
+        !confirmation ||
+        confirmation.output !== baseline.output ||
+        !sameDesktopObjectSequence(confirmation.desktops, baseline.desktops)
+      ) {
+        return false;
+      }
+
+      const action = command.action;
+
+      if (action.kind === "create") {
+        const position = action.position;
+
+        if (
+          !Number.isInteger(position) ||
+          position < 1 ||
+          position >= baseline.desktops.length ||
+          baseline.desktops[position - 1]?.id !== action.adjacentDesktopId ||
+          baseline.desktops[position]?.id !== action.anchorDesktopId
+        ) {
+          return false;
+        }
+
+        const created = this.desktopLifecycle.createRetainedDesktopAtPosition(
+          position,
+          command.desktopIds,
+        );
+
+        return Boolean(
+          created &&
+          created.position === position &&
+          created.beforeDesktopIds.length === command.desktopIds.length &&
+          created.beforeDesktopIds.every(
+            (desktopId, index) => desktopId === command.desktopIds[index],
+          ) &&
+          created.afterDesktopIds[position] === created.desktopId &&
+          created.desktop.id === created.desktopId,
+        );
+      }
+
+      if (action.kind === "remove") {
+        return this.desktopLifecycle.removeDesktopExactly(
+          action.desktopId,
+          command.desktopIds,
+          action.expectedName,
+        );
+      }
+
+      const desktopIndex = command.desktopIds.indexOf(action.desktopId);
+      const desktop = baseline.desktops[desktopIndex];
+
+      if (
+        desktopIndex < 0 ||
+        desktopIndex >= baseline.desktops.length - 1 ||
+        (this.desktopLifecycle.keepEmptyDesktopAboveFirst &&
+          desktopIndex === 0) ||
+        !desktop ||
+        desktop.id !== action.desktopId ||
+        (desktop.name ?? "") !== action.expectedName
+      ) {
+        return false;
+      }
+
+      let setterFailed = false;
+
+      try {
+        desktop.name = action.name;
+      } catch {
+        setterFailed = true;
+      }
+
+      const after = this.overviewWorkspaceCommandSnapshot(command);
+      const renamed = Boolean(
+        !setterFailed &&
+        after &&
+        after.output === baseline.output &&
+        sameDesktopObjectSequence(after.desktops, baseline.desktops) &&
+        after.desktops[desktopIndex] === desktop &&
+        desktop.name === action.name,
+      );
+
+      if (!renamed) {
+        this.restoreOverviewWorkspaceName(
+          desktop,
+          action.name,
+          action.expectedName,
+        );
+      }
+
+      return renamed;
+    } catch {
+      return false;
+    }
+  }
+
+  private overviewWorkspaceCommandCanExecute(): boolean {
+    return (
+      this.started &&
+      this.startupCompleted &&
+      !this.initializing &&
+      !this.hydrationInProgress &&
+      !this.workScheduled &&
+      this.startupStabilizationToken === null &&
+      !this.hasTopologyBarrier() &&
+      !this.desktopLifecycle.unsettled &&
+      this.stackEditOperation === null &&
+      this.windowTransferOperation === null &&
+      this.stackedNativeStateOperation === null &&
+      this.interactiveResizeSource === null &&
+      this.pointerMoveIntent === null &&
+      this.pointerResizeIntent === null &&
+      this.pointerResizeSettlement === null &&
+      this.layoutCaptureReady() &&
+      this.overviewSpatialDropActivation === null &&
+      this.activeSpatialWorkspaceCreation === null &&
+      this.pendingSpatialOutputTransfer === null &&
+      this.pendingDesktopFocus === null &&
+      this.desktopFocusReplay === null &&
+      this.pendingWindowRemovalFocusRecovery === null &&
+      this.pointerColumnDropSettlement === null &&
+      this.pendingDefaultColumnWidth === null &&
+      this.pendingGap === null &&
+      this.pendingAdmissionContexts.size === 0 &&
+      this.pendingTabbedNormalizations.size === 0 &&
+      this.pendingInitialAdmissionStates.size === 0 &&
+      this.pendingManualFloatingSizeChanges.size === 0 &&
+      this.initialDestinationOperations.size === 0 &&
+      this.workFlushDepth === 0 &&
+      !this.layoutStatePublicationLocked
+    );
+  }
+
+  private overviewWorkspaceCommandSnapshot(command: OverviewWorkspaceCommand): {
+    readonly desktops: readonly KWinVirtualDesktop[];
+    readonly output: KWinOutput;
+  } | null {
+    const currentActivity = this.activities.current();
+    const output = this.uniqueOutputByName(command.outputId);
+    const desktops = [...this.workspace.desktops];
+
+    if (
+      !currentActivity ||
+      String(currentActivity) !== command.activityId ||
+      !output ||
+      desktops.length !== command.desktopIds.length ||
+      desktops.length === 0 ||
+      new Set(command.desktopIds).size !== command.desktopIds.length ||
+      desktops.some(
+        (desktop, index) =>
+          desktop.id.length === 0 || desktop.id !== command.desktopIds[index],
+      )
+    ) {
+      return null;
+    }
+
+    return { desktops, output };
+  }
+
+  private restoreOverviewWorkspaceName(
+    desktop: KWinVirtualDesktop,
+    attemptedName: string,
+    expectedName: string,
+  ): void {
+    try {
+      const liveMatches = this.workspace.desktops.filter(
+        (candidate) => candidate === desktop && candidate.id === desktop.id,
+      );
+
+      if (liveMatches.length === 1 && desktop.name === attemptedName) {
+        desktop.name = expectedName;
+      }
+    } catch (error) {
+      console.warn(
+        `[driftile] desktop rename rollback stopped desktop=${desktop.id} error=${String(error)}`,
+      );
+    }
   }
 
   private executeSpatialWorkspaceGapDrop(
@@ -36307,6 +36496,16 @@ function rectContainsPoint(rect: Rect, point: Point): boolean {
 
 function clamp(value: number, minimum: number, maximum: number): number {
   return Math.min(maximum, Math.max(minimum, value));
+}
+
+function sameDesktopObjectSequence(
+  left: readonly KWinVirtualDesktop[],
+  right: readonly KWinVirtualDesktop[],
+): boolean {
+  return (
+    left.length === right.length &&
+    left.every((desktop, index) => desktop === right[index])
+  );
 }
 
 function roundToPhysicalPixel(value: number, devicePixelRatio: number): number {

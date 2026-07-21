@@ -5,7 +5,8 @@ export interface KWinSignal<TArguments extends unknown[]> {
 
 export interface KWinVirtualDesktop {
   readonly id: string;
-  readonly name?: string;
+  name?: string;
+  readonly nameChanged?: KWinSignal<[]>;
 }
 
 export interface KWinRect {

@@ -47,6 +47,7 @@ interface LifecycleFixture {
     position: number,
     desktopId: string,
   ): KWinVirtualDesktop;
+  removeExternalDesktop(desktopId: string): void;
   reconcile(): void;
   removeWindow(window: KWinWindow): void;
   selectedDesktop(output: KWinOutput): KWinVirtualDesktop | null;
@@ -61,7 +62,9 @@ interface LifecycleFixture {
   setMoveMode(
     mode: "commit" | "reject" | "throw" | "unavailable" | "wrong",
   ): void;
-  setRemoveMode(mode: "commit" | "reject" | "throw" | "unavailable"): void;
+  setRemoveMode(
+    mode: "commit" | "reject" | "throw" | "unavailable" | "wrong",
+  ): void;
   replaceDesktopIdentity(position: number): void;
 }
 
@@ -100,7 +103,7 @@ function createLifecycleFixture(
   let moveMode: "commit" | "reject" | "throw" | "wrong" = "commit";
   const moveRequests: Array<{ desktopId: string; position: number }> = [];
   let removeCount = 0;
-  let removeMode: "commit" | "reject" | "throw" = "commit";
+  let removeMode: "commit" | "reject" | "throw" | "wrong" = "commit";
   let nextCreatedId = 1;
   const selected = new Map(
     outputs.map((output) => [output.name, desktops[0] ?? null]),
@@ -199,6 +202,16 @@ function createLifecycleFixture(
         throw new Error("injected desktop removal failure");
       }
 
+      if (removeMode === "wrong") {
+        const wrongDesktop =
+          desktops[desktops.length - 1] === desktop
+            ? desktops[0]
+            : desktops[desktops.length - 1];
+        desktops = desktops.filter((candidate) => candidate !== wrongDesktop);
+        desktopsChanged.emit();
+        return;
+      }
+
       desktops = desktops.filter((candidate) => candidate !== desktop);
       desktopsChanged.emit();
     },
@@ -275,6 +288,10 @@ function createLifecycleFixture(
       windows = windows.filter((candidate) => candidate !== window);
       windowRemoved.emit(window);
     },
+    removeExternalDesktop: (desktopId) => {
+      desktops = desktops.filter((desktop) => desktop.id !== desktopId);
+      desktopsChanged.emit();
+    },
     selectedDesktop: (output) => selected.get(output.name) ?? null,
     select: (output, desktop) => {
       const previous = selected.get(output.name) ?? null;
@@ -330,6 +347,18 @@ function createLifecycleFixture(
 
                 if (mode === "throw") {
                   throw new Error("injected desktop removal failure");
+                }
+
+                if (mode === "wrong") {
+                  const wrongDesktop =
+                    desktops[desktops.length - 1] === desktop
+                      ? desktops[0]
+                      : desktops[desktops.length - 1];
+                  desktops = desktops.filter(
+                    (candidate) => candidate !== wrongDesktop,
+                  );
+                  desktopsChanged.emit();
+                  return;
                 }
 
                 desktops = desktops.filter(
@@ -631,6 +660,191 @@ describe("DesktopLifecycle", () => {
     expect(fixture.desktops).toEqual([leading, trailing]);
     expect(fixture.removeCount).toBe(1);
     expect(fixture.lifecycle.ownedDesktopCount).toBe(0);
+  });
+
+  it("retains an explicitly created desktop until it is externally removed", () => {
+    const leading = { id: "desktop-1" };
+    const trailing = { id: "desktop-2" };
+    const fixture = createLifecycleFixture([leading, trailing], [], 1, true);
+    fixture.reconcile();
+
+    const result = fixture.lifecycle.createRetainedDesktopAtPosition(1, [
+      leading.id,
+      trailing.id,
+    ]);
+
+    expect(result?.desktopId).toBe("created-1");
+    expect(fixture.lifecycle.ownedDesktopCount).toBe(1);
+    expect(result ? fixture.lifecycle.commitCreatedDesktop(result) : true).toBe(
+      false,
+    );
+
+    fixture.reconcile();
+    fixture.reconcile();
+    expect(fixture.desktops.map((desktop) => desktop.id)).toEqual([
+      leading.id,
+      "created-1",
+      trailing.id,
+    ]);
+    expect(fixture.removeCount).toBe(0);
+
+    fixture.removeExternalDesktop("created-1");
+    expect(fixture.lifecycle.ownedDesktopCount).toBe(0);
+  });
+
+  it("preserves the automatic empty tail next to a retained desktop", () => {
+    const primary = { id: "desktop-1" };
+    const fixture = createLifecycleFixture(
+      [primary],
+      [createWindow("window-1", [primary])],
+    );
+    fixture.reconcile();
+    fixture.reconcile();
+    const trailing = fixture.desktops[1];
+
+    if (!trailing) {
+      throw new Error("missing automatic trailing desktop");
+    }
+
+    const result = fixture.lifecycle.createRetainedDesktopAtPosition(1, [
+      primary.id,
+      trailing.id,
+    ]);
+
+    expect(result?.desktopId).toBe("created-2");
+    fixture.reconcile();
+    fixture.reconcile();
+    expect(fixture.desktops.map((desktop) => desktop.id)).toEqual([
+      primary.id,
+      "created-2",
+      trailing.id,
+    ]);
+    expect(fixture.removeCount).toBe(0);
+  });
+
+  it("removes only an exact empty unselected non-boundary desktop", () => {
+    const first = { id: "desktop-1", name: "First" };
+    const removable = { id: "desktop-2", name: "Remove me" };
+    const trailing = { id: "desktop-3", name: "" };
+    const fixture = createLifecycleFixture(
+      [first, removable, trailing],
+      [createWindow("window-1", [first])],
+    );
+    fixture.reconcile();
+
+    expect(
+      fixture.lifecycle.removeDesktopExactly(
+        removable.id,
+        [first.id, removable.id, trailing.id],
+        removable.name,
+      ),
+    ).toBe(true);
+    expect(fixture.desktops).toEqual([first, trailing]);
+    expect(fixture.removeCount).toBe(1);
+  });
+
+  it("rejects protected, occupied, selected, stale, and mismatched removals", () => {
+    const create = (keepLeading = false, outputCount = 1) => {
+      const first = { id: "desktop-1", name: "First" };
+      const middle = { id: "desktop-2", name: "Middle" };
+      const trailing = { id: "desktop-3", name: "" };
+      const fixture = createLifecycleFixture(
+        [first, middle, trailing],
+        [createWindow("window-1", [first])],
+        outputCount,
+        keepLeading,
+      );
+      fixture.reconcile();
+      return { first, fixture, middle, trailing };
+    };
+
+    const stale = create();
+    expect(
+      stale.fixture.lifecycle.removeDesktopExactly(
+        stale.middle.id,
+        [stale.middle.id, stale.first.id, stale.trailing.id],
+        stale.middle.name,
+      ),
+    ).toBe(false);
+    expect(
+      stale.fixture.lifecycle.removeDesktopExactly(
+        stale.middle.id,
+        [stale.first.id, stale.middle.id, stale.trailing.id],
+        "stale name",
+      ),
+    ).toBe(false);
+    expect(stale.fixture.removeCount).toBe(0);
+
+    const protectedTrailing = create();
+    expect(
+      protectedTrailing.fixture.lifecycle.removeDesktopExactly(
+        protectedTrailing.trailing.id,
+        [
+          protectedTrailing.first.id,
+          protectedTrailing.middle.id,
+          protectedTrailing.trailing.id,
+        ],
+        "",
+      ),
+    ).toBe(false);
+
+    const protectedLeading = create(true);
+    expect(
+      protectedLeading.fixture.lifecycle.removeDesktopExactly(
+        protectedLeading.first.id,
+        [
+          protectedLeading.first.id,
+          protectedLeading.middle.id,
+          protectedLeading.trailing.id,
+        ],
+        protectedLeading.first.name,
+      ),
+    ).toBe(false);
+
+    const occupied = create();
+    occupied.fixture.addWindow(
+      createWindow("window-middle", [occupied.middle]),
+    );
+    occupied.fixture.reconcile();
+    expect(
+      occupied.fixture.lifecycle.removeDesktopExactly(
+        occupied.middle.id,
+        [occupied.first.id, occupied.middle.id, occupied.trailing.id],
+        occupied.middle.name,
+      ),
+    ).toBe(false);
+
+    const selected = create(false, 2);
+    const secondOutput = selected.fixture.outputs[1];
+    if (!secondOutput) {
+      throw new Error("missing second output");
+    }
+    selected.fixture.select(secondOutput, selected.middle);
+    selected.fixture.reconcile();
+    expect(
+      selected.fixture.lifecycle.removeDesktopExactly(
+        selected.middle.id,
+        [selected.first.id, selected.middle.id, selected.trailing.id],
+        selected.middle.name,
+      ),
+    ).toBe(false);
+
+    const wrongPostcondition = create();
+    wrongPostcondition.fixture.setRemoveMode("wrong");
+    expect(
+      wrongPostcondition.fixture.lifecycle.removeDesktopExactly(
+        wrongPostcondition.middle.id,
+        [
+          wrongPostcondition.first.id,
+          wrongPostcondition.middle.id,
+          wrongPostcondition.trailing.id,
+        ],
+        wrongPostcondition.middle.name,
+      ),
+    ).toBe(false);
+    expect(wrongPostcondition.fixture.desktops).toContain(
+      wrongPostcondition.middle,
+    );
   });
 
   it("removes a committed workspace-gap desktop after it becomes empty", () => {

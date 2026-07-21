@@ -37,6 +37,7 @@ import {
 } from "../src/core/layout-persistence";
 import type { LayoutPersistenceCatalogSnapshot } from "../src/core/layout-persistence-catalog";
 import type { SpatialDropCommand } from "../src/overview/spatial-drop-command";
+import type { OverviewWorkspaceCommand } from "../src/overview/workspace-command";
 import type {
   KWinOutput,
   KWinSignal,
@@ -43232,6 +43233,171 @@ describe("RuntimeController", () => {
     }
   });
 
+  it("creates, renames, and removes an exact Overview workspace", () => {
+    const setup = createWorkspaceGapDropRuntimeFixture();
+
+    expect(
+      setup.controller.executeOverviewWorkspaceCommand(
+        overviewWorkspaceCommand(setup, {
+          adjacentDesktopId: setup.sourceDesktop.id,
+          anchorDesktopId: setup.trailingDesktop.id,
+          kind: "create",
+          position: 1,
+        }),
+      ),
+    ).toBe(true);
+    const created = setup.createdDesktop;
+
+    if (!created) {
+      throw new Error("overview workspace command did not create a desktop");
+    }
+
+    expect(setup.desktopIds).toEqual([
+      setup.sourceDesktop.id,
+      created.id,
+      setup.trailingDesktop.id,
+    ]);
+    flushManualScheduler(setup.scheduler);
+    expect(setup.removeCount).toBe(0);
+
+    expect(
+      setup.controller.executeOverviewWorkspaceCommand(
+        overviewWorkspaceCommand(setup, {
+          desktopId: created.id,
+          expectedName: "",
+          kind: "rename",
+          name: "Planning",
+        }),
+      ),
+    ).toBe(true);
+    expect(created.name).toBe("Planning");
+
+    expect(
+      setup.controller.executeOverviewWorkspaceCommand(
+        overviewWorkspaceCommand(setup, {
+          desktopId: created.id,
+          expectedName: "Planning",
+          kind: "remove",
+        }),
+      ),
+    ).toBe(true);
+    flushManualScheduler(setup.scheduler);
+    expect(setup.desktopIds).toEqual([
+      setup.sourceDesktop.id,
+      setup.trailingDesktop.id,
+    ]);
+    expect(setup.removeCount).toBe(1);
+  });
+
+  it("rejects stale workspace commands and active runtime transactions", () => {
+    const stale = createWorkspaceGapDropRuntimeFixture();
+    const create = overviewWorkspaceCommand(stale, {
+      adjacentDesktopId: stale.sourceDesktop.id,
+      anchorDesktopId: stale.trailingDesktop.id,
+      kind: "create",
+      position: 1,
+    });
+
+    expect(
+      stale.controller.executeOverviewWorkspaceCommand({
+        ...create,
+        desktopIds: [...create.desktopIds].reverse(),
+      }),
+    ).toBe(false);
+    expect(
+      stale.controller.executeOverviewWorkspaceCommand({
+        ...create,
+        activityId: "stale-activity",
+      }),
+    ).toBe(false);
+    expect(
+      stale.controller.executeOverviewWorkspaceCommand({
+        ...create,
+        outputId: "stale-output",
+      }),
+    ).toBe(false);
+    expect(stale.createCount).toBe(0);
+
+    const blocked = createWorkspaceGapDropRuntimeFixture();
+    (
+      blocked.controller as unknown as {
+        stackEditOperation: object | null;
+      }
+    ).stackEditOperation = {};
+    expect(
+      blocked.controller.executeOverviewWorkspaceCommand(
+        overviewWorkspaceCommand(blocked, {
+          adjacentDesktopId: blocked.sourceDesktop.id,
+          anchorDesktopId: blocked.trailingDesktop.id,
+          kind: "create",
+          position: 1,
+        }),
+      ),
+    ).toBe(false);
+    expect(blocked.createCount).toBe(0);
+  });
+
+  it("restores a renamed desktop when its topology postcondition drifts", () => {
+    const setup = createWorkspaceGapDropRuntimeFixture();
+    let name = "Source";
+    let injectDrift = true;
+    Object.defineProperty(setup.sourceDesktop, "name", {
+      configurable: true,
+      get: () => name,
+      set: (nextName: string) => {
+        name = nextName;
+
+        if (injectDrift) {
+          injectDrift = false;
+          setup.insertExternalDesktop(0, "external-desktop");
+        }
+      },
+    });
+
+    expect(
+      setup.controller.executeOverviewWorkspaceCommand(
+        overviewWorkspaceCommand(setup, {
+          desktopId: setup.sourceDesktop.id,
+          expectedName: "Source",
+          kind: "rename",
+          name: "Renamed",
+        }),
+      ),
+    ).toBe(false);
+    expect(name).toBe("Source");
+    expect(setup.desktopIds).toEqual([
+      "external-desktop",
+      setup.sourceDesktop.id,
+      setup.trailingDesktop.id,
+    ]);
+  });
+
+  it("keeps Overview rename and remove unavailable for protected rows", () => {
+    const setup = createWorkspaceGapDropRuntimeFixture();
+
+    expect(
+      setup.controller.executeOverviewWorkspaceCommand(
+        overviewWorkspaceCommand(setup, {
+          desktopId: setup.trailingDesktop.id,
+          expectedName: "",
+          kind: "rename",
+          name: "Tail",
+        }),
+      ),
+    ).toBe(false);
+    expect(
+      setup.controller.executeOverviewWorkspaceCommand(
+        overviewWorkspaceCommand(setup, {
+          desktopId: setup.trailingDesktop.id,
+          expectedName: "",
+          kind: "remove",
+        }),
+      ),
+    ).toBe(false);
+    expect(setup.trailingDesktop.name).toBeUndefined();
+    expect(setup.removeCount).toBe(0);
+  });
+
   it("moves a non-active same-output workspace-gap source across deferred reconciliation", () => {
     const setup = createWorkspaceGapDropRuntimeFixture();
 
@@ -52097,6 +52263,22 @@ function workspaceGapDropCommand(
       position: "after",
     },
     version: 3,
+  };
+}
+
+function overviewWorkspaceCommand(
+  setup: WorkspaceGapDropRuntimeFixture,
+  action: OverviewWorkspaceCommand["action"],
+): OverviewWorkspaceCommand {
+  return {
+    action,
+    activityId: String(FALLBACK_ACTIVITY_ID),
+    createdAt: 1,
+    desktopIds: [...setup.desktopIds],
+    format: "driftile-overview-workspace-command",
+    outputId: setup.sourceOutput.name,
+    requestId: 1,
+    version: 1,
   };
 }
 
