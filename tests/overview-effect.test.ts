@@ -1692,10 +1692,10 @@ describe("overview effect package", () => {
     expect(desktopCard).toMatch(
       /signal windowDropped\(var candidate, string expectedWindowId, var expectedSourceDesktop,\s*string expectedSourceDesktopId, var expectedTargetDesktop,\s*string expectedTargetDesktopId, var expectedScreen, var exactTarget,\s*string basisFingerprint\)/u,
     );
-    expect(desktopCard.match(/\bDragHandler\s*\{/gu)).toHaveLength(5);
+    expect(desktopCard.match(/\bDragHandler\s*\{/gu)).toHaveLength(7);
     expect(desktopCard.match(/\bDropArea\s*\{/gu)).toHaveLength(2);
-    expect(desktopCard.match(/\.Drag\.active = true;/gu)).toHaveLength(4);
-    expect(desktopCard.match(/\.Drag\.active = false;/gu)).toHaveLength(9);
+    expect(desktopCard.match(/\.Drag\.active = true;/gu)).toHaveLength(6);
+    expect(desktopCard.match(/\.Drag\.active = false;/gu)).toHaveLength(12);
     expect(delegate).toMatch(
       /onWindowDropped:\s*\(\s*candidate,\s*expectedWindowId,\s*expectedSourceDesktop,\s*expectedSourceDesktopId,\s*expectedTargetDesktop,\s*expectedTargetDesktopId,\s*expectedScreen,\s*exactTarget,\s*basisFingerprint\s*\)\s*=>\s*root\.submitWindowSpatialDrop\(\s*candidate,\s*expectedWindowId,\s*expectedSourceDesktop,\s*expectedSourceDesktopId,\s*expectedTargetDesktop,\s*expectedTargetDesktopId,\s*expectedScreen,\s*expectedScreen,\s*exactTarget,\s*basisFingerprint\s*\)/u,
     );
@@ -5816,8 +5816,9 @@ describe("overview effect package", () => {
 
     expect(tab).toContain("acceptedButtons: Qt.LeftButton");
     expect(tab).toContain(
-      "acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad | PointerDevice.TouchScreen",
+      "acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad",
     );
+    expect(tab).toContain("acceptedDevices: PointerDevice.TouchScreen");
     expect(tab).toContain("id: tabActivationHandler");
     expect(tab).toContain("gesturePolicy: TapHandler.ReleaseWithinBounds");
     expect(tab).not.toMatch(

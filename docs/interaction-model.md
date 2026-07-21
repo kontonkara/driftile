@@ -341,10 +341,10 @@ workspace-surface taps are disabled during search.
 
 A short touchscreen tap on a visible window follows the same exact activation
 path as a click, including an exact desktop switch or minimized-window restore.
-Holding an eligible thumbnail before moving remains the touchscreen drag
-gesture. Movement before the hold cancels the tap, a long press never also
-activates the window, and the visible close region cannot fall through to
-activation or drag.
+Holding an eligible thumbnail or rendered non-selected, non-minimized tab chip
+before moving remains the touchscreen drag gesture. Movement before the hold
+cancels the tap, a long press never also activates the window, and the visible
+close region cannot fall through to activation or drag.
 
 The optional close-button setting keeps close controls visible on eligible,
 sufficiently large previews and minimized placeholders. They accept mouse,
@@ -352,11 +352,12 @@ touchpad, and touchscreen input. Their touch target is modestly enlarged
 without changing layout, release outside cancels, and an exact guarded close
 cannot activate or drag the window.
 
-A visible tiled window can be dragged by its window body to another workspace
-or output, into an exact stack position, or into a separate-column gutter. This
-remains an individual-window operation. Its thumbnail follows the pointer
-across row clipping, and the active zone previews the solved final position and
-size before release. Within a populated target column, the central body routes
+A visible tiled window can be dragged by its full window body or an eligible
+rendered tab chip to another workspace or output, into an exact stack position,
+or into a separate-column gutter. This remains an individual-window operation.
+Its scene proxy follows the pointer across row clipping, and the active zone
+previews the solved final position and size before release. Within a populated
+target column, the central body routes
 to the nearest visible stack member, whose upper or lower half selects the
 insertion side. Bounded seam and outer-edge zones remain usable as
 separate-column targets even with a zero or tiny layout gap. Target hysteresis
@@ -443,7 +444,21 @@ samples, and a `Shift` modifier change during
 ownership are consumed without reaching workspace or camera navigation.
 `Ctrl`-wheel zoom remains separate. Search disables rail ownership and retains
 the existing global search-result wheel behavior. No rail paging buttons are
-added, and direct tab dragging remains outside this slice.
+added. Tab-chip dragging reuses the existing spatial placement planner and
+targets.
+
+An exact rendered chip for a non-selected, non-minimized tab can start the
+existing individual-window drag through mouse or touchpad movement or a
+touchscreen long press. It carries the real window and retains the same exact
+preview, cached placement, and guarded drop semantics as a full thumbnail.
+Once drag ownership is accepted, the chip cannot also activate the tab. The
+selected member remains draggable only through its full thumbnail; its chip is
+still an activation and close control. A minimized chip remains restore-only
+rather than a drag source, and an overflow member without a rendered chip has
+no drag surface. Close-button presses never begin a drag. Selection or
+minimization drift, a changed captured rail frame or visibility, or topology,
+activity, output, or context drift cancels the gesture without replacing its
+source.
 
 Windows that were already minimized when Overview opened remain represented,
 and minimized windows use compact actionable placeholders instead of draggable

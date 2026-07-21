@@ -557,7 +557,18 @@ Driftile must integrate with, not duplicate:
   Partial, boundary, invalid later, and mid-gesture `Shift` samples are
   consumed without moving a workspace or camera. `Ctrl`-wheel remains the existing zoom path; search disables rail
   ownership and retains global search-result cycling. The rail adds no paging
-  buttons, and direct tab dragging remains unavailable.
+  buttons.
+- An exact rendered chip for a non-selected, non-minimized tab may start the
+  existing individual-window drag through mouse or touchpad movement or a
+  touchscreen long press. It carries the real window through the existing
+  spatial target planner, solved preview, cached placement, and guarded drop
+  transaction. Drag takeover suppresses tab activation. A selected member is
+  draggable only through its full thumbnail; its chip remains an activation
+  and close control. Minimized chips remain restore-only rather than drag
+  sources, and overflow members without rendered chips expose no drag hit area.
+  Close-button presses cannot begin a drag. Selection, minimization, rail frame
+  or visibility, topology, activity, output, or context drift cancels the
+  captured source safely.
 - Eligible inter-row gaps expose explicit retained-workspace creation. Compact
   row controls and `Insert`, `F2`, and `Delete` provide equivalent create,
   rename, and remove behavior for a workspace marker while preserving
@@ -573,8 +584,9 @@ Driftile must integrate with, not duplicate:
   overwritten, ambiguous, unsettled, or stale commands are consumed without a
   mutation. The effect never calls desktop creation, rename, or removal APIs
   directly.
-- An eligible tiled-window drag presents one scene-level thumbnail proxy across
-  clipped workspace rows. Exact stack, column-boundary, and empty-row targets
+- An eligible tiled-window drag presents one scene-level proxy across clipped
+  workspace rows, whether it starts from a full thumbnail or an exact rendered
+  non-selected tab chip. Exact stack, column-boundary, and empty-row targets
   preview the same solved final position and size used by the guarded drop
   command. Floating sources remain outside this exact-placement path.
 - The disabled-by-default overview close-button option keeps controls visible

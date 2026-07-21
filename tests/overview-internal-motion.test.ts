@@ -134,7 +134,7 @@ const columnDragStart = section(
 );
 const windowDragStart = section(
   desktopCard,
-  "function beginWindowSpatialDrag(source, scenePosition)",
+  "function beginWindowSpatialDrag(source, surfaceKind, surfaceTarget, scenePosition)",
   "function moveWindowSpatialDrag(source, scenePosition)",
 );
 

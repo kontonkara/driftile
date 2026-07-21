@@ -153,8 +153,21 @@ Partial steps, movement at either boundary, invalid later samples, and a
 mid-gesture `Shift` change are consumed without reaching workspace selection or
 either camera. `Ctrl`-wheel zoom stays on its separate existing path. Rail
 ownership is disabled while search is active, so the global search-result wheel
-behavior remains unchanged. The rail adds no paging buttons, and direct tab
-dragging remains outside this slice.
+behavior remains unchanged. The rail adds no paging buttons. Tab-chip dragging
+adds no separate placement planner or target set.
+
+An exact rendered chip for a non-selected, non-minimized tab can start the
+existing individual-window drag with a mouse or touchpad movement or a
+touchscreen long press. The proxy carries that real window into the same
+spatial targets, exact solved preview, and guarded drop transaction used by a
+full thumbnail. Drag takeover suppresses the chip's activation. The selected
+tab remains draggable only through its full preview, while its chip stays an
+activation and close control. Minimized chips remain restore-only rather than
+drag sources, and an overflow member without a rendered chip has no drag hit
+area. Pressing a close control never begins a drag. A change to selection,
+minimization, the captured rail frame or visibility, topology, activity,
+output, or Overview context cancels a stale chip drag without substituting
+another source.
 
 Discrete vertical navigation moves a bounded camera smoothly between workspace
 rows. Precise wheel or touchpad input moves the camera directly, without being
@@ -304,15 +317,16 @@ tap threshold yields to the existing pan or drag owner, and workspace-surface
 taps stay disabled while search is active. A left click still activates a
 visible window. A short touchscreen tap uses the same guarded activation path,
 including desktop selection for an exact off-desktop window and restoration of
-an actionable minimized placeholder. Holding an eligible thumbnail before
-moving remains the touchscreen drag gesture; early movement cancels the tap,
-and a long press never also activates the window. A touch over a visible close
-region does not fall through to activation or drag. Dragging a visible window
-can transfer it to another desktop or output after the source and destination
-are revalidated. Holding the dragged window over another workspace activates
-that workspace after a bounded dwell while keeping the drag active. A
-scene-level proxy keeps the exact thumbnail under the pointer even while it
-crosses clipped rows. On the same output, the central area of a populated
+an actionable minimized placeholder. Holding an eligible thumbnail or rendered
+non-selected, non-minimized tab chip before moving remains the touchscreen drag
+gesture; early movement cancels the tap, and a long press never also activates
+the window. A touch over a visible close region does not fall through to
+activation or drag. Dragging a visible window can transfer it to another
+desktop or output after the source and destination are revalidated. Holding
+the dragged window over another workspace activates that workspace after a
+bounded dwell while keeping the drag active. A scene-level proxy keeps the
+exact captured window presentation under the pointer even while it crosses
+clipped rows. On the same output, the central area of a populated
 target column resolves to its nearest visible stack member, whose upper or
 lower half selects the insertion side. Releasing at a column boundary keeps a
 separate column, and an empty row accepts a new column. Bounded snap zones at

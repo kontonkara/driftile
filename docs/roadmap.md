@@ -2858,4 +2858,15 @@ Release criteria (met):
   without leaking to workspace or camera navigation. Keep `Ctrl` zoom separate
   and preserve global search-result wheel behavior by disabling rail ownership
   during search.
-- Rail paging buttons and direct hidden-tab dragging remain outside this slice.
+- Let an exact rendered non-selected, non-minimized tab chip start the existing
+  individual-window drag with mouse or touchpad movement or a touchscreen long
+  press. Carry the real window through the current spatial targets, exact solved
+  preview, cached placement, and guarded drop transaction without adding a new
+  planner.
+- Keep the selected member draggable only through its full thumbnail, minimized
+  chips restore-only rather than drag sources, and overflow members without a
+  rendered chip free of drag hit areas. Close-button presses never begin a
+  drag, and drag takeover suppresses tab activation.
+- Cancel a captured chip drag on selection, minimization, rail frame or
+  visibility, topology, activity, output, or context drift. Rail paging buttons
+  remain outside this slice.

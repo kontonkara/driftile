@@ -77,8 +77,11 @@ describe("overview tab and minimized interactions", () => {
     expect(closeButton).toMatch(
       /onCloseRequested: \{\s*if \(!tabShell\.closeIsExact\(\)\) \{\s*return;[\s\S]*card\.windowCloseRequested\(windowPresentation\.candidate,/u,
     );
-    expect(activation).toMatch(
-      /onTapped: point => \{\s*if \(card\.closeButtonContainsPoint\(tabCloseButton, tabShell,\s*point\.position\)\) \{\s*tabShell\.disarmMinimizedActivation\(\);\s*return;/u,
+    expect(activation).toContain(
+      "onTapped: point => tabShell.handleActivationTap(point)",
+    );
+    expect(tab).toMatch(
+      /function handleActivationTap\(point\) \{\s*if \(!point \|\| card\.closeButtonContainsPoint\(tabCloseButton, tabShell,\s*point\.position\)\) \{\s*disarmMinimizedActivation\(\);\s*return false;/u,
     );
     expect(tab).toMatch(
       /const releaseLocalPosition = Qt\.point\(releaseLocalX, releaseLocalY\);\s*return tabShell\.contains\(releaseLocalPosition\)\s*&& !card\.closeButtonContainsPoint\(tabCloseButton, tabShell,\s*releaseLocalPosition\);/u,
@@ -170,7 +173,7 @@ describe("overview tab and minimized interactions", () => {
 
   it("uses timer-free hover and pressed feedback for tabs and placeholders", () => {
     expect(tab).toMatch(
-      /color: tabActivationHandler\.pressed \? "#f24b6482"\s*: tabHoverHandler\.hovered \? "#e641526b"/u,
+      /color: tabActivationHandler\.pressed \|\| tabTouchHoldHandler\.pressed \? "#f24b6482"\s*: tabHoverHandler\.hovered \? "#e641526b"/u,
     );
     expect(tab).toContain("id: tabHoverHandler");
     expect(tab).toContain("id: tabActivationHandler");

@@ -3470,10 +3470,15 @@ Rectangle {
     function captureSpatialWindowDragVisual(source) {
         clearSpatialWindowDragVisual();
         try {
-            const target = source ? source.thumbnailTarget : null;
-            const hotSpot = target ? target.spatialDragHotSpot : null;
             const snapshot = source ? source.windowDragSnapshot : null;
-            if (!target || !hotSpot || !snapshot || !Object.isFrozen(snapshot)
+            const surfaceKind = snapshot ? snapshot.surfaceKind : "";
+            const target = snapshot ? snapshot.surfaceTarget : null;
+            const hotSpot = target ? target.spatialDragHotSpot : null;
+            if (!snapshot || !Object.isFrozen(snapshot)
+                    || (surfaceKind !== "thumbnail" && surfaceKind !== "tab")
+                    || !target || target !== snapshot.surfaceTarget || !hotSpot
+                    || (surfaceKind === "thumbnail" && target !== source.thumbnailTarget)
+                    || (surfaceKind === "tab" && target !== source.tabTarget)
                     || typeof source.windowId !== "string"
                     || source.windowId.length === 0 || !Number.isFinite(target.width)
                     || !Number.isFinite(target.height) || target.width <= 0 || target.height <= 0
@@ -3505,6 +3510,8 @@ Rectangle {
                 hotSpotX: visualHotSpotX,
                 hotSpotY: visualHotSpotY,
                 snapshot,
+                surfaceKind,
+                surfaceTarget: target,
                 width: visualWidth,
                 windowId: source.windowId
             });
@@ -3526,9 +3533,14 @@ Rectangle {
             const sourceCard = source ? source.sourceCard : null;
             return source && sourceCard
                 && typeof sourceCard.windowDragHandlerOwnsLifecycle === "function"
-                && sourceCard.windowDragHandlerOwnsLifecycle(source)
-                && plan && Object.isFrozen(plan) && plan.snapshot && Object.isFrozen(plan.snapshot)
+                && plan && Object.isFrozen(plan)
+                && sourceCard.windowDragHandlerOwnsLifecycle(
+                    source, plan.surfaceKind, plan.surfaceTarget)
+                && plan.snapshot && Object.isFrozen(plan.snapshot)
                 && plan.snapshot === source.windowDragSnapshot
+                && plan.surfaceKind === plan.snapshot.surfaceKind
+                && plan.surfaceTarget === plan.snapshot.surfaceTarget
+                && (plan.surfaceKind === "thumbnail" || plan.surfaceKind === "tab")
                 && plan.snapshot.desktopId === spatialWindowDragSourceDesktopId
                 && source.windowId === plan.windowId && plan.snapshot.windowId === plan.windowId
                 && plan.windowId.length > 0

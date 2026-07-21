@@ -20,6 +20,12 @@ const presentation = desktopCard.slice(
   desktopCard.indexOf("id: windowPresentation"),
   desktopCard.indexOf("id: thumbnailShell"),
 );
+const tabSurface = desktopCard.slice(
+  desktopCard.indexOf("id: tabShell"),
+  desktopCard.indexOf("Rectangle {", desktopCard.indexOf("id: tabShell")),
+);
+const tabTouchDrag = handlerBlock("tabTouchDragHandler", "tabDragHandler");
+const tabDrag = handlerBlock("tabDragHandler", "thumbnailShell");
 const thumbnailSurface = desktopCard.slice(
   desktopCard.indexOf("id: thumbnailShell"),
   desktopCard.indexOf("Rectangle {", desktopCard.indexOf("id: thumbnailShell")),
@@ -59,6 +65,10 @@ const thumbnailMiddleClose = desktopCard.slice(
 const lifecycle = desktopCard.slice(
   desktopCard.indexOf("function beginWindowSpatialDrag("),
   desktopCard.indexOf("function windowDropIsValid("),
+);
+const windowDragSurfaceLifecycle = desktopCard.slice(
+  desktopCard.indexOf("function windowDragHandlerOwnsLifecycle("),
+  desktopCard.indexOf("function beginWindowSpatialDrag("),
 );
 const hoverSignals = desktopCard.slice(
   desktopCard.indexOf("signal windowWorkspaceHoverEntered("),
@@ -214,7 +224,7 @@ const columnSpatialSubmission = overviewScene.slice(
 );
 
 describe("spatial overview window drag lifecycle", () => {
-  it("declares one deduplicated source lifecycle for exact thumbnails", () => {
+  it("declares one deduplicated source lifecycle for exact rendered surfaces", () => {
     expect(desktopCard).toContain(
       "signal windowSpatialDragStarted(var source, real sceneX, real sceneY)",
     );
@@ -227,8 +237,17 @@ describe("spatial overview window drag lifecycle", () => {
     expect(presentation).toContain(
       "property bool spatialDragLifecycleActive: false",
     );
-    expect(desktopCard.match(/\bDragHandler\s*\{/gu)).toHaveLength(5);
-    expect(desktopCard).not.toContain("id: tabDragHandler");
+    expect(desktopCard.match(/\bDragHandler\s*\{/gu)).toHaveLength(7);
+    for (const handlerId of [
+      "thumbnailTouchDragHandler",
+      "thumbnailDragHandler",
+      "tabTouchDragHandler",
+      "tabDragHandler",
+    ]) {
+      expect(
+        desktopCard.match(new RegExp(`id: ${handlerId}`, "gu")),
+      ).toHaveLength(1);
+    }
     expect(
       desktopCard.slice(
         desktopCard.indexOf("id: minimizedPlaceholderShell"),
@@ -267,7 +286,7 @@ describe("spatial overview window drag lifecycle", () => {
     expect(drag).toContain(`if (${handlerId}.active) {`);
     expect(drag).toContain(`${handlerId}.centroid.scenePosition`);
     expect(drag).toMatch(
-      /if \(transition === PointerDevice\.GrabExclusive\) \{[\s\S]*?card\.beginWindowSpatialDrag\(windowPresentation, point\.scenePosition\);/u,
+      /if \(transition === PointerDevice\.GrabExclusive\) \{[\s\S]*?card\.beginWindowSpatialDrag\(windowPresentation, "thumbnail",\s*thumbnailShell, point\.scenePosition\);/u,
     );
     expect(drag.match(/card\.beginWindowSpatialDrag\(/gu)).toHaveLength(1);
     expect(drag.match(/card\.moveWindowSpatialDrag\(/gu)).toHaveLength(1);
@@ -281,6 +300,48 @@ describe("spatial overview window drag lifecycle", () => {
     expect(drag).toMatch(
       /transition === PointerDevice\.CancelGrabExclusive[\s\S]*?transition === PointerDevice\.CancelGrabPassive[\s\S]*?[A-Za-z]+Shell\.Drag\.cancel\(\);\s*[A-Za-z]+Shell\.Drag\.active = false;\s*card\.finishWindowSpatialDrag\(windowPresentation\);/u,
     );
+  });
+
+  it("binds every window drag handler to its exact source surface", () => {
+    expect(lifecycle).toContain(
+      "function beginWindowSpatialDrag(source, surfaceKind, surfaceTarget, scenePosition)",
+    );
+    expect(windowDragSurfaceLifecycle).toMatch(
+      /function windowDragHandlerOwnsLifecycle\(source, surfaceKind, surfaceTarget\)/u,
+    );
+    expect(windowDragSurfaceLifecycle).toContain(
+      'surfaceKind === "thumbnail" || surfaceKind === "tab"',
+    );
+    expect(windowDragSurfaceLifecycle).toContain(
+      "snapshot.surfaceKind === surfaceKind",
+    );
+    expect(windowDragSurfaceLifecycle).toContain(
+      "snapshot.surfaceTarget === surfaceTarget",
+    );
+    expect(windowDragSurfaceLifecycle).toMatch(
+      /function captureWindowDragSnapshot\(source, surfaceKind, surfaceTarget\)[\s\S]*?return Object\.freeze\(\{[\s\S]*?surfaceKind,[\s\S]*?surfaceTarget,/u,
+    );
+
+    for (const drag of [thumbnailTouchDrag, thumbnailDrag]) {
+      expect(drag).toMatch(
+        /windowDragHandlerOwnsLifecycle\(\s*windowPresentation, "thumbnail", thumbnailShell\)/u,
+      );
+      expect(drag).toMatch(
+        /beginWindowSpatialDrag\(windowPresentation, "thumbnail",\s*thumbnailShell, point\.scenePosition\)/u,
+      );
+      expect(drag).not.toContain('windowPresentation, "tab", tabShell');
+    }
+    for (const drag of [tabTouchDrag, tabDrag]) {
+      expect(drag).toMatch(
+        /windowDragHandlerOwnsLifecycle\(\s*windowPresentation, "tab", tabShell\)/u,
+      );
+      expect(drag).toMatch(
+        /beginWindowSpatialDrag\(windowPresentation, "tab", tabShell,\s*point\.scenePosition\)/u,
+      );
+      expect(drag).not.toContain(
+        'windowPresentation, "thumbnail", thumbnailShell',
+      );
+    }
   });
 
   it("stores the final scene position before completing either thumbnail drag", () => {
@@ -327,8 +388,8 @@ describe("spatial overview window drag lifecycle", () => {
       );
       expect(drag).toContain("target: null");
     }
-    expect(presentation).toContain(
-      "opacity: thumbnailShell.Drag.active || card.columnDragWindowIsDimmed(windowId) ? 0.2 : 1",
+    expect(presentation).toMatch(
+      /opacity: thumbnailShell\.Drag\.active \|\| tabShell\.Drag\.active\s*\|\| card\.columnDragWindowIsDimmed\(windowId\) \? 0\.2 : 1/u,
     );
     expect(sceneDragVisual).toContain("Loader {");
     expect(sceneDragVisual).toContain('color: "#e61b2432"');
@@ -362,8 +423,8 @@ describe("spatial overview window drag lifecycle", () => {
     expect(sceneDragLifecycle).toMatch(
       /function updateWindowSpatialEdgePan\([\s\S]*?storeSpatialEdgePanScenePoint\(sceneX, sceneY\);/u,
     );
-    expect(sceneDragVisualLifecycle).toContain(
-      "const target = source ? source.thumbnailTarget : null;",
+    expect(sceneDragVisualLifecycle).toMatch(
+      /const snapshot = source \? source\.windowDragSnapshot : null;\s*const surfaceKind = snapshot \? snapshot\.surfaceKind : "";\s*const target = snapshot \? snapshot\.surfaceTarget : null;/u,
     );
     expect(sceneDragVisualLifecycle).toContain(
       "const hotSpot = target ? target.spatialDragHotSpot : null;",
@@ -376,6 +437,21 @@ describe("spatial overview window drag lifecycle", () => {
     );
     expect(sceneDragVisualLifecycle).toContain(
       "spatialWindowDragVisualPlan = Object.freeze({",
+    );
+    expect(sceneDragVisualLifecycle).toMatch(
+      /spatialWindowDragVisualPlan = Object\.freeze\(\{[\s\S]*?snapshot,[\s\S]*?surfaceKind,[\s\S]*?surfaceTarget: target,/u,
+    );
+    expect(sceneDragVisualLifecycle).toContain(
+      '(surfaceKind !== "thumbnail" && surfaceKind !== "tab")',
+    );
+    expect(sceneDragVisualLifecycle).toContain(
+      'surfaceKind === "thumbnail" && target !== source.thumbnailTarget',
+    );
+    expect(sceneDragVisualLifecycle).toContain(
+      'surfaceKind === "tab" && target !== source.tabTarget',
+    );
+    expect(sceneDragVisualLifecycle).toContain(
+      "sourceCard.windowDragHandlerOwnsLifecycle(",
     );
     expect(sceneDragVisualLifecycle).toMatch(
       /function resetSpatialEdgePanTracking\(\) \{[\s\S]*?clearSpatialWindowDragVisual\(\);[\s\S]*?clearSpatialEdgePanScenePoint\(\);/u,
@@ -436,7 +512,7 @@ describe("spatial overview window drag lifecycle", () => {
       "dragThreshold: windowPresentation.touchSpatialDragArmed ? 0 : 32767",
     );
     expect(thumbnailTouchDrag).toMatch(
-      /PointerDevice\.GrabExclusive[\s\S]*?touchSpatialDragArmed[\s\S]*?card\.beginWindowSpatialDrag\(windowPresentation, point\.scenePosition\)/u,
+      /PointerDevice\.GrabExclusive[\s\S]*?touchSpatialDragArmed[\s\S]*?card\.beginWindowSpatialDrag\(windowPresentation, "thumbnail",\s*thumbnailShell, point\.scenePosition\)/u,
     );
     expect(thumbnailTouchDrag).toContain(
       "card.moveWindowSpatialDrag(windowPresentation,",
@@ -703,7 +779,7 @@ describe("spatial overview window drag lifecycle", () => {
     );
   });
 
-  it("keeps exact layout targets exclusive to current tiled sources", () => {
+  it("keeps exact layout targets exclusive to current surface-bound tiled sources", () => {
     expect(presentation).toContain(
       "card.windowDropSourceTiledPresentationIsExact(windowPresentation)",
     );
@@ -717,13 +793,29 @@ describe("spatial overview window drag lifecycle", () => {
       "sourceCard.ownedWindowDropTiledPresentationIsExact(source)",
     );
     expect(hoverLifecycle).toContain(
-      "function ownedWindowDropTiledPresentationIsExact(source)",
+      "function ownedWindowDropTiledPresentationIsExact(source, expectedSurfaceKind,",
     );
-    expect(hoverLifecycle).toContain("source.sourceCard === card");
-    expect(hoverLifecycle).toContain("source.sourceCard.context === context");
-    expect(hoverLifecycle).toContain("tiledPresentations[windowId] === tiled");
-    expect(hoverLifecycle).toContain("tiled.selected === true");
-    expect(hoverLifecycle).toContain("frame.floating === false");
+    expect(hoverLifecycle).toContain(
+      "return windowDragSurfaceIsExact(source, surfaceKind, surfaceTarget)",
+    );
+    expect(hoverLifecycle).toContain("snapshot.surfaceKind === surfaceKind");
+    expect(hoverLifecycle).toContain(
+      "snapshot.surfaceTarget === surfaceTarget",
+    );
+    expect(windowDragSurfaceLifecycle).toContain("source.sourceCard === card");
+    expect(windowDragSurfaceLifecycle).toContain(
+      "source.sourceCard.context !== context",
+    );
+    expect(windowDragSurfaceLifecycle).toContain(
+      "tiledPresentations[windowId] !== tiled",
+    );
+    expect(windowDragSurfaceLifecycle).toContain("frame.floating !== false");
+    expect(windowDragSurfaceLifecycle).toMatch(
+      /if \(surfaceKind === "thumbnail"\) \{[\s\S]*?surfaceTarget === source\.thumbnailTarget[\s\S]*?tiled\.selected === true/u,
+    );
+    expect(windowDragSurfaceLifecycle).toMatch(
+      /const tabFrame = source\.tabFrame;[\s\S]*?surfaceTarget === source\.tabTarget[\s\S]*?tiled\.selected === false[\s\S]*?tabFrame\.visible === true/u,
+    );
     expect(
       `${hoverLifecycle}\n${dropValidation}`.match(
         /windowDropSourceTiledPresentationIsExact\(source\)/gu,
@@ -741,6 +833,39 @@ describe("spatial overview window drag lifecycle", () => {
     expect(routedValidation).not.toContain("tiledPresentations[windowId]");
     expect(routedValidation).not.toContain("source.sourceCard === card");
     expect(routedValidation).not.toContain("KWin.Workspace.activeWindow");
+  });
+
+  it("reuses the exact window drop planner for thumbnail and tab sources", () => {
+    for (const surface of [thumbnailSurface, tabSurface]) {
+      expect(surface).toContain("Drag.source: windowPresentation");
+      expect(surface).toContain('Drag.keys: ["driftile-window"]');
+      expect(surface).toContain("Drag.proposedAction: Qt.MoveAction");
+      expect(surface).toContain("Drag.supportedActions: Qt.MoveAction");
+    }
+    expect(
+      desktopCard.match(/function buildWindowDropPlannerSnapshot\(/gu),
+    ).toHaveLength(1);
+    expect(dropPlanner).toContain(
+      "function windowDropPreviewSourceState(source)",
+    );
+    expect(dropPlanner).toContain(
+      'typeof sourceCard.ownedWindowDragSnapshotIsExact !== "function"',
+    );
+    expect(dropPlanner).toContain(
+      "!sourceCard.ownedWindowDragSnapshotIsExact(source)",
+    );
+    expect(dropPlanner).toContain("column: snapshot.column");
+    expect(dropPlanner).toContain("context: snapshot.context");
+    expect(dropPlanner).toContain("member: snapshot.member");
+    expect(dropPlanner).toContain("windowId: snapshot.windowId");
+    expect(dropPlanner).not.toContain("snapshot.surfaceKind");
+    expect(dropPlanner).not.toContain("snapshot.surfaceTarget");
+    expect(dropValidation).toContain(
+      "windowDropSourceDragSnapshotIsExact(source)",
+    );
+    expect(dropValidation).toContain(
+      "windowDropSourceTiledPresentationIsExact(source)",
+    );
   });
 
   it("supplies height bounds only for columns whose solver state needs them", () => {
@@ -1225,10 +1350,10 @@ describe("spatial overview column drag lifecycle", () => {
     );
     expect(thumbnailDrag).toContain("card.spatialDirectDragBlocked");
     expect(thumbnailDrag).toMatch(
-      /card\.beginWindowSpatialDrag\(windowPresentation, point\.scenePosition\);[\s\S]*if \(!windowPresentation\.spatialDragLifecycleActive\)[\s\S]*thumbnailShell\.Drag\.cancel\(\)/u,
+      /card\.beginWindowSpatialDrag\(windowPresentation, "thumbnail",\s*thumbnailShell, point\.scenePosition\);[\s\S]*if \(!windowPresentation\.spatialDragLifecycleActive\)[\s\S]*thumbnailShell\.Drag\.cancel\(\)/u,
     );
     expect(lifecycle).toMatch(
-      /function beginWindowSpatialDrag\(source, scenePosition\)[\s\S]*columnDragActiveSource !== null \|\| columnPointerHoverSource !== null\s*\|\| columnPointerPressSource !== null[\s\S]*return;/u,
+      /function beginWindowSpatialDrag\(source, surfaceKind, surfaceTarget, scenePosition\)[\s\S]*columnDragActiveSource !== null \|\| columnPointerHoverSource !== null\s*\|\| columnPointerPressSource !== null[\s\S]*return;/u,
     );
     expect(columnLifecycle).toMatch(
       /function cancelActiveColumnSpatialDrag\(\)[\s\S]*const hoveredSource = columnPointerHoverSource;[\s\S]*hoveredSource !== null && !columnDragHandleIsEligible\(hoveredSource\)[\s\S]*columnPointerHoverSource = null;/u,

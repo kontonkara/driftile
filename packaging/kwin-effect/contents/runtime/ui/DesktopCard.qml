@@ -938,7 +938,8 @@ Item {
 
                 width: viewport.width
                 height: viewport.height
-                opacity: thumbnailShell.Drag.active || card.columnDragWindowIsDimmed(windowId) ? 0.2 : 1
+                opacity: thumbnailShell.Drag.active || tabShell.Drag.active
+                    || card.columnDragWindowIsDimmed(windowId) ? 0.2 : 1
                 z: frame && frame.floating ? 1000 + index : 100 + index
 
                 onCandidateChanged: {
@@ -961,6 +962,7 @@ Item {
                 }
                 onPrimaryVisualKindChanged: {
                     card.navigationTargetsChanged();
+                    card.scheduleWindowSpatialDragValidation(windowPresentation);
                     card.schedulePresentationMotion();
                 }
                 onSourceDesktopChanged: card.cancelInvalidWindowSpatialDragSource(windowPresentation)
@@ -968,6 +970,7 @@ Item {
                 onSourceScreenChanged: card.cancelInvalidWindowSpatialDragSource(windowPresentation)
                 onTabFrameChanged: {
                     card.navigationTargetsChanged();
+                    card.scheduleWindowSpatialDragValidation(windowPresentation);
                     card.schedulePresentationMotion();
                 }
                 onTiledPresentationChanged: {
@@ -986,6 +989,8 @@ Item {
                 function cancelWindowDrag() {
                     thumbnailShell.Drag.cancel();
                     thumbnailShell.Drag.active = false;
+                    tabShell.Drag.cancel();
+                    tabShell.Drag.active = false;
                     card.finishWindowSpatialDrag(windowPresentation);
                     touchSpatialDragArmed = false;
                 }
@@ -1110,6 +1115,10 @@ Item {
                     readonly property bool activationEligible: windowPresentation.primaryVisualKind === "tab"
                         && frame !== null && frame.visible === true
                         && windowPresentation.matchesSearch
+                    readonly property bool spatialDragEligible: activationEligible
+                        && !selectedTab && !minimizedTab
+                        && card.windowSnapshotCanDrag(windowPresentation)
+                        && card.windowDragSurfaceIsExact(windowPresentation, "tab", tabShell)
                     readonly property bool keyboardTarget: activationEligible
                     readonly property bool keyboardSelected: keyboardTarget
                         && card.keyboardSelectionId === card.navigationTargetId(windowPresentation.windowId)
@@ -1125,6 +1134,7 @@ Item {
                     property int activationCanceledSerial: -1
                     property int activationConsumedSerial: -1
                     property var minimizedActivationSnapshot: null
+                    property point spatialDragHotSpot: Qt.point(0, 0)
 
                     function nextActivationGestureSerial() {
                         if (activationGestureSerial >= 2147483646) {
@@ -1211,6 +1221,33 @@ Item {
                         minimizedActivationSnapshot = null;
                     }
 
+                    function cancelActivationForSpatialDrag() {
+                        activationCanceledSerial = activationGestureSerial;
+                        minimizedActivationSnapshot = null;
+                    }
+
+                    function storeSpatialDragHotSpot(scenePosition) {
+                        if (!scenePosition || !Number.isFinite(scenePosition.x)
+                                || !Number.isFinite(scenePosition.y)) {
+                            return false;
+                        }
+
+                        try {
+                            const localPosition = tabShell.mapFromItem(
+                                null, scenePosition.x, scenePosition.y);
+                            if (!localPosition || !Number.isFinite(localPosition.x)
+                                    || !Number.isFinite(localPosition.y)) {
+                                return false;
+                            }
+
+                            tabShell.spatialDragHotSpot = Qt.point(localPosition.x,
+                                                                   localPosition.y);
+                            return true;
+                        } catch (error) {
+                            return false;
+                        }
+                    }
+
                     function activationSnapshotMatchesCurrent(snapshot) {
                         return snapshot !== null && snapshot !== undefined
                             && snapshot.serial === activationGestureSerial
@@ -1291,6 +1328,46 @@ Item {
                         return true;
                     }
 
+                    function handleActivationTap(point) {
+                        if (!point || card.closeButtonContainsPoint(tabCloseButton, tabShell,
+                                                                    point.position)) {
+                            disarmMinimizedActivation();
+                            return false;
+                        }
+                        const serial = activationGestureSerial;
+                        const snapshot = minimizedActivationSnapshot;
+                        activationTappedSerial = serial;
+                        if (snapshot && snapshot.serial === serial) {
+                            minimizedActivationSnapshot = null;
+                        }
+                        return dispatchExactActivation(serial, snapshot);
+                    }
+
+                    function cancelSpatialDrag() {
+                        tabShell.Drag.cancel();
+                        tabShell.Drag.active = false;
+                        card.finishWindowSpatialDrag(windowPresentation);
+                        windowPresentation.touchSpatialDragArmed = false;
+                    }
+
+                    function releaseSpatialDrag(scenePosition) {
+                        if (!tabShell.storeSpatialDragHotSpot(scenePosition)) {
+                            tabShell.cancelSpatialDrag();
+                            return false;
+                        }
+
+                        const source = windowPresentation;
+                        const globalPosition = card.crossOutputWindowDropGlobalPosition(scenePosition);
+                        const action = tabShell.Drag.drop();
+                        if (action !== Qt.MoveAction) {
+                            card.requestCrossOutputWindowDrop(source, globalPosition);
+                        }
+                        tabShell.Drag.active = false;
+                        card.finishWindowSpatialDrag(source);
+                        windowPresentation.touchSpatialDragArmed = false;
+                        return true;
+                    }
+
                     function handleActivationGrabChanged(transition, point) {
                         if ((transition === PointerDevice.GrabPassive
                                 || transition === PointerDevice.GrabExclusive)
@@ -1349,7 +1426,7 @@ Item {
                     visible: visualFrame !== null && visualOpacity > 0.0001
                         && model.window && windowPresentation.matchesSearch
                     opacity: windowPresentation.opacity * visualOpacity
-                    color: tabActivationHandler.pressed ? "#f24b6482"
+                    color: tabActivationHandler.pressed || tabTouchHoldHandler.pressed ? "#f24b6482"
                         : tabHoverHandler.hovered ? "#e641526b"
                         : restingColor
                     border.width: keyboardSelected || activeTab ? 2 : 1
@@ -1370,6 +1447,14 @@ Item {
                             && tabShell.visualBaseFrame.height > 0
                             ? tabShell.visualFrame.height / tabShell.visualBaseFrame.height : 1
                     }
+
+                    Drag.active: false
+                    Drag.source: windowPresentation
+                    Drag.hotSpot.x: spatialDragHotSpot.x
+                    Drag.hotSpot.y: spatialDragHotSpot.y
+                    Drag.keys: ["driftile-window"]
+                    Drag.proposedAction: Qt.MoveAction
+                    Drag.supportedActions: Qt.MoveAction
 
                     Rectangle {
                         anchors.fill: parent
@@ -1514,7 +1599,7 @@ Item {
                         id: tabActivationHandler
 
                         acceptedButtons: Qt.LeftButton
-                        acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad | PointerDevice.TouchScreen
+                        acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
                         gesturePolicy: TapHandler.ReleaseWithinBounds
                         grabPermissions: PointerHandler.ApprovesTakeOverByHandlersOfSameType
                                          | PointerHandler.ApprovesTakeOverByHandlersOfDifferentType
@@ -1541,19 +1626,181 @@ Item {
                                 tabShell.disarmMinimizedActivation(snapshot);
                             }
                         }
-                        onTapped: point => {
-                            if (card.closeButtonContainsPoint(tabCloseButton, tabShell,
-                                                              point.position)) {
-                                tabShell.disarmMinimizedActivation();
+                        onTapped: point => tabShell.handleActivationTap(point)
+                    }
+
+                    TapHandler {
+                        id: tabTouchHoldHandler
+
+                        target: null
+                        acceptedButtons: Qt.LeftButton
+                        acceptedDevices: PointerDevice.TouchScreen
+                        acceptedModifiers: Qt.NoModifier
+                        gesturePolicy: TapHandler.DragThreshold
+                        grabPermissions: PointerHandler.ApprovesTakeOverByHandlersOfSameType
+                                         | PointerHandler.ApprovesTakeOverByHandlersOfDifferentType
+                                         | PointerHandler.ApprovesCancellation
+                        enabled: tabShell.activationEligible && card.interactionEligible
+                            && card.desktop && card.screen && card.columnDragActiveSource === null
+                            && card.columnPointerHoverSource === null
+                            && card.columnPointerPressSource === null
+                            && (!card.spatialDirectDragBlocked
+                                || card.windowDragHandlerOwnsLifecycle(
+                                    windowPresentation, "tab", tabShell))
+                        onCanceled: tabShell.disarmMinimizedActivation()
+                        onGrabChanged: (transition, point) =>
+                            tabShell.handleActivationGrabChanged(transition, point)
+                        onPressedChanged: {
+                            if (pressed || (point.state === EventPoint.Released
+                                            && !tabTouchDragHandler.active)) {
+                                windowPresentation.touchSpatialDragArmed = false;
+                            }
+                            const snapshot = tabShell.minimizedActivationSnapshot;
+                            const scenePosition = point.scenePosition;
+                            if (!pressed && snapshot && (!scenePosition
+                                    || !tabShell.activationSceneDisplacementIsWithinThreshold(
+                                        snapshot, scenePosition.x, scenePosition.y))) {
+                                tabShell.disarmMinimizedActivation(snapshot);
+                            }
+                        }
+                        onTapped: point => tabShell.handleActivationTap(point)
+                        onLongPressed: {
+                            tabShell.disarmMinimizedActivation();
+                            if (!tabShell.spatialDragEligible
+                                    || card.closeButtonContainsPoint(tabCloseButton, tabShell,
+                                                                     point.pressPosition)) {
+                                windowPresentation.touchSpatialDragArmed = false;
                                 return;
                             }
-                            const serial = tabShell.activationGestureSerial;
-                            const snapshot = tabShell.minimizedActivationSnapshot;
-                            tabShell.activationTappedSerial = serial;
-                            if (snapshot && snapshot.serial === serial) {
-                                tabShell.minimizedActivationSnapshot = null;
+                            tabShell.cancelActivationForSpatialDrag();
+                            windowPresentation.touchSpatialDragArmed = true;
+                        }
+                    }
+
+                    DragHandler {
+                        id: tabTouchDragHandler
+
+                        target: null
+                        acceptedButtons: Qt.LeftButton
+                        acceptedDevices: PointerDevice.TouchScreen
+                        acceptedModifiers: Qt.NoModifier
+                        dragThreshold: windowPresentation.touchSpatialDragArmed ? 0 : 32767
+                        enabled: (tabShell.visible && tabShell.spatialDragEligible
+                                  && card.columnDragActiveSource === null
+                                  && card.columnPointerPressSource === null
+                                  && !card.spatialDirectDragBlocked)
+                            || card.windowDragHandlerOwnsLifecycle(
+                                windowPresentation, "tab", tabShell)
+                        grabPermissions: PointerHandler.CanTakeOverFromHandlersOfSameType
+                                         | PointerHandler.CanTakeOverFromHandlersOfDifferentType
+                                         | PointerHandler.CanTakeOverFromItems
+                                         | PointerHandler.ApprovesTakeOverByAnything
+
+                        onActiveTranslationChanged: {
+                            if (tabTouchDragHandler.active
+                                    && windowPresentation.spatialDragLifecycleActive) {
+                                const scenePosition = tabTouchDragHandler.centroid.scenePosition;
+                                if (!tabShell.storeSpatialDragHotSpot(scenePosition)) {
+                                    tabShell.cancelSpatialDrag();
+                                    return;
+                                }
+                                card.moveWindowSpatialDrag(windowPresentation, scenePosition);
                             }
-                            tabShell.dispatchExactActivation(serial, snapshot);
+                        }
+
+                        onGrabChanged: (transition, point) => {
+                            if (transition === PointerDevice.GrabExclusive) {
+                                if (!windowPresentation.touchSpatialDragArmed
+                                        || card.closeButtonContainsPoint(tabCloseButton, tabShell,
+                                                                         point.pressPosition)) {
+                                    tabShell.cancelSpatialDrag();
+                                    return;
+                                }
+                                tabShell.cancelActivationForSpatialDrag();
+                                if (!card.settlePresentationMotion()
+                                        || !tabShell.storeSpatialDragHotSpot(point.scenePosition)) {
+                                    tabShell.cancelSpatialDrag();
+                                    return;
+                                }
+                                card.beginWindowSpatialDrag(windowPresentation, "tab", tabShell,
+                                                            point.scenePosition);
+                                if (!windowPresentation.spatialDragLifecycleActive) {
+                                    tabShell.cancelSpatialDrag();
+                                    return;
+                                }
+                                tabShell.Drag.active = true;
+                            } else if (transition === PointerDevice.UngrabExclusive) {
+                                if (point.state === EventPoint.Released
+                                        && windowPresentation.spatialDragLifecycleActive) {
+                                    tabShell.releaseSpatialDrag(point.scenePosition);
+                                } else {
+                                    tabShell.cancelSpatialDrag();
+                                }
+                            } else if (transition === PointerDevice.CancelGrabExclusive
+                                       || transition === PointerDevice.CancelGrabPassive) {
+                                tabShell.cancelSpatialDrag();
+                            }
+                        }
+                    }
+
+                    DragHandler {
+                        id: tabDragHandler
+
+                        target: null
+                        acceptedButtons: Qt.LeftButton
+                        acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
+                        acceptedModifiers: Qt.NoModifier
+                        enabled: (tabShell.visible && tabShell.spatialDragEligible
+                                  && card.columnDragActiveSource === null
+                                  && card.columnPointerHoverSource === null
+                                  && card.columnPointerPressSource === null
+                                  && !card.spatialDirectDragBlocked)
+                            || card.windowDragHandlerOwnsLifecycle(
+                                windowPresentation, "tab", tabShell)
+
+                        onActiveTranslationChanged: {
+                            if (tabDragHandler.active
+                                    && windowPresentation.spatialDragLifecycleActive) {
+                                const scenePosition = tabDragHandler.centroid.scenePosition;
+                                if (!tabShell.storeSpatialDragHotSpot(scenePosition)) {
+                                    tabShell.cancelSpatialDrag();
+                                    return;
+                                }
+                                card.moveWindowSpatialDrag(windowPresentation, scenePosition);
+                            }
+                        }
+
+                        onGrabChanged: (transition, point) => {
+                            if (transition === PointerDevice.GrabExclusive) {
+                                if (card.closeButtonContainsPoint(tabCloseButton, tabShell,
+                                                                  point.pressPosition)) {
+                                    tabShell.cancelSpatialDrag();
+                                    return;
+                                }
+                                tabShell.cancelActivationForSpatialDrag();
+                                if (!card.settlePresentationMotion()
+                                        || !tabShell.storeSpatialDragHotSpot(point.scenePosition)) {
+                                    tabShell.cancelSpatialDrag();
+                                    return;
+                                }
+                                card.beginWindowSpatialDrag(windowPresentation, "tab", tabShell,
+                                                            point.scenePosition);
+                                if (!windowPresentation.spatialDragLifecycleActive) {
+                                    tabShell.cancelSpatialDrag();
+                                    return;
+                                }
+                                tabShell.Drag.active = true;
+                            } else if (transition === PointerDevice.UngrabExclusive) {
+                                if (point.state === EventPoint.Released
+                                        && windowPresentation.spatialDragLifecycleActive) {
+                                    tabShell.releaseSpatialDrag(point.scenePosition);
+                                } else {
+                                    tabShell.cancelSpatialDrag();
+                                }
+                            } else if (transition === PointerDevice.CancelGrabExclusive
+                                       || transition === PointerDevice.CancelGrabPassive) {
+                                tabShell.cancelSpatialDrag();
+                            }
                         }
                     }
 
@@ -1896,7 +2143,8 @@ Item {
                                  && card.columnDragActiveSource === null
                                  && card.columnPointerPressSource === null
                                  && !card.spatialDirectDragBlocked
-                            || card.windowDragHandlerOwnsLifecycle(windowPresentation)
+                            || card.windowDragHandlerOwnsLifecycle(
+                                windowPresentation, "thumbnail", thumbnailShell)
                         grabPermissions: PointerHandler.CanTakeOverFromHandlersOfSameType
                                          | PointerHandler.CanTakeOverFromHandlersOfDifferentType
                                          | PointerHandler.CanTakeOverFromItems
@@ -1949,7 +2197,8 @@ Item {
                                     thumbnailTouchDragHandler.cancelSpatialDrag();
                                     return;
                                 }
-                                card.beginWindowSpatialDrag(windowPresentation, point.scenePosition);
+                                card.beginWindowSpatialDrag(windowPresentation, "thumbnail",
+                                                            thumbnailShell, point.scenePosition);
                                 if (!windowPresentation.spatialDragLifecycleActive) {
                                     thumbnailTouchDragHandler.cancelSpatialDrag();
                                     return;
@@ -1981,7 +2230,8 @@ Item {
                                  && card.columnPointerHoverSource === null
                                  && card.columnPointerPressSource === null
                                  && !card.spatialDirectDragBlocked
-                            || card.windowDragHandlerOwnsLifecycle(windowPresentation)
+                            || card.windowDragHandlerOwnsLifecycle(
+                                windowPresentation, "thumbnail", thumbnailShell)
 
                         onActiveTranslationChanged: {
                             if (thumbnailDragHandler.active) {
@@ -2004,7 +2254,8 @@ Item {
                                     card.cancelWindowSpatialDragSource(windowPresentation);
                                     return;
                                 }
-                                card.beginWindowSpatialDrag(windowPresentation, point.scenePosition);
+                                card.beginWindowSpatialDrag(windowPresentation, "thumbnail",
+                                                            thumbnailShell, point.scenePosition);
                                 if (!windowPresentation.spatialDragLifecycleActive) {
                                     thumbnailShell.Drag.cancel();
                                     thumbnailShell.Drag.active = false;
@@ -2646,6 +2897,7 @@ Item {
     }
     onTabRailPlansChanged: {
         card.navigationTargetsChanged();
+        card.scheduleWindowSpatialDragValidation(card.windowDragActiveSource);
         card.schedulePresentationMotion();
     }
     onSpatialRowGeometryPlanChanged: {
@@ -4995,11 +5247,80 @@ Item {
         }
     }
 
-    function windowDragHandlerOwnsLifecycle(source) {
+    function windowDragLifecycleIsOwned(source) {
         try {
             return source && source === windowDragActiveSource
                     && source.spatialDragLifecycleActive === true
                     && source.windowDragSnapshot && Object.isFrozen(source.windowDragSnapshot);
+        } catch (error) {
+            return false;
+        }
+    }
+
+    function windowDragHandlerOwnsLifecycle(source, surfaceKind, surfaceTarget) {
+        try {
+            const snapshot = source ? source.windowDragSnapshot : null;
+            return windowDragLifecycleIsOwned(source)
+                && (surfaceKind === "thumbnail" || surfaceKind === "tab")
+                && snapshot.surfaceKind === surfaceKind
+                && snapshot.surfaceTarget === surfaceTarget;
+        } catch (error) {
+            return false;
+        }
+    }
+
+    function windowDragSurfaceIsExact(source, surfaceKind, surfaceTarget) {
+        try {
+            const windowId = source ? source.windowId : "";
+            const tiled = source ? source.tiledPresentation : null;
+            const frame = source ? source.frame : null;
+            if (!source || source.sourceCard !== card || source.sourceDesktop !== desktop
+                    || source.sourceDesktopId !== desktopId || source.sourceScreen !== screen
+                    || source.sourceCard.context !== context || !context
+                    || context.columns !== columns || !spatialDragSourceIsOwned(source)
+                    || (surfaceKind !== "thumbnail" && surfaceKind !== "tab")
+                    || !surfaceTarget || surfaceTarget.visible !== true
+                    || !Number.isFinite(surfaceTarget.width) || surfaceTarget.width <= 0
+                    || !Number.isFinite(surfaceTarget.height) || surfaceTarget.height <= 0
+                    || typeof windowId !== "string" || windowId.length === 0 || !tiled
+                    || tiledPresentations[windowId] !== tiled
+                    || !Number.isInteger(tiled.columnIndex) || tiled.columnIndex < 0
+                    || tiled.columnIndex >= columns.length || !Number.isInteger(tiled.memberIndex)
+                    || tiled.memberIndex < 0 || frame === null || frame.floating !== false) {
+                return false;
+            }
+
+            const column = columns[tiled.columnIndex];
+            if (!column || !indexedListHasBoundedLength(column.members, 1, 256)
+                    || tiled.memberIndex >= column.members.length
+                    || !column.members[tiled.memberIndex]
+                    || column.members[tiled.memberIndex].windowId !== windowId
+                    || !Number.isInteger(column.selectedMemberIndex)
+                    || column.selectedMemberIndex < 0
+                    || column.selectedMemberIndex >= column.members.length) {
+                return false;
+            }
+
+            if (surfaceKind === "thumbnail") {
+                return surfaceTarget === source.thumbnailTarget
+                    && source.primaryVisualKind === "thumbnail"
+                    && source.selectedThumbnail === true && tiled.selected === true
+                    && tiled.memberIndex === column.selectedMemberIndex
+                    && source.minimizedWindow !== true && source.frame === frame;
+            }
+
+            const tabFrame = source.tabFrame;
+            return surfaceTarget === source.tabTarget
+                && source.primaryVisualKind === "tab"
+                && source.selectedThumbnail === false && tiled.selected === false
+                && column.presentation === "tabbed" && column.members.length >= 2
+                && tiled.memberIndex !== column.selectedMemberIndex
+                && source.minimizedWindow !== true && source.matchesSearch === true
+                && tabFrame && tabFrame.visible === true && tabFrame.selected === false
+                && tabFrame.memberIndex === tiled.memberIndex
+                && tabFrameForPresentation(tiled, windowId) === tabFrame
+                && surfaceTarget.frame === tabFrame
+                && surfaceTarget.activationEligible === true;
         } catch (error) {
             return false;
         }
@@ -5028,15 +5349,17 @@ Item {
         }
     }
 
-    function captureWindowDragSnapshot(source) {
+    function captureWindowDragSnapshot(source, surfaceKind, surfaceTarget) {
         try {
             if (!source || source.sourceCard !== card || windowDragActiveSource !== null
                     || source.spatialDragLifecycleActive === true || source.windowDragSnapshot !== null
-                    || source.dragEligible !== true || source.minimizedWindow === true
+                    || source.minimizedWindow === true
                     || columnDragActiveSource !== null || columnPointerHoverSource !== null
                     || columnPointerPressSource !== null || spatialDirectDragBlocked
                     || !spatialDragSourceIsOwned(source) || !windowSnapshotCanDrag(source)
-                    || !windowCanDrag(source) || !ownedWindowDropTiledPresentationIsExact(source)) {
+                    || !windowCanDrag(source)
+                    || !windowDragSurfaceIsExact(source, surfaceKind, surfaceTarget)
+                    || !ownedWindowDropTiledPresentationIsExact(source, surfaceKind, surfaceTarget)) {
                 return null;
             }
 
@@ -5056,7 +5379,10 @@ Item {
             const expectedOutputId = outputId;
             const expectedActivityId = overviewActivityId;
             const expectedWindowId = source.windowId;
-            const expectedThumbnailTarget = source.thumbnailTarget;
+            const expectedSurfaceFrame = surfaceKind === "thumbnail"
+                ? source.frame : source.tabFrame;
+            const expectedSurfaceHeight = surfaceTarget.height;
+            const expectedSurfaceWidth = surfaceTarget.width;
             if (!expectedContext || expectedContext.columns !== expectedColumns
                     || !expectedColumn || !indexedListHasBoundedLength(expectedColumn.members, 1, 256)
                     || !expectedMember || expectedMember.windowId !== expectedWindowId
@@ -5064,7 +5390,9 @@ Item {
                     || expectedActionSnapshot.desktops.length !== 1
                     || !Array.isArray(expectedActionSnapshot.desktopIds)
                     || expectedActionSnapshot.desktopIds.length !== 1
-                    || !expectedThumbnailTarget || expectedThumbnailTarget.visible !== true
+                    || !expectedSurfaceFrame || !Number.isFinite(expectedSurfaceHeight)
+                    || expectedSurfaceHeight <= 0 || !Number.isFinite(expectedSurfaceWidth)
+                    || expectedSurfaceWidth <= 0
                     || expectedOutputId.length === 0 || expectedActivityId.length === 0) {
                 return null;
             }
@@ -5096,7 +5424,11 @@ Item {
                 outputId: expectedOutputId,
                 screen: expectedScreen,
                 selectedMemberIndex: expectedColumn.selectedMemberIndex,
-                thumbnailTarget: expectedThumbnailTarget,
+                surfaceFrame: expectedSurfaceFrame,
+                surfaceHeight: expectedSurfaceHeight,
+                surfaceKind,
+                surfaceTarget,
+                surfaceWidth: expectedSurfaceWidth,
                 windowId: expectedWindowId
             });
         } catch (error) {
@@ -5135,9 +5467,14 @@ Item {
                     && snapshot.column.members[snapshot.memberIndex] === snapshot.member
                     && snapshot.member && snapshot.member.windowId === snapshot.windowId
                     && tiled && tiled.columnIndex === snapshot.columnIndex
-                    && tiled.memberIndex === snapshot.memberIndex && tiled.selected === true
-                    && source.thumbnailTarget === snapshot.thumbnailTarget
-                    && snapshot.thumbnailTarget.visible === true
+                    && tiled.memberIndex === snapshot.memberIndex
+                    && windowDragSurfaceIsExact(source, snapshot.surfaceKind,
+                                                snapshot.surfaceTarget)
+                    && (snapshot.surfaceKind === "thumbnail"
+                        ? source.frame === snapshot.surfaceFrame
+                        : source.tabFrame === snapshot.surfaceFrame)
+                    && snapshot.surfaceTarget.width === snapshot.surfaceWidth
+                    && snapshot.surfaceTarget.height === snapshot.surfaceHeight
                     && frame && frame.floating === false
                     && spatialDragSourceIsOwned(source) && windowSnapshotCanDrag(source)
                     && windowCanDrag(source) && ownedWindowDropTiledPresentationIsExact(source);
@@ -5146,7 +5483,7 @@ Item {
         }
     }
 
-    function beginWindowSpatialDrag(source, scenePosition) {
+    function beginWindowSpatialDrag(source, surfaceKind, surfaceTarget, scenePosition) {
         try {
             if (columnDragActiveSource !== null || columnPointerHoverSource !== null
                     || columnPointerPressSource !== null) {
@@ -5156,7 +5493,7 @@ Item {
                     || !settlePresentationMotion()) {
                 return false;
             }
-            const snapshot = captureWindowDragSnapshot(source);
+            const snapshot = captureWindowDragSnapshot(source, surfaceKind, surfaceTarget);
             if (!snapshot) {
                 return false;
             }
@@ -7189,20 +7526,19 @@ Item {
         }
     }
 
-    function ownedWindowDropTiledPresentationIsExact(source) {
+    function ownedWindowDropTiledPresentationIsExact(source, expectedSurfaceKind,
+                                                       expectedSurfaceTarget) {
         try {
-            const windowId = source ? source.windowId : "";
-            const tiled = source ? source.tiledPresentation : null;
-            const frame = source ? source.frame : null;
-            return Boolean(source && source.sourceCard === card && source.sourceDesktop === desktop
-                    && source.sourceDesktopId === desktopId && source.sourceScreen === screen
-                    && source.sourceCard.context === context && context
-                    && context.columns === columns && spatialDragSourceIsOwned(source)
-                    && typeof windowId === "string" && windowId.length > 0 && tiled
-                    && tiledPresentations[windowId] === tiled && tiled.selected === true
-                    && Number.isInteger(tiled.columnIndex) && tiled.columnIndex >= 0
-                    && Number.isInteger(tiled.memberIndex) && tiled.memberIndex >= 0
-                    && frame && frame.floating === false);
+            const snapshot = source ? source.windowDragSnapshot : null;
+            const surfaceKind = snapshot && Object.isFrozen(snapshot)
+                ? snapshot.surfaceKind : expectedSurfaceKind === undefined
+                    ? "thumbnail" : expectedSurfaceKind;
+            const surfaceTarget = snapshot && Object.isFrozen(snapshot)
+                ? snapshot.surfaceTarget : expectedSurfaceTarget === undefined
+                    ? source ? source.thumbnailTarget : null : expectedSurfaceTarget;
+            return windowDragSurfaceIsExact(source, surfaceKind, surfaceTarget)
+                && (!snapshot || snapshot.surfaceKind === surfaceKind
+                    && snapshot.surfaceTarget === surfaceTarget);
         } catch (error) {
             return false;
         }
