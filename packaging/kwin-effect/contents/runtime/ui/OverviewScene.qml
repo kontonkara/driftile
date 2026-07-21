@@ -1549,6 +1549,12 @@ Rectangle {
                 WorkspaceActionStrip {
                     id: workspaceActionStrip
 
+                    property bool exactRemoveEligible: false
+                    readonly property string exactRemoveEligibilityContext:
+                        `${root.activeOverviewSessionId}|${root.overviewContextGeneration}`
+                        + `|${root.outputId}|${root.activeOverviewActivityId}`
+                        + `|${root.desktopTopologyRevision}|${root.currentWorkspaceIndex}`
+                        + `|${root.overviewDesktopCardEpoch}|${root.workspaceRenameEditing ? 1 : 0}`
                     readonly property string exactDesktopName: root.workspaceDesktopName(
                                                                         desktopCardLoader.desktopObject,
                                                                         desktopCardLoader.modelData)
@@ -1565,10 +1571,7 @@ Rectangle {
                                              desktopCardLoader.desktopObject,
                                              desktopCardLoader.modelData,
                                              desktopCardLoader.index)
-                    removeEligible: root.workspaceRemoveEligible(
-                                        desktopCardLoader.desktopObject,
-                                        desktopCardLoader.modelData,
-                                        desktopCardLoader.index)
+                    removeEligible: exactRemoveEligible
                     renameDraft: editing ? root.workspaceRenameDraft : ""
                     opacity: root.spatialPresentationProgress
                     z: 12000
@@ -1584,6 +1587,17 @@ Rectangle {
                                            desktopCardLoader.desktopObject,
                                            desktopCardLoader.modelData)
                     onSubmitRenameRequested: root.submitWorkspaceRename()
+                    Component.onCompleted: refreshRemoveEligibility()
+                    onExactRemoveEligibilityContextChanged: refreshRemoveEligibility()
+                    onInteractionEligibleChanged: refreshRemoveEligibility()
+
+                    function refreshRemoveEligibility() {
+                        exactRemoveEligible = interactionEligible
+                            && root.workspaceRemoveEligible(
+                                   desktopCardLoader.desktopObject,
+                                   desktopCardLoader.modelData,
+                                   desktopCardLoader.index);
+                    }
                 }
             }
         }

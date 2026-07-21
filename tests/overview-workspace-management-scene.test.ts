@@ -122,6 +122,17 @@ describe("Overview workspace management scene", () => {
   });
 
   it("enables remove only for exact empty unselected interior workspaces", () => {
+    expect(rowControls).toContain("property bool exactRemoveEligible: false");
+    expect(rowControls).toContain("removeEligible: exactRemoveEligible");
+    expect(rowControls).toMatch(
+      /exactRemoveEligibilityContext:[\s\S]*overviewContextGeneration[\s\S]*desktopTopologyRevision[\s\S]*currentWorkspaceIndex[\s\S]*overviewDesktopCardEpoch/u,
+    );
+    expect(rowControls).toMatch(
+      /function refreshRemoveEligibility\(\)[\s\S]*exactRemoveEligible = interactionEligible[\s\S]*workspaceRemoveEligible\(/u,
+    );
+    expect(rowControls).not.toMatch(
+      /removeEligible:\s*root\.workspaceRemoveEligible/u,
+    );
     expect(management).toMatch(
       /function workspaceRemoveEligible[\s\S]*desktopIds\.length < 3[\s\S]*expectedIndex <= 0[\s\S]*expectedIndex >= desktopIds\.length - 1[\s\S]*workspaceDesktopSelectedAnywhere[\s\S]*workspaceDesktopIsGloballyEmpty/u,
     );
