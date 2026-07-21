@@ -19,6 +19,13 @@ const effectRoot = readFileSync(
   new URL("../packaging/kwin-effect/contents/ui/main.qml", import.meta.url),
   "utf8",
 );
+const overviewScene = readFileSync(
+  new URL(
+    "../packaging/kwin-effect/contents/runtime/ui/OverviewScene.qml",
+    import.meta.url,
+  ),
+  "utf8",
+);
 const receiver = readFileSync(
   new URL(
     "../packaging/kwin-script/contents/runtime/ui/OverviewSpatialDropReceiver.qml",
@@ -279,11 +286,20 @@ describe("overview spatial drop command channel", () => {
   it("bridges scene views to the guarded controller entry point", () => {
     const bridge = effectRoot.slice(
       effectRoot.indexOf(
-        "function submitSpatialDropCommand(source, target, basisFingerprint)",
+        "function captureSpatialDropBasisFingerprint(source, target)",
       ),
       effectRoot.indexOf("function syncTouchpadGestureSettings("),
     );
 
+    expect(bridge).toContain(
+      'typeof controller.captureSpatialDropBasisFingerprint === "function"',
+    );
+    expect(bridge).toContain(
+      "controller.captureSpatialDropBasisFingerprint(source, target)",
+    );
+    expect(overviewScene).toMatch(
+      /function captureSpatialDropBasisFingerprint\(source, target\)[\s\S]*effect\.captureSpatialDropBasisFingerprint\(source, target\)/u,
+    );
     expect(bridge).toContain(
       'typeof controller.submitSpatialDropCommand === "function"',
     );
