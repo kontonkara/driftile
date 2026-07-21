@@ -849,30 +849,20 @@ capture_qmp_screendump() {
 
 capture_interrupted_overview_close() {
   local capabilities='{"execute":"qmp_capabilities"}'
-  local enter_input='{"execute":"input-send-event","arguments":{"events":[{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"ret"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"ret"}}}]}}'
-  local frame_delay_seconds=0.02
-  local frame_index
-  local image_file
-  local interrupted_image=$1
+  local close_input='{"execute":"input-send-event","arguments":{"events":[{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"meta_l"}}},{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"o"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"o"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"meta_l"}}}]}}'
+  local close_render_delay_seconds=0.14
+  local image_file=$1
   local qmp_pid
   local qmp_read_descriptor
   local qmp_write_descriptor
-  local reopen_input='{"execute":"input-send-event","arguments":{"events":[{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"meta_l"}}},{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"o"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"o"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"meta_l"}}}]}}'
   local result=0
   local screendump
-  local terminal_settle_delay_seconds=0.08
-  local -a exit_frame_images=("${@:2}")
 
-  [[ "$interrupted_image" == "$temporary_directory"/* \
-    && "$interrupted_image" =~ ^[-./_[:alnum:]]+$ \
-    && ${#exit_frame_images[@]} -eq 16 \
+  [[ "$image_file" == "$temporary_directory"/* \
+    && "$image_file" =~ ^[-./_[:alnum:]]+$ \
     && -x "$overview_zoom_socat_executable" ]] || return 1
-  rm -f -- "$interrupted_image"
-  for image_file in "${exit_frame_images[@]}"; do
-    [[ "$image_file" == "$temporary_directory"/* \
-      && "$image_file" =~ ^[-./_[:alnum:]]+$ ]] || return 1
-    rm -f -- "$image_file"
-  done
+  rm -f -- "$image_file"
+  screendump="{\"execute\":\"screendump\",\"arguments\":{\"filename\":\"$image_file\"}}"
 
   if ! coproc OVERVIEW_ZOOM_QMP {
     "$overview_zoom_socat_executable" \
@@ -885,6 +875,77 @@ capture_interrupted_overview_close() {
   qmp_pid=$OVERVIEW_ZOOM_QMP_PID
   qmp_read_descriptor=${OVERVIEW_ZOOM_QMP[0]}
   qmp_write_descriptor=${OVERVIEW_ZOOM_QMP[1]}
+
+  IFS= read -r -t 2 -u "$qmp_read_descriptor" _ || result=1
+  if ((result == 0)); then
+    printf '%s\n' "$capabilities" >&"$qmp_write_descriptor" \
+      || result=1
+  fi
+  if ((result == 0)); then
+    read_qmp_command_return "$qmp_read_descriptor" || result=1
+  fi
+  if ((result == 0)); then
+    printf '%s\n' "$close_input" >&"$qmp_write_descriptor" \
+      || result=1
+  fi
+  if ((result == 0)); then
+    read_qmp_command_return "$qmp_read_descriptor" || result=1
+  fi
+  if ((result == 0)); then
+    sleep "$close_render_delay_seconds"
+    printf '%s\n' "$screendump" >&"$qmp_write_descriptor" \
+      || result=1
+  fi
+  if ((result == 0)); then
+    read_qmp_command_return "$qmp_read_descriptor" || result=1
+  fi
+  if ((result == 0)); then
+    printf '%s\n' "$close_input" >&"$qmp_write_descriptor" \
+      || result=1
+  fi
+  if ((result == 0)); then
+    read_qmp_command_return "$qmp_read_descriptor" || result=1
+  fi
+
+  exec {qmp_write_descriptor}>&- || true
+  exec {qmp_read_descriptor}<&- || true
+  wait "$qmp_pid" || result=1
+  ((result == 0)) && [[ -s "$image_file" ]]
+}
+
+capture_overview_window_exit_burst() {
+  local capabilities='{"execute":"qmp_capabilities"}'
+  local enter_input='{"execute":"input-send-event","arguments":{"events":[{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"ret"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"ret"}}}]}}'
+  local frame_delay_seconds=0.02
+  local frame_index
+  local image_file
+  local qmp_pid
+  local qmp_read_descriptor
+  local qmp_write_descriptor
+  local result=0
+  local screendump
+  local terminal_settle_delay_seconds=0.08
+  local -a exit_frame_images=("$@")
+
+  [[ ${#exit_frame_images[@]} -eq 16 \
+    && -x "$overview_zoom_socat_executable" ]] || return 1
+  for image_file in "${exit_frame_images[@]}"; do
+    [[ "$image_file" == "$temporary_directory"/* \
+      && "$image_file" =~ ^[-./_[:alnum:]]+$ ]] || return 1
+    rm -f -- "$image_file"
+  done
+
+  if ! coproc OVERVIEW_EXIT_QMP {
+    "$overview_zoom_socat_executable" \
+      -t 2 \
+      - \
+      "UNIX-CONNECT:$qmp_socket"
+  }; then
+    return 1
+  fi
+  qmp_pid=$OVERVIEW_EXIT_QMP_PID
+  qmp_read_descriptor=${OVERVIEW_EXIT_QMP[0]}
+  qmp_write_descriptor=${OVERVIEW_EXIT_QMP[1]}
 
   IFS= read -r -t 2 -u "$qmp_read_descriptor" _ || result=1
   if ((result == 0)); then
@@ -918,22 +979,11 @@ capture_interrupted_overview_close() {
       fi
     fi
   done
-  if ((result == 0)); then
-    cp -- "${exit_frame_images[6]}" "$interrupted_image" || result=1
-  fi
-  if ((result == 0)); then
-    printf '%s\n' "$reopen_input" >&"$qmp_write_descriptor" \
-      || result=1
-  fi
-  if ((result == 0)); then
-    read_qmp_command_return "$qmp_read_descriptor" || result=1
-  fi
 
   exec {qmp_write_descriptor}>&- || true
   exec {qmp_read_descriptor}<&- || true
   wait "$qmp_pid" || result=1
   ((result == 0)) || return 1
-  [[ -s "$interrupted_image" ]] || return 1
   for image_file in "${exit_frame_images[@]}"; do
     [[ -s "$image_file" ]] || return 1
   done
@@ -1176,13 +1226,13 @@ send_physical_overview_wheel_controls() {
     "$continuity_seed_image" || return 1
   send_physical_overview_zoom_continuity_phase \
     "$continuity_closing_image" \
-    "$continuity_image" \
-    "${exit_frame_images[@]}" || return 1
+    "$continuity_image" || return 1
   send_physical_overview_zoom_phase \
     configured-reset \
     "$configured_reset_image" || return 1
   send_physical_overview_zoom_phase fresh-seed "$fresh_seed_image" || return 1
-  send_physical_overview_zoom_phase \
+  capture_overview_window_exit_burst "${exit_frame_images[@]}" || return 1
+  verify_physical_overview_zoom_phase \
     fresh-close \
     "$fresh_close_image" || return 1
   send_physical_overview_zoom_phase fresh-open "$fresh_open_image" || return 1
@@ -1277,7 +1327,6 @@ send_physical_overview_zoom_phase() {
   local image_file=$2
   local input
   local input_sent=false
-  local marker_prefix
   local phase=$1
 
   case "$phase" in
@@ -1296,7 +1345,7 @@ send_physical_overview_zoom_phase() {
     configured-reset)
       input='{"execute":"input-send-event","arguments":{"events":[{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"ctrl"}}},{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"0"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"0"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"ctrl"}}}]}}'
       ;;
-    fresh-close|fresh-open)
+    fresh-open)
       input='{"execute":"input-send-event","arguments":{"events":[{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"meta_l"}}},{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"o"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"o"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"meta_l"}}}]}}'
       ;;
     *)
@@ -1326,6 +1375,14 @@ send_physical_overview_zoom_phase() {
   if [[ "$input_sent" == false ]]; then
     send_qmp_commands "$capabilities" "$input" || return 1
   fi
+  verify_physical_overview_zoom_phase "$phase" "$image_file"
+}
+
+verify_physical_overview_zoom_phase() {
+  local image_file=$2
+  local marker_prefix
+  local phase=$1
+
   if [[ -z "$image_file" ]]; then
     marker_prefix="$temporary_directory/xchg/driftile-overview-zoom"
   else
@@ -1356,8 +1413,7 @@ send_physical_overview_zoom_continuity_phase() {
   local final_image=$2
   local marker_prefix
 
-  shift 2
-  capture_interrupted_overview_close "$closing_image" "$@" || return 1
+  capture_interrupted_overview_close "$closing_image" || return 1
   marker_prefix="$(dirname -- "$final_image")/driftile-overview-zoom"
   : > "$marker_prefix-continuity-sent"
   if ! wait_for_guest_exchange_file "$marker_prefix-continuity-verified"; then

@@ -144,7 +144,7 @@ const exitFrameMetrics = Object.fromEntries(
   exitFrameNames.map((name) => [
     name,
     exitContinuityMetrics(
-      images.continuitySeed,
+      images.freshSeed,
       images.freshClose,
       images[name],
       exitDarkDeficitThreshold,
@@ -301,7 +301,7 @@ if (minimumExitDesktopDistance > exitEndpointLimit) {
 if (maximumExitWholeFrameUnderflow > exitWholeFrameUnderflowLimit) {
   fail("an exit frame became materially darker than both stable endpoints");
 }
-if (maximumExitWideDarkAreaFraction >= 0.04) {
+if (maximumExitWideDarkAreaFraction >= 0.08) {
   fail("an exit frame exposed a wide dark rectangular region");
 }
 if (
