@@ -1630,10 +1630,23 @@ describe("overview effect package", () => {
     );
     expect(liveDrop).toContain("windowCanDrag(source)");
     expect(desktopCard).toContain(
-      "onEntered: drag => drag.accepted = card.windowDropIsValid(drag.source, drag.keys)",
+      "onEntered: drag => drag.accepted = card.trackWindowDropHover(drag)",
     );
     expect(desktopCard).toContain(
-      "onPositionChanged: drag => drag.accepted = card.windowDropIsValid(drag.source, drag.keys)",
+      "onPositionChanged: drag => drag.accepted = card.trackWindowDropHover(drag)",
+    );
+    const hoverTracking = desktopCard.slice(
+      desktopCard.indexOf("function trackWindowDropHover("),
+      desktopCard.indexOf("function moveWindowDropHoverToPositions("),
+    );
+    expect(hoverTracking).toMatch(
+      /if \(!drag \|\| !windowDropIsValid\(source, drag\.keys\)\) \{\s*rejectWindowDropHover\(\);\s*return false;\s*\}/u,
+    );
+    expect(hoverTracking).toMatch(
+      /if \(windowDropHoverOwned\) \{\s*moveWindowDropHover\(source, drag\);\s*\} else \{\s*claimWindowDropHover\(source, drag\);\s*\}\s*return true;/u,
+    );
+    expect(hoverTracking).not.toMatch(
+      /return (?:move|claim)WindowDropHover\(/u,
     );
     expect(desktopCard).toContain(
       "|| !card.windowDropHoverOwnershipMatches(source))",

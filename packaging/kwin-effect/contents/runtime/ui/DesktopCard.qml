@@ -2566,14 +2566,8 @@ Item {
             }
         }
 
-        onEntered: drag => drag.accepted = card.windowDropIsValid(drag.source, drag.keys)
-            ? card.claimWindowDropHover(drag.source, drag)
-            : card.rejectWindowDropHover()
-        onPositionChanged: drag => drag.accepted = card.windowDropIsValid(drag.source, drag.keys)
-            ? card.windowDropHoverOwned
-              ? card.moveWindowDropHover(drag.source, drag)
-              : card.claimWindowDropHover(drag.source, drag)
-            : card.rejectWindowDropHover()
+        onEntered: drag => drag.accepted = card.trackWindowDropHover(drag)
+        onPositionChanged: drag => drag.accepted = card.trackWindowDropHover(drag)
         onExited: card.clearWindowDropHover()
         onContainsDragChanged: {
             if (!containsDrag) {
@@ -6349,6 +6343,21 @@ Item {
             return false;
         }
         return moveWindowDropHoverToPositions(source, localPosition, scenePosition);
+    }
+
+    function trackWindowDropHover(drag) {
+        const source = drag ? drag.source : null;
+        if (!drag || !windowDropIsValid(source, drag.keys)) {
+            rejectWindowDropHover();
+            return false;
+        }
+
+        if (windowDropHoverOwned) {
+            moveWindowDropHover(source, drag);
+        } else {
+            claimWindowDropHover(source, drag);
+        }
+        return true;
     }
 
     function moveWindowDropHoverToPositions(source, localPosition, scenePosition) {

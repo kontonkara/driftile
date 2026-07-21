@@ -566,9 +566,16 @@ describe("spatial overview window drag lifecycle", () => {
       /signal windowWorkspaceHoverLeft\(var source, var expectedTargetDesktop,\s*string expectedTargetDesktopId, var expectedTargetScreen\)/u,
     );
     expect(dropArea).toContain(
-      "? card.claimWindowDropHover(drag.source, drag)",
+      "onEntered: drag => drag.accepted = card.trackWindowDropHover(drag)",
     );
-    expect(dropArea).toContain("? card.moveWindowDropHover(drag.source, drag)");
+    expect(dropArea).toContain(
+      "onPositionChanged: drag => drag.accepted = card.trackWindowDropHover(drag)",
+    );
+    expect(dropArea.match(/card\.trackWindowDropHover\(drag\)/gu)).toHaveLength(
+      2,
+    );
+    expect(dropArea).not.toContain("? card.claimWindowDropHover(");
+    expect(dropArea).not.toContain("? card.moveWindowDropHover(");
     expect(dropArea).toContain("onExited: card.clearWindowDropHover()");
     expect(dropArea).toContain("onContainsDragChanged:");
     expect(dropArea).toContain("card.clearWindowDropHover();");
@@ -658,6 +665,9 @@ describe("spatial overview window drag lifecycle", () => {
       "card.windowDropPreviewIsExact(exactPreview, source, exactTarget,",
     );
     expect(dropArea).toContain("card.windowDropHoverOwnershipMatches(source)");
+    expect(dropArea).toMatch(
+      /onDropped: drop => \{[\s\S]*?if \(!card\.windowDropIsValid\(source, drop\.keys\)[\s\S]*?\|\| !card\.windowDropHoverOwnershipMatches\(source\)\) \{\s*card\.clearWindowDropHover\(\);\s*drop\.accepted = false;\s*return;\s*\}[\s\S]*?if \(!card\.windowDropPreviewIsExact\(exactPreview, source, exactTarget,[\s\S]*?\)\) \{\s*card\.clearWindowDropHover\(\);\s*drop\.accepted = false;\s*return;/u,
+    );
     expect(dropArea).not.toContain("card.moveWindowDropHover(source, drop)");
   });
 
@@ -736,18 +746,44 @@ describe("spatial overview window drag lifecycle", () => {
   });
 
   it("owns one cached preview and resolves it only when the exact zone changes", () => {
+    const hoverClaim = hoverLifecycle.slice(
+      hoverLifecycle.indexOf("function claimWindowDropHover("),
+      hoverLifecycle.indexOf("function moveWindowDropHover("),
+    );
+    const hoverTracking = hoverLifecycle.slice(
+      hoverLifecycle.indexOf("function trackWindowDropHover("),
+      hoverLifecycle.indexOf("function moveWindowDropHoverToPositions("),
+    );
     const hoverMove = hoverLifecycle.slice(
       hoverLifecycle.indexOf("function moveWindowDropHoverToPositions("),
       hoverLifecycle.indexOf("function rejectWindowDropHover("),
     );
+    expect(hoverTracking).toMatch(
+      /function trackWindowDropHover\(drag\)[\s\S]*?if \(!drag \|\| !windowDropIsValid\(source, drag\.keys\)\) \{\s*rejectWindowDropHover\(\);\s*return false;\s*\}/u,
+    );
+    expect(hoverTracking).toMatch(
+      /if \(windowDropHoverOwned\) \{\s*moveWindowDropHover\(source, drag\);\s*\} else \{\s*claimWindowDropHover\(source, drag\);\s*\}\s*return true;/u,
+    );
+    expect(hoverTracking).not.toMatch(
+      /return (?:move|claim)WindowDropHover\(/u,
+    );
+    expect(hoverClaim).toMatch(
+      /if \(!snapshot \|\| !target \|\| !preview[\s\S]*?\) \{\s*clearWindowDropHover\(\);\s*return false;\s*\}/u,
+    );
     expect(hoverMove).toMatch(
       /const target = hitWindowDropPlannerSnapshot\(windowDropHoverSnapshot, localPosition,\s*windowDropHoverTarget\);/u,
+    );
+    expect(hoverMove).toMatch(
+      /if \(!target\) \{\s*clearWindowDropHover\(\);\s*return false;\s*\}/u,
     );
     expect(dropPlanner).toContain(
       "runtime.hitTestOverviewSpatialWindowDropWithHysteresis(",
     );
     expect(hoverMove).toMatch(
       /if \(windowDropHoverTarget !== target\) \{[\s\S]*?const preview = planWindowDropPreview\(source, target, windowDropHoverSnapshot\);[\s\S]*?windowDropHoverTarget = target;\s*windowDropHoverPreview = preview;\s*\}/u,
+    );
+    expect(hoverMove).toMatch(
+      /const preview = planWindowDropPreview\(source, target, windowDropHoverSnapshot\);\s*if \(!preview\) \{\s*clearWindowDropHover\(\);\s*return false;\s*\}/u,
     );
     expect(hoverMove).not.toMatch(
       /buildWindowDropPlannerSnapshot|planOverviewSpatialRowGeometry/u,
