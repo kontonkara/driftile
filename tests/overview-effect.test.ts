@@ -4555,7 +4555,7 @@ describe("overview effect package", () => {
       /function beginDesktopReorder\([\s\S]*adoptSpatialHorizontalCameraMotion\(sourceIndex, expectedDesktopId, horizontalBounds\)[\s\S]*adoptSpatialVisualContentY\(\)[\s\S]*resetOverviewWheelState\(\);\s*desktopReorderActive = true;/u,
     );
     expect(wheelNavigation).toMatch(
-      /function resetOverviewWheelState\(\) \{\s*resetOverviewHorizontalWheelState\(\);\s*resetOverviewVerticalWheelState\(\);\s*\}/u,
+      /function resetOverviewWheelState\(\) \{\s*if \(overviewTabRailWheelGestureOwned\) \{\s*invalidateOverviewTabRailWheelOwner\(\);\s*\} else \{\s*resetOverviewTabRailWheelState\(\);\s*\}\s*resetOverviewHorizontalWheelState\(\);\s*resetOverviewVerticalWheelState\(\);\s*\}/u,
     );
     expect(wheelNavigation).toMatch(
       /function resetOverviewHorizontalWheelState\(\) \{\s*cancelOverviewHorizontalWheelSelectionRequest\(\);\s*overviewHorizontalWheelPixelRemainder = 0;\s*overviewHorizontalWheelRemainder = 0;\s*\}/u,

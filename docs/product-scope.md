@@ -543,11 +543,21 @@ Driftile must integrate with, not duplicate:
   including overflow members in a tabbed column. A tab rail renders the largest
   safe contiguous chip window that fits and deterministically reveals keyboard
   selection, a search match, attention, then the selected member. Non-rendered
-  chips keep logical keyboard and search positions but no pointer hit area. If
-  the current desktop has no actionable window, its marker precedes unrelated
-  visual targets. Keyboard and short touchscreen activation use the same
-  guarded path as pointer activation; touchscreen long press remains reserved
-  for an eligible window drag.
+  chips keep logical keyboard and search positions but no pointer hit area.
+  Thin edge cues expose hidden members before or after the rendered chip
+  window. If the current desktop has no actionable window, its marker precedes
+  unrelated visual targets. Keyboard and short touchscreen activation use the
+  same guarded path as pointer activation; touchscreen long press remains
+  reserved for an eligible window drag.
+- An unmodified vertical or horizontal wheel gesture beginning inside an exact
+  rendered tab rail stays rail-owned until it ends. Physical deltas are
+  normalized once, 120 angle units or 40 pixels produce one member step, and a
+  single event advances at most four exact actionable members. Selection
+  auto-reveals overflow members without recentering either workspace camera.
+  Partial, boundary, invalid later, and mid-gesture `Shift` samples are
+  consumed without moving a workspace or camera. `Ctrl`-wheel remains the existing zoom path; search disables rail
+  ownership and retains global search-result cycling. The rail adds no paging
+  buttons, and direct tab dragging remains unavailable.
 - Eligible inter-row gaps expose explicit retained-workspace creation. Compact
   row controls and `Insert`, `F2`, and `Delete` provide equivalent create,
   rename, and remove behavior for a workspace marker while preserving
@@ -786,11 +796,11 @@ Driftile must integrate with, not duplicate:
   title and application identity. The bounded session-only query changes no
   KWin, layout, persistence, or configuration state. Plain-text feedback shows
   the unique matching-window count or an explicit no-match message.
-- An unmodified vertical mouse wheel cycles the overview's current actionable
-  targets. Search-filtered windows form the set while a query is active;
-  otherwise non-current desktop gutters also participate. Bounded
-  high-resolution accumulation changes only the overview selection and writes
-  no KWin, layout, persistence, or configuration state.
+- Outside a rail-owned gesture, an unmodified vertical mouse wheel cycles the
+  overview's current actionable targets. Search-filtered windows form the set
+  while a query is active; otherwise non-current desktop gutters also
+  participate. Bounded high-resolution accumulation changes only the overview
+  selection and writes no KWin, layout, persistence, or configuration state.
 - Delete in the optional overview requests closure only for the exact selected
   closeable window. The effect waits for KWin's removal signal and performs no
   layout, desktop, focus, or persistence write. Middle-clicking a visible

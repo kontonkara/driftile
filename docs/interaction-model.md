@@ -423,13 +423,27 @@ reveals it through the existing presentation motion when motion is eligible;
 search updates reveal their match immediately under the existing search input
 barrier. Overflow members retain one logical keyboard and search target each
 but no invisible pointer hit area. If even one safe chip cannot fit, the rail
-fails closed. Each rendered tab shows selected, minimized, and attention state.
+fails closed. Thin edge cues identify hidden members before or after the
+rendered chip window. Each rendered tab shows selected, minimized, and attention state.
 Its bounded plain-text label uses the available application or window identity
 and falls back to `Tab N` when no safe label is available. Tab labels remain
 readable independently of the optional `ShowWindowLabels` large-thumbnail
 footer setting.
 Actionable chips expose hover and pressed feedback without changing their
 geometry.
+
+An unmodified vertical or horizontal mouse or touchpad wheel gesture that
+starts inside an exact rendered rail stays owned by that rail for the complete
+gesture. Physical deltas are normalized once; high-resolution input accumulates
+at 120 angle units or 40 pixels per member, with at most four target steps per
+event. Navigation changes the keyboard selection among the column's exact
+actionable members, and the bounded rail reveals the destination without
+recentering either workspace camera. Partial or boundary steps, invalid later
+samples, and a `Shift` modifier change during
+ownership are consumed without reaching workspace or camera navigation.
+`Ctrl`-wheel zoom remains separate. Search disables rail ownership and retains
+the existing global search-result wheel behavior. No rail paging buttons are
+added, and direct tab dragging remains outside this slice.
 
 Windows that were already minimized when Overview opened remain represented,
 and minimized windows use compact actionable placeholders instead of draggable

@@ -2847,6 +2847,15 @@ Release criteria (met):
   barrier.
 - Retain exactly one logical keyboard and search target for every overflow
   member without creating an invisible pointer hit area.
-- Fail closed only when the rail cannot fit one safe chip. Rail-local wheel
-  navigation, buttons, and direct hidden-tab dragging remain outside this
-  slice.
+- Mark hidden members before and after the rendered window with thin edge cues
+  while failing closed only when the rail cannot fit one safe chip.
+- Let an unmodified vertical or horizontal wheel gesture that begins on an
+  exact rendered rail own its complete gesture, normalize physical direction
+  once, accumulate 120-unit angle or 40-pixel member steps, and apply at most
+  four exact actionable targets per event. The selected overflow member is
+  auto-revealed without recentering either workspace camera.
+- Consume partial, boundary, invalid later, and mid-gesture `Shift` samples
+  without leaking to workspace or camera navigation. Keep `Ctrl` zoom separate
+  and preserve global search-result wheel behavior by disabling rail ownership
+  during search.
+- Rail paging buttons and direct hidden-tab dragging remain outside this slice.

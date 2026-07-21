@@ -155,6 +155,7 @@ Rectangle {
     property bool keyboardHelpVisible: false
     property string keyboardSelectionId: ""
     property bool keyboardSelectionViewportAnimateVisual: false
+    property bool keyboardSelectionViewportSyncSuppressed: false
     property var keyboardSelectionViewportTarget: null
     property int keyboardBoundaryNavigationRequestId: 0
     property bool keyboardBoundaryNavigationPending: false
@@ -170,6 +171,10 @@ Rectangle {
     property int overviewHorizontalWheelSelectionStepOffset: 0
     property string overviewHorizontalWheelSelectionTargetId: ""
     property int overviewHorizontalWheelSelectionWorkspaceIndex: -1
+    property int overviewTabRailWheelAngleRemainder: 0
+    property bool overviewTabRailWheelGestureOwned: false
+    property var overviewTabRailWheelOwner: null
+    property real overviewTabRailWheelPixelRemainder: 0
     property string overviewWheelAxisOwner: ""
     property real overviewWheelPixelRemainder: 0
     property int overviewWheelRemainder: 0
@@ -442,9 +447,11 @@ Rectangle {
     onKeyboardSelectionIdChanged: {
         const expectedTargetId = keyboardSelectionId;
         const animateVisual = keyboardSelectionViewportAnimateVisual;
+        const synchronizeViewport = !keyboardSelectionViewportSyncSuppressed;
         keyboardSelectionViewportTarget = null;
         keyboardSelectionViewportAnimateVisual = false;
-        if (expectedTargetId.length > 0) {
+        keyboardSelectionViewportSyncSuppressed = false;
+        if (synchronizeViewport && expectedTargetId.length > 0) {
             Qt.callLater(root.synchronizeKeyboardSelectionViewportTarget,
                          expectedTargetId, animateVisual);
         }
@@ -6256,6 +6263,26 @@ Rectangle {
         return keyboardSelectionId === target.id;
     }
 
+    function setKeyboardSelectionTargetWithoutViewport(target) {
+        if (!target || typeof target.id !== "string" || target.id.length === 0) {
+            return false;
+        }
+
+        keyboardSelectionViewportTarget = null;
+        keyboardSelectionViewportAnimateVisual = false;
+        if (keyboardSelectionId === target.id) {
+            return true;
+        }
+
+        try {
+            keyboardSelectionViewportSyncSuppressed = true;
+            keyboardSelectionId = target.id;
+            return keyboardSelectionId === target.id;
+        } finally {
+            keyboardSelectionViewportSyncSuppressed = false;
+        }
+    }
+
     function synchronizeKeyboardSelectionViewport(preferredTarget, animateVisual = false) {
         const selectedTargetId = keyboardSelectionId;
         if (selectedTargetId.length === 0) {
@@ -7359,21 +7386,21 @@ Rectangle {
 
     function routeOverviewWheel(event, point, handlerAxis) {
         if (!event) {
-            return false;
+            return consumeInvalidOverviewTabRailWheelSample(event);
         }
         if (!spatialPointerInputEligible) {
-            return false;
+            return consumeInvalidOverviewTabRailWheelSample(event);
         }
         if ((handlerAxis !== "horizontal" && handlerAxis !== "vertical")
                 || !event.pixelDelta || !event.angleDelta
                 || !Number.isFinite(event.pixelDelta.x) || !Number.isFinite(event.pixelDelta.y)
                 || !Number.isFinite(event.angleDelta.x) || !Number.isFinite(event.angleDelta.y)) {
-            return false;
+            return consumeInvalidOverviewTabRailWheelSample(event);
         }
 
         const runtime = OverviewRuntime.DriftileOverview;
         if (!runtime || typeof runtime.planOverviewSpatialWheelAxis !== "function") {
-            return false;
+            return consumeInvalidOverviewTabRailWheelSample(event);
         }
 
         const expectedAxisOwner = overviewWheelAxisOwner.length === 0 ? null : overviewWheelAxisOwner;
@@ -7387,11 +7414,19 @@ Rectangle {
                                                             pixelDeltaY: event.pixelDelta.y
                                                         });
         } catch (error) {
+            return consumeInvalidOverviewTabRailWheelSample(event);
+        }
+        if (!spatialWheelAxisPlanIsValid(plan, expectedAxisOwner) || plan.axis === null) {
+            return consumeInvalidOverviewTabRailWheelSample(event);
+        }
+        if (handlerAxis !== plan.axis) {
             return false;
         }
-        if (!spatialWheelAxisPlanIsValid(plan, expectedAxisOwner) || plan.axis === null
-                || handlerAxis !== plan.axis) {
-            return false;
+
+        if (overviewTabRailWheelOwner === null && expectedAxisOwner === null
+                && event.modifiers === Qt.NoModifier) {
+            overviewTabRailWheelOwner = captureOverviewTabRailWheelOwner(point);
+            overviewTabRailWheelGestureOwned = overviewTabRailWheelOwner !== null;
         }
 
         const claimedAxis = overviewWheelAxisOwner.length === 0;
@@ -7403,6 +7438,19 @@ Rectangle {
             return true;
         }
 
+        if (overviewTabRailWheelGestureOwned) {
+            if (!overviewTabRailWheelOwnerIsExact()) {
+                invalidateOverviewTabRailWheelOwner();
+                event.accepted = true;
+                return true;
+            }
+            if (!handleOverviewTabRailWheel(event, plan.axis)) {
+                invalidateOverviewTabRailWheelOwner();
+            }
+            event.accepted = true;
+            return true;
+        }
+
         const handled = plan.axis === "horizontal"
             ? handleOverviewHorizontalWheel(event, point)
             : handleOverviewWheel(event);
@@ -7410,6 +7458,149 @@ Rectangle {
             overviewWheelAxisOwner = "";
         }
         return handled;
+    }
+
+    function captureOverviewTabRailWheelOwner(point) {
+        try {
+            const workspaceIndex = spatialWorkspaceIndexAtPoint(point);
+            if (workspaceIndex < 0 || workspaceIndex >= desktopIds.length) {
+                return null;
+            }
+            const expectedDesktopId = desktopIds[workspaceIndex];
+            const card = desktopCardAt(workspaceIndex);
+            if (!card || card.desktopId !== expectedDesktopId
+                    || typeof card.captureTabRailWheelOwner !== "function") {
+                return null;
+            }
+            const owner = card.captureTabRailWheelOwner(root, point);
+            return owner && Object.isFrozen(owner) && owner.card === card
+                && owner.desktopId === expectedDesktopId ? owner : null;
+        } catch (error) {
+            return null;
+        }
+    }
+
+    function consumeInvalidOverviewTabRailWheelSample(event) {
+        if (!overviewTabRailWheelGestureOwned) {
+            return false;
+        }
+        invalidateOverviewTabRailWheelOwner();
+        if (event) {
+            event.accepted = true;
+        }
+        return true;
+    }
+
+    function overviewTabRailWheelOwnerIsExact() {
+        try {
+            const owner = overviewTabRailWheelOwner;
+            return Boolean(owner && Object.isFrozen(owner) && owner.card
+                && typeof owner.card.tabRailWheelOwnerIsExact === "function"
+                && owner.card.tabRailWheelOwnerIsExact(owner));
+        } catch (error) {
+            return false;
+        }
+    }
+
+    function handleOverviewTabRailWheel(event, axis) {
+        try {
+            const owner = overviewTabRailWheelOwner;
+            const runtime = OverviewRuntime.DriftileOverview;
+            if (!event || (axis !== "horizontal" && axis !== "vertical")
+                    || !overviewTabRailWheelOwnerIsExact() || !runtime
+                    || typeof runtime.normalizeOverviewPhysicalWheelAngleDelta !== "function"
+                    || typeof runtime.normalizeOverviewPhysicalWheelPixelDelta !== "function"
+                    || typeof runtime.planOverviewTabRailWheel !== "function") {
+                return false;
+            }
+
+            const rawAngleDelta = axis === "horizontal"
+                ? event.angleDelta.x : event.angleDelta.y;
+            const rawPixelDelta = axis === "horizontal"
+                ? event.pixelDelta.x : event.pixelDelta.y;
+            const angleDelta = runtime.normalizeOverviewPhysicalWheelAngleDelta(
+                rawAngleDelta, event.inverted === true);
+            const pixelDelta = runtime.normalizeOverviewPhysicalWheelPixelDelta(
+                rawPixelDelta, event.inverted === true);
+            if (!Number.isSafeInteger(angleDelta) || !Number.isFinite(pixelDelta)) {
+                return false;
+            }
+
+            const plan = runtime.planOverviewTabRailWheel({
+                angleDelta,
+                angleRemainder: overviewTabRailWheelAngleRemainder,
+                currentIndex: owner.currentNavigationIndex,
+                memberCount: owner.navigationWindowIds.length,
+                pixelDelta,
+                pixelRemainder: overviewTabRailWheelPixelRemainder
+            });
+            if (!overviewTabRailWheelPlanIsExact(plan, owner)) {
+                return false;
+            }
+
+            overviewTabRailWheelAngleRemainder = plan.angleRemainder;
+            overviewTabRailWheelPixelRemainder = plan.pixelRemainder;
+            if (!plan.moved) {
+                return true;
+            }
+
+            const targetId = owner.card.tabRailWheelTargetId(owner, plan.targetIndex);
+            const target = typeof targetId === "string" && targetId.length > 0
+                ? navigationTargetForId(collectNavigationTargets(), targetId) : null;
+            if (!target || target.id !== targetId || target.kind !== "window"
+                    || target.desktopId !== owner.desktopId || target.screen !== owner.screen
+                    || !setKeyboardSelectionTargetWithoutViewport(target)) {
+                return false;
+            }
+
+            const advancedOwner = owner.card.advanceTabRailWheelOwner(
+                owner, plan.targetIndex, targetId);
+            if (!advancedOwner || !Object.isFrozen(advancedOwner)
+                    || advancedOwner.currentNavigationIndex !== plan.targetIndex
+                    || advancedOwner.expectedKeyboardSelectionId !== targetId) {
+                return false;
+            }
+            overviewTabRailWheelOwner = advancedOwner;
+            return overviewTabRailWheelOwnerIsExact();
+        } catch (error) {
+            return false;
+        }
+    }
+
+    function overviewTabRailWheelPlanIsExact(plan, owner) {
+        if (!plan || !Object.isFrozen(plan) || plan.consumed !== true
+                || (plan.inputMode !== "angle" && plan.inputMode !== "pixel")
+                || (plan.direction !== null && plan.direction !== "next"
+                    && plan.direction !== "previous")
+                || typeof plan.moved !== "boolean" || !Number.isInteger(plan.stepsApplied)
+                || plan.stepsApplied < 0 || plan.stepsApplied > 4
+                || !Number.isInteger(plan.targetIndex) || plan.targetIndex < 0
+                || plan.targetIndex >= owner.navigationWindowIds.length
+                || !Number.isInteger(plan.angleRemainder)
+                || Math.abs(plan.angleRemainder) >= 120
+                || !Number.isFinite(plan.pixelRemainder)
+                || Math.abs(plan.pixelRemainder) >= 40
+                || (plan.inputMode === "angle" && plan.pixelRemainder !== 0)
+                || (plan.inputMode === "pixel" && plan.angleRemainder !== 0)) {
+            return false;
+        }
+
+        const distance = Math.abs(plan.targetIndex - owner.currentNavigationIndex);
+        if (plan.stepsApplied !== distance || plan.moved !== (distance > 0)) {
+            return false;
+        }
+        if (plan.direction === null) {
+            return plan.stepsApplied === 0
+                && plan.targetIndex === owner.currentNavigationIndex;
+        }
+        if (distance === 0) {
+            return plan.direction === "next"
+                ? owner.currentNavigationIndex === owner.navigationWindowIds.length - 1
+                : owner.currentNavigationIndex === 0;
+        }
+        return plan.direction === "next"
+            ? plan.targetIndex > owner.currentNavigationIndex
+            : plan.targetIndex < owner.currentNavigationIndex;
     }
 
     function spatialWheelAxisPlanIsValid(plan, expectedAxisOwner) {
@@ -7449,6 +7640,10 @@ Rectangle {
         if (pixelDeltaX === 0 && angleDeltaX === 0) {
             return false;
         }
+        if (overviewTabRailWheelGestureOwned) {
+            event.accepted = true;
+            return true;
+        }
 
         const claimedAxis = overviewWheelAxisOwner.length === 0;
         if (claimedAxis) {
@@ -7473,6 +7668,7 @@ Rectangle {
                 finishSpatialVerticalWheelGesture();
             }
             overviewWheelAxisOwner = "";
+            resetOverviewTabRailWheelState();
         }
     }
 
@@ -8324,8 +8520,26 @@ Rectangle {
     }
 
     function resetOverviewWheelState() {
+        if (overviewTabRailWheelGestureOwned) {
+            invalidateOverviewTabRailWheelOwner();
+        } else {
+            resetOverviewTabRailWheelState();
+        }
         resetOverviewHorizontalWheelState();
         resetOverviewVerticalWheelState();
+    }
+
+    function resetOverviewTabRailWheelState() {
+        overviewTabRailWheelAngleRemainder = 0;
+        overviewTabRailWheelGestureOwned = false;
+        overviewTabRailWheelOwner = null;
+        overviewTabRailWheelPixelRemainder = 0;
+    }
+
+    function invalidateOverviewTabRailWheelOwner() {
+        overviewTabRailWheelAngleRemainder = 0;
+        overviewTabRailWheelOwner = null;
+        overviewTabRailWheelPixelRemainder = 0;
     }
 
     function resetOverviewHorizontalWheelState() {

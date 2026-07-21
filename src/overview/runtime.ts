@@ -58,6 +58,13 @@ export type {
   OverviewTabRailPlan,
   OverviewTabRailRect,
 } from "./tab-rail";
+export { planOverviewTabRailWheel } from "./tab-rail-wheel";
+export type {
+  OverviewTabRailWheelDirection,
+  OverviewTabRailWheelInput,
+  OverviewTabRailWheelInputMode,
+  OverviewTabRailWheelPlan,
+} from "./tab-rail-wheel";
 export { planOverviewWindowDesktopDrop } from "./window-drop";
 export { planOverviewWindowLabel } from "./window-label";
 export type { OverviewWindowLabelPlan } from "./window-label";

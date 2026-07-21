@@ -73,7 +73,8 @@ anchor that window in deterministic priority order. Overflow members retain
 one logical keyboard and search target each but expose no invisible pointer hit
 area. Selection and attention use the existing presentation motion when it is
 eligible, while search reveals its match immediately under the existing search
-input barrier. The rail fails closed only when even one safe chip cannot fit.
+input barrier. Thin edge cues mark hidden members before or after the rendered
+window. The rail fails closed only when even one safe chip cannot fit.
 Floating windows retain their output-local geometry. Eligible minimized stacked
 and floating windows use compact placeholders in their projected slots instead
 of thumbnails.
@@ -140,6 +141,20 @@ Overview by activating a window or workspace settles that reflow first so the
 next interaction starts from exact geometry. Closing a window removes its
 representation immediately; the remaining windows still animate into their
 new frames.
+
+An unmodified vertical or horizontal mouse or touchpad wheel gesture that
+begins inside an exact rendered tab rail remains owned by that rail until the
+gesture ends. Physical direction is normalized once, angle input accumulates
+in 120-unit steps, pixel input accumulates in 40-pixel steps, and one event can
+advance at most four exact actionable members. The resulting keyboard
+selection automatically reveals an overflow member in the bounded chip window
+without recentering the workspace row or its horizontal camera.
+Partial steps, movement at either boundary, invalid later samples, and a
+mid-gesture `Shift` change are consumed without reaching workspace selection or
+either camera. `Ctrl`-wheel zoom stays on its separate existing path. Rail
+ownership is disabled while search is active, so the global search-result wheel
+behavior remains unchanged. The rail adds no paging buttons, and direct tab
+dragging remains outside this slice.
 
 Discrete vertical navigation moves a bounded camera smoothly between workspace
 rows. Precise wheel or touchpad input moves the camera directly, without being

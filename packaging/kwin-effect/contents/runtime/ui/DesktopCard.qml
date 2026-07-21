@@ -1113,6 +1113,12 @@ Item {
                     readonly property bool keyboardTarget: activationEligible
                     readonly property bool keyboardSelected: keyboardTarget
                         && card.keyboardSelectionId === card.navigationTargetId(windowPresentation.windowId)
+                    readonly property int hiddenBeforeCount: card.tabRailOverflowCountForFrame(
+                        windowPresentation.tiledPresentation, windowPresentation.windowId,
+                        frame, "before")
+                    readonly property int hiddenAfterCount: card.tabRailOverflowCountForFrame(
+                        windowPresentation.tiledPresentation, windowPresentation.windowId,
+                        frame, "after")
                     readonly property bool closeButtonLargeEnough: width >= 64 && height >= 20
                     property int activationGestureSerial: 0
                     property int activationTappedSerial: -1
@@ -1415,6 +1421,26 @@ Item {
                         visible: tabShell.attentionTab
                         color: "#e2556f"
                         z: 1
+                    }
+
+                    Rectangle {
+                        anchors.left: parent.left
+                        anchors.top: parent.top
+                        anchors.bottom: parent.bottom
+                        width: 2
+                        visible: tabShell.hiddenBeforeCount > 0
+                        color: "#d986aee8"
+                        z: 3
+                    }
+
+                    Rectangle {
+                        anchors.right: parent.right
+                        anchors.top: parent.top
+                        anchors.bottom: parent.bottom
+                        width: 2
+                        visible: tabShell.hiddenAfterCount > 0
+                        color: "#d986aee8"
+                        z: 3
                     }
 
                     Rectangle {
@@ -7268,6 +7294,255 @@ Item {
         return clippedLogicalTabNavigationRect(frame, sceneItem);
     }
 
+    function captureTabRailWheelOwner(sceneItem, scenePoint) {
+        try {
+            if (!interactionEligible || searchQuery.trim().length > 0 || !sceneItem || !scenePoint
+                    || !Number.isFinite(scenePoint.x) || !Number.isFinite(scenePoint.y)
+                    || spatialDirectDragBlocked || columnDragActiveSource !== null
+                    || columnPointerHoverSource !== null || columnPointerPressSource !== null
+                    || windowDragActiveSource !== null || !context || context.columns !== columns
+                    || !indexedListHasBoundedLength(columns, 0, 512)
+                    || !Number.isInteger(windowRepeater.count) || windowRepeater.count < 0
+                    || windowRepeater.count > 131072) {
+                return null;
+            }
+
+            const viewportPoint = viewport.mapFromItem(sceneItem, scenePoint.x, scenePoint.y);
+            if (!viewportPoint || !Number.isFinite(viewportPoint.x)
+                    || !Number.isFinite(viewportPoint.y) || viewportPoint.x < 0
+                    || viewportPoint.y < 0 || viewportPoint.x >= viewport.width
+                    || viewportPoint.y >= viewport.height) {
+                return null;
+            }
+
+            let column = null;
+            let columnIndex = -1;
+            let plan = null;
+            for (let candidateIndex = 0; candidateIndex < columns.length; candidateIndex += 1) {
+                const candidateColumn = columns[candidateIndex];
+                const sourceFrame = tabRailColumnFrame(candidateColumn, candidateIndex);
+                const anchorIndex = tabRailAnchorIndex(candidateColumn, candidateIndex,
+                                                       keyboardSelectionId, searchQuery,
+                                                       attentionRevision);
+                const candidatePlan = tabRailPlans[candidateIndex];
+                if (sourceFrame === null
+                        || !tabRailPlanIsExact(candidatePlan, candidateColumn, candidateIndex,
+                                               sourceFrame, anchorIndex)) {
+                    continue;
+                }
+                const rail = candidatePlan.railFrame;
+                if (viewportPoint.x < rail.x || viewportPoint.y < rail.y
+                        || viewportPoint.x >= rail.x + rail.width
+                        || viewportPoint.y >= rail.y + rail.height) {
+                    continue;
+                }
+                if (column !== null) {
+                    return null;
+                }
+                column = candidateColumn;
+                columnIndex = candidateIndex;
+                plan = candidatePlan;
+            }
+            if (!column || columnIndex < 0 || !plan) {
+                return null;
+            }
+
+            let hoveredMemberIndex = -1;
+            let hoveredDistance = Number.POSITIVE_INFINITY;
+            for (const chip of plan.chipFrames) {
+                if (!chip || chip.visible !== true) {
+                    continue;
+                }
+                const distance = Math.abs(viewportPoint.x - (chip.x + chip.width / 2));
+                if (distance < hoveredDistance) {
+                    hoveredDistance = distance;
+                    hoveredMemberIndex = chip.memberIndex;
+                }
+            }
+            if (hoveredMemberIndex < 0) {
+                return null;
+            }
+
+            const navigationMemberIndexes = [];
+            const navigationTargetIds = [];
+            const navigationWindowIds = [];
+            let hoveredNavigationIndex = -1;
+            let selectedNavigationIndex = -1;
+            for (let memberIndex = 0; memberIndex < column.members.length; memberIndex += 1) {
+                const member = column.members[memberIndex];
+                const presentation = member ? presentationForWindowId(member.windowId) : null;
+                const memberTiled = presentation ? presentation.tiledPresentation : null;
+                if (!member || typeof member.windowId !== "string" || member.windowId.length === 0
+                        || member.windowId.length > 4096 || !presentation
+                        || presentation.sourceCard !== card || presentation.sourceDesktop !== desktop
+                        || presentation.sourceDesktopId !== desktopId
+                        || presentation.sourceScreen !== screen
+                        || tiledPresentations[member.windowId] !== memberTiled || !memberTiled
+                        || memberTiled.columnIndex !== columnIndex
+                        || memberTiled.memberIndex !== memberIndex
+                        || presentation.matchesSearch !== true || !windowCanNavigate(presentation)) {
+                    continue;
+                }
+                const navigationIndex = navigationWindowIds.length;
+                navigationMemberIndexes.push(memberIndex);
+                navigationWindowIds.push(member.windowId);
+                navigationTargetIds.push(navigationTargetId(member.windowId));
+                if (hoveredNavigationIndex < 0
+                        || Math.abs(memberIndex - hoveredMemberIndex)
+                            < Math.abs(navigationMemberIndexes[hoveredNavigationIndex]
+                                       - hoveredMemberIndex)) {
+                    hoveredNavigationIndex = navigationIndex;
+                }
+                if (keyboardSelectionId === navigationTargetIds[navigationIndex]) {
+                    selectedNavigationIndex = navigationIndex;
+                }
+            }
+            const currentNavigationIndex = selectedNavigationIndex >= 0
+                ? selectedNavigationIndex : hoveredNavigationIndex;
+            if (navigationWindowIds.length < 1 || hoveredNavigationIndex < 0
+                    || currentNavigationIndex < 0) {
+                return null;
+            }
+
+            Object.freeze(navigationMemberIndexes);
+            Object.freeze(navigationTargetIds);
+            Object.freeze(navigationWindowIds);
+            return Object.freeze({
+                activityId: overviewActivityId,
+                card,
+                column,
+                columnIndex,
+                columns,
+                context,
+                currentNavigationIndex,
+                desktop,
+                desktopId,
+                expectedKeyboardSelectionId: keyboardSelectionId,
+                navigationMemberIndexes,
+                navigationTargetIds,
+                navigationWindowIds,
+                outputId,
+                screen
+            });
+        } catch (error) {
+            return null;
+        }
+    }
+
+    function tabRailWheelOwnerIsExact(owner) {
+        try {
+            if (!owner || !Object.isFrozen(owner) || owner.card !== card
+                    || owner.context !== context || owner.columns !== columns
+                    || !context || context.columns !== columns || owner.desktop !== desktop
+                    || owner.desktopId !== desktopId || owner.screen !== screen
+                    || owner.outputId !== outputId || owner.activityId !== overviewActivityId
+                    || owner.expectedKeyboardSelectionId !== keyboardSelectionId
+                    || searchQuery.trim().length > 0 || !interactionEligible || spatialDirectDragBlocked
+                    || columnDragActiveSource !== null || columnPointerHoverSource !== null
+                    || columnPointerPressSource !== null || windowDragActiveSource !== null
+                    || !Number.isInteger(owner.columnIndex) || owner.columnIndex < 0
+                    || owner.columnIndex >= columns.length || columns[owner.columnIndex] !== owner.column
+                    || !owner.column || owner.column.presentation !== "tabbed"
+                    || !indexedListHasBoundedLength(owner.column.members, 2, 256)
+                    || !Array.isArray(owner.navigationMemberIndexes)
+                    || !Array.isArray(owner.navigationTargetIds)
+                    || !Array.isArray(owner.navigationWindowIds)
+                    || !Object.isFrozen(owner.navigationMemberIndexes)
+                    || !Object.isFrozen(owner.navigationTargetIds)
+                    || !Object.isFrozen(owner.navigationWindowIds)
+                    || owner.navigationMemberIndexes.length < 1
+                    || owner.navigationTargetIds.length !== owner.navigationMemberIndexes.length
+                    || owner.navigationWindowIds.length !== owner.navigationMemberIndexes.length
+                    || !Number.isInteger(owner.currentNavigationIndex)
+                    || owner.currentNavigationIndex < 0
+                    || owner.currentNavigationIndex >= owner.navigationWindowIds.length) {
+                return false;
+            }
+
+            const sourceFrame = tabRailColumnFrame(owner.column, owner.columnIndex);
+            const anchorIndex = tabRailAnchorIndex(owner.column, owner.columnIndex,
+                                                   keyboardSelectionId, searchQuery,
+                                                   attentionRevision);
+            const plan = tabRailPlans[owner.columnIndex];
+            if (sourceFrame === null
+                    || !tabRailPlanIsExact(plan, owner.column, owner.columnIndex, sourceFrame,
+                                           anchorIndex)) {
+                return false;
+            }
+
+            let navigationIndex = 0;
+            for (let memberIndex = 0; memberIndex < owner.column.members.length; memberIndex += 1) {
+                const member = owner.column.members[memberIndex];
+                const presentation = member ? presentationForWindowId(member.windowId) : null;
+                const memberTiled = presentation ? presentation.tiledPresentation : null;
+                if (!member || typeof member.windowId !== "string" || member.windowId.length === 0
+                        || member.windowId.length > 4096 || !presentation
+                        || presentation.sourceCard !== card || presentation.sourceDesktop !== desktop
+                        || presentation.sourceDesktopId !== desktopId
+                        || presentation.sourceScreen !== screen
+                        || tiledPresentations[member.windowId] !== memberTiled || !memberTiled
+                        || memberTiled.columnIndex !== owner.columnIndex
+                        || memberTiled.memberIndex !== memberIndex
+                        || presentation.matchesSearch !== true || !windowCanNavigate(presentation)) {
+                    continue;
+                }
+                if (navigationIndex >= owner.navigationWindowIds.length
+                        || owner.navigationMemberIndexes[navigationIndex] !== memberIndex
+                        || owner.navigationWindowIds[navigationIndex] !== member.windowId
+                        || owner.navigationTargetIds[navigationIndex]
+                            !== navigationTargetId(member.windowId)) {
+                    return false;
+                }
+                navigationIndex += 1;
+            }
+            return navigationIndex === owner.navigationWindowIds.length;
+        } catch (error) {
+            return false;
+        }
+    }
+
+    function tabRailWheelTargetId(owner, targetNavigationIndex) {
+        if (!tabRailWheelOwnerIsExact(owner)
+                || !Number.isInteger(targetNavigationIndex) || targetNavigationIndex < 0
+                || targetNavigationIndex >= owner.navigationTargetIds.length) {
+            return "";
+        }
+        return owner.navigationTargetIds[targetNavigationIndex];
+    }
+
+    function advanceTabRailWheelOwner(owner, targetNavigationIndex,
+                                      expectedKeyboardSelectionId) {
+        if (!owner || !Object.isFrozen(owner) || owner.card !== card
+                || !Array.isArray(owner.navigationTargetIds)
+                || !Object.isFrozen(owner.navigationTargetIds)
+                || !Number.isInteger(targetNavigationIndex) || targetNavigationIndex < 0
+                || targetNavigationIndex >= owner.navigationTargetIds.length
+                || typeof expectedKeyboardSelectionId !== "string"
+                || expectedKeyboardSelectionId.length === 0
+                || expectedKeyboardSelectionId !== owner.navigationTargetIds[targetNavigationIndex]
+                || keyboardSelectionId !== expectedKeyboardSelectionId) {
+            return null;
+        }
+        const advanced = Object.freeze({
+            activityId: owner.activityId,
+            card: owner.card,
+            column: owner.column,
+            columnIndex: owner.columnIndex,
+            columns: owner.columns,
+            context: owner.context,
+            currentNavigationIndex: targetNavigationIndex,
+            desktop: owner.desktop,
+            desktopId: owner.desktopId,
+            expectedKeyboardSelectionId,
+            navigationMemberIndexes: owner.navigationMemberIndexes,
+            navigationTargetIds: owner.navigationTargetIds,
+            navigationWindowIds: owner.navigationWindowIds,
+            outputId: owner.outputId,
+            screen: owner.screen
+        });
+        return tabRailWheelOwnerIsExact(advanced) ? advanced : null;
+    }
+
     function windowSnapshotCanActivateMinimizedWindow(presentation) {
         try {
             const snapshot = presentation ? presentation.actionSnapshot : null;
@@ -8156,6 +8431,40 @@ Item {
     function tabRailRectIsValid(frame) {
         return frame && !Array.isArray(frame) && typeof frame === "object"
             && projectionGeometryScalarsAreValid(frame.x, frame.y, frame.width, frame.height);
+    }
+
+    function tabRailOverflowCountForFrame(tiled, expectedWindowId, expectedFrame, direction) {
+        try {
+            if ((direction !== "before" && direction !== "after") || !expectedFrame
+                    || expectedFrame.visible !== true
+                    || !tiled || typeof expectedWindowId !== "string"
+                    || expectedWindowId.length === 0
+                    || tiledPresentations[expectedWindowId] !== tiled
+                    || !Number.isInteger(tiled.columnIndex) || tiled.columnIndex < 0
+                    || tiled.columnIndex >= columns.length || !Number.isInteger(tiled.memberIndex)
+                    || tiled.memberIndex < 0) {
+                return 0;
+            }
+
+            const column = columns[tiled.columnIndex];
+            const sourceFrame = tabRailColumnFrame(column, tiled.columnIndex);
+            const anchorIndex = tabRailAnchorIndex(column, tiled.columnIndex,
+                                                   keyboardSelectionId, searchQuery,
+                                                   attentionRevision);
+            const plan = tabRailPlans[tiled.columnIndex];
+            if (sourceFrame === null
+                    || !tabRailPlanIsExact(plan, column, tiled.columnIndex, sourceFrame,
+                                           anchorIndex)
+                    || plan.chipFrames[tiled.memberIndex] !== expectedFrame) {
+                return 0;
+            }
+            if (direction === "before") {
+                return tiled.memberIndex === plan.firstVisibleIndex ? plan.hiddenBefore : 0;
+            }
+            return tiled.memberIndex === plan.lastVisibleIndex ? plan.hiddenAfter : 0;
+        } catch (error) {
+            return 0;
+        }
     }
 
     function tabFrameForPresentation(tiled, expectedWindowId) {
