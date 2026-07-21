@@ -189,6 +189,10 @@ describe("overview spatial drop basis", () => {
     } as const;
 
     const forward = fingerprintOverviewSpatialDropBasis(workspaceGapBasis);
+    const wholeColumn = fingerprintOverviewSpatialDropBasis({
+      ...workspaceGapBasis,
+      source: { ...workspaceGapBasis.source, scope: "column" },
+    });
     const reversed = fingerprintOverviewSpatialDropBasis({
       ...workspaceGapBasis,
       model: {
@@ -198,6 +202,8 @@ describe("overview spatial drop basis", () => {
     });
 
     expect(forward).toMatch(/^[0-9a-f]{64}$/u);
+    expect(wholeColumn).toMatch(/^[0-9a-f]{64}$/u);
+    expect(wholeColumn).not.toBe(forward);
     expect(reversed).toMatch(/^[0-9a-f]{64}$/u);
     expect(reversed).not.toBe(forward);
   });

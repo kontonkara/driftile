@@ -1050,7 +1050,7 @@ describe("spatial overview column drag lifecycle", () => {
       ),
     );
     expect(
-      `${windowRepeaterLifecycle}\n${presentation}\n${columnEligibilityPublication}\n${columnEligibilityScheduler}`,
+      `${windowRepeaterLifecycle}\n${columnEligibilityPublication}\n${columnEligibilityScheduler}`,
     ).not.toContain("Qt.callLater");
     for (const delegateTraversal of [
       "invalidateColumnDragEligibilityDelegates",

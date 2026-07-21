@@ -1807,6 +1807,13 @@ describe("overview effect package", () => {
       scene.indexOf("id: workspaceGapDropRepeater"),
       scene.indexOf("id: spatialHorizontalRowInput"),
     );
+    const columnGapDelegate = gapDelegate.slice(
+      gapDelegate.indexOf("id: workspaceGapColumnDropArea"),
+      gapDelegate.indexOf(
+        "Rectangle {",
+        gapDelegate.indexOf("id: workspaceGapColumnDropArea"),
+      ),
+    );
     const planning = scene.slice(
       scene.indexOf("function planWorkspaceGapDrop("),
       scene.indexOf("function workspaceGapDropSourceIsExact("),
@@ -1835,6 +1842,9 @@ describe("overview effect package", () => {
     expect(gapDelegate).toMatch(
       /onDropped: drop => \{\s*const exactPreview = root\.workspaceGapPreviewSource === drop\.source\s*&& root\.workspaceGapPreviewIndex === workspaceGapDropSlot\.index\s*&& root\.workspaceGapPreviewIsExact\(\);\s*const plan = exactPreview \? root\.workspaceGapPreviewPlan : null;/u,
     );
+    expect(gapDelegate).toMatch(
+      /const basisFingerprint = root\.workspaceGapPreviewBasisFingerprint;\s*root\.releaseWorkspaceGapPreview\(workspaceGapDropSlot\.index\);\s*const accepted = plan !== null/u,
+    );
     expect(gapDelegate).not.toMatch(
       /onDropped: drop => \{[\s\S]*?planWorkspaceGapDrop\(workspaceGapDropArea, drop/u,
     );
@@ -1842,14 +1852,22 @@ describe("overview effect package", () => {
       /drop\.action = accepted \? Qt\.MoveAction : Qt\.IgnoreAction;[\s\S]*drop\.accepted = accepted;/u,
     );
     expect(gapDelegate).toMatch(
-      /readonly property var plan: root\.workspaceGapPreviewSource !== null[\s\S]*root\.workspaceGapPreviewSourceId\(root\.workspaceGapPreviewSource\)[\s\S]*root\.workspaceGapPreviewPlan !== null \? root\.workspaceGapPreviewPlan : null[\s\S]*x: root\.cardX[\s\S]*y: plan \? plan\.lineY - workspaceGapDropSlot\.y - height \/ 2[\s\S]*width: root\.cardWidth[\s\S]*visible: plan !== null/u,
+      /readonly property bool previewContainsDrag:[\s\S]*workspaceGapColumnDropArea\.containsDrag[\s\S]*workspaceGapDropArea\.containsDrag[\s\S]*readonly property var plan: previewContainsDrag[\s\S]*root\.workspaceGapPreviewSourceId\(root\.workspaceGapPreviewSource\)[\s\S]*root\.workspaceGapPreviewPlan !== null \? root\.workspaceGapPreviewPlan : null[\s\S]*x: root\.cardX[\s\S]*y: plan \? plan\.lineY - workspaceGapDropSlot\.y - height \/ 2[\s\S]*width: root\.cardWidth[\s\S]*visible: plan !== null/u,
     );
     expect(gapDelegate).toContain("workspaceGapPreviewIsExact()");
-    expect(gapDelegate).toContain(
+    expect(gapDelegate).not.toContain(
       "onExited: root.releaseWorkspaceGapPreview(workspaceGapDropSlot.index)",
     );
-    expect(gapDelegate).toMatch(
-      /onContainsDragChanged:[\s\S]*if \(!containsDrag\) \{\s*root\.releaseWorkspaceGapPreview\(workspaceGapDropSlot\.index\);/u,
+    expect(gapDelegate).not.toContain("onContainsDragChanged:");
+    expect(columnGapDelegate).toContain('keys: ["driftile-column"]');
+    expect(columnGapDelegate.match(/onDropped: drop =>/gu)).toHaveLength(1);
+    expect(
+      columnGapDelegate.match(/submitColumnWorkspaceGapDrop/gu),
+    ).toHaveLength(1);
+    expect(columnGapDelegate).not.toContain("submitWindowWorkspaceGapDrop");
+    expect(columnGapDelegate).not.toContain("planColumnWorkspaceGapDrop(");
+    expect(columnGapDelegate).toMatch(
+      /const exactPreview = root\.workspaceGapPreviewSource === drop\.source[\s\S]*const plan = exactPreview \? root\.workspaceGapPreviewPlan : null;[\s\S]*const basisFingerprint = root\.workspaceGapPreviewBasisFingerprint;[\s\S]*root\.releaseWorkspaceGapPreview\(workspaceGapDropSlot\.index\);[\s\S]*root\.submitColumnWorkspaceGapDrop\(drop\.source, plan, root\.targetScreen,[\s\S]*basisFingerprint\);[\s\S]*drop\.action = accepted \? Qt\.MoveAction : Qt\.IgnoreAction;[\s\S]*drop\.accepted = accepted;/u,
     );
 
     expect(planning).toContain(

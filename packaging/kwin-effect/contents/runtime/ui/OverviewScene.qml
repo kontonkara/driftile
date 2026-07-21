@@ -1848,24 +1848,18 @@ Rectangle {
                         drag.accepted = root.claimWorkspaceGapPreview(
                             workspaceGapDropArea, drag, workspaceGapDropSlot.index);
                     }
-                    onExited: root.releaseWorkspaceGapPreview(workspaceGapDropSlot.index)
-                    onContainsDragChanged: {
-                        if (!containsDrag) {
-                            root.releaseWorkspaceGapPreview(workspaceGapDropSlot.index);
-                        }
-                    }
                     onDropped: drop => {
                         const exactPreview = root.workspaceGapPreviewSource === drop.source
                             && root.workspaceGapPreviewIndex === workspaceGapDropSlot.index
                             && root.workspaceGapPreviewIsExact();
                         const plan = exactPreview ? root.workspaceGapPreviewPlan : null;
                         const basisFingerprint = root.workspaceGapPreviewBasisFingerprint;
+                        root.releaseWorkspaceGapPreview(workspaceGapDropSlot.index);
                         const accepted = plan !== null
                             && root.submitWindowWorkspaceGapDrop(drop.source, plan, root.targetScreen,
                                                                  basisFingerprint);
                         drop.action = accepted ? Qt.MoveAction : Qt.IgnoreAction;
                         drop.accepted = accepted;
-                        root.releaseWorkspaceGapPreview(workspaceGapDropSlot.index);
                     }
                 }
 
@@ -1883,29 +1877,29 @@ Rectangle {
                         drag.accepted = root.claimColumnWorkspaceGapPreview(
                             workspaceGapColumnDropArea, drag, workspaceGapDropSlot.index);
                     }
-                    onExited: root.releaseWorkspaceGapPreview(workspaceGapDropSlot.index)
-                    onContainsDragChanged: {
-                        if (!containsDrag) {
-                            root.releaseWorkspaceGapPreview(workspaceGapDropSlot.index);
-                        }
-                    }
                     onDropped: drop => {
                         const exactPreview = root.workspaceGapPreviewSource === drop.source
                             && root.workspaceGapPreviewIndex === workspaceGapDropSlot.index
                             && root.workspaceGapPreviewIsExact();
                         const plan = exactPreview ? root.workspaceGapPreviewPlan : null;
                         const basisFingerprint = root.workspaceGapPreviewBasisFingerprint;
+                        root.releaseWorkspaceGapPreview(workspaceGapDropSlot.index);
                         const accepted = plan !== null
                             && root.submitColumnWorkspaceGapDrop(drop.source, plan, root.targetScreen,
                                                                  basisFingerprint);
                         drop.action = accepted ? Qt.MoveAction : Qt.IgnoreAction;
                         drop.accepted = accepted;
-                        root.releaseWorkspaceGapPreview(workspaceGapDropSlot.index);
                     }
                 }
 
                 Rectangle {
-                    readonly property var plan: root.workspaceGapPreviewSource !== null
+                    readonly property bool previewContainsDrag:
+                        root.workspaceGapPreviewSource !== null
+                        && (root.workspaceGapPreviewSource.scope === "column"
+                            ? workspaceGapColumnDropArea.containsDrag
+                            : workspaceGapDropArea.containsDrag)
+                    readonly property var plan: previewContainsDrag
+                        && root.workspaceGapPreviewSource !== null
                         && root.workspaceGapPreviewWindowId.length > 0
                         && root.workspaceGapPreviewSourceId(root.workspaceGapPreviewSource)
                            === root.workspaceGapPreviewWindowId
