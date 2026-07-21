@@ -12206,10 +12206,9 @@ let
           || ! wait_for_window_minimized_state "$title_b" false \
           || ! wait_for_window_minimized_state "$title_c" false \
           || [[ "$(effect_active_state "$overview_plugin_id" 2>/dev/null || true)" != true ]] \
-          || ! kwin_process_is_unchanged "$process_id" \
-          || ! overview_component_errors_after "$journal_cursor"; then
+          || ! kwin_process_is_unchanged "$process_id"; then
           record_focus_state \
-            "physical Overview visible-tab drag did not place A after B exactly"
+            "physical Overview visible-tab drag did not settle exact focus, frames, membership, or process state"
           return 1
         fi
 
@@ -12230,6 +12229,12 @@ let
           || -n "$tab_drag_request_document" ]]; then
           record_focus_state \
             "physical Overview visible-tab drag replayed or remained pending"
+          return 1
+        fi
+
+        if ! overview_component_errors_after "$journal_cursor"; then
+          record_focus_state \
+            "physical Overview visible-tab drag produced component diagnostics"
           return 1
         fi
 
