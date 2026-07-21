@@ -201,6 +201,9 @@ monitor_guest() {
   local overview_window_drop_ready_file="$temporary_directory/xchg/driftile-overview-window-drop-ready"
   local overview_window_drop_sent=false
   local overview_window_drop_sent_file="$temporary_directory/xchg/driftile-overview-window-drop-sent"
+  local overview_workspace_create_ready_file="$temporary_directory/xchg/driftile-overview-workspace-create-ready"
+  local overview_workspace_create_sent=false
+  local overview_workspace_create_sent_file="$temporary_directory/xchg/driftile-overview-workspace-create-sent"
   local wheel_control_ready_file="$temporary_directory/xchg/driftile-wheel-control-ready"
   local wheel_control_sent=false
   local wheel_control_sent_file="$temporary_directory/xchg/driftile-wheel-control-sent"
@@ -254,10 +257,8 @@ monitor_guest() {
     [overview-window-drop-escape]=false
     [overview-workspace-begin-rename]=false
     [overview-workspace-close]=false
-    [overview-workspace-create]=false
     [overview-workspace-remove]=false
     [overview-workspace-select-created]=false
-    [overview-workspace-select-first]=false
     [overview-workspace-submit-rename]=false
     [overview-open]=false
     [overview-search-close]=false
@@ -322,8 +323,6 @@ monitor_guest() {
       overview-escape \
       overview-reorder-escape \
       overview-window-drop-escape \
-      overview-workspace-select-first \
-      overview-workspace-create \
       overview-workspace-select-created \
       overview-workspace-begin-rename \
       overview-workspace-submit-rename \
@@ -450,6 +449,19 @@ monitor_guest() {
       printf 'The VM received the physical Overview minimized-tab click.\n'
       : > "$overview_tab_restore_sent_file"
       overview_tab_restore_sent=true
+    fi
+
+    if [[ "$overview_workspace_create_sent" == false \
+      && -f "$overview_workspace_create_ready_file" ]]; then
+      if ! send_plain_pointer_click "$overview_workspace_create_ready_file"; then
+        printf 'Could not click the physical Overview workspace create control.\n' >&2
+        finish_full_vm_monitor || true
+        return 1
+      fi
+
+      printf 'The VM received the physical Overview workspace create click.\n'
+      : > "$overview_workspace_create_sent_file"
+      overview_workspace_create_sent=true
     fi
 
     if [[ "$overview_wheel_controls_sent" == false \
@@ -2060,12 +2072,6 @@ send_physical_shortcut() {
       ;;
     overview-escape|overview-reorder-escape|overview-window-drop-escape)
       input='{"execute":"input-send-event","arguments":{"events":[{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"esc"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"esc"}}}]}}'
-      ;;
-    overview-workspace-select-first)
-      input='{"execute":"input-send-event","arguments":{"events":[{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"home"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"home"}}}]}}'
-      ;;
-    overview-workspace-create)
-      input='{"execute":"input-send-event","arguments":{"events":[{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"insert"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"insert"}}}]}}'
       ;;
     overview-workspace-select-created)
       input='{"execute":"input-send-event","arguments":{"events":[{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"down"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"down"}}}]}}'

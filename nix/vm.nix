@@ -6008,21 +6008,7 @@ let
         # Workspace commands remain fail-closed until the opening presentation settles.
         sleep 3
 
-        if ! request_physical_shortcut overview-workspace-select-first; then
-          overview_checkpoint_failure \
-            "physical Home did not select the first workspace marker"
-          return 1
-        fi
-        sleep 0.3
-        if [[ "$(effect_active_state "$overview_plugin_id" 2>/dev/null || true)" != true ]] \
-          || ! kwin_process_is_unchanged "$kwin_workspace_management_process_id" \
-          || ! overview_component_errors_after "$journal_cursor"; then
-          overview_checkpoint_failure \
-            "selecting the first workspace marker changed Overview or restarted KWin"
-          return 1
-        fi
-
-        if ! request_physical_shortcut overview-workspace-create \
+        if ! request_physical_overview_workspace_create "$output_frame" \
           || ! wait_for_overview_workspace_command_request_after \
             "$workspace_management_before_request_id" \
           || ! wait_for_single_inserted_desktop_between \
@@ -6030,7 +6016,7 @@ let
             "$primary_desktop_id" \
             "$secondary_desktop_id"; then
           overview_checkpoint_failure \
-            "physical Insert did not create one exact workspace after the selected marker"
+            "the physical create control did not insert one exact workspace"
           return 1
         fi
         workspace_management_before_request_id=$(
@@ -10359,6 +10345,64 @@ let
           "$source_y" \
           "$destination_x" \
           "$destination_y" \
+          "$output_x" \
+          "$output_y" \
+          "$output_width" \
+          "$output_height" \
+          > "$temporary_file"
+        mv "$temporary_file" "$ready_file"
+
+        for ((attempt = 0; attempt < 100; attempt += 1)); do
+          [[ -f "$sent_file" ]] && return 0
+          sleep 0.1
+        done
+
+        return 1
+      }
+
+      request_physical_overview_workspace_create() {
+        local attempt
+        local card_height_milli
+        local control_x
+        local control_y
+        local edge_margin_milli
+        local gap_milli
+        local output_frame=$1
+        local output_height
+        local output_width
+        local output_x
+        local output_y
+        local ready_file=/tmp/shared/driftile-overview-workspace-create-ready
+        local sent_file=/tmp/shared/driftile-overview-workspace-create-sent
+        local temporary_file="$ready_file.tmp"
+        local zoom_milli=${toString overviewZoom.milli}
+
+        frame_is_valid "$output_frame" || return 1
+        IFS=, read -r \
+          output_x \
+          output_y \
+          output_width \
+          output_height \
+          <<< "$output_frame"
+
+        card_height_milli=$((output_height * zoom_milli))
+        edge_margin_milli=$(((output_height * 1000 - card_height_milli) / 2))
+        gap_milli=$((card_height_milli / 10))
+        ((gap_milli <= 48000)) || gap_milli=48000
+        control_x=$((output_x + output_width / 2))
+        control_y=$((output_y \
+          + (edge_margin_milli + card_height_milli + gap_milli / 2 + 500) / 1000))
+
+        ((control_x >= output_x \
+          && control_x < output_x + output_width \
+          && control_y >= output_y \
+          && control_y < output_y + output_height)) \
+          || return 1
+
+        rm -f "$ready_file" "$sent_file" "$temporary_file"
+        printf '%s %s %s %s %s %s\n' \
+          "$control_x" \
+          "$control_y" \
           "$output_x" \
           "$output_y" \
           "$output_width" \
