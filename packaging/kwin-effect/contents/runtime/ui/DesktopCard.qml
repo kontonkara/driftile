@@ -2496,7 +2496,7 @@ Item {
         id: windowDropArea
 
         readonly property bool validTarget: card.windowDropHoverOwned
-            && card.windowDropHoverTarget !== null && card.windowDropHoverOwnershipIsValid()
+            && card.windowDropHoverTarget !== null && card.windowDropHoverPreview !== null
         readonly property var spatialPreview: validTarget ? card.windowDropHoverPreview : null
 
         anchors.fill: parent
@@ -2645,7 +2645,7 @@ Item {
         id: columnDropArea
 
         readonly property bool validTarget: card.columnDropHoverOwned
-            && card.columnDropHoverTarget !== null && card.columnDropHoverOwnershipIsValid()
+            && card.columnDropHoverTarget !== null && card.columnDropHoverPreview !== null
         readonly property var spatialPreview: validTarget ? card.columnDropHoverPreview : null
 
         anchors.fill: parent

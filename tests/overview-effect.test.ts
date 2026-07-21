@@ -1642,14 +1642,68 @@ describe("overview effect package", () => {
         desktopCard.indexOf("id: columnDropArea"),
       ),
     );
+    const clearInvalidWindowDropHover = desktopCard.slice(
+      desktopCard.indexOf("function clearInvalidWindowDropHover("),
+      desktopCard.indexOf("function clearWindowDropHover("),
+    );
+    const clearInvalidColumnDropHover = desktopCard.slice(
+      desktopCard.indexOf("function clearInvalidColumnDropHover("),
+      desktopCard.indexOf("function clearColumnDropHover("),
+    );
+    const windowDropOwnership = desktopCard.slice(
+      desktopCard.indexOf("function windowDropHoverOwnershipIsValid("),
+      desktopCard.indexOf("function windowDropLocalPosition("),
+    );
+    const columnDropOwnership = desktopCard.slice(
+      desktopCard.indexOf("function columnDropHoverOwnershipIsValid("),
+      desktopCard.indexOf("function planColumnDropPreview("),
+    );
+    const windowDropHandler = desktopCard.slice(
+      desktopCard.indexOf(
+        "onDropped: drop =>",
+        desktopCard.indexOf("id: windowDropArea"),
+      ),
+      desktopCard.indexOf(
+        "Connections {",
+        desktopCard.indexOf("id: windowDropArea"),
+      ),
+    );
+    const columnDropHandler = desktopCard.slice(
+      desktopCard.indexOf(
+        "onDropped: drop =>",
+        desktopCard.indexOf("id: columnDropArea"),
+      ),
+      desktopCard.indexOf(
+        "Connections {",
+        desktopCard.indexOf("id: columnDropArea"),
+      ),
+    );
     expect(windowDropValidity).toMatch(
-      /readonly property bool validTarget:\s*card\.windowDropHoverOwned\s*&& card\.windowDropHoverTarget !== null\s*&& card\.windowDropHoverOwnershipIsValid\(\)/u,
+      /readonly property bool validTarget:\s*card\.windowDropHoverOwned\s*&& card\.windowDropHoverTarget !== null\s*&& card\.windowDropHoverPreview !== null/u,
     );
     expect(columnDropValidity).toMatch(
-      /readonly property bool validTarget:\s*card\.columnDropHoverOwned\s*&& card\.columnDropHoverTarget !== null\s*&& card\.columnDropHoverOwnershipIsValid\(\)/u,
+      /readonly property bool validTarget:\s*card\.columnDropHoverOwned\s*&& card\.columnDropHoverTarget !== null\s*&& card\.columnDropHoverPreview !== null/u,
     );
-    expect(`${windowDropValidity}\n${columnDropValidity}`).not.toContain(
-      "containsDrag",
+    expect(`${windowDropValidity}\n${columnDropValidity}`).not.toMatch(
+      /containsDrag|DropHoverOwnership(?:IsValid|Matches)\s*\(/u,
+    );
+    expect(clearInvalidWindowDropHover).toMatch(
+      /windowDropHoverOwned && !windowDropHoverOwnershipIsValid\(\)/u,
+    );
+    expect(clearInvalidColumnDropHover).toMatch(
+      /columnDropHoverOwned && !columnDropHoverOwnershipIsValid\(\)/u,
+    );
+    expect(windowDropOwnership).toMatch(
+      /return windowDropHoverOwnershipMatches\(windowDropHoverSource\)\s*&& windowDropIsValid\(windowDropHoverSource, \["driftile-window"\]\);/u,
+    );
+    expect(columnDropOwnership).toMatch(
+      /return columnDropHoverOwnershipMatches\(columnDropHoverSource\)\s*&& columnDropIsValid\(columnDropHoverSource, \["driftile-column"\]\);/u,
+    );
+    expect(windowDropHandler).toMatch(
+      /!card\.windowDropIsValid\(source, drop\.keys\)\s*\|\| !card\.windowDropHoverOwnershipMatches\(source\)/u,
+    );
+    expect(columnDropHandler).toMatch(
+      /!card\.columnDropIsValid\(source, drop\.keys\)\s*\|\| !card\.columnDropHoverOwnershipMatches\(source\)/u,
     );
     expect(liveDrop).toContain("windowCanDrag(source)");
     expect(desktopCard).toContain(
