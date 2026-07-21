@@ -423,6 +423,7 @@ Rectangle {
     }
     onOverviewModelChanged: {
         root.cancelWorkspaceRenameOnDrift();
+        root.cancelActiveWindowSpatialDrag();
         root.cancelActiveColumnSpatialDrag();
         if (spatialExitHandoffActive) {
             root.invalidateSpatialExitHandoff("stale");
@@ -454,6 +455,7 @@ Rectangle {
     onOverviewZoomGestureDirectionChanged: root.handleExternalSpatialZoomDirectionChanged()
     onOutputIdChanged: {
         root.cancelWorkspaceRenameOnDrift();
+        root.cancelActiveWindowSpatialDrag();
         root.cancelActiveColumnSpatialDrag();
         root.cancelSpatialZoomTransaction();
         root.discardSpatialZoomTransaction();
@@ -462,6 +464,7 @@ Rectangle {
     }
     onDesktopIdsChanged: {
         root.cancelWorkspaceRenameOnDrift();
+        root.cancelActiveWindowSpatialDrag();
         root.cancelActiveColumnSpatialDrag();
         root.cancelSpatialZoomTransaction();
         root.discardSpatialZoomTransaction();
@@ -469,15 +472,23 @@ Rectangle {
         root.synchronizeSpatialZoomInputState();
     }
     onWidthChanged: {
+        root.cancelActiveWindowSpatialDrag();
         root.cancelActiveColumnSpatialDrag();
         root.cancelSpatialZoomTransaction();
     }
     onHeightChanged: {
+        root.cancelActiveWindowSpatialDrag();
         root.cancelActiveColumnSpatialDrag();
         root.cancelSpatialZoomTransaction();
     }
-    onOverviewContextGenerationChanged: root.cancelWorkspaceRenameOnDrift()
-    onDesktopTopologyRevisionChanged: root.cancelWorkspaceRenameOnDrift()
+    onOverviewContextGenerationChanged: {
+        root.cancelWorkspaceRenameOnDrift();
+        root.cancelActiveWindowSpatialDrag();
+    }
+    onDesktopTopologyRevisionChanged: {
+        root.cancelWorkspaceRenameOnDrift();
+        root.cancelActiveWindowSpatialDrag();
+    }
     onSpatialZoomInputEligibleChanged: {
         if (!spatialZoomInputEligible) {
             root.cancelSpatialZoomTransaction();
@@ -496,6 +507,7 @@ Rectangle {
     }
     onSearchQueryChanged: {
         root.cancelWorkspaceRenameOnDrift();
+        root.cancelActiveWindowSpatialDrag();
         root.cancelActiveColumnSpatialDrag();
         resetOverviewWheelState();
         resetWindowWorkspaceHover();
@@ -545,6 +557,11 @@ Rectangle {
         }
         if (unmodified && event.key === Qt.Key_Escape && spatialColumnDragSource !== null) {
             root.cancelActiveColumnSpatialDrag();
+            event.accepted = true;
+            return;
+        }
+        if (unmodified && event.key === Qt.Key_Escape && spatialWindowDragSource !== null) {
+            root.cancelActiveWindowSpatialDrag();
             event.accepted = true;
             return;
         }
@@ -626,7 +643,11 @@ Rectangle {
         handleSpatialPresentationPhaseChanged();
         synchronizeSpatialZoomInputState();
     }
-    Component.onDestruction: root.destroySpatialZoomScene()
+    Component.onDestruction: {
+        root.cancelActiveWindowSpatialDrag();
+        root.cancelActiveColumnSpatialDrag();
+        root.destroySpatialZoomScene();
+    }
 
     Connections {
         target: root.sceneEffect
@@ -666,6 +687,7 @@ Rectangle {
         ignoreUnknownSignals: true
 
         function onDesktopsChanged() {
+            root.cancelActiveWindowSpatialDrag();
             root.cancelActiveColumnSpatialDrag();
             if (root.spatialExitHandoffActive) {
                 root.invalidateSpatialExitHandoff("topology");
@@ -949,25 +971,59 @@ Rectangle {
         ignoreUnknownSignals: true
 
         function onDestroyed() {
-            root.resetSpatialEdgePanTracking();
+            if (!root.cancelActiveWindowSpatialDrag()) {
+                root.resetSpatialEdgePanTracking();
+            }
+        }
+
+        function onCandidateChanged() {
+            root.cancelActiveWindowSpatialDrag();
         }
 
         function onDragEligibleChanged() {
             if (target && target.dragEligible !== true) {
-                root.resetSpatialEdgePanTracking();
+                root.scheduleWindowSpatialDragValidation(target);
             }
         }
 
         function onMinimizedWindowChanged() {
             if (target && target.minimizedWindow === true) {
-                root.resetSpatialEdgePanTracking();
+                root.cancelActiveWindowSpatialDrag();
             }
+        }
+
+        function onSourceDesktopChanged() {
+            root.cancelActiveWindowSpatialDrag();
+        }
+
+        function onSourceDesktopIdChanged() {
+            root.cancelActiveWindowSpatialDrag();
+        }
+
+        function onSourceScreenChanged() {
+            root.cancelActiveWindowSpatialDrag();
         }
 
         function onSpatialDragLifecycleActiveChanged() {
             if (target && target.spatialDragLifecycleActive !== true) {
                 root.resetSpatialEdgePanTracking();
             }
+        }
+
+        function onTiledPresentationChanged() {
+            root.scheduleWindowSpatialDragValidation(target);
+        }
+
+        function onWindowDragSnapshotChanged() {
+            if (target && target.spatialDragLifecycleActive === true
+                    && !root.windowSpatialDragSourceIsExact(
+                        target, root.spatialWindowDragSourceDesktopId)) {
+                root.cancelActiveWindowSpatialDrag();
+            }
+        }
+
+        function onWindowIdChanged() {
+            root.cancelActiveWindowSpatialDrag();
         }
     }
 
@@ -2682,18 +2738,25 @@ Rectangle {
                 || spatialHorizontalRowDragHandler.active
                 || workspaceIndex < 0 || workspaceIndex >= desktopIds.length
                 || !windowSpatialDragSourceIsExact(source, expectedDesktopId)) {
-            return;
+            cancelWindowSpatialDragOwner(source);
+            return false;
         }
         if (!adoptSpatialVisualContentY()
                 || !storeSpatialEdgePanScenePoint(sceneX, sceneY)) {
-            return;
+            cancelWindowSpatialDragOwner(source);
+            return false;
         }
 
         resetOverviewWheelState();
         spatialWindowDragSource = source;
         spatialWindowDragSourceDesktopId = expectedDesktopId;
         spatialWindowDragSourceWorkspaceIndex = workspaceIndex;
-        captureSpatialWindowDragVisual(source);
+        const visualCaptured = captureSpatialWindowDragVisual(source);
+        if (!visualCaptured) {
+            cancelActiveWindowSpatialDrag();
+            return false;
+        }
+        return true;
     }
 
     function updateWindowSpatialEdgePan(source, expectedDesktopId, sceneX, sceneY) {
@@ -2702,11 +2765,15 @@ Rectangle {
             return;
         }
         if (!windowSpatialDragSourceIsExact(source, expectedDesktopId)) {
-            resetSpatialEdgePanTracking();
-            return;
+            cancelActiveWindowSpatialDrag();
+            return false;
         }
-
-        storeSpatialEdgePanScenePoint(sceneX, sceneY);
+        const pointStored = storeSpatialEdgePanScenePoint(sceneX, sceneY);
+        if (!pointStored) {
+            cancelActiveWindowSpatialDrag();
+            return false;
+        }
+        return true;
     }
 
     function finishWindowSpatialEdgePan(source, expectedDesktopId) {
@@ -2970,7 +3037,7 @@ Rectangle {
     function windowSpatialDragSourceIsExact(source, expectedDesktopId) {
         try {
             if (!spatialPresentationInteractive || !sceneEffect || sceneEffect.active !== true || !source
-                    || source.spatialDragLifecycleActive !== true || source.dragEligible !== true
+                    || source.spatialDragLifecycleActive !== true
                     || source.minimizedWindow === true || typeof expectedDesktopId !== "string"
                     || expectedDesktopId.length === 0 || source.sourceDesktopId !== expectedDesktopId
                     || typeof source.windowId !== "string" || source.windowId.length === 0) {
@@ -2978,6 +3045,7 @@ Rectangle {
             }
 
             const candidate = source.candidate;
+            const sourceCard = source.sourceCard;
             const liveDesktop = source.sourceDesktop;
             const liveScreen = source.sourceScreen;
             if (!candidate || candidate.deleted || candidate.internalId === undefined
@@ -2985,7 +3053,9 @@ Rectangle {
                     || !liveDesktop || liveDesktop.id === undefined || liveDesktop.id === null
                     || String(liveDesktop.id) !== expectedDesktopId
                     || !liveScreen || liveScreen !== targetScreen
-                    || candidate.output !== liveScreen) {
+                    || candidate.output !== liveScreen || !sourceCard
+                    || typeof sourceCard.ownedWindowDragSnapshotIsExact !== "function"
+                    || !sourceCard.ownedWindowDragSnapshotIsExact(source)) {
                 return false;
             }
 
@@ -3083,7 +3153,9 @@ Rectangle {
         try {
             const target = source ? source.thumbnailTarget : null;
             const hotSpot = target ? target.spatialDragHotSpot : null;
-            if (!target || !hotSpot || typeof source.windowId !== "string"
+            const snapshot = source ? source.windowDragSnapshot : null;
+            if (!target || !hotSpot || !snapshot || !Object.isFrozen(snapshot)
+                    || typeof source.windowId !== "string"
                     || source.windowId.length === 0 || !Number.isFinite(target.width)
                     || !Number.isFinite(target.height) || target.width <= 0 || target.height <= 0
                     || !Number.isFinite(hotSpot.x) || !Number.isFinite(hotSpot.y)) {
@@ -3113,6 +3185,7 @@ Rectangle {
                 height: visualHeight,
                 hotSpotX: visualHotSpotX,
                 hotSpotY: visualHotSpotY,
+                snapshot,
                 width: visualWidth,
                 windowId: source.windowId
             });
@@ -3130,12 +3203,15 @@ Rectangle {
     function spatialWindowDragVisualIsExact() {
         try {
             const plan = spatialWindowDragVisualPlan;
-            return spatialWindowDragSource !== null
-                && spatialWindowDragSource.dragEligible === true
-                && spatialWindowDragSource.minimizedWindow !== true
-                && spatialWindowDragSource.spatialDragLifecycleActive === true
-                && plan && Object.isFrozen(plan)
-                && spatialWindowDragSource.windowId === plan.windowId
+            const source = spatialWindowDragSource;
+            const sourceCard = source ? source.sourceCard : null;
+            return source && sourceCard
+                && typeof sourceCard.windowDragHandlerOwnsLifecycle === "function"
+                && sourceCard.windowDragHandlerOwnsLifecycle(source)
+                && plan && Object.isFrozen(plan) && plan.snapshot && Object.isFrozen(plan.snapshot)
+                && plan.snapshot === source.windowDragSnapshot
+                && plan.snapshot.desktopId === spatialWindowDragSourceDesktopId
+                && source.windowId === plan.windowId && plan.snapshot.windowId === plan.windowId
                 && plan.windowId.length > 0
                 && Number.isFinite(spatialEdgePanPointerX)
                 && Number.isFinite(spatialEdgePanPointerY)
@@ -3235,6 +3311,41 @@ Rectangle {
         }
     }
 
+    function cancelActiveWindowSpatialDrag() {
+        const source = spatialWindowDragSource;
+        if (source === null) {
+            return false;
+        }
+        const canceled = cancelWindowSpatialDragOwner(source);
+        if (spatialWindowDragSource === source) {
+            resetSpatialEdgePanTracking();
+        }
+        return canceled;
+    }
+
+    function cancelWindowSpatialDragOwner(source) {
+        try {
+            const sourceCard = source ? source.sourceCard : null;
+            if (sourceCard && typeof sourceCard.cancelWindowSpatialDragSource === "function") {
+                return sourceCard.cancelWindowSpatialDragSource(source) === true;
+            }
+        } catch (error) {
+            return false;
+        }
+        return false;
+    }
+
+    function scheduleWindowSpatialDragValidation(source) {
+        try {
+            const sourceCard = source ? source.sourceCard : null;
+            return Boolean(sourceCard
+                && typeof sourceCard.scheduleWindowSpatialDragValidation === "function"
+                && sourceCard.scheduleWindowSpatialDragValidation(source));
+        } catch (error) {
+            return false;
+        }
+    }
+
     function cancelActiveColumnSpatialDrag() {
         const source = spatialColumnDragSource;
         if (source === null) {
@@ -3277,6 +3388,7 @@ Rectangle {
     function handleSpatialPresentationPhaseChanged() {
         if (spatialPresentationPhase === "closing") {
             cancelWorkspaceRename();
+            cancelActiveWindowSpatialDrag();
             cancelActiveColumnSpatialDrag();
             cancelSpatialZoomTransaction();
             if (!spatialExitHandoffActive) {
@@ -3334,6 +3446,7 @@ Rectangle {
 
     function beginOverviewContextRefreshBarrier() {
         cancelWorkspaceRename();
+        cancelActiveWindowSpatialDrag();
         cancelActiveColumnSpatialDrag();
         cancelSpatialZoomTransaction();
         discardSpatialZoomTransaction();
@@ -4150,6 +4263,7 @@ Rectangle {
     }
 
     function refreshOverviewSpatialSession(preserveViewport, animateViewport = false) {
+        cancelActiveWindowSpatialDrag();
         cancelActiveColumnSpatialDrag();
         const previousViewportSnapshot = preserveViewport === true ? spatialViewportSnapshot : null;
         let selectedDesktopId = "";
@@ -5232,6 +5346,7 @@ Rectangle {
 
     function resetSpatialViewport(animateVisual = false) {
         if (!spatialLayoutIsValid(overviewSpatialLayout)) {
+            cancelActiveWindowSpatialDrag();
             resetSpatialEdgePanTracking();
             spatialVerticalCameraAnimation.stop();
             spatialContentY = 0;
@@ -5241,6 +5356,7 @@ Rectangle {
 
         const plan = planSpatialViewport(overviewSpatialLayout.initialContentY);
         if (!plan) {
+            cancelActiveWindowSpatialDrag();
             resetSpatialEdgePanTracking();
             spatialVerticalCameraAnimation.stop();
             spatialContentY = 0;
@@ -8978,6 +9094,7 @@ Rectangle {
             return false;
         }
 
+        cancelActiveWindowSpatialDrag();
         cancelActiveColumnSpatialDrag();
         cancelSpatialZoomTransaction();
         discardSpatialZoomTransaction();
@@ -9455,7 +9572,7 @@ Rectangle {
         try {
             const sourceCard = source ? source.sourceCard : null;
             return source && sourceCard && source.spatialDragLifecycleActive === true
-                    && source.dragEligible === true && source.minimizedWindow !== true
+                    && source.minimizedWindow !== true
                     && typeof sourceCard.crossOutputWindowDropSourceIsExact === "function"
                     && sourceCard.crossOutputWindowDropSourceIsExact(source);
         } catch (error) {
