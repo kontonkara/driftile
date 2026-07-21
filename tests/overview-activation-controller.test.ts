@@ -147,7 +147,7 @@ describe("overview activation controller", () => {
       /openingReadinessEpoch = epoch;[\s\S]*openingReadinessExpectedOutputIds = outputIds;[\s\S]*openingReadinessModel = model;[\s\S]*openingReadinessTopologyGeneration = overviewTopologyGeneration;[\s\S]*presentationProgress = 0;[\s\S]*presentationPhase = "preparing";[\s\S]*sceneVisible = true;[\s\S]*Qt\.callLater[\s\S]*rejectUnstartedOpeningScene/u,
     );
     expect(register).toMatch(
-      /openingReadinessContextIsExact\(epoch, sessionId, model, topologyGeneration\)[\s\S]*openingReadinessExpectedOutputIds\.indexOf\(outputId\)[\s\S]*registration\.outputId === outputId \|\| registration\.sceneToken === sceneToken[\s\S]*requestSceneRetirement\(sessionId\)/u,
+      /openingReadinessExpectedOutputIds\.indexOf\(outputId\)[\s\S]*latchOpeningSceneActivation\(epoch, sessionId, model,[\s\S]*topologyGeneration\)[\s\S]*registration\.outputId === outputId \|\| registration\.sceneToken === sceneToken[\s\S]*requestSceneRetirement\(sessionId\)/u,
     );
     expect(complete).toMatch(
       /openingReadinessSceneActivated[\s\S]*registrations\.length !== outputIds\.length[\s\S]*matches !== 1[\s\S]*clearOpeningReadiness\(\)[\s\S]*startPresentationTransition\("opening", 1, sessionId\)/u,
@@ -183,6 +183,47 @@ describe("overview activation controller", () => {
     );
     expect(controller).toMatch(
       /function activate\(\)[\s\S]*if \(active\)[\s\S]*presentationPhase === "preparing"[\s\S]*return;[\s\S]*startPresentationTransition\("opening", 1, activeSessionId\)/u,
+    );
+  });
+
+  it("recovers when public scene activation predates readiness setup", () => {
+    const acknowledge = controller.slice(
+      controller.indexOf("function acknowledgeOverviewSceneActivated("),
+      controller.indexOf("function latchOpeningSceneActivation("),
+    );
+    const latch = controller.slice(
+      controller.indexOf("function latchOpeningSceneActivation("),
+      controller.indexOf("function registerOverviewSceneReady("),
+    );
+    const register = controller.slice(
+      controller.indexOf("function registerOverviewSceneReady("),
+      controller.indexOf("function unregisterOverviewSceneReady("),
+    );
+    const readinessContext = scene.slice(
+      scene.indexOf("function sceneReadinessContext()"),
+      scene.indexOf("function synchronizePresentationReadiness()"),
+    );
+
+    expect(readinessContext).toMatch(
+      /effect\.active !== true[\s\S]*spatialPresentationPhase !== "preparing"/u,
+    );
+    expect(acknowledge).toMatch(
+      /if \(!latchOpeningSceneActivation\(epoch, sessionId, openingReadinessModel,[\s\S]*openingReadinessTopologyGeneration\)\) \{[\s\S]*return false;[\s\S]*return completeOpeningReadinessIfExact\(\);/u,
+    );
+    expect(latch).toMatch(
+      /openingReadinessContextIsExact\(epoch, sessionId, model, topologyGeneration\)[\s\S]*return false;[\s\S]*openingReadinessSceneActivated = true;[\s\S]*return true;/u,
+    );
+    expect(register).toMatch(
+      /if \(!overviewZoomIdentifierIsValid\(outputId\)[\s\S]*\|\| !overviewZoomSceneTokenIsValid\(sceneToken\)[\s\S]*\|\| !latchOpeningSceneActivation\(epoch, sessionId, model,[\s\S]*topologyGeneration\)\) \{[\s\S]*return false;/u,
+    );
+    expect(register).toMatch(
+      /registration\.outputId === outputId && registration\.sceneToken === sceneToken\) \{\s*completeOpeningReadinessIfExact\(\);\s*return true;/u,
+    );
+    expect(register).toMatch(
+      /openingReadinessRegistrations = nextRegistrations;\s*completeOpeningReadinessIfExact\(\);\s*return true;/u,
+    );
+    expect(`${entrypoint}\n${controller}\n${scene}`).not.toMatch(
+      /org\.kde\.kwin\.private|setInterval|setTimeout/u,
     );
   });
 });

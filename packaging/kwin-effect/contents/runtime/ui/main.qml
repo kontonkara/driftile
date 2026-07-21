@@ -1955,24 +1955,28 @@ QtObject {
     }
 
     function acknowledgeOverviewSceneActivated(epoch, sessionId) {
-        if (!openingReadinessContextIsExact(epoch, sessionId, openingReadinessModel,
-                                            openingReadinessTopologyGeneration)) {
+        if (!latchOpeningSceneActivation(epoch, sessionId, openingReadinessModel,
+                                         openingReadinessTopologyGeneration)) {
             return false;
         }
-        if (openingReadinessSceneActivated) {
-            return true;
-        }
-
-        openingReadinessSceneActivated = true;
         return completeOpeningReadinessIfExact();
+    }
+
+    function latchOpeningSceneActivation(epoch, sessionId, model, topologyGeneration) {
+        if (!openingReadinessContextIsExact(epoch, sessionId, model, topologyGeneration)) {
+            return false;
+        }
+        openingReadinessSceneActivated = true;
+        return true;
     }
 
     function registerOverviewSceneReady(epoch, sessionId, model, topologyGeneration,
                                         outputId, sceneToken) {
-        if (!openingReadinessContextIsExact(epoch, sessionId, model, topologyGeneration)
-                || !overviewZoomIdentifierIsValid(outputId)
+        if (!overviewZoomIdentifierIsValid(outputId)
                 || openingReadinessExpectedOutputIds.indexOf(outputId) < 0
-                || !overviewZoomSceneTokenIsValid(sceneToken)) {
+                || !overviewZoomSceneTokenIsValid(sceneToken)
+                || !latchOpeningSceneActivation(epoch, sessionId, model,
+                                                topologyGeneration)) {
             return false;
         }
 
@@ -1985,6 +1989,7 @@ QtObject {
             }
             if (registration.outputId === outputId || registration.sceneToken === sceneToken) {
                 if (registration.outputId === outputId && registration.sceneToken === sceneToken) {
+                    completeOpeningReadinessIfExact();
                     return true;
                 }
                 requestSceneRetirement(sessionId);
