@@ -23,6 +23,18 @@ const windowPresentation = desktopCard.slice(
   desktopCard.indexOf("id: windowPresentation"),
   desktopCard.indexOf("id: tabShell"),
 );
+const tabRailLayer = desktopCard.slice(
+  desktopCard.indexOf("id: tabRailLayer"),
+  desktopCard.indexOf("id: columnRepeater"),
+);
+const columnShell = desktopCard.slice(
+  desktopCard.indexOf("id: columnShell"),
+  desktopCard.indexOf("Drag.active: false"),
+);
+const tabShell = desktopCard.slice(
+  desktopCard.indexOf("id: tabShell"),
+  desktopCard.indexOf("id: thumbnailShell"),
+);
 const viewportHitTest = desktopCard.slice(
   desktopCard.indexOf("function viewportPointHitsWindow("),
   desktopCard.indexOf("function visualContainsViewportPoint("),
@@ -268,6 +280,25 @@ describe("spatial overview navigation geometry", () => {
       `${navigationVisual}\n${collection}\n${viewportHitTest}`,
     ).not.toMatch(
       /org\.kde\.kwin\.private|KWin\.Workspace\.(?:stackingOrder|windows)|\.setValue\s*\(/u,
+    );
+  });
+
+  it("keeps minimized tab actions above the selected column visual", () => {
+    const tabRailZ = Number(tabRailLayer.match(/\bz:\s*(\d+)/u)?.[1]);
+    const columnShellZ = Number(columnShell.match(/\bz:\s*(\d+)/u)?.[1]);
+
+    expect(Number.isFinite(tabRailZ)).toBe(true);
+    expect(Number.isFinite(columnShellZ)).toBe(true);
+    expect(tabRailZ).toBeGreaterThan(columnShellZ);
+    expect(tabShell).toContain("parent: tabRailLayer");
+    expect(tabShell).toMatch(
+      /readonly property bool activationEligible: windowPresentation\.primaryVisualKind === "tab"\s*&& frame !== null/u,
+    );
+    expect(tabShell).toMatch(
+      /function activationIsExact\(\) \{\s*return tabShell\.visible && tabShell\.frameIsExact\(\)\s*&& windowPresentation\.primaryVisualKind === "tab"/u,
+    );
+    expect(tabShell).toMatch(
+      /onTapped: \{\s*if \(!tabShell\.activationIsExact\(\)\) \{\s*return;\s*\}\s*card\.windowTapped\(/u,
     );
   });
 

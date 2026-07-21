@@ -476,7 +476,7 @@ Item {
 
             anchors.fill: parent
             clip: true
-            z: 8000
+            z: 10000
         }
 
         Repeater {
