@@ -10502,10 +10502,12 @@ let
         local tabbed_x
         local tabbed_y
         local temporary_file="$ready_file.tmp"
+        local available_height_milli
+        local available_top_milli
+        local tab_rail_minimum_y_milli=30000
         local vertical_inset_milli
         local viewport_origin_x_milli
         local visible_bottom_milli
-        local visible_height_milli
         local visible_left_milli
         local visible_right_milli
         local visible_top_milli
@@ -10553,13 +10555,16 @@ let
         visible_bottom_milli=$source_bottom_milli
         ((visible_bottom_milli <= card_height_milli)) \
           || visible_bottom_milli=$card_height_milli
+        available_top_milli=$visible_top_milli
+        ((available_top_milli >= tab_rail_minimum_y_milli)) \
+          || available_top_milli=$tab_rail_minimum_y_milli
         visible_width_milli=$((visible_right_milli - visible_left_milli))
-        visible_height_milli=$((visible_bottom_milli - visible_top_milli))
+        available_height_milli=$((visible_bottom_milli - available_top_milli))
         minimum_rail_width_milli=$((
           2 * minimum_chip_width_milli + chip_gap_milli
         ))
         ((visible_width_milli >= minimum_rail_width_milli \
-          && visible_height_milli >= minimum_chip_height_milli)) \
+          && available_height_milli >= minimum_chip_height_milli)) \
           || return 1
 
         horizontal_inset_milli=$(((
@@ -10574,11 +10579,11 @@ let
         rail_width_milli=$((2 * chip_width_milli + chip_gap_milli))
 
         vertical_inset_milli=$(((
-          visible_height_milli - minimum_chip_height_milli
+          available_height_milli - minimum_chip_height_milli
         ) / 2))
         ((vertical_inset_milli <= 8000)) || vertical_inset_milli=8000
         chip_height_milli=$((
-          visible_height_milli - 2 * vertical_inset_milli
+          available_height_milli - 2 * vertical_inset_milli
         ))
         ((chip_height_milli <= 24000)) || chip_height_milli=24000
         ((chip_width_milli >= minimum_chip_width_milli \
@@ -10593,7 +10598,7 @@ let
           + chip_width_milli / 2))
         pointer_y_milli=$((output_y * 1000 \
           + (output_height * 1000 - card_height_milli) / 2 \
-          + visible_top_milli + vertical_inset_milli \
+          + available_top_milli + vertical_inset_milli \
           + chip_height_milli / 2))
         pointer_x=$(((pointer_x_milli + 500) / 1000))
         pointer_y=$(((pointer_y_milli + 500) / 1000))

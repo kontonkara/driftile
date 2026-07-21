@@ -126,6 +126,18 @@ const columnGrip = desktopCard.slice(
   desktopCard.indexOf("id: columnGrabHandle"),
   desktopCard.indexOf("id: columnTouchHoldHandler"),
 );
+const cardGeometryProperties = desktopCard.slice(
+  desktopCard.indexOf("readonly property real contentLeft:"),
+  desktopCard.indexOf("readonly property bool searchDeemphasized:"),
+);
+const tabRailPlanning = desktopCard.slice(
+  desktopCard.indexOf("function buildTabRailPlans()"),
+  desktopCard.indexOf("function tabRailColumnFrame("),
+);
+const tabRailValidation = desktopCard.slice(
+  desktopCard.indexOf("function tabRailPlanIsExact("),
+  desktopCard.indexOf("function tabRailRectIsValid("),
+);
 const columnPointerHover = handlerBlock(
   "columnPointerHoverHandler",
   "columnPointerPressHandler",
@@ -223,6 +235,29 @@ describe("spatial overview window drag lifecycle", () => {
         desktopCard.indexOf("id: windowDropArea"),
       ),
     ).not.toContain("windowSpatialDrag");
+  });
+
+  it("keeps the whole-column control lane disjoint from tab rails", () => {
+    expect(cardGeometryProperties).toContain(
+      "readonly property real columnControlLaneHeight: 26",
+    );
+    expect(cardGeometryProperties).toContain(
+      "readonly property real tabRailMinimumY: contentTop + columnControlLaneHeight + 4",
+    );
+    expect(columnGrip).toContain("height: card.columnControlLaneHeight");
+    expect(tabRailPlanning).toContain("minimumY: tabRailMinimumY");
+    expect(tabRailValidation).toContain(
+      "const availableTop = Math.max(visibleTop, tabRailMinimumY);",
+    );
+    expect(tabRailValidation).toContain("rail.y < availableTop - epsilon");
+    expect(tabRailValidation.indexOf("const availableTop")).toBeLessThan(
+      tabRailValidation.indexOf("rail.y < availableTop - epsilon"),
+    );
+    expect(
+      `${cardGeometryProperties}\n${columnGrip}\n${tabRailPlanning}\n${tabRailValidation}`,
+    ).not.toMatch(
+      /org\.kde\.kwin\.private|\bTimer\s*\{|setInterval|setTimeout|\.setValue\s*\(/u,
+    );
   });
 
   it("emits a complete thumbnail drag lifecycle from the existing handler", () => {
@@ -905,7 +940,7 @@ describe("spatial overview column drag lifecycle", () => {
     expect(columnGrip).toContain(
       "visible: columnShell.dragHandleAvailable && visibleWidth >= 12",
     );
-    expect(columnGrip).toContain("height: 26");
+    expect(columnGrip).toContain("height: card.columnControlLaneHeight");
     expect(columnGrip).toContain("anchors.topMargin: 5");
     expect(columnGrip).toContain("height: 7");
     expect(columnLifecycle).toMatch(

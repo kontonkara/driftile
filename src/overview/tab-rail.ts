@@ -15,6 +15,7 @@ export interface OverviewTabRailChipFrame extends OverviewTabRailRect {
 export interface OverviewTabRailInput {
   readonly columnFrame: OverviewTabRailRect;
   readonly memberCount: number;
+  readonly minimumY: number;
   readonly presentation: "tabbed";
   readonly selectedIndex: number;
   readonly viewport: OverviewTabRailRect;
@@ -42,6 +43,7 @@ export function planOverviewTabRail(
 
     const presentation = input["presentation"];
     const memberCount = input["memberCount"];
+    const minimumY = input["minimumY"];
     const selectedIndex = input["selectedIndex"];
     const columnFrame = snapshotRect(input["columnFrame"]);
     const viewport = snapshotRect(input["viewport"]);
@@ -49,6 +51,7 @@ export function planOverviewTabRail(
     if (
       presentation !== "tabbed" ||
       !validMemberCount(memberCount) ||
+      !validCoordinate(minimumY) ||
       !validSelectedIndex(selectedIndex, memberCount) ||
       columnFrame === null ||
       viewport === null
@@ -59,6 +62,13 @@ export function planOverviewTabRail(
     const visibleFrame = intersectRects(columnFrame, viewport);
 
     if (visibleFrame === null) {
+      return null;
+    }
+
+    const availableTop = Math.max(visibleFrame.y, minimumY);
+    const availableHeight = visibleFrame.y + visibleFrame.height - availableTop;
+
+    if (!validDimension(availableHeight)) {
       return null;
     }
 
@@ -81,7 +91,7 @@ export function planOverviewTabRail(
     const railWidth = memberCount * chipWidth + gapsWidth;
     const verticalInset = Math.min(
       MAXIMUM_RAIL_INSET,
-      (visibleFrame.height - MINIMUM_CHIP_HEIGHT) / 2,
+      (availableHeight - MINIMUM_CHIP_HEIGHT) / 2,
     );
 
     if (verticalInset < 0) {
@@ -90,10 +100,10 @@ export function planOverviewTabRail(
 
     const chipHeight = Math.min(
       MAXIMUM_CHIP_HEIGHT,
-      visibleFrame.height - verticalInset * 2,
+      availableHeight - verticalInset * 2,
     );
     const railX = visibleFrame.x + (visibleFrame.width - railWidth) / 2;
-    const railY = visibleFrame.y + verticalInset;
+    const railY = availableTop + verticalInset;
 
     if (
       !validDimension(chipWidth) ||

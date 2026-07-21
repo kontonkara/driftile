@@ -5,6 +5,7 @@ import { planOverviewTabRail } from "../../src/overview/runtime";
 const baseInput = Object.freeze({
   columnFrame: Object.freeze({ height: 480, width: 420, x: 120, y: 80 }),
   memberCount: 3,
+  minimumY: 30,
   presentation: "tabbed",
   selectedIndex: 1,
   viewport: Object.freeze({ height: 720, width: 1280, x: 0, y: 0 }),
@@ -68,7 +69,7 @@ describe("planOverviewTabRail", () => {
           selected: false,
           width: 58,
           x: 8,
-          y: 8,
+          y: 38,
         },
         {
           height: 24,
@@ -76,7 +77,7 @@ describe("planOverviewTabRail", () => {
           selected: false,
           width: 58,
           x: 70,
-          y: 8,
+          y: 38,
         },
         {
           height: 24,
@@ -84,7 +85,7 @@ describe("planOverviewTabRail", () => {
           selected: false,
           width: 58,
           x: 132,
-          y: 8,
+          y: 38,
         },
         {
           height: 24,
@@ -92,15 +93,15 @@ describe("planOverviewTabRail", () => {
           selected: true,
           width: 58,
           x: 194,
-          y: 8,
+          y: 38,
         },
       ],
-      railFrame: { height: 24, width: 244, x: 8, y: 8 },
+      railFrame: { height: 24, width: 244, x: 8, y: 38 },
     });
 
     for (const chip of plan?.chipFrames ?? []) {
       expect(chip.x).toBeGreaterThanOrEqual(0);
-      expect(chip.y).toBeGreaterThanOrEqual(0);
+      expect(chip.y).toBeGreaterThanOrEqual(baseInput.minimumY);
       expect(chip.x + chip.width).toBeLessThanOrEqual(260);
       expect(chip.y + chip.height).toBeLessThanOrEqual(200);
     }
@@ -110,6 +111,7 @@ describe("planOverviewTabRail", () => {
     const plan = planOverviewTabRail({
       ...baseInput,
       columnFrame: { height: 16, width: 92, x: -92, y: -16 },
+      minimumY: -16,
       viewport: { height: 16, width: 92, x: -92, y: -16 },
     });
 
@@ -139,6 +141,15 @@ describe("planOverviewTabRail", () => {
     expect(first?.chipFrames.every((chip) => Object.isFrozen(chip))).toBe(true);
   });
 
+  it("accepts the exact coordinate bound for the reserved top lane", () => {
+    const plan = planOverviewTabRail({
+      ...baseInput,
+      minimumY: -LAYOUT_PERSISTENCE_LIMITS.numericMagnitude,
+    });
+
+    expect(plan?.railFrame.y).toBe(88);
+  });
+
   it.each([
     { ...baseInput, presentation: "stacked" },
     { ...baseInput, memberCount: 1, selectedIndex: 0 },
@@ -159,6 +170,25 @@ describe("planOverviewTabRail", () => {
     null,
     [],
     {},
+    {
+      columnFrame: baseInput.columnFrame,
+      memberCount: baseInput.memberCount,
+      presentation: baseInput.presentation,
+      selectedIndex: baseInput.selectedIndex,
+      viewport: baseInput.viewport,
+    },
+    { ...baseInput, minimumY: null },
+    { ...baseInput, minimumY: "30" },
+    { ...baseInput, minimumY: Number.NaN },
+    { ...baseInput, minimumY: Number.POSITIVE_INFINITY },
+    {
+      ...baseInput,
+      minimumY: LAYOUT_PERSISTENCE_LIMITS.numericMagnitude + 1,
+    },
+    {
+      ...baseInput,
+      minimumY: -LAYOUT_PERSISTENCE_LIMITS.numericMagnitude - 1,
+    },
     { ...baseInput, columnFrame: null },
     { ...baseInput, columnFrame: { height: 100, width: 0, x: 0, y: 0 } },
     {

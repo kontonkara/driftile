@@ -1342,7 +1342,10 @@ describe("overview effect package", () => {
     );
     expect(focusHandler).toContain('phase: "focus-queued"');
     expect(focusHandler).toMatch(
-      /Qt\.callLater\(function\(\) \{[\s\S]*activeWindow !== request\.activeWindowBaseline[\s\S]*replacePendingWindowFocusPhase\(request,[\s\S]*"focus-requested"\)[\s\S]*KWin\.Workspace\.activeWindow = requested\.candidate/u,
+      /if \(request\.restoredFromMinimized === true\) \{\s*return performPendingWindowFocusWrite\(request\);\s*\}[\s\S]*Qt\.callLater\(function\(\) \{\s*root\.performPendingWindowFocusWrite\(request\);/u,
+    );
+    expect(focusHandler).toMatch(
+      /function performPendingWindowFocusWrite\(request\)[\s\S]*activeWindow !== request\.activeWindowBaseline[\s\S]*replacePendingWindowFocusPhase\(request,[\s\S]*"focus-requested"\)[\s\S]*KWin\.Workspace\.activeWindow = requested\.candidate/u,
     );
     expect(focusHandler).toMatch(
       /pendingWindowFocusRequestIsExact\(request, true\)[\s\S]*settleSpatialExitHandoff\(request\.candidate, request\.exitToken\)[\s\S]*clearPendingWindowFocus\(\);[\s\S]*effect\.deactivate\(\);/u,
@@ -1444,7 +1447,7 @@ describe("overview effect package", () => {
       "KWin.Workspace.activeWindow = requested.candidate",
     );
     const focusConfirmation = focusHandler.indexOf(
-      "KWin.Workspace.activeWindow === requested.candidate",
+      "pendingWindowFocusRequestIsExact(current, true)",
     );
     const exactFocusSettle = focusHandler.indexOf(
       "pendingWindowFocusRequestIsExact(request, true)",
@@ -2843,7 +2846,7 @@ describe("overview effect package", () => {
       "readonly property bool minimizedActivationEligible: minimizedWindow",
     );
     expect(presentation).toMatch(
-      /readonly property bool minimizedActivationEligible: minimizedWindow\s*&& matchesSearch && frame !== null/u,
+      /readonly property bool minimizedActivationEligible: minimizedWindow\s*&& selectedThumbnail && matchesSearch && frame !== null/u,
     );
     expect(minimizedActivationBinding).not.toContain(
       "windowSnapshotCanActivateMinimizedWindow",
@@ -2855,6 +2858,9 @@ describe("overview effect package", () => {
     expect(presentation).toContain("card.planMinimizedPlaceholderFrame(frame)");
     expect(presentation).toContain(
       "readonly property var minimizedPlaceholderTarget: minimizedPlaceholderShell",
+    );
+    expect(presentation).toMatch(
+      /readonly property string primaryVisualKind:[\s\S]*"thumbnail"[\s\S]*"placeholder"[\s\S]*"tab"/u,
     );
     expect(presentation).toContain(
       "onMinimizedPlaceholderFrameChanged: card.navigationTargetsChanged()",
@@ -2883,7 +2889,10 @@ describe("overview effect package", () => {
     expect(planner).toMatch(/catch \(error\) \{\s*return null;/u);
 
     expect(placeholder).toContain(
-      "readonly property bool activationEligible: windowPresentation.minimizedActivationEligible",
+      'readonly property bool activationEligible: windowPresentation.primaryVisualKind === "placeholder"',
+    );
+    expect(placeholder).toContain(
+      "&& windowPresentation.minimizedActivationEligible",
     );
     expect(placeholder).toContain(
       "readonly property bool keyboardTarget: visible && activationEligible",
@@ -5722,11 +5731,12 @@ describe("overview effect package", () => {
       "readonly property bool selectedTab: frame !== null && frame.selected === true",
     );
     expect(tab).toMatch(
-      /readonly property bool activationEligible: frame !== null\s*&& windowPresentation\.matchesSearch/u,
+      /readonly property bool activationEligible: windowPresentation\.primaryVisualKind === "tab"\s*&& frame !== null\s*&& windowPresentation\.matchesSearch/u,
     );
-    expect(tab).toMatch(
-      /readonly property bool keyboardTarget: activationEligible\s*&& !thumbnailShell\.visible && !minimizedPlaceholderShell\.visible/u,
+    expect(tab).toContain(
+      "readonly property bool keyboardTarget: activationEligible",
     );
+    expect(tab).toContain('windowPresentation.primaryVisualKind === "tab"');
     expect(tab).not.toMatch(
       /readonly property bool (?:activationEligible|keyboardTarget):[^\n]*windowCanNavigate/u,
     );
@@ -5763,6 +5773,11 @@ describe("overview effect package", () => {
       "!indexedListHasBoundedLength(column.members, 2, 256)",
     );
     expect(planner).toContain("tabRailPlanIsExact(");
+    expect(planner).toContain("minimumY: tabRailMinimumY");
+    expect(planner).toContain(
+      "const availableTop = Math.max(visibleTop, tabRailMinimumY);",
+    );
+    expect(planner).toContain("rail.y < availableTop - epsilon");
     expect(desktopCard).toContain("Object.isFrozen(plan)");
     expect(desktopCard).toContain("Object.isFrozen(plan.railFrame)");
     expect(desktopCard).toContain("Object.isFrozen(plan.chipFrames)");

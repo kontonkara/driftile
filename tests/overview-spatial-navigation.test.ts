@@ -19,6 +19,10 @@ const navigationVisual = desktopCard.slice(
   desktopCard.indexOf("function navigationVisualForPresentation("),
   desktopCard.indexOf("function windowSnapshotCanActivateMinimizedWindow("),
 );
+const windowPresentation = desktopCard.slice(
+  desktopCard.indexOf("id: windowPresentation"),
+  desktopCard.indexOf("id: tabShell"),
+);
 const viewportHitTest = desktopCard.slice(
   desktopCard.indexOf("function viewportPointHitsWindow("),
   desktopCard.indexOf("function visualContainsViewportPoint("),
@@ -205,31 +209,32 @@ describe("spatial overview navigation geometry", () => {
     );
   });
 
-  it("projects one primary navigation visual for every actionable window", () => {
+  it("projects exactly the declared primary visual for every actionable window", () => {
+    expect(windowPresentation).toMatch(
+      /readonly property bool minimizedActivationEligible: minimizedWindow\s*&& selectedThumbnail && matchesSearch && frame !== null/u,
+    );
+    expect(windowPresentation).toMatch(
+      /readonly property string primaryVisualKind: !matchesSearch \|\| !model\.window \? ""\s*: !minimizedWindow && selectedThumbnail && frame !== null \? "thumbnail"\s*: minimizedActivationEligible && minimizedPlaceholderFrame !== null \? "placeholder"\s*: tabFrame !== null \? "tab" : ""/u,
+    );
     expect(navigationVisual).toContain(
       "function navigationVisualForPresentation(presentation)",
     );
-    expect(navigationVisual).toMatch(
-      /presentation\.selectedThumbnail[\s\S]*presentation\.thumbnailTarget[\s\S]*presentation\.thumbnailTarget\.visible[\s\S]*return presentation\.thumbnailTarget;/u,
+    expect(navigationVisual).toContain(
+      "switch (presentation.primaryVisualKind)",
     );
     expect(navigationVisual).toMatch(
-      /presentation\.minimizedWindow[\s\S]*presentation\.minimizedPlaceholderTarget[\s\S]*presentation\.minimizedPlaceholderTarget\.visible[\s\S]*return presentation\.minimizedPlaceholderTarget;/u,
+      /case "thumbnail":\s*return presentation\.minimizedWindow !== true\s*&& presentation\.selectedThumbnail === true\s*&& presentation\.thumbnailTarget && presentation\.thumbnailTarget\.visible\s*\? presentation\.thumbnailTarget : null;/u,
     );
     expect(navigationVisual).toMatch(
-      /presentation\.tabTarget[\s\S]*presentation\.tabTarget\.visible[\s\S]*return presentation\.tabTarget;/u,
+      /case "placeholder":\s*return presentation\.minimizedWindow === true\s*&& presentation\.selectedThumbnail === true\s*&& presentation\.minimizedPlaceholderTarget\s*&& presentation\.minimizedPlaceholderTarget\.visible\s*\? presentation\.minimizedPlaceholderTarget : null;/u,
     );
-    expect(navigationVisual).toMatch(/return null;/u);
-
-    const thumbnail = navigationVisual.indexOf(
-      "return presentation.thumbnailTarget;",
+    expect(navigationVisual).toMatch(
+      /case "tab":\s*return presentation\.tabTarget && presentation\.tabTarget\.visible\s*&& presentation\.tabTarget\.activationEligible === true\s*\? presentation\.tabTarget : null;/u,
     );
-    const placeholder = navigationVisual.indexOf(
-      "return presentation.minimizedPlaceholderTarget;",
+    expect(navigationVisual).toMatch(/default:\s*return null;/u);
+    expect(navigationVisual).not.toMatch(
+      /if \(presentation\.minimizedWindow[\s\S]*return presentation\.(?:thumbnailTarget|minimizedPlaceholderTarget|tabTarget)/u,
     );
-    const tab = navigationVisual.indexOf("return presentation.tabTarget;");
-    expect(thumbnail).toBeGreaterThanOrEqual(0);
-    expect(placeholder).toBeGreaterThan(thumbnail);
-    expect(tab).toBeGreaterThan(placeholder);
 
     expect(collection).toContain(
       "const visual = navigationVisualForPresentation(presentation);",

@@ -97,6 +97,8 @@ Item {
     readonly property real contentTop: 0
     readonly property real contentWidth: Math.max(1, width)
     readonly property real contentHeight: Math.max(1, height)
+    readonly property real columnControlLaneHeight: 26
+    readonly property real tabRailMinimumY: contentTop + columnControlLaneHeight + 4
     readonly property bool searchDeemphasized: searchQuery.trim().length > 0 && searchResultCount === 0
     readonly property var spatialRowDimensions: spatialRowGeometryPlan && spatialRowGeometryPlan.dimensions
         ? spatialRowGeometryPlan.dimensions : null
@@ -604,7 +606,7 @@ Item {
                     readonly property real visibleWidth: Math.max(0, visibleRight - visibleLeft)
                     x: visibleLeft + (visibleWidth - width) / 2
                     width: Math.min(56, visibleWidth)
-                    height: 26
+                    height: card.columnControlLaneHeight
                     visible: columnShell.dragHandleAvailable && visibleWidth >= 12
                     enabled: visible && (!card.spatialDirectDragBlocked
                                           || card.columnDragActiveSource === columnShell)
@@ -866,10 +868,14 @@ Item {
                 readonly property bool selectedThumbnail: !tiledPresentation || tiledPresentation.selected
                 readonly property bool minimizedWindow: model.window ? model.window.minimized : false
                 readonly property bool minimizedActivationEligible: minimizedWindow
-                    && matchesSearch && frame !== null
+                    && selectedThumbnail && matchesSearch && frame !== null
                 readonly property var minimizedPlaceholderFrame: minimizedActivationEligible
                     ? card.planMinimizedPlaceholderFrame(frame) : null
                 readonly property var tabFrame: card.tabFrameForPresentation(tiledPresentation, windowId)
+                readonly property string primaryVisualKind: !matchesSearch || !model.window ? ""
+                    : !minimizedWindow && selectedThumbnail && frame !== null ? "thumbnail"
+                    : minimizedActivationEligible && minimizedPlaceholderFrame !== null ? "placeholder"
+                    : tabFrame !== null ? "tab" : ""
                 readonly property var windowLabel: card.planWindowLabel(candidate, matchesSearch && model.window
                     && ((!minimizedWindow && selectedThumbnail && frame !== null && frame !== undefined)
                         || (minimizedPlaceholderFrame !== null && minimizedPlaceholderFrame !== undefined)
@@ -904,6 +910,7 @@ Item {
                 onFrameChanged: card.scheduleWindowSpatialDragValidation(windowPresentation)
                 onMinimizedPlaceholderFrameChanged: card.navigationTargetsChanged()
                 onMinimizedWindowChanged: card.cancelInvalidWindowSpatialDragSource(windowPresentation)
+                onPrimaryVisualKindChanged: card.navigationTargetsChanged()
                 onSourceDesktopChanged: card.cancelInvalidWindowSpatialDragSource(windowPresentation)
                 onSourceDesktopIdChanged: card.cancelInvalidWindowSpatialDragSource(windowPresentation)
                 onSourceScreenChanged: card.cancelInvalidWindowSpatialDragSource(windowPresentation)
@@ -1015,10 +1022,10 @@ Item {
                     readonly property bool minimizedTab: windowPresentation.minimizedWindow
                     readonly property bool attentionTab: windowPresentation.attentionRequested
                     readonly property bool activeTab: KWin.Workspace.activeWindow === windowPresentation.candidate
-                    readonly property bool activationEligible: frame !== null
+                    readonly property bool activationEligible: windowPresentation.primaryVisualKind === "tab"
+                        && frame !== null
                         && windowPresentation.matchesSearch
                     readonly property bool keyboardTarget: activationEligible
-                        && !thumbnailShell.visible && !minimizedPlaceholderShell.visible
                     readonly property bool keyboardSelected: keyboardTarget
                         && card.keyboardSelectionId === card.navigationTargetId(windowPresentation.windowId)
 
@@ -1030,12 +1037,14 @@ Item {
 
                     function activationIsExact() {
                         return tabShell.visible && tabShell.frameIsExact()
+                            && windowPresentation.primaryVisualKind === "tab"
                             && windowPresentation.matchesSearch
                             && card.windowCanNavigate(windowPresentation);
                     }
 
                     function closeIsExact() {
                         return tabShell.visible && tabShell.frameIsExact()
+                            && windowPresentation.primaryVisualKind === "tab"
                             && windowPresentation.closeEligible
                             && card.windowSnapshotCanRequestClose(windowPresentation);
                     }
@@ -1145,7 +1154,7 @@ Item {
                     TapHandler {
                         acceptedButtons: Qt.MiddleButton
                         acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
-                        enabled: tabShell.visible && windowPresentation.closeEligible
+                        enabled: tabShell.activationEligible && windowPresentation.closeEligible
                             && card.interactionEligible && card.columnDragActiveSource === null
                             && card.columnPointerHoverSource === null
                             && card.columnPointerPressSource === null && !card.spatialDirectDragBlocked
@@ -1166,6 +1175,7 @@ Item {
                     id: thumbnailShell
 
                     readonly property bool keyboardTarget: visible
+                        && windowPresentation.primaryVisualKind === "thumbnail"
                     readonly property bool keyboardSelected: keyboardTarget
                         && card.keyboardSelectionId === card.navigationTargetId(windowPresentation.windowId)
                     readonly property bool closeButtonLargeEnough: width >= 52 && height >= 40
@@ -1605,7 +1615,8 @@ Item {
                     id: minimizedPlaceholderShell
 
                     readonly property var frame: windowPresentation.minimizedPlaceholderFrame
-                    readonly property bool activationEligible: windowPresentation.minimizedActivationEligible
+                    readonly property bool activationEligible: windowPresentation.primaryVisualKind === "placeholder"
+                        && windowPresentation.minimizedActivationEligible
                     readonly property bool keyboardTarget: visible && activationEligible
                     readonly property bool keyboardSelected: keyboardTarget
                         && card.keyboardSelectionId === card.navigationTargetId(windowPresentation.windowId)
@@ -1613,6 +1624,7 @@ Item {
 
                     function activationIsExact() {
                         return minimizedPlaceholderShell.visible
+                            && windowPresentation.primaryVisualKind === "placeholder"
                             && windowPresentation.minimizedWindow
                             && windowPresentation.matchesSearch
                             && card.windowSnapshotCanActivateMinimizedWindow(windowPresentation);
@@ -5640,18 +5652,25 @@ Item {
                     || !windowCanNavigate(presentation)) {
                 return null;
             }
-            if (presentation.minimizedWindow !== true && presentation.selectedThumbnail === true
-                    && presentation.thumbnailTarget && presentation.thumbnailTarget.visible) {
-                return presentation.thumbnailTarget;
+            switch (presentation.primaryVisualKind) {
+            case "thumbnail":
+                return presentation.minimizedWindow !== true
+                    && presentation.selectedThumbnail === true
+                    && presentation.thumbnailTarget && presentation.thumbnailTarget.visible
+                    ? presentation.thumbnailTarget : null;
+            case "placeholder":
+                return presentation.minimizedWindow === true
+                    && presentation.selectedThumbnail === true
+                    && presentation.minimizedPlaceholderTarget
+                    && presentation.minimizedPlaceholderTarget.visible
+                    ? presentation.minimizedPlaceholderTarget : null;
+            case "tab":
+                return presentation.tabTarget && presentation.tabTarget.visible
+                    && presentation.tabTarget.activationEligible === true
+                    ? presentation.tabTarget : null;
+            default:
+                return null;
             }
-            if (presentation.minimizedWindow === true && presentation.minimizedPlaceholderTarget
-                    && presentation.minimizedPlaceholderTarget.visible) {
-                return presentation.minimizedPlaceholderTarget;
-            }
-            if (presentation.tabTarget && presentation.tabTarget.visible) {
-                return presentation.tabTarget;
-            }
-            return null;
         } catch (error) {
             return null;
         }
@@ -6250,6 +6269,7 @@ Item {
                 const planned = runtime.planOverviewTabRail({
                     columnFrame: sourceFrame,
                     memberCount: column.members.length,
+                    minimumY: tabRailMinimumY,
                     presentation: "tabbed",
                     selectedIndex: column.selectedMemberIndex,
                     viewport: {
@@ -6339,13 +6359,14 @@ Item {
 
             const visibleLeft = Math.max(0, sourceFrame.x);
             const visibleTop = Math.max(0, sourceFrame.y);
+            const availableTop = Math.max(visibleTop, tabRailMinimumY);
             const visibleRight = Math.min(viewport.width, sourceFrame.x + sourceFrame.width);
             const visibleBottom = Math.min(viewport.height, sourceFrame.y + sourceFrame.height);
             const rail = plan.railFrame;
             const epsilon = Math.max(1, viewport.width, viewport.height, Math.abs(rail.x),
                                      Math.abs(rail.y), rail.width, rail.height) * 0.000000001;
             if (visibleRight <= visibleLeft || visibleBottom <= visibleTop
-                    || rail.x < visibleLeft - epsilon || rail.y < visibleTop - epsilon
+                    || rail.x < visibleLeft - epsilon || rail.y < availableTop - epsilon
                     || rail.x + rail.width > visibleRight + epsilon
                     || rail.y + rail.height > visibleBottom + epsilon
                     || rail.height < 16 - epsilon || rail.height > 24 + epsilon) {

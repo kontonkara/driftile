@@ -29,8 +29,24 @@ describe("overview exit handoff integration", () => {
       scene.indexOf("function createPendingWindowFocusRequest("),
       scene.indexOf("function capturedWindowExitHandoffIsExact("),
     );
-    const focusWrite = scene.slice(
+    const capturedHandoff = scene.slice(
+      scene.indexOf("function capturedWindowExitHandoffIsExact("),
+      scene.indexOf("function pendingWindowFocusRequestIsExact("),
+    );
+    const exactRequest = scene.slice(
+      scene.indexOf("function pendingWindowFocusRequestIsExact("),
+      scene.indexOf("function replacePendingWindowFocusPhase("),
+    );
+    const phaseReplacement = scene.slice(
+      scene.indexOf("function replacePendingWindowFocusPhase("),
       scene.indexOf("function queuePendingWindowFocusWrite("),
+    );
+    const focusQueue = scene.slice(
+      scene.indexOf("function queuePendingWindowFocusWrite("),
+      scene.indexOf("function performPendingWindowFocusWrite("),
+    );
+    const focusWrite = scene.slice(
+      scene.indexOf("function performPendingWindowFocusWrite("),
       scene.indexOf("function queuePendingWindowFocusWriteConfirmation("),
     );
     const focusSettle = scene.slice(
@@ -64,13 +80,36 @@ describe("overview exit handoff integration", () => {
     expect(windowSelection).toMatch(
       /pendingWindowFocusRequest = request;\s*return queuePendingWindowFocusWrite\(request\);/u,
     );
+    expect(windowSelection).toMatch(
+      /candidate, expectedWindowId, exitToken, expectedMinimized\);/u,
+    );
     expect(requestCreation).toContain("return Object.freeze({");
     expect(requestCreation).toContain(
       "activeWindowBaseline: KWin.Workspace.activeWindow",
     );
-    expect(focusWrite).toContain("Qt.callLater(function() {");
-    expect(focusWrite).toContain(
-      'replacePendingWindowFocusPhase(request,\n                                                                   "focus-requested")',
+    expect(requestCreation).toContain(
+      'typeof restoredFromMinimized !== "boolean"',
+    );
+    expect(requestCreation).toContain("restoredFromMinimized,");
+    expect(capturedHandoff).toContain(
+      'typeof expectedTargetMinimized === "boolean"',
+    );
+    expect(capturedHandoff).toContain(
+      "capture.targetMinimized === expectedTargetMinimized",
+    );
+    expect(exactRequest).toMatch(
+      /capturedWindowExitHandoffIsExact\(request\.exitToken,[\s\S]*request\.restoredFromMinimized\)/u,
+    );
+    expect(phaseReplacement).toContain(
+      "restoredFromMinimized: request.restoredFromMinimized",
+    );
+    expect(focusQueue).toMatch(
+      /if \(request\.restoredFromMinimized === true\) \{\s*return performPendingWindowFocusWrite\(request\);\s*\}\s*Qt\.callLater\(function\(\) \{\s*root\.performPendingWindowFocusWrite\(request\);\s*\}\);/u,
+    );
+    expect(focusQueue).not.toMatch(/KWin\.Workspace\.activeWindow\s*=(?!=)/u);
+    expect(focusWrite).not.toContain("Qt.callLater(function() {");
+    expect(focusWrite).toMatch(
+      /replacePendingWindowFocusPhase\(request,\s*"focus-requested"\)/u,
     );
     expect(
       focusWrite.match(/KWin\.Workspace\.activeWindow\s*=(?!=)/gu),
@@ -78,9 +117,12 @@ describe("overview exit handoff integration", () => {
     expect(focusSettle).toMatch(
       /pendingWindowFocusRequestIsExact\(request, true\)[\s\S]*Qt\.callLater[\s\S]*completePendingWindowFocus[\s\S]*settleSpatialExitHandoff\(request\.candidate, request\.exitToken\)[\s\S]*clearPendingWindowFocus\(\);[\s\S]*effect\.deactivate\(\);/u,
     );
-    expect(`${requestCreation}\n${focusWrite}\n${focusSettle}`).not.toMatch(
-      /\bTimer\s*\{|setTimeout|setInterval/u,
+    expect(`${focusQueue}\n${focusWrite}`).not.toContain(
+      "effect.deactivate();",
     );
+    expect(
+      `${requestCreation}\n${capturedHandoff}\n${exactRequest}\n${phaseReplacement}\n${focusQueue}\n${focusWrite}\n${focusSettle}`,
+    ).not.toMatch(/\bTimer\s*\{|setTimeout|setInterval/u);
   });
 
   it("promotes geometry only after the exact controller transition", () => {
@@ -173,8 +215,12 @@ describe("overview exit handoff integration", () => {
       scene.indexOf("function capturedWindowExitHandoffIsExact("),
       scene.indexOf("function pendingWindowFocusRequestIsExact("),
     );
-    const focusWrite = scene.slice(
+    const focusQueue = scene.slice(
       scene.indexOf("function queuePendingWindowFocusWrite("),
+      scene.indexOf("function performPendingWindowFocusWrite("),
+    );
+    const focusWrite = scene.slice(
+      scene.indexOf("function performPendingWindowFocusWrite("),
       scene.indexOf("function handlePendingWindowFocusActivation("),
     );
     const activation = scene.slice(
@@ -187,11 +233,20 @@ describe("overview exit handoff integration", () => {
     );
 
     expect(capturedHandoff).toContain('state.phase === "captured"');
+    expect(capturedHandoff).toMatch(
+      /capture\.targetMinimized === expectedTargetMinimized/u,
+    );
     expect(exactRequest).toMatch(
-      /pendingWindowFocusRequest !== request[\s\S]*capturedWindowExitHandoffIsExact[\s\S]*KWin\.Workspace\.activeWindow === request\.candidate/u,
+      /pendingWindowFocusRequest !== request[\s\S]*capturedWindowExitHandoffIsExact\(request\.exitToken,[\s\S]*request\.restoredFromMinimized\)[\s\S]*KWin\.Workspace\.activeWindow === request\.candidate/u,
+    );
+    expect(focusQueue).toMatch(
+      /request\.restoredFromMinimized === true[\s\S]*return performPendingWindowFocusWrite\(request\);[\s\S]*Qt\.callLater[\s\S]*root\.performPendingWindowFocusWrite\(request\);/u,
     );
     expect(focusWrite).toMatch(
-      /root\.pendingWindowFocusRequest !== request[\s\S]*activeWindow !== request\.activeWindowBaseline[\s\S]*yieldPendingWindowFocusToExternalActivation/u,
+      /pendingWindowFocusRequest !== request[\s\S]*pendingWindowFocusRequestIsExact\(request\)[\s\S]*activeWindow !== request\.activeWindowBaseline[\s\S]*yieldPendingWindowFocusToExternalActivation/u,
+    );
+    expect(focusWrite).toMatch(
+      /KWin\.Workspace\.activeWindow = requested\.candidate;[\s\S]*const current = pendingWindowFocusRequest;[\s\S]*current\.candidate === requested\.candidate[\s\S]*current\.exitToken === requested\.exitToken[\s\S]*pendingWindowFocusRequestIsExact\(current, true\)[\s\S]*queuePendingWindowFocusSettle\(current\)/u,
     );
     expect(activation).toMatch(
       /window === request\.candidate[\s\S]*KWin\.Workspace\.activeWindow === request\.candidate[\s\S]*queuePendingWindowFocusSettle\(request\)[\s\S]*yieldPendingWindowFocusToExternalActivation\(\)/u,

@@ -8921,7 +8921,7 @@ Rectangle {
             const request = createPendingWindowFocusRequest(
                 effect, model, liveScreen, expectedOutput, expectedOutputId,
                 liveDesktop, expectedDesktopId, expectedActivityId,
-                candidate, expectedWindowId, exitToken);
+                candidate, expectedWindowId, exitToken, expectedMinimized);
             if (!request) {
                 cancelSpatialExitHandoff();
                 return false;
@@ -8937,7 +8937,7 @@ Rectangle {
     function createPendingWindowFocusRequest(effect, model, liveScreen, expectedOutput,
                                              expectedOutputId, liveDesktop, expectedDesktopId,
                                              expectedActivityId, candidate, expectedWindowId,
-                                             exitToken) {
+                                             exitToken, restoredFromMinimized) {
         try {
             const selectedDesktop = currentDesktop;
             if (!Number.isInteger(exitToken) || exitToken <= 0
@@ -8951,10 +8951,12 @@ Rectangle {
                                              expectedActivityId)
                     || !windowFocusStateIsExact(candidate, false, true)
                     || candidate.managed !== true
+                    || typeof restoredFromMinimized !== "boolean"
                     || !capturedWindowExitHandoffIsExact(exitToken, candidate,
                                                          expectedWindowId,
                                                          expectedDesktopId,
-                                                         expectedOutputId)) {
+                                                         expectedOutputId,
+                                                         restoredFromMinimized)) {
                 return null;
             }
 
@@ -8970,6 +8972,7 @@ Rectangle {
                                      output: expectedOutput,
                                      outputId: expectedOutputId,
                                      phase: "focus-queued",
+                                     restoredFromMinimized,
                                      screen: liveScreen,
                                      sessionId: activeOverviewSessionId,
                                      topologyGeneration: overviewContextGeneration,
@@ -8981,7 +8984,8 @@ Rectangle {
     }
 
     function capturedWindowExitHandoffIsExact(exitToken, candidate, expectedWindowId,
-                                              expectedDesktopId, expectedOutputId) {
+                                              expectedDesktopId, expectedOutputId,
+                                              expectedTargetMinimized) {
         const effect = sceneEffect;
         const state = overviewExitHandoffState;
         const capture = state ? state.capture : null;
@@ -8994,6 +8998,8 @@ Rectangle {
             && capture.targetWindowId === expectedWindowId
             && capture.targetDesktopId === expectedDesktopId
             && capture.targetOutputId === expectedOutputId
+            && typeof expectedTargetMinimized === "boolean"
+            && capture.targetMinimized === expectedTargetMinimized
             && effect.overviewExitHandoffWindow === candidate;
     }
 
@@ -9035,7 +9041,8 @@ Rectangle {
                                                     request.candidate,
                                                     request.windowId,
                                                     request.desktopId,
-                                                    request.outputId)
+                                                    request.outputId,
+                                                    request.restoredFromMinimized)
                 && (!requireActiveCandidate
                     || KWin.Workspace.activeWindow === request.candidate);
         } catch (error) {
@@ -9067,6 +9074,7 @@ Rectangle {
                                        output: request.output,
                                        outputId: request.outputId,
                                        phase,
+                                       restoredFromMinimized: request.restoredFromMinimized,
                                        screen: request.screen,
                                        sessionId: request.sessionId,
                                        topologyGeneration: request.topologyGeneration,
@@ -9082,51 +9090,64 @@ Rectangle {
             return false;
         }
 
+        if (request.restoredFromMinimized === true) {
+            return performPendingWindowFocusWrite(request);
+        }
+
         Qt.callLater(function() {
-            if (root.pendingWindowFocusRequest !== request) {
-                return;
-            }
-            if (!root.pendingWindowFocusRequestIsExact(request)) {
-                root.abortPendingWindowFocus("stale");
-                return;
-            }
-
-            let activeWindow = null;
-            try {
-                activeWindow = KWin.Workspace.activeWindow;
-            } catch (error) {
-                root.abortPendingWindowFocus("stale");
-                return;
-            }
-            if (activeWindow === request.candidate) {
-                root.queuePendingWindowFocusSettle(request);
-                return;
-            }
-            if (activeWindow !== request.activeWindowBaseline) {
-                root.yieldPendingWindowFocusToExternalActivation();
-                return;
-            }
-
-            const requested = root.replacePendingWindowFocusPhase(request,
-                                                                   "focus-requested");
-            if (!requested || !root.pendingWindowFocusRequestIsExact(requested)) {
-                root.abortPendingWindowFocus("stale");
-                return;
-            }
-            try {
-                KWin.Workspace.activeWindow = requested.candidate;
-            } catch (error) {
-                root.abortPendingWindowFocus("stale");
-                return;
-            }
-            if (root.pendingWindowFocusRequest === requested
-                    && KWin.Workspace.activeWindow === requested.candidate) {
-                root.queuePendingWindowFocusSettle(requested);
-                return;
-            }
-            root.queuePendingWindowFocusWriteConfirmation(requested);
+            root.performPendingWindowFocusWrite(request);
         });
         return true;
+    }
+
+    function performPendingWindowFocusWrite(request) {
+        if (!request || request.phase !== "focus-queued"
+                || pendingWindowFocusRequest !== request) {
+            return false;
+        }
+        if (!pendingWindowFocusRequestIsExact(request)) {
+            abortPendingWindowFocus("stale");
+            return false;
+        }
+
+        let activeWindow = null;
+        try {
+            activeWindow = KWin.Workspace.activeWindow;
+        } catch (error) {
+            abortPendingWindowFocus("stale");
+            return false;
+        }
+        if (activeWindow === request.candidate) {
+            return queuePendingWindowFocusSettle(request);
+        }
+        if (activeWindow !== request.activeWindowBaseline) {
+            yieldPendingWindowFocusToExternalActivation();
+            return false;
+        }
+
+        const requested = replacePendingWindowFocusPhase(request,
+                                                          "focus-requested");
+        if (!requested || !pendingWindowFocusRequestIsExact(requested)) {
+            abortPendingWindowFocus("stale");
+            return false;
+        }
+        try {
+            KWin.Workspace.activeWindow = requested.candidate;
+        } catch (error) {
+            abortPendingWindowFocus("stale");
+            return false;
+        }
+
+        const current = pendingWindowFocusRequest;
+        if (current && current.candidate === requested.candidate
+                && current.exitToken === requested.exitToken
+                && pendingWindowFocusRequestIsExact(current, true)) {
+            return queuePendingWindowFocusSettle(current);
+        }
+        if (pendingWindowFocusRequest === requested) {
+            return queuePendingWindowFocusWriteConfirmation(requested);
+        }
+        return false;
     }
 
     function queuePendingWindowFocusWriteConfirmation(request) {
