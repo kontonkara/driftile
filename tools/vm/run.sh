@@ -849,20 +849,30 @@ capture_qmp_screendump() {
 
 capture_interrupted_overview_close() {
   local capabilities='{"execute":"qmp_capabilities"}'
-  local close_input='{"execute":"input-send-event","arguments":{"events":[{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"meta_l"}}},{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"o"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"o"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"meta_l"}}}]}}'
-  local close_render_delay_seconds=0.14
-  local image_file=$1
+  local enter_input='{"execute":"input-send-event","arguments":{"events":[{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"ret"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"ret"}}}]}}'
+  local frame_delay_seconds=0.02
+  local frame_index
+  local image_file
+  local interrupted_image=$1
   local qmp_pid
   local qmp_read_descriptor
   local qmp_write_descriptor
+  local reopen_input='{"execute":"input-send-event","arguments":{"events":[{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"meta_l"}}},{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"o"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"o"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"meta_l"}}}]}}'
   local result=0
   local screendump
+  local terminal_settle_delay_seconds=0.08
+  local -a exit_frame_images=("${@:2}")
 
-  [[ "$image_file" == "$temporary_directory"/* \
-    && "$image_file" =~ ^[-./_[:alnum:]]+$ \
+  [[ "$interrupted_image" == "$temporary_directory"/* \
+    && "$interrupted_image" =~ ^[-./_[:alnum:]]+$ \
+    && ${#exit_frame_images[@]} -eq 16 \
     && -x "$overview_zoom_socat_executable" ]] || return 1
-  rm -f -- "$image_file"
-  screendump="{\"execute\":\"screendump\",\"arguments\":{\"filename\":\"$image_file\"}}"
+  rm -f -- "$interrupted_image"
+  for image_file in "${exit_frame_images[@]}"; do
+    [[ "$image_file" == "$temporary_directory"/* \
+      && "$image_file" =~ ^[-./_[:alnum:]]+$ ]] || return 1
+    rm -f -- "$image_file"
+  done
 
   if ! coproc OVERVIEW_ZOOM_QMP {
     "$overview_zoom_socat_executable" \
@@ -885,22 +895,34 @@ capture_interrupted_overview_close() {
     read_qmp_command_return "$qmp_read_descriptor" || result=1
   fi
   if ((result == 0)); then
-    printf '%s\n' "$close_input" >&"$qmp_write_descriptor" \
+    printf '%s\n' "$enter_input" >&"$qmp_write_descriptor" \
       || result=1
   fi
   if ((result == 0)); then
     read_qmp_command_return "$qmp_read_descriptor" || result=1
   fi
-  if ((result == 0)); then
-    sleep "$close_render_delay_seconds"
+  for frame_index in "${!exit_frame_images[@]}"; do
+    ((result == 0)) || break
+    image_file=${exit_frame_images[$frame_index]}
+    screendump="{\"execute\":\"screendump\",\"arguments\":{\"filename\":\"$image_file\"}}"
     printf '%s\n' "$screendump" >&"$qmp_write_descriptor" \
       || result=1
+    if ((result == 0)); then
+      read_qmp_command_return "$qmp_read_descriptor" || result=1
+    fi
+    if ((result == 0 && frame_index + 1 < ${#exit_frame_images[@]})); then
+      if ((frame_index + 2 == ${#exit_frame_images[@]})); then
+        sleep "$terminal_settle_delay_seconds"
+      else
+        sleep "$frame_delay_seconds"
+      fi
+    fi
+  done
+  if ((result == 0)); then
+    cp -- "${exit_frame_images[6]}" "$interrupted_image" || result=1
   fi
   if ((result == 0)); then
-    read_qmp_command_return "$qmp_read_descriptor" || result=1
-  fi
-  if ((result == 0)); then
-    printf '%s\n' "$close_input" >&"$qmp_write_descriptor" \
+    printf '%s\n' "$reopen_input" >&"$qmp_write_descriptor" \
       || result=1
   fi
   if ((result == 0)); then
@@ -910,7 +932,11 @@ capture_interrupted_overview_close() {
   exec {qmp_write_descriptor}>&- || true
   exec {qmp_read_descriptor}<&- || true
   wait "$qmp_pid" || result=1
-  ((result == 0)) && [[ -s "$image_file" ]]
+  ((result == 0)) || return 1
+  [[ -s "$interrupted_image" ]] || return 1
+  for image_file in "${exit_frame_images[@]}"; do
+    [[ -s "$image_file" ]] || return 1
+  done
 }
 
 wait_for_guest_exchange_file() {
@@ -1043,7 +1069,10 @@ send_physical_overview_wheel_controls() {
   local continuity_image
   local continuity_seed_image
   local coordinate_file=$1
+  local desktop_surface_image
   local exchange_directory
+  local exit_frame_index
+  local exit_frame_suffix
   local extra
   local horizontal_wheel_input='{"execute":"input-send-event","arguments":{"events":[{"type":"btn","data":{"down":true,"button":"wheel-right"}},{"type":"btn","data":{"down":false,"button":"wheel-right"}}]}}'
   local key_in_image
@@ -1060,6 +1089,7 @@ send_physical_overview_wheel_controls() {
   local shift_up_input='{"execute":"input-send-event","arguments":{"events":[{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"shift"}}}]}}'
   local shifted_wheel_input='{"execute":"input-send-event","arguments":{"events":[{"type":"btn","data":{"down":true,"button":"wheel-down"}},{"type":"btn","data":{"down":false,"button":"wheel-down"}}]}}'
   local settle_seconds=0.05
+  local fresh_close_image
   local fresh_open_image
   local fresh_seed_image
   local vertical_wheel_down_input='{"execute":"input-send-event","arguments":{"events":[{"type":"btn","data":{"down":true,"button":"wheel-down"}},{"type":"btn","data":{"down":false,"button":"wheel-down"}}]}}'
@@ -1069,6 +1099,7 @@ send_physical_overview_wheel_controls() {
   local wheel_reset_image
   local x
   local y
+  local -a exit_frame_images=()
 
   IFS=' ' read -r \
     x \
@@ -1105,7 +1136,15 @@ send_physical_overview_wheel_controls() {
   continuity_image="$exchange_directory/driftile-overview-zoom-continuity.ppm"
   configured_reset_image="$exchange_directory/driftile-overview-zoom-configured-reset.ppm"
   fresh_seed_image="$exchange_directory/driftile-overview-zoom-fresh-seed.ppm"
+  fresh_close_image="$exchange_directory/driftile-overview-zoom-fresh-close.ppm"
   fresh_open_image="$exchange_directory/driftile-overview-zoom-fresh-open.ppm"
+  desktop_surface_image="$exchange_directory/driftile-overview-desktop-surface.ppm"
+  for ((exit_frame_index = 1; exit_frame_index <= 16; exit_frame_index += 1)); do
+    printf -v exit_frame_suffix '%02d' "$exit_frame_index"
+    exit_frame_images+=(
+      "$exchange_directory/driftile-overview-exit-frame-$exit_frame_suffix.ppm"
+    )
+  done
 
   capture_qmp_screendump "$baseline_image" || return 1
   capture_qmp_screendump "$baseline_duplicate_image" || return 1
@@ -1137,39 +1176,16 @@ send_physical_overview_wheel_controls() {
     "$continuity_seed_image" || return 1
   send_physical_overview_zoom_continuity_phase \
     "$continuity_closing_image" \
-    "$continuity_image" || return 1
+    "$continuity_image" \
+    "${exit_frame_images[@]}" || return 1
   send_physical_overview_zoom_phase \
     configured-reset \
     "$configured_reset_image" || return 1
   send_physical_overview_zoom_phase fresh-seed "$fresh_seed_image" || return 1
-  send_physical_overview_zoom_phase fresh-close "" || return 1
+  send_physical_overview_zoom_phase \
+    fresh-close \
+    "$fresh_close_image" || return 1
   send_physical_overview_zoom_phase fresh-open "$fresh_open_image" || return 1
-
-  [[ -x "$overview_zoom_node_executable" ]] || return 1
-  if ! probe_report=$("$overview_zoom_node_executable" \
-    "$root_directory/tools/vm/overview-zoom-visual-probe.mjs" \
-    "$baseline_image" \
-    "$baseline_duplicate_image" \
-    "$wheel_in_image" \
-    "$wheel_in_duplicate_image" \
-    "$wheel_reset_image" \
-    "$anchor_baseline_image" \
-    "$anchor_baseline_duplicate_image" \
-    "$anchor_wheel_in_image" \
-    "$anchor_wheel_reset_image" \
-    "$key_in_image" \
-    "$key_reset_image" \
-    "$continuity_seed_image" \
-    "$continuity_closing_image" \
-    "$continuity_image" \
-    "$configured_reset_image" \
-    "$fresh_seed_image" \
-    "$fresh_open_image"); then
-    printf 'Overview zoom visual probe metrics: %s\n' \
-      "${probe_report:-unavailable}" >&2
-    return 1
-  fi
-  printf 'Overview zoom visual probe: %s\n' "$probe_report"
 
   marker_prefix="$exchange_directory/driftile-overview-vertical-wheel"
 
@@ -1185,6 +1201,7 @@ send_physical_overview_wheel_controls() {
     return 1
   fi
   sleep 0.2
+  capture_qmp_screendump "$desktop_surface_image" || return 1
 
   send_qmp_commands "$capabilities" "$vertical_wheel_up_input" || return 1
   : > "$marker_prefix-up-sent"
@@ -1222,6 +1239,35 @@ send_physical_overview_wheel_controls() {
     send_qmp_commands "$capabilities" "$shift_up_input" >/dev/null 2>&1 || true
     return 1
   fi
+
+  [[ -x "$overview_zoom_node_executable" ]] || return 1
+  if ! probe_report=$("$overview_zoom_node_executable" \
+    "$root_directory/tools/vm/overview-zoom-visual-probe.mjs" \
+    "$baseline_image" \
+    "$baseline_duplicate_image" \
+    "$wheel_in_image" \
+    "$wheel_in_duplicate_image" \
+    "$wheel_reset_image" \
+    "$anchor_baseline_image" \
+    "$anchor_baseline_duplicate_image" \
+    "$anchor_wheel_in_image" \
+    "$anchor_wheel_reset_image" \
+    "$key_in_image" \
+    "$key_reset_image" \
+    "$continuity_seed_image" \
+    "$continuity_closing_image" \
+    "$continuity_image" \
+    "$configured_reset_image" \
+    "$fresh_seed_image" \
+    "$fresh_open_image" \
+    "$fresh_close_image" \
+    "$desktop_surface_image" \
+    "${exit_frame_images[@]}"); then
+    printf 'Overview zoom visual probe metrics: %s\n' \
+      "${probe_report:-unavailable}" >&2
+    return 1
+  fi
+  printf 'Overview zoom visual probe: %s\n' "$probe_report"
 }
 
 send_physical_overview_zoom_phase() {
@@ -1297,6 +1343,9 @@ send_physical_overview_zoom_phase() {
     fi
     return 1
   fi
+  if [[ "$phase" == fresh-close ]]; then
+    sleep 0.2
+  fi
   if [[ -n "$image_file" ]]; then
     capture_qmp_screendump "$image_file" || return 1
   fi
@@ -1307,7 +1356,8 @@ send_physical_overview_zoom_continuity_phase() {
   local final_image=$2
   local marker_prefix
 
-  capture_interrupted_overview_close "$closing_image" || return 1
+  shift 2
+  capture_interrupted_overview_close "$closing_image" "$@" || return 1
   marker_prefix="$(dirname -- "$final_image")/driftile-overview-zoom"
   : > "$marker_prefix-continuity-sent"
   if ! wait_for_guest_exchange_file "$marker_prefix-continuity-verified"; then

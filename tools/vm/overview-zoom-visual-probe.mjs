@@ -7,6 +7,10 @@ const configuredZoom = 0.43;
 const steppedZoom = 0.48;
 const anchorFraction = 0.75;
 const maximumCardGap = 48;
+const exitFrameNames = Array.from(
+  { length: 16 },
+  (_, index) => `exitFrame${String(index + 1).padStart(2, "0")}`,
+);
 const imageNames = [
   "baseline",
   "baselineDuplicate",
@@ -25,6 +29,9 @@ const imageNames = [
   "configuredReset",
   "freshSeed",
   "freshOpen",
+  "freshClose",
+  "desktopSurface",
+  ...exitFrameNames,
 ];
 
 if (process.argv.length !== imageNames.length + 2) {
@@ -52,7 +59,7 @@ for (const [name, image] of Object.entries(images)) {
 
 const baselineDistances = Object.fromEntries(
   imageNames
-    .filter((name) => name !== "baseline")
+    .slice(1, imageNames.indexOf("freshClose"))
     .map((name) => [name, normalizedMeanAbsoluteError(baseline, images[name])]),
 );
 const duplicateDistances = {
@@ -124,6 +131,55 @@ const closingDistanceLimit = Math.max(
   minimumZoomDistance * 0.2,
   sameStateNoise * 8 + 0.001,
 );
+const exitDarkDeficitThreshold = Math.max(
+  12,
+  Math.ceil(sameStateNoise * 255 * 12),
+);
+const exitWholeFrameUnderflowLimit = Math.max(
+  0.025,
+  sameStateNoise * 12 + 0.002,
+);
+const exitEndpointLimit = Math.max(0.01, sameStateNoise * 10 + 0.002);
+const exitFrameMetrics = Object.fromEntries(
+  exitFrameNames.map((name) => [
+    name,
+    exitContinuityMetrics(
+      images.continuitySeed,
+      images.freshClose,
+      images[name],
+      exitDarkDeficitThreshold,
+    ),
+  ]),
+);
+const maximumExitWholeFrameUnderflow = Math.max(
+  ...Object.values(exitFrameMetrics).map(
+    (metrics) => metrics.wholeFrameUnderflow,
+  ),
+);
+const maximumExitWideDarkAreaFraction = Math.max(
+  ...Object.values(exitFrameMetrics).map(
+    (metrics) => metrics.wideDarkAreaFraction,
+  ),
+);
+const minimumExitEndpointDistance = Math.min(
+  ...Object.values(exitFrameMetrics).map((metrics) =>
+    Math.min(metrics.seedDistance, metrics.desktopDistance),
+  ),
+);
+const minimumExitDesktopDistance = Math.min(
+  ...Object.values(exitFrameMetrics).map((metrics) => metrics.desktopDistance),
+);
+const maximumExitEndpointDistance = Math.max(
+  ...Object.values(exitFrameMetrics).map((metrics) =>
+    Math.min(metrics.seedDistance, metrics.desktopDistance),
+  ),
+);
+const desktopSurfaceMetrics = wallpaperSurfaceMetrics(images.desktopSurface);
+const desktopSurfaceRangeLimit = Math.max(0.02, sameStateNoise * 8 + 0.002);
+const desktopSurfaceGradientLimit = Math.max(
+  0.0008,
+  sameStateNoise * 2 + 0.0002,
+);
 
 const configuredStride = spatialStride(baseline.height, configuredZoom);
 const steppedStride = spatialStride(baseline.height, steppedZoom);
@@ -168,6 +224,22 @@ const report = {
   equivalenceSignalFraction: roundMetric(
     equivalenceLimit / minimumZoomDistance,
   ),
+  exit: {
+    darkDeficitThreshold: exitDarkDeficitThreshold,
+    frames: Object.fromEntries(
+      Object.entries(exitFrameMetrics).map(([name, metrics]) => [
+        name,
+        roundMetrics(metrics),
+      ]),
+    ),
+    maximumEndpointDistance: roundMetric(maximumExitEndpointDistance),
+    maximumWholeFrameUnderflow: roundMetric(maximumExitWholeFrameUnderflow),
+    maximumWideDarkAreaFraction: roundMetric(maximumExitWideDarkAreaFraction),
+    minimumDesktopDistance: roundMetric(minimumExitDesktopDistance),
+    minimumEndpointDistance: roundMetric(minimumExitEndpointDistance),
+    endpointLimit: roundMetric(exitEndpointLimit),
+    wholeFrameUnderflowLimit: roundMetric(exitWholeFrameUnderflowLimit),
+  },
   maximumEquivalenceDistance: roundMetric(maximumEquivalenceDistance),
   maximumResetDistance: roundMetric(maximumResetDistance),
   minimumClosingDistance: roundMetric(minimumClosingDistance),
@@ -176,6 +248,11 @@ const report = {
   resetLimit: roundMetric(resetLimit),
   resetSignalFraction: roundMetric(resetLimit / minimumZoomDistance),
   sameStateNoise: roundMetric(sameStateNoise),
+  wallpaperSurface: {
+    ...roundMetrics(desktopSurfaceMetrics),
+    gradientLimit: roundMetric(desktopSurfaceGradientLimit),
+    rangeLimit: roundMetric(desktopSurfaceRangeLimit),
+  },
 };
 
 process.stdout.write(`${JSON.stringify(report)}\n`);
@@ -214,6 +291,25 @@ if (anchorRegistration.improvement < anchorMinimumImprovement) {
 }
 if (minimumClosingDistance < closingDistanceLimit) {
   fail("the interrupted close screendump did not materially enter closing");
+}
+if (maximumExitEndpointDistance < closingDistanceLimit) {
+  fail("the exit burst did not contain a material transition frame");
+}
+if (minimumExitDesktopDistance > exitEndpointLimit) {
+  fail("the exit burst did not reach the stable desktop endpoint");
+}
+if (maximumExitWholeFrameUnderflow > exitWholeFrameUnderflowLimit) {
+  fail("an exit frame became materially darker than both stable endpoints");
+}
+if (maximumExitWideDarkAreaFraction >= 0.04) {
+  fail("an exit frame exposed a wide dark rectangular region");
+}
+if (
+  desktopSurfaceMetrics.dynamicRange < desktopSurfaceRangeLimit ||
+  desktopSurfaceMetrics.neighborGradient < desktopSurfaceGradientLimit ||
+  desktopSurfaceMetrics.modalFraction >= 0.8
+) {
+  fail("the visible empty workspace did not contain a real wallpaper surface");
 }
 
 function spatialStride(sceneHeight, zoom) {
@@ -301,6 +397,173 @@ function shiftedRegionMeanAbsoluteError(
     fail("anchor registration did not find enough zoom-sensitive pixels");
   }
   return difference / (sampledChannels * 255);
+}
+
+function exitContinuityMetrics(seed, desktop, frame, deficitThreshold) {
+  const gridColumns = 16;
+  const gridRows = 12;
+  const darkCells = Array.from({ length: gridRows }, () =>
+    Array.from({ length: gridColumns }, () => false),
+  );
+  let desktopLuminance = 0;
+  let frameLuminance = 0;
+  let seedLuminance = 0;
+  let sampledPixels = 0;
+
+  for (let gridY = 0; gridY < gridRows; gridY += 1) {
+    const yStart = Math.floor((gridY * frame.height) / gridRows);
+    const yEnd = Math.floor(((gridY + 1) * frame.height) / gridRows);
+    for (let gridX = 0; gridX < gridColumns; gridX += 1) {
+      const xStart = Math.floor((gridX * frame.width) / gridColumns);
+      const xEnd = Math.floor(((gridX + 1) * frame.width) / gridColumns);
+      let cellDeficit = 0;
+      let darkPixels = 0;
+      let eligiblePixels = 0;
+      let cellPixels = 0;
+
+      for (let y = yStart; y < yEnd; y += 2) {
+        for (let x = xStart; x < xEnd; x += 2) {
+          const offset = (y * frame.width + x) * 3;
+          const seedValue = pixelLuminance(seed.bytes, offset);
+          const desktopValue = pixelLuminance(desktop.bytes, offset);
+          const frameValue = pixelLuminance(frame.bytes, offset);
+          const endpointFloor = Math.min(seedValue, desktopValue);
+          seedLuminance += seedValue;
+          desktopLuminance += desktopValue;
+          frameLuminance += frameValue;
+          sampledPixels += 1;
+          cellPixels += 1;
+
+          if (endpointFloor < 24) {
+            continue;
+          }
+          eligiblePixels += 1;
+          const deficit = endpointFloor - frameValue;
+          if (deficit >= deficitThreshold) {
+            darkPixels += 1;
+            cellDeficit += deficit;
+          }
+        }
+      }
+
+      darkCells[gridY][gridX] =
+        eligiblePixels >= cellPixels * 0.25 &&
+        darkPixels >= eligiblePixels * 0.6 &&
+        cellDeficit >= darkPixels * deficitThreshold * 1.15;
+    }
+  }
+
+  const seedMean = seedLuminance / (sampledPixels * 255);
+  const desktopMean = desktopLuminance / (sampledPixels * 255);
+  const frameMean = frameLuminance / (sampledPixels * 255);
+  const wideDarkAreaFraction = largestWideRectangleFraction(darkCells, 0.5);
+  return {
+    desktopDistance: normalizedMeanAbsoluteError(frame, desktop),
+    frameMean,
+    seedDistance: normalizedMeanAbsoluteError(frame, seed),
+    wholeFrameUnderflow: Math.max(
+      0,
+      Math.min(seedMean, desktopMean) - frameMean,
+    ),
+    wideDarkAreaFraction,
+  };
+}
+
+function largestWideRectangleFraction(cells, minimumWidthFraction) {
+  const rows = cells.length;
+  const columns = cells[0]?.length ?? 0;
+  const heights = Array.from({ length: columns }, () => 0);
+  let maximumArea = 0;
+
+  for (let row = 0; row < rows; row += 1) {
+    for (let column = 0; column < columns; column += 1) {
+      heights[column] = cells[row][column] ? heights[column] + 1 : 0;
+    }
+    for (let left = 0; left < columns; left += 1) {
+      let height = Number.POSITIVE_INFINITY;
+      for (let right = left; right < columns; right += 1) {
+        height = Math.min(height, heights[right]);
+        const width = right - left + 1;
+        if (height <= 0 || width / columns < minimumWidthFraction) {
+          continue;
+        }
+        maximumArea = Math.max(maximumArea, width * height);
+      }
+    }
+  }
+
+  return rows > 0 && columns > 0 ? maximumArea / (rows * columns) : 0;
+}
+
+function wallpaperSurfaceMetrics(image) {
+  const cardHeight = image.height * configuredZoom;
+  const nextCardStart =
+    image.height / 2 +
+    cardHeight / 2 +
+    Math.min(cardHeight * 0.1, maximumCardGap);
+  const xStart = Math.floor(image.width * 0.08);
+  const xEnd = Math.ceil(image.width * 0.92);
+  const yStart = Math.ceil(nextCardStart + cardHeight * 0.12);
+  const yEnd = Math.min(
+    Math.floor(image.height * 0.96),
+    Math.floor(nextCardStart + cardHeight * 0.88),
+  );
+  if (xEnd <= xStart || yEnd <= yStart) {
+    fail("the image is too small for the empty-workspace wallpaper crop");
+  }
+
+  const luminances = [];
+  const colors = new Map();
+  let gradient = 0;
+  let gradientSamples = 0;
+  let maximumColorCount = 0;
+  let sampledPixels = 0;
+
+  for (let y = yStart; y < yEnd; y += 2) {
+    for (let x = xStart; x < xEnd; x += 2) {
+      const offset = (y * image.width + x) * 3;
+      const luminance = pixelLuminance(image.bytes, offset);
+      luminances.push(luminance);
+      const color =
+        (image.bytes[offset] << 16) |
+        (image.bytes[offset + 1] << 8) |
+        image.bytes[offset + 2];
+      const count = (colors.get(color) ?? 0) + 1;
+      colors.set(color, count);
+      maximumColorCount = Math.max(maximumColorCount, count);
+      sampledPixels += 1;
+
+      if (x + 2 < xEnd) {
+        gradient += Math.abs(
+          luminance - pixelLuminance(image.bytes, offset + 6),
+        );
+        gradientSamples += 1;
+      }
+      if (y + 2 < yEnd) {
+        gradient += Math.abs(
+          luminance - pixelLuminance(image.bytes, offset + image.width * 6),
+        );
+        gradientSamples += 1;
+      }
+    }
+  }
+
+  luminances.sort((left, right) => left - right);
+  const low = luminances[Math.floor(luminances.length * 0.05)];
+  const high = luminances[Math.floor(luminances.length * 0.95)];
+  return {
+    dynamicRange: (high - low) / 255,
+    modalFraction: maximumColorCount / sampledPixels,
+    neighborGradient: gradient / (gradientSamples * 255),
+  };
+}
+
+function pixelLuminance(bytes, offset) {
+  return (
+    bytes[offset] * 0.2126 +
+    bytes[offset + 1] * 0.7152 +
+    bytes[offset + 2] * 0.0722
+  );
 }
 
 function readPortablePixmap(path) {
