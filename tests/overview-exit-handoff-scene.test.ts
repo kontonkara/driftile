@@ -270,7 +270,7 @@ describe("overview exit handoff scene", () => {
       /readonly property real desktopBridgeOpacity: desktopBridgeReady\s*\? boundedUnit\(desktopBridgeBlend\) : 0/u,
     );
     expect(handoff).toMatch(
-      /readonly property real surfaceOpacity: terminalCoverageMode === "canvas"\s*\|\| desktopBridgeOpacity < 1 \? 1 : 0/u,
+      /readonly property bool desktopBridgeCoversOutput: boundedProgress >= 1[\s\S]*desktopBridgeOpacity >= 1[\s\S]*rectsMatch\(animatedDesktopRect, localTargetOutputRect\)[\s\S]*readonly property real surfaceOpacity: terminalCoverageMode === "canvas"\s*\|\| !desktopBridgeCoversOutput \? 1 : 0/u,
     );
     expect(handoff).toContain(
       "readonly property real chromeOpacity: 1 - boundedProgress",
@@ -285,7 +285,7 @@ describe("overview exit handoff scene", () => {
       "readonly property real fallbackOpacity: revealOpacity * (1 - boundedProgress)",
     );
     expect(handoff).toMatch(
-      /readonly property bool terminalCoverageOpaque: terminalCoverageMode === "canvas"[\s\S]*surfaceOpacity >= 1 && desktopBridgeOpacity <= 0[\s\S]*terminalCoverageMode === "bridge" && desktopBridgeReady[\s\S]*desktopBridgeOpacity >= 1 && surfaceOpacity <= 0/u,
+      /readonly property bool terminalCoverageOpaque: terminalCoverageMode === "canvas"[\s\S]*surfaceOpacity >= 1 && desktopBridgeOpacity <= 0[\s\S]*terminalCoverageMode === "bridge" && desktopBridgeReady[\s\S]*desktopBridgeCoversOutput && surfaceOpacity <= 0/u,
     );
     expect(handoff).not.toContain("id: rowFallbackShell");
     expect(handoff).not.toContain("rowFallbackScale");
@@ -294,26 +294,39 @@ describe("overview exit handoff scene", () => {
       mode: "none" | "canvas" | "bridge",
       ready: boolean,
       blend: number,
+      progress: number,
+      geometryExact = true,
     ) => {
       const bridge = ready ? Math.max(0, Math.min(1, blend)) : 0;
-      const surface = mode === "canvas" || bridge < 1 ? 1 : 0;
+      const bridgeCoversOutput = progress >= 1 && bridge >= 1 && geometryExact;
+      const surface = mode === "canvas" || !bridgeCoversOutput ? 1 : 0;
       const terminalOpaque =
         mode === "canvas"
           ? surface >= 1 && bridge <= 0
-          : mode === "bridge" && ready && bridge >= 1 && surface <= 0;
+          : mode === "bridge" && ready && bridgeCoversOutput && surface <= 0;
       return { bridge, surface, terminalOpaque };
     };
-    expect(opacityAt("none", true, 0)).toEqual({
+    expect(opacityAt("none", true, 0, 0.5)).toEqual({
       bridge: 0,
       surface: 1,
       terminalOpaque: false,
     });
-    expect(opacityAt("bridge", true, 1)).toEqual({
+    expect(opacityAt("none", true, 1, 0.8)).toEqual({
+      bridge: 1,
+      surface: 1,
+      terminalOpaque: false,
+    });
+    expect(opacityAt("bridge", true, 1, 1)).toEqual({
       bridge: 1,
       surface: 0,
       terminalOpaque: true,
     });
-    expect(opacityAt("canvas", false, 0)).toEqual({
+    expect(opacityAt("bridge", true, 1, 1, false)).toEqual({
+      bridge: 1,
+      surface: 1,
+      terminalOpaque: false,
+    });
+    expect(opacityAt("canvas", false, 0, 1)).toEqual({
       bridge: 0,
       surface: 1,
       terminalOpaque: true,
@@ -374,6 +387,9 @@ describe("overview exit handoff scene", () => {
     );
     expect(handoff).toMatch(
       /NumberAnimation \{\s*id: desktopBridgeFadeIn[\s\S]*property: "desktopBridgeBlend"[\s\S]*from: 0[\s\S]*to: 1[\s\S]*duration: 90/u,
+    );
+    expect(handoff).toMatch(
+      /function startDesktopBridgeFadeIfEligible\(\)[\s\S]*boundedProgress < 1[\s\S]*desktopBridgeFadeIn\.restart\(\)/u,
     );
   });
 

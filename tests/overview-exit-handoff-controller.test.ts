@@ -316,6 +316,13 @@ describe("overview exit handoff integration", () => {
     expect(scene).toContain("desktopSourceRect: target.desktopSourceRect");
     expect(controller).toContain("desktopSourceRect: input.desktopSourceRect");
     expect(scene).toMatch(
+      /function overviewExitDesktopSurfaceRect\(expectedDesktopId\)[\s\S]*card\.contentLeft \+ card\.viewportOriginX[\s\S]*card\.contentTop \+ card\.viewportOriginY[\s\S]*card\.projectedViewportWidth[\s\S]*card\.projectedViewportHeight/u,
+    );
+    expect(scene).not.toContain("function overviewExitDesktopRowRect(");
+    expect(scene).not.toMatch(
+      /overviewExitDesktopSurfaceRect\(expectedDesktopId\)\s*\|\|\s*target\.rect/u,
+    );
+    expect(scene).toMatch(
       /const targetIndex = target[\s\S]*desktopIds\.indexOf\(target\.targetDesktopId\)[\s\S]*spatialExitFrozenWorkspaceIndex = targetIndex;[\s\S]*spatialPresentationWorkspaceIndex = targetIndex;/u,
     );
     expect(entrypoint).toContain(

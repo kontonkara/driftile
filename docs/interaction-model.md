@@ -260,9 +260,10 @@ scene consumes that progress directly. Exact public exit thumbnail and Desktop
 surface bridges preload in the captured output's render path. Two matching
 frames latch each ready bridge; otherwise the spatial canvas remains opaque.
 Two bounded promoted frames still choose the thumbnail or monochrome window
-shell once, and that window mode can only downgrade. The Desktop bridge expands
-from the target row to the output beneath it and remains opaque at terminal
-progress; the one-color row-scale fallback is not part of the normal close path.
+shell once, and that window mode can only downgrade. The Desktop bridge tracks
+the exact projected surface of the target row, reaches full-output geometry,
+then replaces the canvas at terminal progress; the one-color row-scale fallback
+is not part of the normal close path.
 Interactive gestures continue to drive presentation progress directly.
 Reopening during that close motion reverses the same visible session from its
 current progress and keeps the current session zoom.

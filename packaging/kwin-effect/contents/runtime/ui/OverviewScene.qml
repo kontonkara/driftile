@@ -8534,7 +8534,7 @@ Rectangle {
         const target = overviewExitNavigationTarget("window", candidate, expectedWindowId,
                                                     expectedDesktopId, expectedScreen);
         const targetFrame = overviewExitWindowFrame(candidate);
-        const desktopSourceRect = overviewExitDesktopRowRect(expectedDesktopId);
+        const desktopSourceRect = overviewExitDesktopSurfaceRect(expectedDesktopId);
         if (!target || !targetFrame || !desktopSourceRect) {
             return 0;
         }
@@ -8561,8 +8561,8 @@ Rectangle {
                                                expectedScreen) {
         const target = overviewExitNavigationTarget("desktop", candidate, null,
                                                     expectedDesktopId, expectedScreen);
-        const sourceRect = target ? overviewExitDesktopRowRect(expectedDesktopId)
-                                  || target.rect : null;
+        const sourceRect = target
+            ? overviewExitDesktopSurfaceRect(expectedDesktopId) : null;
         const targetFrame = overviewExitOutputFrame(expectedScreen);
         if (!sourceRect || !targetFrame) {
             return 0;
@@ -8750,22 +8750,27 @@ Rectangle {
         return match && overviewExitRect(match.rect) ? match : null;
     }
 
-    function overviewExitDesktopRowRect(expectedDesktopId) {
+    function overviewExitDesktopSurfaceRect(expectedDesktopId) {
         const index = desktopIds.indexOf(expectedDesktopId);
         const card = index >= 0 ? desktopCardAt(index) : null;
-        if (!card || !Number.isFinite(card.width) || card.width <= 0
-                || !Number.isFinite(card.height) || card.height <= 0) {
+        if (!card || !Number.isFinite(card.contentLeft)
+                || !Number.isFinite(card.contentTop)
+                || !Number.isFinite(card.viewportOriginX)
+                || !Number.isFinite(card.viewportOriginY)
+                || !Number.isFinite(card.projectedViewportWidth)
+                || card.projectedViewportWidth <= 0
+                || !Number.isFinite(card.projectedViewportHeight)
+                || card.projectedViewportHeight <= 0) {
             return null;
         }
 
         try {
-            const point = card.mapToItem(root, 0, 0);
-            return overviewExitRect({
-                                        x: point.x,
-                                        y: point.y,
-                                        width: card.width,
-                                        height: card.height
-                                    });
+            return overviewExitRect(card.mapToItem(
+                                        root,
+                                        card.contentLeft + card.viewportOriginX,
+                                        card.contentTop + card.viewportOriginY,
+                                        card.projectedViewportWidth,
+                                        card.projectedViewportHeight));
         } catch (error) {
             return null;
         }
@@ -8862,9 +8867,9 @@ Rectangle {
             return Qt.rect(0, 0, 1, 1);
         }
         if (overviewExitHandoffState && overviewExitHandoffState.phase === "fallback") {
-            const row = overviewExitDesktopRowRect(capture.targetDesktopId);
-            if (row) {
-                return overviewExitRectValue(row);
+            const desktopSourceRect = overviewExitRect(capture.desktopSourceRect);
+            if (desktopSourceRect) {
+                return overviewExitRectValue(desktopSourceRect);
             }
         }
         return overviewExitRectValue(capture.sourceRect);

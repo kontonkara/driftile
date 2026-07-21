@@ -239,10 +239,12 @@ staged for two rendered frames. If promotion arrives first, two bounded promoted
 frames choose the thumbnail or monochrome shell once; stale window identity
 chooses the desktop-only path. The committed window mode may only downgrade. The
 Desktop surface expands from its row to the output and replaces the fading
-spatial canvas only after it is ready. Until then the canvas stays opaque. The
-target thumbnail morphs from its Overview rectangle to the native frame above
-that surface, so neither a uniform row rectangle nor a transparent terminal
-frame is presented.
+spatial canvas only after it is ready and has reached exact full-output geometry.
+Its immutable source is the projected Desktop surface, not the surrounding
+workspace card. Until terminal coverage is complete, the canvas stays opaque.
+The target thumbnail morphs from its Overview rectangle to the native frame
+above that surface, so neither a uniform row rectangle nor a transparent
+terminal frame is presented.
 
 Input remains locked throughout the close. At terminal progress, either the
 two-frame Desktop bridge or the retained spatial canvas still covers every

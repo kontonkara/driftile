@@ -77,8 +77,11 @@ Item {
     readonly property real revealOpacity: boundedUnit(boundedProgress / 0.16)
     readonly property real desktopBridgeOpacity: desktopBridgeReady
         ? boundedUnit(desktopBridgeBlend) : 0
+    readonly property bool desktopBridgeCoversOutput: boundedProgress >= 1
+        && desktopBridgeOpacity >= 1
+        && rectsMatch(animatedDesktopRect, localTargetOutputRect)
     readonly property real surfaceOpacity: terminalCoverageMode === "canvas"
-        || desktopBridgeOpacity < 1 ? 1 : 0
+        || !desktopBridgeCoversOutput ? 1 : 0
     readonly property real chromeOpacity: 1 - boundedProgress
     readonly property real thumbnailOpacity: revealOpacity
     readonly property real fallbackOpacity: revealOpacity * (1 - boundedProgress)
@@ -87,7 +90,7 @@ Item {
     readonly property bool terminalCoverageOpaque: terminalCoverageMode === "canvas"
         ? surfaceOpacity >= 1 && desktopBridgeOpacity <= 0
         : terminalCoverageMode === "bridge" && desktopBridgeReady
-          && desktopBridgeOpacity >= 1 && surfaceOpacity <= 0
+          && desktopBridgeCoversOutput && surfaceOpacity <= 0
     property string committedHandoffKey: ""
     property string committedVisualMode: "none"
     property bool visualModeCommitted: false
@@ -580,7 +583,7 @@ Item {
 
     function startDesktopBridgeFadeIfEligible() {
         if (!desktopBridgeReady || !resolvedOutputExact
-                || terminalCoverageMode === "canvas") {
+                || boundedProgress < 1 || terminalCoverageMode === "canvas") {
             return false;
         }
         if (desktopBridgeBlend >= 1 || desktopBridgeFadeIn.running) {

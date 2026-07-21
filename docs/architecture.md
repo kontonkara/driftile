@@ -182,8 +182,9 @@ Events travel from KWin through the bridge into the runtime. Commands and result
   controller owns the easing once, and the scene consumes its bounded progress
   directly. The exact Desktop surface expands from its row beneath the target
   window and remains opaque at terminal progress. Until it is ready, the current
-  spatial canvas stays opaque instead of exposing a uniform row rectangle or
-  transparent frame.
+  spatial canvas stays opaque until terminal full-output geometry instead of
+  exposing a uniform row rectangle or transparent frame. The bridge source is
+  the exact projected Desktop surface rather than the enclosing workspace card.
 - Freezes the visible workspace index and cameras while that handoff owns the
   close, blocks scene input, and defers model replacement. At terminal progress,
   an opaque Desktop bridge or retained canvas covers every output while a frozen
