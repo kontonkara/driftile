@@ -81,6 +81,7 @@ Item {
         ? desktopSurfaceActivityId : "driftile-unavailable-activity"
     readonly property bool desktopSurfaceContextExact: desktopSurfaceContextIsExact()
     readonly property bool desktopSurfaceReloadContextExact: desktopSurfaceReloadContextIsExact()
+    property bool desktopSurfaceContextInvalidated: false
     property bool desktopSurfaceReady: false
     property int desktopSurfaceReadyToken: 0
     property int desktopSurfaceLoadedToken: 0
@@ -374,10 +375,7 @@ Item {
                     synchronizeDesktopSurfacePresentation();
                 }
                 onDesktopSurfacePresentedChanged: synchronizeDesktopSurfacePresentation()
-                onLoaded: {
-                    card.acceptDesktopSurfaceLoad(desktopSurfaceLoader.item);
-                    synchronizeDesktopSurfacePresentation();
-                }
+                onLoaded: acceptDesktopSurfaceCandidate(desktopSurfaceLoader.item)
                 onStatusChanged: {
                     if (status !== Loader.Ready) {
                         card.rejectDesktopSurfaceLoad();
@@ -411,8 +409,16 @@ Item {
                     return true;
                 }
 
+                function acceptDesktopSurfaceCandidate(candidate) {
+                    const accepted = card.acceptDesktopSurfaceLoad(candidate);
+                    synchronizeDesktopSurfacePresentation();
+                    return accepted;
+                }
+
                 sourceComponent: Component {
                     KWin.DesktopBackground {
+                        id: desktopBackground
+
                         property bool driftileContextCaptured: false
                         property int driftileContextGeneration: 0
                         property int driftileReloadToken: 0
@@ -443,6 +449,7 @@ Item {
                             driftileScreenName = card.desktopSurfaceReloadScreenName;
                             driftileOutputId = card.desktopSurfaceReloadOutputId;
                             driftileContextCaptured = true;
+                            desktopSurfaceLoader.acceptDesktopSurfaceCandidate(desktopBackground);
                         }
                     }
                 }
@@ -2388,7 +2395,7 @@ Item {
         card.cancelInvalidActiveColumnSpatialDrag();
     }
     onDesktopChanged: {
-        card.scheduleDesktopSurfaceContextReload();
+        card.synchronizeDesktopSurfaceContext();
         card.scheduleColumnDragEligibilityRefresh();
         card.clearWindowDropHover();
         card.clearColumnDropHover();
@@ -2396,15 +2403,16 @@ Item {
         card.cancelActiveColumnSpatialDrag();
     }
     onDesktopIdChanged: {
-        card.scheduleDesktopSurfaceContextReload();
+        card.synchronizeDesktopSurfaceContext();
         card.scheduleColumnDragEligibilityRefresh();
         card.clearWindowDropHover();
         card.clearColumnDropHover();
         card.cancelActiveWindowSpatialDrag();
         card.cancelActiveColumnSpatialDrag();
     }
-    onDesktopSurfaceActivityIdChanged: card.scheduleDesktopSurfaceContextReload()
-    onDesktopSurfaceEnabledChanged: card.scheduleDesktopSurfaceContextReload()
+    onDesktopSurfaceActivityIdChanged: card.synchronizeDesktopSurfaceContext()
+    onDesktopSurfaceContextExactChanged: card.synchronizeDesktopSurfaceContext()
+    onDesktopSurfaceEnabledChanged: card.synchronizeDesktopSurfaceContext()
     onDesktopSurfaceLifecycleEventChanged: card.scheduleDesktopSurfaceReload()
     onEnabledChanged: {
         card.scheduleColumnDragEligibilityRefresh();
@@ -2416,7 +2424,7 @@ Item {
         }
     }
     onScreenChanged: {
-        card.scheduleDesktopSurfaceContextReload();
+        card.synchronizeDesktopSurfaceContext();
         card.scheduleColumnDragEligibilityRefresh();
         card.clearWindowDropHover();
         card.clearColumnDropHover();
@@ -2424,7 +2432,7 @@ Item {
         card.cancelActiveColumnSpatialDrag();
     }
     onOutputIdChanged: {
-        card.scheduleDesktopSurfaceContextReload();
+        card.synchronizeDesktopSurfaceContext();
         card.scheduleColumnDragEligibilityRefresh();
         card.clearInvalidWindowDropHover();
         card.clearInvalidColumnDropHover();
@@ -2487,16 +2495,16 @@ Item {
         }
     }
     onOverviewActivityIdChanged: {
-        card.scheduleDesktopSurfaceContextReload();
+        card.synchronizeDesktopSurfaceContext();
         card.scheduleColumnDragEligibilityRefresh();
         card.cancelInvalidActiveWindowSpatialDrag();
     }
     onOverviewContextGenerationChanged: {
-        card.scheduleDesktopSurfaceContextReload();
+        card.synchronizeDesktopSurfaceContext();
         card.cancelActiveWindowSpatialDrag();
     }
 
-    Component.onCompleted: card.scheduleDesktopSurfaceContextReload()
+    Component.onCompleted: card.synchronizeDesktopSurfaceContext()
 
     Component.onDestruction: {
         card.rejectDesktopSurfaceLoad();
@@ -2519,7 +2527,7 @@ Item {
         }
 
         const expectation = desktopSurfaceReloadExpectation();
-        if (expectation === null) {
+        if (expectation === null || !Object.isFrozen(expectation)) {
             return false;
         }
 
@@ -2531,7 +2539,11 @@ Item {
         desktopSurfaceReady = false;
         desktopSurfaceReadyToken = 0;
         desktopSurfaceLoadedToken = 0;
-        applyDesktopSurfaceReloadExpectation(expectation);
+        desktopSurfaceContextInvalidated = false;
+        if (!applyDesktopSurfaceReloadExpectation(expectation)) {
+            desktopSurfaceContextInvalidated = true;
+            return false;
+        }
         Qt.callLater(card.completeDesktopSurfaceReload, token, reloadRevision);
         return true;
     }
@@ -2549,6 +2561,11 @@ Item {
     }
 
     function scheduleDesktopSurfaceContextReload() {
+        const expectation = desktopSurfaceReloadExpectation();
+        if (expectation === null || !Object.isFrozen(expectation)) {
+            return false;
+        }
+
         desktopSurfaceReloadToken = desktopSurfaceReloadToken >= 2147483647
             ? 1 : desktopSurfaceReloadToken + 1;
         const token = desktopSurfaceReloadToken;
@@ -2556,14 +2573,39 @@ Item {
         desktopSurfaceReady = false;
         desktopSurfaceReadyToken = 0;
         desktopSurfaceLoadedToken = 0;
-
-        const expectation = desktopSurfaceReloadExpectation();
-        if (expectation === null) {
+        desktopSurfaceContextInvalidated = false;
+        if (!applyDesktopSurfaceReloadExpectation(expectation)) {
+            desktopSurfaceContextInvalidated = true;
             return false;
         }
 
-        applyDesktopSurfaceReloadExpectation(expectation);
         Qt.callLater(card.completeDesktopSurfaceReload, token, reloadRevision);
+        return true;
+    }
+
+    function synchronizeDesktopSurfaceContext() {
+        if (!desktopSurfaceContextExact) {
+            return invalidateDesktopSurfaceContext();
+        }
+        if (!desktopSurfaceContextInvalidated && desktopSurfaceReloadToken > 0
+                && desktopSurfaceReloadContextExact) {
+            return true;
+        }
+
+        return scheduleDesktopSurfaceContextReload();
+    }
+
+    function invalidateDesktopSurfaceContext() {
+        if (desktopSurfaceContextInvalidated) {
+            return false;
+        }
+
+        desktopSurfaceReloadToken = desktopSurfaceReloadToken >= 2147483647
+            ? 1 : desktopSurfaceReloadToken + 1;
+        desktopSurfaceContextInvalidated = true;
+        desktopSurfaceReady = false;
+        desktopSurfaceReadyToken = 0;
+        desktopSurfaceLoadedToken = 0;
         return true;
     }
 
@@ -2640,7 +2682,6 @@ Item {
     function acceptDesktopSurfaceLoad(candidate) {
         if (!desktopSurfaceReady || desktopSurfaceReadyToken !== desktopSurfaceReloadToken
                 || !desktopSurfaceLoadedItemIsExact(candidate)) {
-            desktopSurfaceLoadedToken = 0;
             return false;
         }
 

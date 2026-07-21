@@ -918,6 +918,9 @@ describe("overview effect package", () => {
     );
     expect(desktopCard).toContain("property int desktopSurfaceReloadToken: 0");
     expect(desktopCard).toContain(
+      "property bool desktopSurfaceContextInvalidated: false",
+    );
+    expect(desktopCard).toContain(
       "onDesktopSurfaceLifecycleEventChanged: card.scheduleDesktopSurfaceReload()",
     );
     expect(desktopCard).toMatch(
@@ -945,6 +948,12 @@ describe("overview effect package", () => {
     );
     expect(surfaceLoader).toMatch(
       /Component\.onCompleted:[\s\S]*driftileContextGeneration = card\.desktopSurfaceReloadGeneration;[\s\S]*driftileReloadToken = card\.desktopSurfaceReadyToken;[\s\S]*driftileContextCaptured = true;/u,
+    );
+    expect(surfaceLoader).toMatch(
+      /onLoaded: acceptDesktopSurfaceCandidate\(desktopSurfaceLoader\.item\)[\s\S]*function acceptDesktopSurfaceCandidate\(candidate\)[\s\S]*card\.acceptDesktopSurfaceLoad\(candidate\);/u,
+    );
+    expect(surfaceLoader).toMatch(
+      /driftileContextCaptured = true;[\s\S]*desktopSurfaceLoader\.acceptDesktopSurfaceCandidate\(desktopBackground\);/u,
     );
     expect(surfaceLoader).toContain("enabled: false");
     expect(surfaceLoader).toContain("z: 0");
@@ -1029,6 +1038,9 @@ describe("overview effect package", () => {
     expect(surfaceReloadSchedule).toMatch(
       /if \(plan\.targeted !== true\) \{\s*return false;/u,
     );
+    expect(surfaceReloadSchedule).toMatch(
+      /const expectation = desktopSurfaceReloadExpectation\(\);\s*if \(expectation === null \|\| !Object\.isFrozen\(expectation\)\) \{\s*return false;/u,
+    );
     expect(surfaceReloadSchedule).not.toMatch(
       /plan\.revision\s*(?:<=|<|>=|>|===|==)\s*desktopSurfaceReloadRevision/u,
     );
@@ -1054,6 +1066,15 @@ describe("overview effect package", () => {
     expect(surfaceReloadCompletion).toMatch(
       /desktopSurfaceReady = true;\s*return true;/u,
     );
+    expect(surfaceReloadCompletion).toMatch(
+      /function synchronizeDesktopSurfaceContext\(\) \{\s*if \(!desktopSurfaceContextExact\) \{\s*return invalidateDesktopSurfaceContext\(\);[\s\S]*desktopSurfaceContextInvalidated[\s\S]*desktopSurfaceReloadContextExact[\s\S]*return scheduleDesktopSurfaceContextReload\(\);/u,
+    );
+    expect(surfaceReloadCompletion).toMatch(
+      /function invalidateDesktopSurfaceContext\(\)[\s\S]*if \(desktopSurfaceContextInvalidated\)[\s\S]*desktopSurfaceReloadToken = desktopSurfaceReloadToken >= 2147483647[\s\S]*desktopSurfaceContextInvalidated = true;[\s\S]*desktopSurfaceReady = false;[\s\S]*desktopSurfaceReadyToken = 0;[\s\S]*desktopSurfaceLoadedToken = 0;/u,
+    );
+    expect(desktopCard).toContain(
+      "onDesktopSurfaceContextExactChanged: card.synchronizeDesktopSurfaceContext()",
+    );
     expect(surfaceReloadCompletion).not.toMatch(
       /desktopSurfaceLifecycleEvent|sceneEffect|controller|planOverviewDesktopSurfaceLifecycleRefresh/u,
     );
@@ -1063,11 +1084,15 @@ describe("overview effect package", () => {
     const tokenWrite = surfaceReloadSchedule.indexOf(
       "desktopSurfaceReloadToken =",
     );
+    const expectationGuard = surfaceReloadSchedule.indexOf(
+      "if (expectation === null || !Object.isFrozen(expectation))",
+    );
     const revisionWrite = surfaceReloadSchedule.indexOf(
       "desktopSurfaceReloadRevision = plan.revision;",
     );
     expect(targetGuard).toBeGreaterThan(0);
-    expect(tokenWrite).toBeGreaterThan(targetGuard);
+    expect(expectationGuard).toBeGreaterThan(targetGuard);
+    expect(tokenWrite).toBeGreaterThan(expectationGuard);
     expect(revisionWrite).toBeGreaterThan(tokenWrite);
     expect(
       surfaceReloadSchedule.indexOf("desktopSurfaceReady = false;"),
