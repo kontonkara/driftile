@@ -1359,9 +1359,12 @@ Rectangle {
 
         interval: 16
         repeat: true
-        running: root.spatialEdgePanCanRun()
+        running: false
         triggeredOnStart: false
-        onTriggered: root.advanceSpatialEdgePan(interval)
+        onTriggered: {
+            root.advanceSpatialEdgePan(interval);
+            root.refreshSpatialEdgePanTimer();
+        }
     }
 
     Timer {
@@ -3073,6 +3076,7 @@ Rectangle {
             cancelActiveWindowSpatialDrag();
             return false;
         }
+        refreshSpatialEdgePanTimer();
         return true;
     }
 
@@ -3122,7 +3126,9 @@ Rectangle {
         spatialColumnDragSourceWorkspaceIndex = workspaceIndex;
         if (!captureSpatialColumnDragVisual(source)) {
             cancelActiveColumnSpatialDrag();
+            return;
         }
+        refreshSpatialEdgePanTimer();
     }
 
     function updateColumnSpatialEdgePan(source, expectedDesktopId, sceneX, sceneY) {
@@ -3457,10 +3463,12 @@ Rectangle {
         spatialEdgePanSceneY = sceneY;
         spatialEdgePanPointerX = point.x;
         spatialEdgePanPointerY = point.y;
+        refreshSpatialEdgePanTimer();
         return true;
     }
 
     function clearSpatialEdgePanScenePoint() {
+        spatialEdgePanTimer.stop();
         spatialEdgePanSceneX = Number.NaN;
         spatialEdgePanSceneY = Number.NaN;
         spatialEdgePanPointerX = Number.NaN;
@@ -5980,6 +5988,16 @@ Rectangle {
         }
 
         return spatialVerticalEdgePanCanRun() || spatialHorizontalEdgePanCanRun();
+    }
+
+    function refreshSpatialEdgePanTimer() {
+        const shouldRun = spatialEdgePanCanRun();
+        if (shouldRun && !spatialEdgePanTimer.running) {
+            spatialEdgePanTimer.start();
+        } else if (!shouldRun && spatialEdgePanTimer.running) {
+            spatialEdgePanTimer.stop();
+        }
+        return shouldRun;
     }
 
     function spatialVerticalEdgePanCanRun() {

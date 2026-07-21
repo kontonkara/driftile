@@ -1622,11 +1622,34 @@ describe("overview effect package", () => {
     expect(snapshotDrop).toContain(
       "windowDropSourceDragSnapshotIsExact(source)",
     );
-    expect(desktopCard).toContain(
-      "readonly property bool validTarget: containsDrag && card.windowDropHoverOwned",
+    const windowDropValidity = desktopCard.slice(
+      desktopCard.indexOf(
+        "readonly property bool validTarget:",
+        desktopCard.indexOf("id: windowDropArea"),
+      ),
+      desktopCard.indexOf(
+        "readonly property var spatialPreview:",
+        desktopCard.indexOf("id: windowDropArea"),
+      ),
     );
-    expect(desktopCard).toContain(
-      "card.windowDropHoverTarget !== null && card.windowDropHoverOwnershipIsValid()",
+    const columnDropValidity = desktopCard.slice(
+      desktopCard.indexOf(
+        "readonly property bool validTarget:",
+        desktopCard.indexOf("id: columnDropArea"),
+      ),
+      desktopCard.indexOf(
+        "readonly property var spatialPreview:",
+        desktopCard.indexOf("id: columnDropArea"),
+      ),
+    );
+    expect(windowDropValidity).toMatch(
+      /readonly property bool validTarget:\s*card\.windowDropHoverOwned\s*&& card\.windowDropHoverTarget !== null\s*&& card\.windowDropHoverOwnershipIsValid\(\)/u,
+    );
+    expect(columnDropValidity).toMatch(
+      /readonly property bool validTarget:\s*card\.columnDropHoverOwned\s*&& card\.columnDropHoverTarget !== null\s*&& card\.columnDropHoverOwnershipIsValid\(\)/u,
+    );
+    expect(`${windowDropValidity}\n${columnDropValidity}`).not.toContain(
+      "containsDrag",
     );
     expect(liveDrop).toContain("windowCanDrag(source)");
     expect(desktopCard).toContain(
@@ -2629,12 +2652,22 @@ describe("overview effect package", () => {
     expect(scene.match(/\bTimer\s*\{/gu)).toHaveLength(2);
     expect(spatialEdgePanTimer).toContain("interval: 16");
     expect(spatialEdgePanTimer).toContain("repeat: true");
-    expect(spatialEdgePanTimer).toContain(
-      "running: root.spatialEdgePanCanRun()",
-    );
+    expect(spatialEdgePanTimer).toContain("running: false");
     expect(spatialEdgePanTimer).toContain("triggeredOnStart: false");
-    expect(spatialEdgePanTimer).toContain(
-      "onTriggered: root.advanceSpatialEdgePan(interval)",
+    expect(spatialEdgePanTimer).toMatch(
+      /onTriggered: \{\s*root\.advanceSpatialEdgePan\(interval\);\s*root\.refreshSpatialEdgePanTimer\(\);\s*\}/u,
+    );
+    expect(spatialEdgePanTimer).not.toMatch(
+      /running:\s*root\.spatialEdgePanCanRun\(\)/u,
+    );
+    expect(spatialEdgePan).toMatch(
+      /function refreshSpatialEdgePanTimer\(\) \{[\s\S]*spatialEdgePanCanRun\(\)[\s\S]*spatialEdgePanTimer\.start\(\);[\s\S]*spatialEdgePanTimer\.stop\(\);[\s\S]*\}/u,
+    );
+    expect(spatialEdgePan).toMatch(
+      /function storeSpatialEdgePanScenePoint[\s\S]*spatialEdgePanPointerY = point\.y;\s*refreshSpatialEdgePanTimer\(\);\s*return true;/u,
+    );
+    expect(spatialEdgePan).toMatch(
+      /function clearSpatialEdgePanScenePoint\(\) \{\s*spatialEdgePanTimer\.stop\(\);[\s\S]*spatialEdgePanPointerY = Number\.NaN;\s*\}/u,
     );
     for (const signal of [
       "onWindowSpatialDragStarted:",

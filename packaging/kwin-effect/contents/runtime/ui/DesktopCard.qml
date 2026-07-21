@@ -2495,7 +2495,7 @@ Item {
     DropArea {
         id: windowDropArea
 
-        readonly property bool validTarget: containsDrag && card.windowDropHoverOwned
+        readonly property bool validTarget: card.windowDropHoverOwned
             && card.windowDropHoverTarget !== null && card.windowDropHoverOwnershipIsValid()
         readonly property var spatialPreview: validTarget ? card.windowDropHoverPreview : null
 
@@ -2644,7 +2644,7 @@ Item {
     DropArea {
         id: columnDropArea
 
-        readonly property bool validTarget: containsDrag && card.columnDropHoverOwned
+        readonly property bool validTarget: card.columnDropHoverOwned
             && card.columnDropHoverTarget !== null && card.columnDropHoverOwnershipIsValid()
         readonly property var spatialPreview: validTarget ? card.columnDropHoverPreview : null
 

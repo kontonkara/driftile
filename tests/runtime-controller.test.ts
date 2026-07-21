@@ -43862,6 +43862,85 @@ describe("RuntimeController", () => {
     expect(setup.published).toHaveLength(1);
   });
 
+  it("reorders a non-selected visible tab source at an exact same-context target", () => {
+    const setup = createSpatialDropRuntimeFixture();
+    const source = setup.windows[0];
+
+    if (!source) {
+      throw new Error("missing non-selected spatial tab source fixture");
+    }
+
+    const layout = runtimeLayout(setup.controller);
+    const before = layout.snapshot(
+      outputId(setup.output.name),
+      desktopId(setup.desktop.id),
+      FALLBACK_ACTIVITY_ID,
+    );
+    const activateWindow = vi.spyOn(layout, "activateWindow");
+    const rollbackStackEdit = vi.spyOn(layout, "rollbackStackEdit");
+    const discardStackEditRollback = vi.spyOn(
+      layout,
+      "discardStackEditRollback",
+    );
+    const command = spatialDropCommandWithBasis(setup.controller, {
+      createdAt: 1,
+      format: "driftile-spatial-drop",
+      requestId: 1,
+      source: {
+        activityId: String(FALLBACK_ACTIVITY_ID),
+        desktopId: setup.desktop.id,
+        outputId: setup.output.name,
+        scope: "window",
+        windowId: String(source.window.internalId),
+      },
+      target: {
+        activityId: String(FALLBACK_ACTIVITY_ID),
+        desktopId: setup.desktop.id,
+        kind: "stack-insertion",
+        outputId: setup.output.name,
+        position: "after",
+        targetWindowId: "target-second",
+      },
+      version: 4,
+    });
+
+    expect(before.columns[0]).toMatchObject({
+      selectedWindowId: "active",
+      windowIds: ["peer", "active"],
+    });
+    expect(setup.fixture.workspace.activeWindow).toBe(setup.active.window);
+
+    expect(setup.controller.executeSpatialDrop(command)).toBe(true);
+    expect(activateWindow).toHaveBeenCalledWith(windowId("peer"));
+    expect(rollbackStackEdit).not.toHaveBeenCalled();
+    expect(discardStackEditRollback).toHaveBeenCalledOnce();
+    expect(
+      testLayoutColumns(setup.controller, setup.output, setup.desktop),
+    ).toEqual([
+      { id: "column:source", windowIds: ["active"] },
+      {
+        id: "column:target",
+        windowIds: ["target-first", "target-second", "peer"],
+      },
+      { id: "column:tail", windowIds: ["tail"] },
+    ]);
+    expect(setup.fixture.workspace.activeWindow).toBe(source.window);
+    expect(
+      layout.snapshot(
+        outputId(setup.output.name),
+        desktopId(setup.desktop.id),
+        FALLBACK_ACTIVITY_ID,
+      ),
+    ).toMatchObject({
+      activeColumnId: "column:target",
+      columns: [
+        { id: "column:source", selectedWindowId: "active" },
+        { id: "column:target", selectedWindowId: "peer" },
+        { id: "column:tail", selectedWindowId: "tail" },
+      ],
+    });
+  });
+
   it.each([
     {
       expectedColumns: [
