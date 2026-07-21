@@ -11946,8 +11946,8 @@ let
         fi
         overview_effect_loaded_once=true
 
-        if ! set_external_window_minimized "$title_a" true \
-          || ! wait_for_window_minimized_state "$title_a" true \
+        if ! set_external_window_minimized "$title_a" false \
+          || ! wait_for_window_minimized_state "$title_a" false \
           || ! wait_for_active "$title_b" \
           || ! wait_for_frames \
             "$tabbed_frame" \
@@ -11965,6 +11965,26 @@ let
           return 1
         fi
         sleep 3
+
+        if [[ "$(effect_active_state "$overview_plugin_id" 2>/dev/null || true)" != true ]] \
+          || ! set_external_window_minimized "$title_a" true \
+          || ! wait_for_window_minimized_state "$title_a" true \
+          || ! wait_for_active "$title_b" \
+          || ! wait_for_frames \
+            "$tabbed_frame" \
+            "$tabbed_frame" \
+            "$stack_third_frame" \
+          || [[ "$(effect_active_state "$overview_plugin_id" 2>/dev/null || true)" != true ]] \
+          || ! kwin_process_is_unchanged "$process_id" \
+          || ! overview_component_errors_after "$journal_cursor"; then
+          record_focus_state \
+            "active Overview minimized-tab reflow did not settle exactly"
+          return 1
+        fi
+
+        # Outlast bounded model validation and presentation motion before
+        # targeting the newly visible minimized-tab control physically.
+        sleep 0.3
 
         if [[ "$(effect_active_state "$overview_plugin_id" 2>/dev/null || true)" != true ]] \
           || ! request_physical_overview_tab_restore_click \
@@ -12000,7 +12020,7 @@ let
         fi
 
         record_focus_state \
-          "physical Overview first-tab click restored minimized A and preserved the exact tabbed fixture"
+          "active Overview reflowed into a minimized tab, and its physical click restored A exactly"
       }
 
       verify_physical_height_shortcuts() {
