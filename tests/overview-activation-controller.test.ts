@@ -226,4 +226,45 @@ describe("overview activation controller", () => {
       /org\.kde\.kwin\.private|setInterval|setTimeout/u,
     );
   });
+
+  it("accepts canonical rows without a tiled readiness context", () => {
+    const contextIndex = scene.slice(
+      scene.indexOf("function indexReadinessContextsForOutput("),
+      scene.indexOf("function sceneReadinessContext()"),
+    );
+    const readinessContext = scene.slice(
+      scene.indexOf("function sceneReadinessContext()"),
+      scene.indexOf("function resetPresentationReadinessRegistration()"),
+    );
+
+    expect(contextIndex).toMatch(
+      /indexedListHasBoundedLength\(model\.contexts, 0, 512\)[\s\S]*typeof expectedOutputId !== "string" \|\| expectedOutputId\.length === 0[\s\S]*model\.currentActivityId !== activeOverviewActivityId/u,
+    );
+    expect(contextIndex).toMatch(
+      /for \(const context of model\.contexts\)[\s\S]*context\.activityId !== activeOverviewActivityId[\s\S]*context\.outputId\.length === 0[\s\S]*context\.desktopId\.length === 0/u,
+    );
+    expect(contextIndex).toMatch(
+      /if \(context\.outputId !== expectedOutputId\) \{\s*continue;\s*\}/u,
+    );
+    expect(contextIndex).toMatch(
+      /const desktopIndex = desktopIds\.indexOf\(context\.desktopId\);[\s\S]*desktopIds\.lastIndexOf\(context\.desktopId\) !== desktopIndex[\s\S]*contextsByDesktopId\[context\.desktopId\] !== undefined[\s\S]*return null;/u,
+    );
+    expect(contextIndex).toMatch(
+      /contextsByDesktopId\[context\.desktopId\] = context;[\s\S]*return Object\.freeze\(contextsByDesktopId\);/u,
+    );
+
+    expect(readinessContext).toMatch(
+      /effect\.active !== true[\s\S]*sessionId <= 0 \|\| epoch <= 0 \|\| topologyGeneration <= 0[\s\S]*!model \|\| effect\.overviewModel !== model/u,
+    );
+    expect(readinessContext).toMatch(
+      /const contextsByDesktopId = indexReadinessContextsForOutput\(model, expectedOutputId\);[\s\S]*outputId !== expectedOutputId[\s\S]*contextsByDesktopId === null[\s\S]*outputMatches !== 1/u,
+    );
+    expect(readinessContext).toMatch(
+      /for \(let index = 0; index < desktopIds\.length; index \+= 1\)[\s\S]*const context = contextsByDesktopId\[desktopId\];[\s\S]*context !== undefined[\s\S]*context\.outputId !== expectedOutputId \|\| context\.desktopId !== desktopId[\s\S]*!spatialHorizontalGeometryPlanAt\(index, desktopId,[\s\S]*spatialHorizontalViewportRevision\)[\s\S]*!Number\.isFinite\(spatialHorizontalViewportOffsets\[index\]\)/u,
+    );
+    expect(readinessContext).not.toMatch(/if \(\(!context \|\|/u);
+    expect(`${controller}\n${scene}`).not.toMatch(
+      /org\.kde\.kwin\.private|setInterval|setTimeout/u,
+    );
+  });
 });

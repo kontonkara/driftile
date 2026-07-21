@@ -5707,7 +5707,7 @@ describe("overview effect package", () => {
 
     expect(railLayer).toContain("anchors.fill: parent");
     expect(railLayer).toContain("clip: true");
-    expect(railLayer).toContain("z: 8000");
+    expect(railLayer).toContain("z: 10000");
     expect(desktopCard).toMatch(/id: columnShell[\s\S]*z: 9000/u);
     expect(tab).toContain("parent: tabRailLayer");
 

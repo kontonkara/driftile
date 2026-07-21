@@ -10925,6 +10925,41 @@ Rectangle {
         }
     }
 
+    function indexReadinessContextsForOutput(model, expectedOutputId) {
+        try {
+            if (!model || !indexedListHasBoundedLength(model.contexts, 0, 512)
+                    || typeof expectedOutputId !== "string" || expectedOutputId.length === 0
+                    || typeof model.currentActivityId !== "string"
+                    || model.currentActivityId !== activeOverviewActivityId) {
+                return null;
+            }
+
+            const contextsByDesktopId = Object.create(null);
+            for (const context of model.contexts) {
+                if (!context || Array.isArray(context) || typeof context !== "object"
+                        || typeof context.activityId !== "string"
+                        || context.activityId !== activeOverviewActivityId
+                        || typeof context.outputId !== "string" || context.outputId.length === 0
+                        || typeof context.desktopId !== "string" || context.desktopId.length === 0) {
+                    return null;
+                }
+                if (context.outputId !== expectedOutputId) {
+                    continue;
+                }
+
+                const desktopIndex = desktopIds.indexOf(context.desktopId);
+                if (desktopIndex < 0 || desktopIds.lastIndexOf(context.desktopId) !== desktopIndex
+                        || contextsByDesktopId[context.desktopId] !== undefined) {
+                    return null;
+                }
+                contextsByDesktopId[context.desktopId] = context;
+            }
+            return Object.freeze(contextsByDesktopId);
+        } catch (error) {
+            return null;
+        }
+    }
+
     function sceneReadinessContext() {
         try {
             const effect = sceneEffect;
@@ -10948,6 +10983,7 @@ Rectangle {
             const output = projectedOutput(model, screen);
             const expectedOutputId = output ? String(output.outputId) : "";
             const geometry = screen.geometry;
+            const contextsByDesktopId = indexReadinessContextsForOutput(model, expectedOutputId);
             if (!output || expectedOutputId.length === 0 || outputId !== expectedOutputId
                     || !geometry || Number(geometry.width) !== width
                     || Number(geometry.height) !== height
@@ -10960,7 +10996,8 @@ Rectangle {
                     || !sameStringList(spatialViewportSnapshot.desktopIds, desktopIds)
                     || !sameStringList(spatialHorizontalDesktopIds, desktopIds)
                     || spatialHorizontalGeometryPlans.length !== desktopIds.length
-                    || spatialHorizontalViewportOffsets.length !== desktopIds.length) {
+                    || spatialHorizontalViewportOffsets.length !== desktopIds.length
+                    || contextsByDesktopId === null) {
                 return null;
             }
 
@@ -10976,9 +11013,9 @@ Rectangle {
 
             for (let index = 0; index < desktopIds.length; index += 1) {
                 const desktopId = desktopIds[index];
-                const context = contextFor(desktopId);
-                if (!context || context.outputId !== expectedOutputId
-                        || context.desktopId !== desktopId
+                const context = contextsByDesktopId[desktopId];
+                if ((context !== undefined
+                     && (context.outputId !== expectedOutputId || context.desktopId !== desktopId))
                         || !spatialHorizontalGeometryPlanAt(index, desktopId,
                                                             spatialHorizontalViewportRevision)
                         || !Number.isFinite(spatialHorizontalViewportOffsets[index])) {
