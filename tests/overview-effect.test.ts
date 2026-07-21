@@ -2730,6 +2730,14 @@ describe("overview effect package", () => {
       desktopCard.indexOf("id: windowPresentation"),
       desktopCard.indexOf("id: thumbnailShell"),
     );
+    const minimizedActivationBinding = presentation.slice(
+      presentation.indexOf(
+        "readonly property bool minimizedActivationEligible:",
+      ),
+      presentation.indexOf(
+        "readonly property var minimizedPlaceholderFrame:",
+      ),
+    );
     const placeholder = desktopCard.slice(
       desktopCard.indexOf("id: minimizedPlaceholderShell"),
       desktopCard.indexOf("id: windowDropArea"),
@@ -2762,9 +2770,13 @@ describe("overview effect package", () => {
     expect(presentation).toContain(
       "readonly property bool minimizedActivationEligible: minimizedWindow",
     );
-    expect(presentation).toContain(
-      "card.windowSnapshotCanActivateMinimizedWindow(windowPresentation)",
+    expect(presentation).toMatch(
+      /readonly property bool minimizedActivationEligible: minimizedWindow\s*&& matchesSearch && frame !== null/u,
     );
+    expect(minimizedActivationBinding).not.toContain(
+      "windowSnapshotCanActivateMinimizedWindow",
+    );
+    expect(minimizedActivationBinding).not.toContain("windowCanNavigate");
     expect(presentation).toContain(
       "readonly property var minimizedPlaceholderFrame: minimizedActivationEligible",
     );
@@ -2802,7 +2814,7 @@ describe("overview effect package", () => {
       "readonly property bool activationEligible: windowPresentation.minimizedActivationEligible",
     );
     expect(placeholder).toContain(
-      "readonly property bool keyboardTarget: activationEligible && windowPresentation.matchesSearch",
+      "readonly property bool keyboardTarget: visible && activationEligible",
     );
     expect(placeholder).toContain(
       "card.keyboardSelectionId === card.navigationTargetId(windowPresentation.windowId)",
@@ -2829,7 +2841,10 @@ describe("overview effect package", () => {
     expect(placeholderTap).toContain("gesturePolicy: TapHandler.DragThreshold");
     expect(placeholderTap).toContain("&& card.desktop && card.screen");
     expect(placeholderTap).toMatch(
-      /onTapped: point => \{\s*if \(card\.closeButtonContainsPoint\(minimizedPlaceholderCloseButton,\s*minimizedPlaceholderShell, point\.position\)\) \{\s*return;\s*\}\s*card\.windowTapped\(model\.window, windowPresentation\.windowId, card\.desktop,\s*card\.desktopId, card\.screen\);/u,
+      /onTapped: point => \{\s*if \(card\.closeButtonContainsPoint\(minimizedPlaceholderCloseButton,\s*minimizedPlaceholderShell, point\.position\)\s*\|\| !minimizedPlaceholderShell\.activationIsExact\(\)\) \{\s*return;\s*\}\s*card\.windowTapped\(model\.window, windowPresentation\.windowId, card\.desktop,\s*card\.desktopId, card\.screen\);/u,
+    );
+    expect(placeholder).toMatch(
+      /function activationIsExact\(\) \{[\s\S]*minimizedPlaceholderShell\.visible[\s\S]*windowPresentation\.minimizedWindow[\s\S]*windowPresentation\.matchesSearch[\s\S]*card\.windowSnapshotCanActivateMinimizedWindow\(windowPresentation\);[\s\S]*\}/u,
     );
     expect(placeholder).toContain(
       "card.windowTapped(model.window, windowPresentation.windowId, card.desktop,",
@@ -3549,7 +3564,7 @@ describe("overview effect package", () => {
     expect(cardTargets).toContain("right <= left || bottom <= top");
 
     expect(thumbnail).toContain(
-      "card.navigationVisualForPresentation(windowPresentation) === thumbnailShell",
+      "readonly property bool keyboardTarget: visible",
     );
     expect(thumbnail).toContain("windowPresentation.selectedThumbnail");
     expect(thumbnail).toContain("!windowPresentation.minimizedWindow");
@@ -5629,6 +5644,15 @@ describe("overview effect package", () => {
     expect(tab).toContain("windowPresentation.attentionRequested");
     expect(tab).toContain(
       "readonly property bool selectedTab: frame !== null && frame.selected === true",
+    );
+    expect(tab).toMatch(
+      /readonly property bool activationEligible: frame !== null\s*&& windowPresentation\.matchesSearch/u,
+    );
+    expect(tab).toMatch(
+      /readonly property bool keyboardTarget: activationEligible\s*&& !thumbnailShell\.visible && !minimizedPlaceholderShell\.visible/u,
+    );
+    expect(tab).not.toMatch(
+      /readonly property bool (?:activationEligible|keyboardTarget):[^\n]*windowCanNavigate/u,
     );
     expect(tab).toMatch(/`Tab \$\{[^}]*memberIndex \+ 1 : ""\}`/u);
     expect(tab).toContain("elide: Text.ElideRight");

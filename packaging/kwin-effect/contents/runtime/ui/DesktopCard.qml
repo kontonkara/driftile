@@ -811,7 +811,7 @@ Item {
                 readonly property bool selectedThumbnail: !tiledPresentation || tiledPresentation.selected
                 readonly property bool minimizedWindow: model.window ? model.window.minimized : false
                 readonly property bool minimizedActivationEligible: minimizedWindow
-                    && card.windowSnapshotCanActivateMinimizedWindow(windowPresentation)
+                    && matchesSearch && frame !== null
                 readonly property var minimizedPlaceholderFrame: minimizedActivationEligible
                     ? card.planMinimizedPlaceholderFrame(frame) : null
                 readonly property var tabFrame: card.tabFrameForPresentation(tiledPresentation, windowId)
@@ -942,9 +942,9 @@ Item {
                     readonly property bool attentionTab: windowPresentation.attentionRequested
                     readonly property bool activeTab: KWin.Workspace.activeWindow === windowPresentation.candidate
                     readonly property bool activationEligible: frame !== null
-                        && windowPresentation.matchesSearch && card.windowCanNavigate(windowPresentation)
+                        && windowPresentation.matchesSearch
                     readonly property bool keyboardTarget: activationEligible
-                        && card.navigationVisualForPresentation(windowPresentation) === tabShell
+                        && !thumbnailShell.visible && !minimizedPlaceholderShell.visible
                     readonly property bool keyboardSelected: keyboardTarget
                         && card.keyboardSelectionId === card.navigationTargetId(windowPresentation.windowId)
 
@@ -1091,8 +1091,7 @@ Item {
                 Item {
                     id: thumbnailShell
 
-                    readonly property bool keyboardTarget: windowPresentation.matchesSearch
-                        && card.navigationVisualForPresentation(windowPresentation) === thumbnailShell
+                    readonly property bool keyboardTarget: visible
                     readonly property bool keyboardSelected: keyboardTarget
                         && card.keyboardSelectionId === card.navigationTargetId(windowPresentation.windowId)
                     readonly property bool closeButtonLargeEnough: width >= 52 && height >= 40
@@ -1525,11 +1524,17 @@ Item {
 
                     readonly property var frame: windowPresentation.minimizedPlaceholderFrame
                     readonly property bool activationEligible: windowPresentation.minimizedActivationEligible
-                    readonly property bool keyboardTarget: activationEligible && windowPresentation.matchesSearch
-                        && card.navigationVisualForPresentation(windowPresentation) === minimizedPlaceholderShell
+                    readonly property bool keyboardTarget: visible && activationEligible
                     readonly property bool keyboardSelected: keyboardTarget
                         && card.keyboardSelectionId === card.navigationTargetId(windowPresentation.windowId)
                     readonly property bool closeButtonLargeEnough: width >= 72 && height >= 20
+
+                    function activationIsExact() {
+                        return minimizedPlaceholderShell.visible
+                            && windowPresentation.minimizedWindow
+                            && windowPresentation.matchesSearch
+                            && card.windowSnapshotCanActivateMinimizedWindow(windowPresentation);
+                    }
 
                     x: frame ? frame.x : 0
                     y: frame ? frame.y : 0
@@ -1647,7 +1652,8 @@ Item {
                                  && card.desktop && card.screen && !card.spatialDirectDragBlocked
                         onTapped: point => {
                             if (card.closeButtonContainsPoint(minimizedPlaceholderCloseButton,
-                                                              minimizedPlaceholderShell, point.position)) {
+                                                              minimizedPlaceholderShell, point.position)
+                                    || !minimizedPlaceholderShell.activationIsExact()) {
                                 return;
                             }
                             card.windowTapped(model.window, windowPresentation.windowId, card.desktop,
