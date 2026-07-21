@@ -435,11 +435,11 @@ remaining excluded from every drag path.
 A primary mouse click, touchpad tap, or touchscreen tap on a tab control
 activates its exact window. A sufficiently wide closeable tab chip exposes the
 same optional close button as other window surfaces. Its exclusive guarded
-release cannot also activate the tab or begin a drag. A middle mouse or
-touchpad click closes any eligible visible tab only while the same exact close
-checks still pass, including the chip for the selected member. Stale column
-membership, geometry, output, desktop, activity, or window identity disables
-the control instead of falling through to another action.
+release cannot reach the selected preview behind the rail or begin a drag. A
+middle mouse or touchpad click closes any eligible visible tab only while the
+same exact close checks still pass, including the chip for the selected member.
+Stale column membership, geometry, output, desktop, activity, or window
+identity disables the control instead of falling through to another action.
 
 Window and desktop changes refresh the active scene. Changing the current
 activity, the activity set, or output topology and geometry also refreshes the

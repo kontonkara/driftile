@@ -17,6 +17,10 @@ const placeholder = desktopCard.slice(
   desktopCard.indexOf("id: minimizedPlaceholderShell"),
   desktopCard.indexOf("id: windowDropArea"),
 );
+const thumbnail = desktopCard.slice(
+  desktopCard.indexOf("id: thumbnailShell"),
+  desktopCard.indexOf("id: minimizedPlaceholderShell"),
+);
 
 describe("overview tab and minimized interactions", () => {
   it("keeps real tab captions and exact close controls available independently", () => {
@@ -80,6 +84,53 @@ describe("overview tab and minimized interactions", () => {
     );
     expect(middle).toMatch(
       /acceptedButtons: Qt\.MiddleButton[\s\S]*enabled: tabShell\.visible && windowPresentation\.closeEligible[\s\S]*if \(!tabShell\.closeIsExact\(\)\) \{\s*return;[\s\S]*card\.windowCloseRequested\(windowPresentation\.candidate,/u,
+    );
+  });
+
+  it("owns primary tab taps exclusively while preserving gesture takeovers", () => {
+    const activationId = tab.indexOf("id: tabActivationHandler");
+    const activation = tab.slice(
+      tab.lastIndexOf("TapHandler {", activationId),
+      tab.indexOf("\n                    TapHandler {", activationId),
+    );
+    const recovery = tab.slice(
+      tab.indexOf("function handleActivationGrabChanged("),
+      tab.indexOf("function closeIsExact("),
+    );
+    const thumbnailPrimaryStart = thumbnail.indexOf("TapHandler {");
+    const thumbnailPrimary = thumbnail.slice(
+      thumbnailPrimaryStart,
+      thumbnail.indexOf(
+        "\n                    TapHandler {",
+        thumbnailPrimaryStart,
+      ),
+    );
+
+    expect(activationId).toBeGreaterThanOrEqual(0);
+    expect(thumbnailPrimaryStart).toBeGreaterThanOrEqual(0);
+    expect(tab).toContain("parent: tabRailLayer");
+    expect(activation).toContain(
+      "gesturePolicy: TapHandler.ReleaseWithinBounds",
+    );
+    expect(activation).not.toContain("TapHandler.DragThreshold");
+    expect(activation).toMatch(
+      /grabPermissions: PointerHandler\.ApprovesTakeOverByHandlersOfSameType\s*\| PointerHandler\.ApprovesTakeOverByHandlersOfDifferentType\s*\| PointerHandler\.ApprovesCancellation/u,
+    );
+    expect(recovery).toMatch(
+      /transition === PointerDevice\.GrabPassive\s*\|\| transition === PointerDevice\.GrabExclusive/u,
+    );
+    expect(recovery).toMatch(
+      /transition !== PointerDevice\.UngrabPassive\s*&& transition !== PointerDevice\.UngrabExclusive/u,
+    );
+    expect(tab).toContain(
+      "const threshold = tabActivationHandler.dragThreshold;",
+    );
+    expect(thumbnailPrimary).toMatch(
+      /acceptedButtons: Qt\.LeftButton[\s\S]*acceptedDevices: PointerDevice\.Mouse \| PointerDevice\.TouchPad[\s\S]*card\.windowTapped\(model\.window,/u,
+    );
+    expect(thumbnail.match(/DragHandler \{/gu)).toHaveLength(2);
+    expect(`${activation}\n${recovery}`).not.toMatch(
+      /PointerHandler\.TakeOverForbidden|org\.kde\.kwin\.private|\bMouseArea\s*\{/u,
     );
   });
 

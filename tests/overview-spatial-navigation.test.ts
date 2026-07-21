@@ -325,6 +325,11 @@ describe("spatial overview navigation geometry", () => {
   it("keeps minimized tab actions above the selected column visual", () => {
     const tabRailZ = Number(tabRailLayer.match(/\bz:\s*(\d+)/u)?.[1]);
     const columnShellZ = Number(columnShell.match(/\bz:\s*(\d+)/u)?.[1]);
+    const activationId = tabShell.indexOf("id: tabActivationHandler");
+    const activationHandler = tabShell.slice(
+      tabShell.lastIndexOf("TapHandler {", activationId),
+      tabShell.indexOf("\n                    TapHandler {", activationId),
+    );
 
     expect(Number.isFinite(tabRailZ)).toBe(true);
     expect(Number.isFinite(columnShellZ)).toBe(true);
@@ -336,8 +341,12 @@ describe("spatial overview navigation geometry", () => {
     expect(tabShell).toMatch(
       /function activationIsExact\(\) \{\s*return tabShell\.visible && tabShell\.frameIsExact\(\)\s*&& windowPresentation\.primaryVisualKind === "tab"/u,
     );
-    expect(tabShell).toMatch(
-      /TapHandler \{\s*id: tabActivationHandler[\s\S]*gesturePolicy: TapHandler\.DragThreshold/u,
+    expect(activationHandler).toContain(
+      "gesturePolicy: TapHandler.ReleaseWithinBounds",
+    );
+    expect(activationHandler).not.toContain("TapHandler.DragThreshold");
+    expect(activationHandler).toMatch(
+      /grabPermissions: PointerHandler\.ApprovesTakeOverByHandlersOfSameType\s*\| PointerHandler\.ApprovesTakeOverByHandlersOfDifferentType\s*\| PointerHandler\.ApprovesCancellation/u,
     );
     expect(tabShell).toContain("property int activationGestureSerial: 0");
     expect(tabShell).toContain(
@@ -348,7 +357,10 @@ describe("spatial overview navigation geometry", () => {
       /onGrabChanged: \(transition, point\) =>\s*tabShell\.handleActivationGrabChanged\(transition, point\)/u,
     );
     expect(tabShell).toMatch(
-      /PointerDevice\.GrabPassive[\s\S]*EventPoint\.Pressed[\s\S]*armMinimizedActivation\(point\)[\s\S]*PointerDevice\.UngrabPassive[\s\S]*EventPoint\.Released[\s\S]*Qt\.callLater/u,
+      /transition === PointerDevice\.GrabPassive\s*\|\| transition === PointerDevice\.GrabExclusive[\s\S]*EventPoint\.Pressed[\s\S]*armMinimizedActivation\(point\)[\s\S]*transition !== PointerDevice\.UngrabPassive\s*&& transition !== PointerDevice\.UngrabExclusive[\s\S]*EventPoint\.Released[\s\S]*Qt\.callLater/u,
+    );
+    expect(tabShell).toContain(
+      "const threshold = tabActivationHandler.dragThreshold;",
     );
     expect(tabShell).toMatch(
       /onTapped:[\s\S]*activationTappedSerial = serial;[\s\S]*minimizedActivationSnapshot = null;[\s\S]*dispatchExactActivation\(serial, snapshot\)/u,

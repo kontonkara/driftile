@@ -158,6 +158,11 @@ describe("overview desktop surface residency scene", () => {
   });
 
   it("keeps exact resident hosts loaded without admitting them to input", () => {
+    const exitMotionSettlement = section(
+      "function settleOverviewExitCardMotions(",
+      "function beginWindowSpatialEdgePan(",
+    );
+
     expect(surfacePolicy).toContain(
       "desktopSurfaceResidencyContextMatchesCurrent()",
     );
@@ -198,6 +203,19 @@ describe("overview desktop surface residency scene", () => {
       section("function desktopCardAt(", "function beginWindowSpatialEdgePan("),
     ).toMatch(
       /loader\.active !== true \|\| !loader\.item[\s\S]*loader\.item\.desktopId !== expectedDesktopId[\s\S]*loader\.item\.interactionEligible !== true[\s\S]*return null;/u,
+    );
+    expect(exitMotionSettlement).toContain(
+      "const targetCard = desktopCardAt(targetIndex);",
+    );
+    expect(exitMotionSettlement).toMatch(
+      /const motionActive = phase === "validating" \|\| phase === "animating";[\s\S]*item\.internalMotionActive !== motionActive[\s\S]*if \(\(item === targetCard \|\| motionActive\)[\s\S]*item\.settlePresentationMotion\(\) !== true[\s\S]*item\.presentationMotionPhase !== "ready"/u,
+    );
+    expect(exitMotionSettlement).toMatch(
+      /const confirmedTargetCard = desktopCardAt\(targetIndex\);[\s\S]*confirmedTargetCard === targetCard/u,
+    );
+    expect(exitMotionSettlement).not.toContain("desktopSurfaceResidencyRange");
+    expect(exitMotionSettlement).not.toMatch(
+      /if \(!identityExact \|\| !callable \|\| !settled\)/u,
     );
   });
 

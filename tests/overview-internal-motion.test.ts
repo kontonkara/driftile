@@ -119,7 +119,7 @@ const scenePresentationState = section(
 );
 const sceneMotionSettlement = section(
   scene,
-  "function settleLoadedDesktopCardMotions()",
+  "function settleOverviewExitCardMotions(expectedDesktopId, expectedScreen)",
   "function beginWindowSpatialEdgePan(",
 );
 const sceneExitPreparation = section(
@@ -410,13 +410,34 @@ describe("overview internal presentation motion contracts", () => {
     expect(columnDragStart).toContain("!settlePresentationMotion()");
     expect(windowDragStart).toContain("!settlePresentationMotion()");
     expect(sceneMotionSettlement).toMatch(
-      /typeof item\.settlePresentationMotion !== "function"[\s\S]*!item\.settlePresentationMotion\(\)/u,
+      /typeof expectedDesktopId !== "string"[\s\S]*expectedDesktopId\.length === 0[\s\S]*expectedScreen !== targetScreen/u,
     );
+    expect(sceneMotionSettlement).toMatch(
+      /const targetIndex = desktopIds\.indexOf\(expectedDesktopId\);[\s\S]*targetIndex < 0[\s\S]*targetIndex !== desktopIds\.lastIndexOf\(expectedDesktopId\)/u,
+    );
+    expect(sceneMotionSettlement).toMatch(
+      /const targetCard = desktopCardAt\(targetIndex\);[\s\S]*targetCard\.desktopId !== expectedDesktopId[\s\S]*targetCard\.screen !== expectedScreen/u,
+    );
+    expect(sceneMotionSettlement).toMatch(
+      /for \(let index = 0; index < desktopRepeater\.count; index \+= 1\)[\s\S]*loader\.index === index[\s\S]*loader\.modelData === item\.desktopId[\s\S]*typeof item\.settlePresentationMotion === "function"/u,
+    );
+    expect(sceneMotionSettlement).toMatch(
+      /const phase = item\.presentationMotionPhase;[\s\S]*const motionActive = phase === "validating" \|\| phase === "animating";[\s\S]*phase !== "invalid" && phase !== "ready" && !motionActive[\s\S]*item\.internalMotionActive !== motionActive/u,
+    );
+    expect(sceneMotionSettlement).toMatch(
+      /if \(\(item === targetCard \|\| motionActive\)[\s\S]*item\.settlePresentationMotion\(\) !== true[\s\S]*item\.presentationMotionPhase !== "ready"[\s\S]*return false;/u,
+    );
+    expect(sceneMotionSettlement).toMatch(
+      /const confirmedTargetCard = desktopCardAt\(targetIndex\);[\s\S]*confirmedTargetCard === targetCard[\s\S]*confirmedTargetCard\.desktopId === expectedDesktopId[\s\S]*confirmedTargetCard\.screen === expectedScreen[\s\S]*confirmedTargetCard\.presentationMotionPhase === "ready"/u,
+    );
+    expect(sceneMotionSettlement).not.toContain("desktopSurfaceResidencyRange");
     expect(
-      sceneExitPreparation.match(/settleLoadedDesktopCardMotions\(\)/gu),
+      sceneExitPreparation.match(
+        /settleOverviewExitCardMotions\(expectedDesktopId, expectedScreen\)/gu,
+      ),
     ).toHaveLength(2);
     expect(sceneExitPreparation).toMatch(
-      /function prepareOverviewWindowExitHandoff\([\s\S]*if \(!settleLoadedDesktopCardMotions\(\)\) \{\s*return 0;[\s\S]*function prepareOverviewDesktopExitHandoff\([\s\S]*if \(!settleLoadedDesktopCardMotions\(\)\) \{\s*return 0;/u,
+      /function prepareOverviewWindowExitHandoff\([\s\S]*if \(!settleOverviewExitCardMotions\(expectedDesktopId, expectedScreen\)\) \{\s*return 0;[\s\S]*function prepareOverviewDesktopExitHandoff\([\s\S]*if \(!settleOverviewExitCardMotions\(expectedDesktopId, expectedScreen\)\) \{\s*return 0;/u,
     );
   });
 });

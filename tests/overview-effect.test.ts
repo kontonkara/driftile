@@ -5819,7 +5819,13 @@ describe("overview effect package", () => {
       "acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad | PointerDevice.TouchScreen",
     );
     expect(tab).toContain("id: tabActivationHandler");
-    expect(tab).toContain("gesturePolicy: TapHandler.DragThreshold");
+    expect(tab).toContain("gesturePolicy: TapHandler.ReleaseWithinBounds");
+    expect(tab).not.toMatch(
+      /id: tabActivationHandler[\s\S]{0,500}gesturePolicy: TapHandler\.DragThreshold/u,
+    );
+    expect(tab).toMatch(
+      /id: tabActivationHandler[\s\S]*grabPermissions: PointerHandler\.ApprovesTakeOverByHandlersOfSameType\s*\| PointerHandler\.ApprovesTakeOverByHandlersOfDifferentType\s*\| PointerHandler\.ApprovesCancellation/u,
+    );
     expect(tab).toContain("const candidate = windowPresentation.candidate;");
     expect(tab).toContain(
       "const expectedWindowId = windowPresentation.windowId;",
@@ -5876,7 +5882,7 @@ describe("overview effect package", () => {
     );
   });
 
-  it("recovers exact minimized tab releases without widening drag grabs", () => {
+  it("recovers exact minimized tab releases under exclusive primary ownership", () => {
     const tabStart = desktopCard.indexOf("id: tabShell");
     const tab = desktopCard.slice(
       tabStart,
@@ -5899,9 +5905,12 @@ describe("overview effect package", () => {
     expect(tabStart).toBeGreaterThanOrEqual(0);
     expect(activationHandlerId).toBeGreaterThanOrEqual(0);
     expect(activationHandler).toContain(
-      "gesturePolicy: TapHandler.DragThreshold",
+      "gesturePolicy: TapHandler.ReleaseWithinBounds",
     );
-    expect(activationHandler).not.toContain("TapHandler.ReleaseWithinBounds");
+    expect(activationHandler).not.toContain("TapHandler.DragThreshold");
+    expect(activationHandler).toMatch(
+      /grabPermissions: PointerHandler\.ApprovesTakeOverByHandlersOfSameType\s*\| PointerHandler\.ApprovesTakeOverByHandlersOfDifferentType\s*\| PointerHandler\.ApprovesCancellation/u,
+    );
     expect(recovery).toMatch(
       /point\.state !== EventPoint\.Pressed[\s\S]*!minimizedTab[\s\S]*!activationIsExact\(\)[\s\S]*minimizedActivationSnapshot = Object\.freeze/u,
     );
@@ -5922,7 +5931,10 @@ describe("overview effect package", () => {
       /PointerDevice\.CancelGrabPassive[\s\S]*PointerDevice\.CancelGrabExclusive[\s\S]*disarmMinimizedActivation\(\)/u,
     );
     expect(recovery).toMatch(
-      /PointerDevice\.UngrabPassive[\s\S]*EventPoint\.Released[\s\S]*Qt\.callLater/u,
+      /transition === PointerDevice\.GrabPassive\s*\|\| transition === PointerDevice\.GrabExclusive[\s\S]*EventPoint\.Pressed[\s\S]*armMinimizedActivation\(point\)/u,
+    );
+    expect(recovery).toMatch(
+      /transition !== PointerDevice\.UngrabPassive\s*&& transition !== PointerDevice\.UngrabExclusive[\s\S]*EventPoint\.Released[\s\S]*Qt\.callLater/u,
     );
     expect(recovery).toMatch(
       /deltaX \* deltaX \+ deltaY \* deltaY <= threshold \* threshold[\s\S]*snapshot\.localX \+ release\.sceneX - snapshot\.sceneX[\s\S]*const releaseLocalPosition = Qt\.point[\s\S]*tabShell\.contains\(releaseLocalPosition\)[\s\S]*!card\.closeButtonContainsPoint\(tabCloseButton, tabShell,/u,

@@ -75,6 +75,17 @@ describe("overview exit handoff integration", () => {
     expect(preparation).toContain(
       "effect.beginOverviewExitHandoff(windowCandidate",
     );
+    expect(
+      preparation.match(
+        /settleOverviewExitCardMotions\(expectedDesktopId, expectedScreen\)/gu,
+      ),
+    ).toHaveLength(2);
+    expect(preparation).toMatch(
+      /function prepareOverviewWindowExitHandoff\([\s\S]*settleOverviewExitCardMotions\(expectedDesktopId, expectedScreen\)[\s\S]*overviewExitNavigationTarget\("window"[\s\S]*beginSpatialExitHandoff\(candidate,/u,
+    );
+    expect(preparation).toMatch(
+      /function prepareOverviewDesktopExitHandoff\([\s\S]*settleOverviewExitCardMotions\(expectedDesktopId, expectedScreen\)[\s\S]*overviewExitNavigationTarget\("desktop"[\s\S]*beginSpatialExitHandoff\(null,/u,
+    );
 
     expect(
       desktopSelection.indexOf("prepareOverviewDesktopExitHandoff("),

@@ -2993,9 +2993,19 @@ Rectangle {
         return loader.item;
     }
 
-    function settleLoadedDesktopCardMotions() {
+    function settleOverviewExitCardMotions(expectedDesktopId, expectedScreen) {
         if (!Number.isInteger(desktopRepeater.count) || desktopRepeater.count < 0
-                || desktopRepeater.count > 512) {
+                || desktopRepeater.count > 512 || typeof expectedDesktopId !== "string"
+                || expectedDesktopId.length === 0 || expectedScreen !== targetScreen) {
+            return false;
+        }
+        const targetIndex = desktopIds.indexOf(expectedDesktopId);
+        if (targetIndex < 0 || targetIndex !== desktopIds.lastIndexOf(expectedDesktopId)) {
+            return false;
+        }
+        const targetCard = desktopCardAt(targetIndex);
+        if (!targetCard || targetCard.desktopId !== expectedDesktopId
+                || targetCard.screen !== expectedScreen) {
             return false;
         }
         for (let index = 0; index < desktopRepeater.count; index += 1) {
@@ -3004,13 +3014,27 @@ Rectangle {
                 continue;
             }
             const item = loader.item;
-            if (loader.index !== index || loader.modelData !== item.desktopId
-                    || typeof item.settlePresentationMotion !== "function"
-                    || !item.settlePresentationMotion()) {
+            const identityExact = loader.index === index
+                && loader.modelData === item.desktopId;
+            const callable = typeof item.settlePresentationMotion === "function";
+            const phase = item.presentationMotionPhase;
+            const motionActive = phase === "validating" || phase === "animating";
+            if (!identityExact || !callable
+                    || (phase !== "invalid" && phase !== "ready" && !motionActive)
+                    || item.internalMotionActive !== motionActive) {
+                return false;
+            }
+            if ((item === targetCard || motionActive)
+                    && (item.settlePresentationMotion() !== true
+                        || item.presentationMotionPhase !== "ready")) {
                 return false;
             }
         }
-        return true;
+        const confirmedTargetCard = desktopCardAt(targetIndex);
+        return confirmedTargetCard === targetCard
+            && confirmedTargetCard.desktopId === expectedDesktopId
+            && confirmedTargetCard.screen === expectedScreen
+            && confirmedTargetCard.presentationMotionPhase === "ready";
     }
 
     function beginWindowSpatialEdgePan(source, expectedDesktopId, sceneX, sceneY) {
@@ -8876,7 +8900,7 @@ Rectangle {
 
     function prepareOverviewWindowExitHandoff(candidate, expectedWindowId,
                                               expectedDesktopId, expectedScreen) {
-        if (!settleLoadedDesktopCardMotions()) {
+        if (!settleOverviewExitCardMotions(expectedDesktopId, expectedScreen)) {
             return 0;
         }
         const target = overviewExitNavigationTarget("window", candidate, expectedWindowId,
@@ -8907,7 +8931,7 @@ Rectangle {
 
     function prepareOverviewDesktopExitHandoff(candidate, expectedDesktopId,
                                                expectedScreen) {
-        if (!settleLoadedDesktopCardMotions()) {
+        if (!settleOverviewExitCardMotions(expectedDesktopId, expectedScreen)) {
             return 0;
         }
         const target = overviewExitNavigationTarget("desktop", candidate, null,

@@ -1285,7 +1285,8 @@ Item {
                     }
 
                     function handleActivationGrabChanged(transition, point) {
-                        if (transition === PointerDevice.GrabPassive
+                        if ((transition === PointerDevice.GrabPassive
+                                || transition === PointerDevice.GrabExclusive)
                                 && point && point.state === EventPoint.Pressed) {
                             armMinimizedActivation(point);
                             return;
@@ -1295,7 +1296,8 @@ Item {
                             disarmMinimizedActivation();
                             return;
                         }
-                        if (transition !== PointerDevice.UngrabPassive) {
+                        if (transition !== PointerDevice.UngrabPassive
+                                && transition !== PointerDevice.UngrabExclusive) {
                             return;
                         }
 
@@ -1483,7 +1485,10 @@ Item {
 
                         acceptedButtons: Qt.LeftButton
                         acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad | PointerDevice.TouchScreen
-                        gesturePolicy: TapHandler.DragThreshold
+                        gesturePolicy: TapHandler.ReleaseWithinBounds
+                        grabPermissions: PointerHandler.ApprovesTakeOverByHandlersOfSameType
+                                         | PointerHandler.ApprovesTakeOverByHandlersOfDifferentType
+                                         | PointerHandler.ApprovesCancellation
                         enabled: tabShell.activationEligible && card.interactionEligible
                             && card.desktop && card.screen && card.columnDragActiveSource === null
                             && card.columnPointerHoverSource === null
