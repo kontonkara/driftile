@@ -196,7 +196,7 @@ Rectangle {
         spatialPresentationVisible && !spatialExitHandoffActive
         && (spatialPresentationPhase === "opening" || spatialPresentationPhase === "open")
     readonly property bool spatialPointerInputEligible:
-        spatialPresentationInteractive && !keyboardHelpVisible
+        spatialPresentationInteractive && !keyboardHelpVisible && !workspaceRenameEditing
         && spatialZoomOwner.length === 0 && spatialExternalZoomTransaction === null
         && !spatialExternalZoomActive
     readonly property var spatialDirectDragSource: spatialColumnDragSource !== null
@@ -214,7 +214,7 @@ Rectangle {
         && sameStringList(spatialHorizontalDesktopIds, desktopIds)
         && spatialHorizontalViewportOffsets.length === desktopIds.length
     readonly property bool spatialZoomCompetingInputEligible:
-        !keyboardHelpVisible && !desktopReorderActive
+        !keyboardHelpVisible && !workspaceRenameEditing && !desktopReorderActive
         && !spatialDirectDragActive
         && !spatialViewportDragHandler.active && !spatialHorizontalViewportDragHandler.active
         && !spatialHorizontalRowDragHandler.active && !spatialVisualContentYDeferred
@@ -291,6 +291,19 @@ Rectangle {
     property string workspaceGapPreviewWindowId: ""
     property int workspaceGapPreviewIndex: -1
     property var workspaceGapPreviewPlan: null
+    property bool workspaceRenameEditing: false
+    property string workspaceRenameActivityId: ""
+    property var workspaceRenameDesktop: null
+    property string workspaceRenameDesktopId: ""
+    property var workspaceRenameDesktopIds: []
+    property string workspaceRenameDraft: ""
+    property var workspaceRenameEffect: null
+    property string workspaceRenameExpectedName: ""
+    property int workspaceRenameGeneration: 0
+    property var workspaceRenameModel: null
+    property string workspaceRenameOutputId: ""
+    property int workspaceRenameSessionId: 0
+    property int workspaceRenameTopologyRevision: -1
     readonly property int spatialWindowDragHoverThresholdMilliseconds: 600
     property string spatialWindowDragHoverCurrentDesktopId: ""
     property int spatialWindowDragHoverGeometryEpoch: -1
@@ -346,8 +359,12 @@ Rectangle {
             root.finishOverviewContextRefreshBarrier();
         }
     }
-    onActiveOverviewSessionIdChanged: root.restartDesktopSurfaceResidency()
+    onActiveOverviewSessionIdChanged: {
+        root.cancelWorkspaceRenameOnDrift();
+        root.restartDesktopSurfaceResidency();
+    }
     onActiveOverviewActivityIdChanged: {
+        root.cancelWorkspaceRenameOnDrift();
         if (overviewContextRefreshPending || !overviewContextModelExact) {
             root.beginOverviewContextRefreshBarrier();
         } else {
@@ -405,6 +422,7 @@ Rectangle {
         root.refreshOverviewSpatialSession(false, spatialPresentationInteractive);
     }
     onOverviewModelChanged: {
+        root.cancelWorkspaceRenameOnDrift();
         root.cancelActiveColumnSpatialDrag();
         if (spatialExitHandoffActive) {
             root.invalidateSpatialExitHandoff("stale");
@@ -435,6 +453,7 @@ Rectangle {
     }
     onOverviewZoomGestureDirectionChanged: root.handleExternalSpatialZoomDirectionChanged()
     onOutputIdChanged: {
+        root.cancelWorkspaceRenameOnDrift();
         root.cancelActiveColumnSpatialDrag();
         root.cancelSpatialZoomTransaction();
         root.discardSpatialZoomTransaction();
@@ -442,6 +461,7 @@ Rectangle {
         root.synchronizeSpatialZoomInputState();
     }
     onDesktopIdsChanged: {
+        root.cancelWorkspaceRenameOnDrift();
         root.cancelActiveColumnSpatialDrag();
         root.cancelSpatialZoomTransaction();
         root.discardSpatialZoomTransaction();
@@ -456,6 +476,8 @@ Rectangle {
         root.cancelActiveColumnSpatialDrag();
         root.cancelSpatialZoomTransaction();
     }
+    onOverviewContextGenerationChanged: root.cancelWorkspaceRenameOnDrift()
+    onDesktopTopologyRevisionChanged: root.cancelWorkspaceRenameOnDrift()
     onSpatialZoomInputEligibleChanged: {
         if (!spatialZoomInputEligible) {
             root.cancelSpatialZoomTransaction();
@@ -473,6 +495,7 @@ Rectangle {
         root.captureSpatialViewportSnapshot();
     }
     onSearchQueryChanged: {
+        root.cancelWorkspaceRenameOnDrift();
         root.cancelActiveColumnSpatialDrag();
         resetOverviewWheelState();
         resetWindowWorkspaceHover();
@@ -498,6 +521,13 @@ Rectangle {
             if (!event.isAutoRepeat && unmodified && event.key === Qt.Key_Escape
                     && sceneEffect) {
                 sceneEffect.deactivate();
+            }
+            event.accepted = true;
+            return;
+        }
+        if (workspaceRenameEditing) {
+            if (!event.isAutoRepeat && unmodified && event.key === Qt.Key_Escape) {
+                root.cancelWorkspaceRename();
             }
             event.accepted = true;
             return;
@@ -561,8 +591,12 @@ Rectangle {
             root.navigateKeyboardBoundary("first");
         } else if (unmodified && event.key === Qt.Key_End) {
             root.navigateKeyboardBoundary("last");
-        } else if (unmodified && event.key === Qt.Key_Delete) {
-            root.closeKeyboardSelection();
+        } else if (!event.isAutoRepeat && unmodified && event.key === Qt.Key_Insert) {
+            root.createWorkspaceAfterKeyboardSelection();
+        } else if (!event.isAutoRepeat && unmodified && event.key === Qt.Key_F2) {
+            root.renameKeyboardDesktopSelection();
+        } else if (!event.isAutoRepeat && unmodified && event.key === Qt.Key_Delete) {
+            root.deleteKeyboardSelection();
         } else if (unmodified
                    && (event.key === Qt.Key_Enter || event.key === Qt.Key_Return
                        || (event.key === Qt.Key_Space && searchQuery.length === 0))) {
@@ -683,6 +717,24 @@ Rectangle {
 
         function onWindowRemoved(window) {
             root.handleSpatialLiveCameraWindowRemoved(window);
+        }
+    }
+
+    Connections {
+        target: root.workspaceRenameDesktop
+        enabled: target !== null && root.workspaceRenameEditing
+        ignoreUnknownSignals: true
+
+        function onDestroyed() {
+            root.cancelWorkspaceRename();
+        }
+
+        function onIdChanged() {
+            root.cancelWorkspaceRenameOnDrift();
+        }
+
+        function onNameChanged() {
+            root.cancelWorkspaceRenameOnDrift();
         }
     }
 
@@ -1349,6 +1401,7 @@ Rectangle {
                 required property string modelData
                 required property int index
                 readonly property var desktopObject: root.desktopForId(modelData)
+                readonly property var workspaceManagementActionControl: workspaceActionStrip
 
                 x: 0
                 y: index * (root.cardHeight + root.cardGap)
@@ -1367,7 +1420,7 @@ Rectangle {
                 sourceComponent: Component {
                     DesktopCard {
                         enabled: interactionEligible && !root.keyboardHelpVisible
-                            && !root.spatialHorizontalRowDragActive
+                            && !root.spatialHorizontalRowDragActive && !root.workspaceRenameEditing
                         context: root.contextFor(desktopCardLoader.modelData)
                         current: root.spatialPresentationDesktopId === desktopCardLoader.modelData
                         desktop: desktopCardLoader.desktopObject
@@ -1492,6 +1545,46 @@ Rectangle {
                                                              expectedTargetScreen)
                     }
                 }
+
+                WorkspaceActionStrip {
+                    id: workspaceActionStrip
+
+                    readonly property string exactDesktopName: root.workspaceDesktopName(
+                                                                        desktopCardLoader.desktopObject,
+                                                                        desktopCardLoader.modelData)
+
+                    x: Math.max(6, root.cardX + root.cardWidth - width - 10)
+                    y: 8
+                    width: implicitWidth
+                    height: implicitHeight
+                    desktopName: exactDesktopName
+                    editing: desktopCardLoader.active && root.workspaceRenameEditing
+                        && root.workspaceRenameDesktopId === desktopCardLoader.modelData
+                    interactionEligible: desktopCardLoader.active
+                        && root.workspaceRowActionsEligible(
+                                             desktopCardLoader.desktopObject,
+                                             desktopCardLoader.modelData,
+                                             desktopCardLoader.index)
+                    removeEligible: root.workspaceRemoveEligible(
+                                        desktopCardLoader.desktopObject,
+                                        desktopCardLoader.modelData,
+                                        desktopCardLoader.index)
+                    renameDraft: editing ? root.workspaceRenameDraft : ""
+                    opacity: root.spatialPresentationProgress
+                    z: 12000
+
+                    onCancelRenameRequested: root.cancelWorkspaceRename()
+                    onRemoveRequested: root.removeWorkspace(
+                                           desktopCardLoader.desktopObject,
+                                           desktopCardLoader.modelData,
+                                           desktopCardLoader.index)
+                    onRenameDraftEdited: draft => root.updateWorkspaceRenameDraft(
+                                              desktopCardLoader.modelData, draft)
+                    onRenameRequested: root.beginWorkspaceRename(
+                                           desktopCardLoader.desktopObject,
+                                           desktopCardLoader.modelData)
+                    onSubmitRenameRequested: root.submitWorkspaceRename()
+                }
             }
         }
 
@@ -1504,6 +1597,7 @@ Rectangle {
                 id: workspaceGapDropSlot
 
                 required property int index
+                readonly property var workspaceManagementCreateControl: workspaceGapCreateButton
 
                 x: 0
                 y: index * (root.cardHeight + root.cardGap) + root.cardHeight
@@ -1596,6 +1690,25 @@ Rectangle {
                     color: "#86aee8"
                     opacity: root.spatialPresentationProgress
                     radius: height / 2
+                }
+
+                WorkspaceGapCreateButton {
+                    id: workspaceGapCreateButton
+
+                    readonly property var createPlan: root.workspaceCreatePlanForGap(
+                                                                  workspaceGapDropSlot.index)
+
+                    x: root.cardX + (root.cardWidth - width) / 2
+                    y: (workspaceGapDropSlot.height - height) / 2
+                    width: implicitWidth
+                    height: implicitHeight
+                    actionEligible: createPlan !== null
+                        && root.workspaceGapCreateEligible(workspaceGapDropSlot.index, createPlan)
+                    opacity: root.spatialPresentationProgress
+                    z: 2
+
+                    onCreateRequested: root.createWorkspaceAtGap(
+                                           workspaceGapDropSlot.index, createPlan)
                 }
             }
         }
@@ -1909,7 +2022,9 @@ Rectangle {
                         { keys: "Tab / Shift+Tab", action: "Select next / previous" },
                         { keys: "Home / End", action: "Select first / last" },
                         { keys: "Enter / Space", action: "Activate selection; Space works outside search" },
-                        { keys: "Delete", action: "Close selected window" },
+                        { keys: "Insert", action: "Create after the selected workspace" },
+                        { keys: "F2", action: "Rename the selected workspace" },
+                        { keys: "Delete", action: "Close a window or remove an eligible workspace" },
                         { keys: "Type text", action: "Search windows" },
                         { keys: "Backspace", action: "Remove last search character" },
                         { keys: "Ctrl+Backspace", action: "Remove last search clause" },
@@ -3147,6 +3262,7 @@ Rectangle {
 
     function handleSpatialPresentationPhaseChanged() {
         if (spatialPresentationPhase === "closing") {
+            cancelWorkspaceRename();
             cancelActiveColumnSpatialDrag();
             cancelSpatialZoomTransaction();
             if (!spatialExitHandoffActive) {
@@ -3183,6 +3299,7 @@ Rectangle {
     }
 
     function resetOverviewSession() {
+        cancelWorkspaceRename();
         cancelSpatialZoomTransaction();
         clearExternalSpatialZoom();
         invalidateDesktopTopologyRefresh();
@@ -3202,6 +3319,7 @@ Rectangle {
     }
 
     function beginOverviewContextRefreshBarrier() {
+        cancelWorkspaceRename();
         cancelActiveColumnSpatialDrag();
         cancelSpatialZoomTransaction();
         discardSpatialZoomTransaction();
@@ -5560,6 +5678,7 @@ Rectangle {
                     || point.x < 0 || point.y < 0 || point.x >= width || point.y >= height
                     || !spatialPointerInputEligible || desktopReorderActive
                     || spatialDirectDragActive || !spatialWheelPresentationIsExact()
+                    || workspaceManagementControlContainsPoint(point)
                     || spatialViewportOverlayContainsPoint(keyboardHelpHint, point)
                     || spatialViewportOverlayContainsPoint(searchOverlay, point)
                     || spatialViewportOverlayContainsPoint(outputIdentityLoader, point)) {
@@ -5753,6 +5872,7 @@ Rectangle {
         if (!point || !Number.isFinite(point.x) || !Number.isFinite(point.y)
                 || point.x < 0 || point.y < 0 || point.x >= width || point.y >= height
                 || !spatialPointerInputEligible || desktopReorderActive
+                || workspaceManagementControlContainsPoint(point)
                 || spatialViewportOverlayContainsPoint(keyboardHelpHint, point)
                 || spatialViewportOverlayContainsPoint(searchOverlay, point)
                 || spatialViewportOverlayContainsPoint(outputIdentityLoader, point)) {
@@ -5782,6 +5902,7 @@ Rectangle {
                 || point.x < 0 || point.y < 0 || point.x >= width || point.y >= height
                 || !spatialPointerInputEligible || desktopReorderActive
                 || spatialDirectDragActive
+                || workspaceManagementControlContainsPoint(point)
                 || spatialViewportOverlayContainsPoint(keyboardHelpHint, point)
                 || spatialViewportOverlayContainsPoint(searchOverlay, point)
                 || spatialViewportOverlayContainsPoint(outputIdentityLoader, point)) {
@@ -6027,6 +6148,54 @@ Rectangle {
         } catch (error) {
             return true;
         }
+    }
+
+    function workspaceManagementItemContainsPoint(item, point) {
+        if (!item || item.visible !== true || item.enabled !== true
+                || !Number.isFinite(item.width) || !Number.isFinite(item.height)
+                || item.width <= 0 || item.height <= 0) {
+            return false;
+        }
+
+        try {
+            const localPoint = item.mapFromItem(root, point.x, point.y);
+            return Number.isFinite(localPoint.x) && Number.isFinite(localPoint.y)
+                && localPoint.x >= 0 && localPoint.y >= 0
+                && localPoint.x < item.width && localPoint.y < item.height;
+        } catch (error) {
+            return true;
+        }
+    }
+
+    function workspaceManagementControlContainsPoint(point) {
+        if (!point || !Number.isFinite(point.x) || !Number.isFinite(point.y)
+                || !spatialVisibleRangeIsValid(overviewSpatialVisibleRangePlan)) {
+            return true;
+        }
+
+        const firstIndex = overviewSpatialVisibleRangePlan.firstIndex;
+        const lastIndex = overviewSpatialVisibleRangePlan.lastIndex;
+        for (let index = firstIndex; index <= lastIndex; index += 1) {
+            const loader = desktopRepeater.itemAt(index);
+            if (loader && loader.active === true && loader.visible === true
+                    && workspaceManagementItemContainsPoint(
+                        loader.workspaceManagementActionControl, point)) {
+                return true;
+            }
+        }
+
+        const firstGapIndex = Math.max(0, firstIndex - 1);
+        const lastGapIndex = Math.min(workspaceGapDropRepeater.count - 1, lastIndex);
+        for (let index = firstGapIndex; index <= lastGapIndex; index += 1) {
+            const slot = workspaceGapDropRepeater.itemAt(index);
+            if (slot && slot.enabled === true && slot.visible === true
+                    && workspaceManagementItemContainsPoint(
+                        slot.workspaceManagementCreateControl, point)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     function beginDesktopReorder(candidate, expectedDesktopId, expectedScreen, sceneX, sceneY) {
@@ -8626,6 +8795,469 @@ Rectangle {
         }
 
         return false;
+    }
+
+    function workspaceDesktopName(candidate, expectedDesktopId) {
+        if (!workspaceDesktopIsExact(candidate, expectedDesktopId)) {
+            return "";
+        }
+        try {
+            return typeof candidate.name === "string" ? candidate.name : "";
+        } catch (error) {
+            return "";
+        }
+    }
+
+    function workspaceDesktopIsExact(candidate, expectedDesktopId) {
+        try {
+            return candidate && typeof expectedDesktopId === "string"
+                && expectedDesktopId.length > 0
+                && candidate.id !== undefined && candidate.id !== null
+                && String(candidate.id) === expectedDesktopId
+                && liveDesktopFor(candidate, expectedDesktopId) === candidate;
+        } catch (error) {
+            return false;
+        }
+    }
+
+    function workspaceCommandSceneIsExact() {
+        try {
+            if (!spatialPresentationSettled || overviewContextRefreshPending
+                    || !overviewContextModelExact || desktopTopologyRefreshPending
+                    || keyboardHelpVisible || searchQuery.length > 0 || desktopReorderActive
+                    || spatialDirectDragActive || spatialHorizontalRowDragActive
+                    || spatialViewportDragHandler.active
+                    || spatialHorizontalViewportDragHandler.active
+                    || spatialTouchPanDragHandler.active
+                    || spatialZoomOwner.length > 0 || spatialExternalZoomTransaction !== null
+                    || spatialExternalZoomActive || !sceneEffect || sceneEffect.active !== true
+                    || typeof sceneEffect.submitWorkspaceCommand !== "function"
+                    || activeOverviewSessionId <= 0 || activeOverviewActivityId.length === 0
+                    || outputId.length === 0 || !overviewModel
+                    || overviewModel !== sceneEffect.overviewModel
+                    || overviewModel.currentActivityId !== activeOverviewActivityId
+                    || !desktopIdListShapeIsValid(desktopIds) || desktopIds.length < 2
+                    || desktopIds.length > 25) {
+                return false;
+            }
+
+            const liveDesktops = KWin.Workspace.desktops;
+            if (!liveDesktops || liveDesktops.length !== desktopIds.length) {
+                return false;
+            }
+            for (let index = 0; index < desktopIds.length; index += 1) {
+                const desktopId = desktopIds[index];
+                const desktop = liveDesktops[index];
+                if (typeof desktopId !== "string" || desktopId.length === 0
+                        || desktopIds.lastIndexOf(desktopId) !== index
+                        || !desktop || desktop.id === undefined || desktop.id === null
+                        || String(desktop.id) !== desktopId) {
+                    return false;
+                }
+            }
+
+            return projectedOutput(overviewModel, targetScreen) !== null
+                && projectedOutputId(overviewModel, targetScreen) === outputId;
+        } catch (error) {
+            return false;
+        }
+    }
+
+    function workspaceCommandContextSnapshot() {
+        if (!workspaceCommandSceneIsExact()) {
+            return null;
+        }
+        const copiedDesktopIds = [];
+        for (const desktopId of desktopIds) {
+            copiedDesktopIds.push(desktopId);
+        }
+        return Object.freeze({
+            activityId: activeOverviewActivityId,
+            desktopIds: Object.freeze(copiedDesktopIds),
+            outputId
+        });
+    }
+
+    function workspaceRowActionsEligible(candidate, expectedDesktopId, expectedIndex) {
+        return !workspaceRenameEditing && Number.isInteger(expectedIndex)
+            && expectedIndex >= 0 && expectedIndex < desktopIds.length - 1
+            && (!emptyDesktopAboveFirst || expectedIndex > 0)
+            && desktopIds[expectedIndex] === expectedDesktopId
+            && workspaceDesktopIsExact(candidate, expectedDesktopId)
+            && boundedExpectedWorkspaceName(workspaceDesktopName(candidate, expectedDesktopId))
+            && workspaceCommandSceneIsExact();
+    }
+
+    function workspaceCreatePlanForGap(expectedGapIndex) {
+        if (workspaceRenameEditing || !workspaceCommandSceneIsExact()
+                || !Number.isInteger(expectedGapIndex) || expectedGapIndex < 0
+                || expectedGapIndex >= desktopIds.length - 1) {
+            return null;
+        }
+        const pointY = expectedGapIndex * (cardHeight + cardGap) + cardHeight + cardGap / 2;
+        const gapPlan = planWorkspaceGapDropAtCanvasY(pointY);
+        const position = expectedGapIndex + 1;
+        if (!workspaceGapPlanIsExact(gapPlan, position)
+                || desktopIds[position - 1] === undefined
+                || desktopIds[position] === undefined) {
+            return null;
+        }
+
+        return Object.freeze({
+            adjacentDesktopId: desktopIds[position - 1],
+            anchorDesktopId: desktopIds[position],
+            insertionIndex: position
+        });
+    }
+
+    function workspaceCreatePlansMatch(first, second) {
+        return first && second && first.insertionIndex === second.insertionIndex
+            && first.anchorDesktopId === second.anchorDesktopId
+            && first.adjacentDesktopId === second.adjacentDesktopId;
+    }
+
+    function workspaceGapCreateEligible(expectedGapIndex, expectedPlan) {
+        const exactPlan = workspaceCreatePlanForGap(expectedGapIndex);
+        return workspaceCreatePlansMatch(exactPlan, expectedPlan);
+    }
+
+    function createWorkspaceAtGap(expectedGapIndex, expectedPlan) {
+        const exactPlan = workspaceCreatePlanForGap(expectedGapIndex);
+        if (!workspaceCreatePlansMatch(exactPlan, expectedPlan)) {
+            return false;
+        }
+        const context = workspaceCommandContextSnapshot();
+        if (!context) {
+            return false;
+        }
+        const action = Object.freeze({
+            adjacentDesktopId: exactPlan.adjacentDesktopId,
+            anchorDesktopId: exactPlan.anchorDesktopId,
+            kind: "create",
+            position: exactPlan.insertionIndex
+        });
+        try {
+            return sceneEffect.submitWorkspaceCommand(context, action) === true;
+        } catch (error) {
+            return false;
+        }
+    }
+
+    function createWorkspaceAfterKeyboardSelection() {
+        const target = navigationTargetForId(collectNavigationTargets(), keyboardSelectionId);
+        if (!target || target.kind !== "desktop") {
+            return false;
+        }
+        const selectedIndex = desktopIds.indexOf(target.desktopId);
+        const plan = workspaceCreatePlanForGap(selectedIndex);
+        return plan !== null && createWorkspaceAtGap(selectedIndex, plan);
+    }
+
+    function beginWorkspaceRename(candidate, expectedDesktopId) {
+        if (workspaceRenameEditing || !workspaceCommandSceneIsExact()
+                || !workspaceDesktopIsExact(candidate, expectedDesktopId)) {
+            return false;
+        }
+        const expectedName = workspaceDesktopName(candidate, expectedDesktopId);
+        const context = workspaceCommandContextSnapshot();
+        if (!context || !boundedExpectedWorkspaceName(expectedName)) {
+            return false;
+        }
+
+        cancelActiveColumnSpatialDrag();
+        cancelSpatialZoomTransaction();
+        discardSpatialZoomTransaction();
+        cancelKeyboardBoundaryNavigation();
+        resetOverviewWheelState();
+        resetDesktopReorder();
+        resetSpatialEdgePanTracking();
+        clearSpatialTouchPan();
+        clearSpatialHorizontalViewportDrag();
+        spatialViewportInput.panLayout = null;
+        spatialViewportInput.panStartContentY = 0;
+
+        workspaceRenameActivityId = context.activityId;
+        workspaceRenameDesktop = candidate;
+        workspaceRenameDesktopId = expectedDesktopId;
+        workspaceRenameDesktopIds = context.desktopIds;
+        workspaceRenameDraft = expectedName;
+        workspaceRenameEffect = sceneEffect;
+        workspaceRenameExpectedName = expectedName;
+        workspaceRenameGeneration = overviewContextGeneration;
+        workspaceRenameModel = overviewModel;
+        workspaceRenameOutputId = context.outputId;
+        workspaceRenameSessionId = activeOverviewSessionId;
+        workspaceRenameTopologyRevision = desktopTopologyRevision;
+        workspaceRenameEditing = true;
+        return true;
+    }
+
+    function renameKeyboardDesktopSelection() {
+        const target = navigationTargetForId(collectNavigationTargets(), keyboardSelectionId);
+        return target && target.kind === "desktop"
+            ? beginWorkspaceRename(target.candidate, target.desktopId) : false;
+    }
+
+    function workspaceRenameEditorIsExact() {
+        try {
+            return workspaceRenameEditing && spatialPresentationSettled
+                && !overviewContextRefreshPending && overviewContextModelExact
+                && sceneEffect === workspaceRenameEffect && sceneEffect.active === true
+                && activeOverviewSessionId === workspaceRenameSessionId
+                && overviewContextGeneration === workspaceRenameGeneration
+                && overviewModel === workspaceRenameModel
+                && activeOverviewActivityId === workspaceRenameActivityId
+                && outputId === workspaceRenameOutputId
+                && desktopTopologyRevision === workspaceRenameTopologyRevision
+                && sameStringList(desktopIds, workspaceRenameDesktopIds)
+                && workspaceDesktopIsExact(workspaceRenameDesktop, workspaceRenameDesktopId)
+                && workspaceDesktopName(workspaceRenameDesktop, workspaceRenameDesktopId)
+                   === workspaceRenameExpectedName
+                && boundedExpectedWorkspaceName(workspaceRenameExpectedName);
+        } catch (error) {
+            return false;
+        }
+    }
+
+    function updateWorkspaceRenameDraft(expectedDesktopId, draft) {
+        if (!workspaceRenameEditorIsExact() || expectedDesktopId !== workspaceRenameDesktopId
+                || !boundedWorkspaceRenameDraft(draft)) {
+            cancelWorkspaceRenameOnDrift();
+            return false;
+        }
+        workspaceRenameDraft = draft;
+        return true;
+    }
+
+    function submitWorkspaceRename() {
+        if (!workspaceRenameEditorIsExact() || !boundedWorkspaceName(workspaceRenameDraft)) {
+            return false;
+        }
+        if (workspaceRenameDraft === workspaceRenameExpectedName) {
+            cancelWorkspaceRename();
+            return true;
+        }
+        const context = Object.freeze({
+            activityId: workspaceRenameActivityId,
+            desktopIds: workspaceRenameDesktopIds,
+            outputId: workspaceRenameOutputId
+        });
+        const action = Object.freeze({
+            desktopId: workspaceRenameDesktopId,
+            expectedName: workspaceRenameExpectedName,
+            kind: "rename",
+            name: workspaceRenameDraft
+        });
+        let submitted = false;
+        try {
+            submitted = workspaceRenameEffect.submitWorkspaceCommand(context, action) === true;
+        } catch (error) {
+            submitted = false;
+        }
+        if (submitted) {
+            cancelWorkspaceRename();
+        }
+        return submitted;
+    }
+
+    function cancelWorkspaceRenameOnDrift() {
+        if (workspaceRenameEditing && !workspaceRenameEditorIsExact()) {
+            cancelWorkspaceRename();
+            return true;
+        }
+        return false;
+    }
+
+    function cancelWorkspaceRename() {
+        workspaceRenameEditing = false;
+        workspaceRenameActivityId = "";
+        workspaceRenameDesktop = null;
+        workspaceRenameDesktopId = "";
+        workspaceRenameDesktopIds = [];
+        workspaceRenameDraft = "";
+        workspaceRenameEffect = null;
+        workspaceRenameExpectedName = "";
+        workspaceRenameGeneration = 0;
+        workspaceRenameModel = null;
+        workspaceRenameOutputId = "";
+        workspaceRenameSessionId = 0;
+        workspaceRenameTopologyRevision = -1;
+        if (spatialKeyboardInputEligible) {
+            forceActiveFocus();
+        }
+        return true;
+    }
+
+    function workspaceRemoveEligible(candidate, expectedDesktopId, expectedIndex) {
+        if (!workspaceRowActionsEligible(candidate, expectedDesktopId, expectedIndex)
+                || desktopIds.length < 3 || expectedIndex <= 0
+                || expectedIndex >= desktopIds.length - 1
+                || workspaceDesktopSelectedAnywhere(expectedDesktopId)) {
+            return false;
+        }
+        return workspaceDesktopIsGloballyEmpty(candidate, expectedDesktopId);
+    }
+
+    function workspaceDesktopSelectedAnywhere(expectedDesktopId) {
+        try {
+            const liveIds = desktopIds;
+            if (typeof KWin.Workspace.currentDesktopForScreen === "function") {
+                const screens = KWin.Workspace.screens;
+                if (!screens || screens.length < 1 || screens.length > 64) {
+                    return true;
+                }
+                for (const screen of screens) {
+                    const selected = KWin.Workspace.currentDesktopForScreen(screen);
+                    if (!selected || selected.id === undefined || selected.id === null
+                            || liveIds.indexOf(String(selected.id)) < 0) {
+                        return true;
+                    }
+                    if (String(selected.id) === expectedDesktopId) {
+                        return true;
+                    }
+                }
+                return false;
+            }
+            const selected = KWin.Workspace.currentDesktop;
+            return !selected || selected.id === undefined || selected.id === null
+                || liveIds.indexOf(String(selected.id)) < 0
+                || String(selected.id) === expectedDesktopId;
+        } catch (error) {
+            return true;
+        }
+    }
+
+    function workspaceDesktopIsGloballyEmpty(candidate, expectedDesktopId) {
+        if (!workspaceDesktopIsExact(candidate, expectedDesktopId)) {
+            return false;
+        }
+        try {
+            const windows = KWin.Workspace.stackingOrder;
+            if (!windows || !Number.isInteger(windows.length) || windows.length > 4096) {
+                return false;
+            }
+            for (const window of windows) {
+                if (!window) {
+                    return false;
+                }
+                if (window.deleted === true || window.desktopWindow === true || window.dock === true
+                        || window.onAllDesktops === true) {
+                    continue;
+                }
+                const windowDesktops = window.desktops;
+                if (!windowDesktops || !Number.isInteger(windowDesktops.length)
+                        || windowDesktops.length < 1 || windowDesktops.length > desktopIds.length) {
+                    return false;
+                }
+                const seen = Object.create(null);
+                for (const windowDesktop of windowDesktops) {
+                    if (!windowDesktop || windowDesktop.id === undefined || windowDesktop.id === null) {
+                        return false;
+                    }
+                    const windowDesktopId = String(windowDesktop.id);
+                    if (desktopIds.indexOf(windowDesktopId) < 0 || seen[windowDesktopId] === true) {
+                        return false;
+                    }
+                    seen[windowDesktopId] = true;
+                    if (windowDesktopId === expectedDesktopId) {
+                        return false;
+                    }
+                }
+            }
+            return true;
+        } catch (error) {
+            return false;
+        }
+    }
+
+    function removeWorkspace(candidate, expectedDesktopId, expectedIndex) {
+        if (!workspaceRemoveEligible(candidate, expectedDesktopId, expectedIndex)) {
+            return false;
+        }
+        const expectedName = workspaceDesktopName(candidate, expectedDesktopId);
+        const context = workspaceCommandContextSnapshot();
+        if (!context || !boundedExpectedWorkspaceName(expectedName)) {
+            return false;
+        }
+        const action = Object.freeze({
+            desktopId: expectedDesktopId,
+            expectedName,
+            kind: "remove"
+        });
+        try {
+            return sceneEffect.submitWorkspaceCommand(context, action) === true;
+        } catch (error) {
+            return false;
+        }
+    }
+
+    function deleteKeyboardSelection() {
+        const targets = collectNavigationTargets();
+        let target = navigationTargetForId(targets, keyboardSelectionId);
+        if (!target) {
+            repairKeyboardSelectionFrom(targets);
+            target = navigationTargetForId(collectNavigationTargets(), keyboardSelectionId);
+        }
+        if (!target) {
+            return false;
+        }
+        if (target.kind === "window") {
+            return closeWindow(target.candidate, target.windowId, target.desktop,
+                               target.desktopId, target.screen);
+        }
+        if (target.kind !== "desktop") {
+            return false;
+        }
+        const index = desktopIds.indexOf(target.desktopId);
+        return removeWorkspace(target.candidate, target.desktopId, index);
+    }
+
+    function boundedExpectedWorkspaceName(value) {
+        return boundedPlainWorkspaceUnicode(value, true);
+    }
+
+    function boundedWorkspaceName(value) {
+        return boundedPlainWorkspaceUnicode(value, false);
+    }
+
+    function boundedWorkspaceRenameDraft(value) {
+        return boundedPlainWorkspaceUnicode(value, true);
+    }
+
+    function boundedPlainWorkspaceUnicode(value, emptyAllowed) {
+        if (typeof value !== "string" || value.length > 256
+                || (!emptyAllowed && value.length === 0)) {
+            return false;
+        }
+        let bytes = 0;
+        for (let offset = 0; offset < value.length;) {
+            const leading = value.charCodeAt(offset);
+            let codePoint = leading;
+            if (leading >= 0xd800 && leading <= 0xdbff) {
+                const trailing = value.charCodeAt(offset + 1);
+                if (!Number.isInteger(trailing) || trailing < 0xdc00 || trailing > 0xdfff) {
+                    return false;
+                }
+                codePoint = ((leading - 0xd800) << 10) + trailing - 0xdc00 + 0x10000;
+                offset += 2;
+            } else {
+                if (leading >= 0xdc00 && leading <= 0xdfff) {
+                    return false;
+                }
+                offset += 1;
+            }
+            if (codePoint <= 0x1f || codePoint === 0x7f
+                    || codePoint >= 0x80 && codePoint <= 0x9f
+                    || codePoint === 0x2028 || codePoint === 0x2029) {
+                return false;
+            }
+            bytes += codePoint <= 0x7f ? 1 : codePoint <= 0x7ff ? 2
+                : codePoint <= 0xffff ? 3 : 4;
+            if (bytes > 255) {
+                return false;
+            }
+        }
+        return true;
     }
 
     function planWorkspaceGapDrop(dropArea, drag, expectedGapIndex) {

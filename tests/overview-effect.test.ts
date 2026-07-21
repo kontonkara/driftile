@@ -79,6 +79,14 @@ const keyboardHelpHint = readFileSync(
   new URL("contents/runtime/ui/KeyboardHelpHint.qml", effectRoot),
   "utf8",
 );
+const workspaceActionStrip = readFileSync(
+  new URL("contents/runtime/ui/WorkspaceActionStrip.qml", effectRoot),
+  "utf8",
+);
+const workspaceGapCreateButton = readFileSync(
+  new URL("contents/runtime/ui/WorkspaceGapCreateButton.qml", effectRoot),
+  "utf8",
+);
 const overviewRuntimeIndex = readFileSync(
   new URL("../src/overview/runtime.ts", import.meta.url),
   "utf8",
@@ -99,8 +107,17 @@ const qmlSources = [
   searchMatchBadge,
   keyboardHelpCloseButton,
   keyboardHelpHint,
+  workspaceActionStrip,
+  workspaceGapCreateButton,
   windowCloseButton,
 ];
+const workspaceManagementStart = scene.indexOf(
+  "function workspaceDesktopName(",
+);
+const workspaceManagementEnd = scene.indexOf("function planWorkspaceGapDrop(");
+const sceneWithoutWorkspaceManagement =
+  scene.slice(0, workspaceManagementStart) +
+  scene.slice(workspaceManagementEnd);
 
 describe("overview effect package", () => {
   it("declares a disabled standalone configurable KWin effect", () => {
@@ -523,7 +540,7 @@ describe("overview effect package", () => {
 
   it("keeps a fixed scene-effect proxy over the cache-busted controller", () => {
     expect(createHash("sha256").update(main, "utf8").digest("hex")).toBe(
-      "8a0e4f923ef9b0ee37b57f5ada0d8192c7446c0f5f584a4c29ed202124e165bf",
+      "4d74b308ff111cfa2accacb7b80ab3db39cb386eda7a3225c172029d70cbd58c",
     );
     expect(main).toContain("KWin.SceneEffect {");
     expect(main).toContain("Date.now().toString(36)");
@@ -1432,8 +1449,10 @@ describe("overview effect package", () => {
       focusHandler.match(/windowFocusStateIsExact\(candidate, false, true\)/gu),
     ).toHaveLength(3);
 
-    expect(scene).not.toContain("KWin.Workspace.stackingOrder");
-    expect(`${scene}\n${desktopCard}`).not.toMatch(
+    expect(sceneWithoutWorkspaceManagement).not.toContain(
+      "KWin.Workspace.stackingOrder",
+    );
+    expect(`${sceneWithoutWorkspaceManagement}\n${desktopCard}`).not.toMatch(
       /MouseArea|ShortcutHandler|\.setValue\s*\(/u,
     );
   });
@@ -2571,7 +2590,7 @@ describe("overview effect package", () => {
     );
     expect(reorder).toContain("storeSpatialEdgePanScenePoint(sceneX, sceneY)");
     expect(spatialSessionRefresh).toContain("resetSpatialEdgePanTracking();");
-    expect(`${scene}\n${desktopCard}`).not.toMatch(
+    expect(`${sceneWithoutWorkspaceManagement}\n${desktopCard}`).not.toMatch(
       /\bMouseArea\s*\{|KWin\.Workspace\.(?:stackingOrder|windows)\b|\.setValue\s*\(/u,
     );
   });
@@ -3690,7 +3709,7 @@ describe("overview effect package", () => {
     expect(attentionProjection).not.toMatch(
       /windowTapped|windowCloseRequested|closeWindow|activeWindow\s*=|\.setValue\s*\(|Settings/u,
     );
-    expect(`${scene}\n${desktopCard}`).not.toMatch(
+    expect(`${sceneWithoutWorkspaceManagement}\n${desktopCard}`).not.toMatch(
       /KWin\.Workspace\.(?:stackingOrder|windows)\b|\.setValue\s*\(/u,
     );
   });
@@ -4299,7 +4318,7 @@ describe("overview effect package", () => {
       /function spatialLiveGeometryIsManuallyDetached[\s\S]*spatialLiveGeometryDetachedOutputId === expectedOutputId[\s\S]*spatialLiveGeometryDetachedDesktopId === expectedDesktopId/u,
     );
     expect(scene).toMatch(
-      /function resetOverviewSession\(\) \{\s*cancelSpatialZoomTransaction\(\);\s*clearExternalSpatialZoom\(\);\s*invalidateDesktopTopologyRefresh\(\);\s*resetSpatialLiveCameraSession\(\);/u,
+      /function resetOverviewSession\(\) \{\s*cancelWorkspaceRename\(\);\s*cancelSpatialZoomTransaction\(\);\s*clearExternalSpatialZoom\(\);\s*invalidateDesktopTopologyRefresh\(\);\s*resetSpatialLiveCameraSession\(\);/u,
     );
     expect(liveCamera).toMatch(
       /function resetSpatialLiveCameraSession\(\) \{\s*resetSpatialLiveCameraRefresh\(\);\s*clearSpatialLiveCameraAttachment\(\);\s*clearSpatialLiveCameraProbe\(\);/u,
@@ -4740,7 +4759,7 @@ describe("overview effect package", () => {
       "readonly property bool searchQueryValid: searchQueryPlan !== null",
     );
     expect(scene).toMatch(
-      /onSearchQueryChanged: \{\s*root\.cancelActiveColumnSpatialDrag\(\);\s*resetOverviewWheelState\(\);\s*resetWindowWorkspaceHover\(\);\s*cancelKeyboardBoundaryNavigation\(\);\s*Qt\.callLater\(root\.repairKeyboardSelection\);\s*\}/u,
+      /onSearchQueryChanged: \{\s*root\.cancelWorkspaceRenameOnDrift\(\);\s*root\.cancelActiveColumnSpatialDrag\(\);\s*resetOverviewWheelState\(\);\s*resetWindowWorkspaceHover\(\);\s*cancelKeyboardBoundaryNavigation\(\);\s*Qt\.callLater\(root\.repairKeyboardSelection\);\s*\}/u,
     );
     expect(keyHandler).toContain("event.key === Qt.Key_Backspace");
     expect(keyHandler).toContain("root.removeLastSearchCharacter()");
@@ -4939,8 +4958,8 @@ describe("overview effect package", () => {
       scene.indexOf("Component.onCompleted:"),
     );
     const selection = scene.slice(
-      scene.indexOf("function closeKeyboardSelection("),
-      scene.indexOf("function repairKeyboardSelection("),
+      scene.indexOf("function deleteKeyboardSelection("),
+      scene.indexOf("function boundedExpectedWorkspaceName("),
     );
     const transaction = scene.slice(
       scene.indexOf("function closeWindow("),
@@ -4948,13 +4967,17 @@ describe("overview effect package", () => {
     );
 
     expect(keyHandler).toContain("event.key === Qt.Key_Delete");
-    expect(keyHandler).toContain("root.closeKeyboardSelection()");
+    expect(keyHandler).toContain("root.deleteKeyboardSelection()");
     expect(selection).toContain(
       "navigationTargetForId(targets, keyboardSelectionId)",
     );
-    expect(selection).toMatch(/if \(target\.kind !== "window"\) \{\s*return;/u);
+    expect(selection).toContain('if (target.kind === "window")');
+    expect(selection).toMatch(
+      /closeWindow\(target\.candidate, target\.windowId, target\.desktop,\s*target\.desktopId, target\.screen\)/u,
+    );
+    expect(selection).toContain('if (target.kind !== "desktop")');
     expect(selection).toContain(
-      "closeWindow(target.candidate, target.windowId, target.desktop, target.desktopId, target.screen)",
+      "return removeWorkspace(target.candidate, target.desktopId, index)",
     );
 
     expect(transaction.match(/closeWindowContextIsExact\(/gu)).toHaveLength(3);

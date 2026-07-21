@@ -134,10 +134,23 @@ covers pre-selection no-ops and post-selection late failures that close the
 stale effect without desktop rollback. The only permitted KWin writes or
 requests are `KWin.Workspace.activeWindow`, `KWin.SceneView.currentDesktop`, the
 guarded `KWin.Workspace.currentDesktop` fallback, and one guarded public
-`KWin.Workspace.moveDesktop` call for a validated card reorder. Settings,
+`KWin.Workspace.moveDesktop` call for a validated card reorder. Configuration,
 shortcut-assignment, screen-edge, window-move, geometry, and membership writes
-remain forbidden; actions, bindings, schema, private APIs, and timers remain
-absent. Window, stacking-order, and layout scans remain forbidden.
+remain forbidden; private APIs and timers remain absent. Window,
+stacking-order, and layout scans remain forbidden. The dedicated bounded
+RuntimeLocation workspace-command writer and unbound dispatch action are the
+only additional transport described below.
+
+Explicit workspace-management coverage keeps desktop mutations outside the
+effect. Codec and channel tests require exact own-data schemas, bounded Unicode
+names, ordered unique desktop IDs, durable no-overwrite transport, destructive
+consume, expiry, and replay rejection. Scene tests cover gap buttons, row
+controls, `Insert`/`F2`/`Delete`, editor input isolation, drift cancellation,
+and the continued window-close meaning of `Delete`. Lifecycle and controller
+tests independently cover retained-tail preservation, exact create and rename,
+and fail-closed removal for protected, occupied, selected, stale, or malformed
+desktops. Only the main script may call the public desktop mutation APIs after
+those checks; the effect still contains no direct desktop write or private API.
 
 The two-output Wayland scenario routes a physical left click through the
 compositor for native Wayland and XWayland passes. It verifies both exact

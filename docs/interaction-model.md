@@ -291,6 +291,21 @@ desktop write. Typing filters windows by title, application, desktop, output,
 or state. `F1` opens the compact keyboard and search reference. The hint and
 repair add no persistence, layout write, or private API.
 
+For a selected workspace marker, `Insert` creates an exact retained blank in
+the next eligible row gap, `F2` starts inline rename, and `Delete` requests an
+exact safe removal. Pointer and touch users get the same `+`, Rename, and Remove
+controls next to the spatial rows. Protected boundaries cannot be renamed or
+removed, and removal remains disabled for a globally occupied desktop or one
+selected on any output. `Delete` keeps its window-close meaning when a window
+target is selected.
+
+The rename editor owns text input until `Enter` or `Return` submits it or
+`Escape` cancels it. Search, navigation, wheel or touch panning, zoom, reorder,
+and spatial dragging remain blocked during that edit. Any activity, output,
+model, topology, desktop-object, or expected-name drift cancels the editor.
+Create and remove refresh the existing Overview session in place and repair the
+selection instead of replaying the opening transition.
+
 Activating a window captures an immutable pre-write handoff with its target,
 desktop, output, exact Overview rectangle, target frame, and session cameras and
 zoom. The scene remains frozen while a public `KWin.WindowThumbnail` morphs on
@@ -338,6 +353,13 @@ the existing order is a safe no-op. On the same output, a handle can transfer
 the complete column to an exact boundary or empty gutter in another visible
 workspace row. An eligible insertion gap between workspace rows creates the
 destination at that exact position and moves the complete column there.
+
+Workspace creation, rename, and removal never mutate KWin from the effect. The
+effect writes one bounded immutable command and invokes an unbound main-script
+action. The main script consumes it destructively, rejects stale or replayed
+request IDs, revalidates the complete ordered topology and public objects, and
+uses only public virtual-desktop APIs. An explicitly created empty desktop is
+retained by the dynamic lifecycle until the user safely removes it.
 
 Whole-column Overview placement preserves member order, the selected member,
 stacked or tabbed presentation, column width, and per-member height state. A

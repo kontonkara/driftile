@@ -59,6 +59,8 @@ const expectedOverviewRuntimeEntries = [
   "ui/SearchMatchBadge.qml",
   "ui/WindowApplicationIcon.qml",
   "ui/WindowCloseButton.qml",
+  "ui/WorkspaceActionStrip.qml",
+  "ui/WorkspaceGapCreateButton.qml",
   "ui/main.qml",
 ];
 const expectedTransitionPackageEntries = [

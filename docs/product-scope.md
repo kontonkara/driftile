@@ -543,6 +543,21 @@ Driftile must integrate with, not duplicate:
   window, its marker precedes unrelated visual targets. Keyboard and short
   touchscreen activation use the same guarded path as pointer activation;
   touchscreen long press remains reserved for an eligible window drag.
+- Eligible inter-row gaps expose explicit retained-workspace creation. Compact
+  row controls and `Insert`, `F2`, and `Delete` provide equivalent create,
+  rename, and remove behavior for a workspace marker while preserving
+  window-target close. Protected boundaries are unavailable, and remove also
+  requires the desktop to be globally empty and unselected on every output.
+- Inline workspace rename owns bounded plain-text input and excludes search,
+  navigation, pan, zoom, reorder, and spatial dragging. It cancels on session,
+  model, activity, output, topology, object, or prior-name drift. Successful
+  create and remove use the existing in-place topology refresh rather than
+  closing Overview.
+- Workspace actions cross a dedicated bounded command channel and are repeated
+  against exact public KWin state by the main script. Expired, replayed,
+  overwritten, ambiguous, unsettled, or stale commands are consumed without a
+  mutation. The effect never calls desktop creation, rename, or removal APIs
+  directly.
 - An eligible tiled-window drag presents one scene-level thumbnail proxy across
   clipped workspace rows. Exact stack, column-boundary, and empty-row targets
   preview the same solved final position and size used by the guarded drop

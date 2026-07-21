@@ -209,6 +209,20 @@ preferred selection synchronously, then activate it exactly once through the
 existing guarded path. `Delete` requests closure of a selected closeable window.
 `Escape` clears a non-empty search first and otherwise closes the effect.
 
+When a workspace marker is selected, `Insert` creates a retained empty
+workspace in the exact eligible gap below it, `F2` opens its inline name editor,
+and `Delete` requests removal instead of closing a window. The row controls
+offer the same Rename and Remove actions, and a compact `+` appears in each
+eligible gap between rows. The protected boundary rows cannot be renamed or
+removed. Remove is available only when the desktop is globally empty and is not
+selected on any output.
+
+The inline editor accepts a bounded plain Unicode name. `Enter` or `Return`
+submits it and `Escape` cancels it. While editing, search, navigation, panning,
+zoom, reorder, and window or column dragging do not receive the typed input. A
+changed session, model, activity, output, desktop topology, object, or prior
+name cancels the stale edit without applying it.
+
 Window activation captures an immutable handoff before any desktop, focus, or
 minimized-state write. It includes the target identity, desktop, output, exact
 Overview rectangle, target frame, and session cameras and zoom. The visible
@@ -260,6 +274,15 @@ rows creates one virtual desktop at that exact position and moves the window
 onto it. The operation works on the same output or across outputs, keeps the
 Overview open after success, and removes the newly created desktop again if the
 transfer is rejected while the captured state is still safe to restore.
+
+Explicit workspace actions use a separate one-way command channel to the main
+KWin script. Every command carries the current activity, output, complete
+ordered desktop snapshot, monotonic request identity, and exact action
+preconditions. The script consumes the document before applying it, rejects
+expired or replayed requests, then independently revalidates the public KWin
+objects. A manually created blank is retained instead of being reclaimed by
+dynamic-workspace cleanup. Removal requires a second exact global occupancy and
+selection check immediately before the public mutation.
 
 Adding, removing, or reordering virtual desktops refreshes an active Overview
 in place. Activity and output topology changes use a generation-bound in-place

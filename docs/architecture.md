@@ -221,6 +221,29 @@ Events travel from KWin through the bridge into the runtime. Commands and result
 - Re-reads the public desktop order synchronously when KWin reports a changed
   desktop list, then coalesces the persisted-model refresh without exposing
   stale workspace order to later pointer or gesture input.
+- Presents explicit workspace creation in each exact eligible row gap and
+  exposes row-local rename and safe-remove controls. `Insert`, `F2`, and
+  `Delete` share those paths when the keyboard target is a workspace marker;
+  window-target `Delete` retains its close behavior.
+- Owns inline rename state at scene scope so row virtualization cannot detach
+  the immutable desktop, name, session, model, output, activity, generation,
+  and ordered-topology preconditions. Editing excludes search, navigation,
+  panning, zoom, reorder, and spatial drag ownership and cancels on drift.
+- Sends create, rename, and remove through a dedicated RuntimeLocation command
+  document and unbound KGlobalAccel action. The writer confirms durable storage
+  without overwriting a pending request; the main script clears the document
+  before decoding it and advances replay state even when an exact command is
+  rejected.
+- Applies workspace commands only after the main controller independently
+  revalidates the current activity, unique output, ordered live desktop objects,
+  lifecycle settlement, and absence of structural transactions. Creation uses
+  the public `createDesktop`, rename uses the writable public desktop `name`,
+  and removal uses public `removeDesktop`; the effect performs none of those
+  writes directly.
+- Marks an explicitly created blank as retained for the current runtime. The
+  automatic planner treats it as occupied-equivalent so the protected dynamic
+  tail remains available, while exact manual removal still evaluates its real
+  global occupancy and every output's selected desktop.
 - Shows one compact `Type to search · F1 help` control only after the scene has
   settled and while search and help are both closed. Its hover state signals
   clickability, and click or touch opens the existing keyboard reference. The
