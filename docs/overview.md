@@ -113,11 +113,12 @@ activation cache is copied only afterward on a deferred event-loop turn.
 Ordinary opening animates from the current full-size row into the spatial plane.
 The projected canvas fades with presentation progress, so neither asynchronous
 Desktop surfaces nor window thumbnails can expose a full-size intermediate
-flash. Interactive gestures continue to drive presentation progress directly
-and settle on completion. Closing uses the same bounded motion in reverse. A
-manually panned current row returns to its live camera during the close motion;
-reopening during that motion resumes from the current progress without
-discarding the current session zoom.
+flash. The controller eases presentation progress once, and the scene consumes
+that bounded progress directly. Interactive gestures continue to drive progress
+and settle on completion. Closing uses the same motion in reverse. A manually
+panned current row returns to its live camera during the close motion; reopening
+during that motion reverses the same visible session from its current progress
+without discarding the current session zoom.
 
 Discrete vertical navigation moves a bounded camera smoothly between workspace
 rows. Precise wheel or touchpad input moves the camera directly, without being
@@ -226,17 +227,23 @@ name cancels the stale edit without applying it.
 Window activation captures an immutable handoff before any desktop, focus, or
 minimized-state write. It includes the target identity, desktop, output, exact
 Overview rectangle, target frame, and session cameras and zoom. The visible
-scene then stays frozen while a public `KWin.WindowThumbnail` on only the target
-output morphs from the Overview rectangle to the target frame; workspace rows
-and chrome fade without a live reflow. The source row always fades with close
-progress. While an eligible asynchronous thumbnail is pending, a single-window
-monochrome shell is already following the source-to-target morph;
-a ready Loader promotes the live thumbnail without ever retaining an opaque
-full-size row. Desktop selection and a minimized, deleted, stale, or
-topology-invalid window use a row-scale fallback instead. Input remains locked
-throughout the close. Reopening an interrupted close discards the stale target
-and restores the captured session cameras and zoom. This handoff adds no private
-API, geometry write, persistence, or auxiliary timer.
+scene then stays frozen while an exact public `KWin.WindowThumbnail` preloads in
+the captured target output's render path at sub-visible opacity. Two matching
+frames latch a ready preload. If promotion arrives first, two bounded promoted
+frames choose the thumbnail or monochrome shell once; stale identity chooses the
+row-scale fallback. Subsequent loader or context changes may only downgrade that
+choice. The committed view morphs from the Overview rectangle to the target
+frame while workspace rows and chrome fade without a live reflow. An exact
+thumbnail remains opaque at terminal progress to bridge into the native window,
+while monochrome and row fallbacks fade out completely.
+
+Input remains locked throughout the close. At terminal progress, the frozen
+scene retires only after every exact output has rendered two matching frame
+callbacks for the same session, model, topology, and handoff. Reopening clears
+that barrier and reverses the same visible session from its current progress;
+any deferred model refresh resumes after the opening settles. Identity drift or
+scene destruction rejects stale callbacks and fails closed. This handoff adds no
+private API, geometry write, persistence, or auxiliary timer.
 
 Only the selected member of a tabbed column is a target in the spatial plane.
 Unselected tabbed members and minimized windows do not receive synthetic

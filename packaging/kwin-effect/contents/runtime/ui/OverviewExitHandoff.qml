@@ -7,47 +7,84 @@ Item {
     id: root
 
     required property var handoff
+    required property string handoffPhase
+    required property var promotion
     required property var windowCandidate
-    required property string thumbnailSource
     required property rect sourceRect
-    required property rect targetRect
     required property rect targetOutputGeometry
     required property real progress
     required property bool handoffActive
     required property string activeOutput
-    required property string promotedOutput
+    required property string capturedOutput
 
     signal handoffCompleted(var immutableHandoff, string visualMode)
 
     readonly property real boundedProgress: boundedUnit(progress)
-    readonly property real easedProgress: smoothstep(boundedProgress)
-    readonly property string expectedOutput: promotedOutput
-    readonly property bool outputPromoted: activeOutput.length > 0
-        && activeOutput === expectedOutput
+    readonly property string handoffKey: validatedHandoffKey()
     readonly property string handoffKind: validatedHandoffKind()
     readonly property string handoffWindowId: validatedHandoffWindowId()
-    readonly property bool exactWindowCandidate: windowCandidateIsExact()
-    readonly property bool liveThumbnailEligible: exactWindowCandidate
-        && thumbnailSource.length > 0 && thumbnailSource === handoffWindowId
+    readonly property bool capturedOutputExact: handoffKey.length > 0
+        && activeOutput.length > 0 && capturedOutput.length > 0
+        && activeOutput === capturedOutput
+    readonly property bool promotionExact: promotionMatchesHandoff()
+    readonly property string promotedOutput: validatedPromotedOutput()
+    readonly property bool promotedOutputExact: promotionExact
+        && promotedOutput.length > 0 && promotedOutput === capturedOutput
+        && activeOutput === promotedOutput
+    readonly property bool fallbackOutputExact: handoffPhase === "fallback"
+        && capturedOutputExact
+    readonly property bool resolvedOutputExact: promotedOutputExact || fallbackOutputExact
+    readonly property bool preloadWindowCandidateExact: preloadCandidateIsExact()
+    readonly property bool liveThumbnailEligible: preloadWindowCandidateExact
+        && handoffWindowId.length > 0
+    readonly property int liveThumbnailLoaderStatus: exitThumbnailLoader.status
+    readonly property var liveThumbnailItem: liveThumbnailLoaderStatus === Loader.Ready
+        && objectAvailable(exitThumbnailLoader.item) ? exitThumbnailLoader.item : null
     readonly property bool liveThumbnailReady: liveThumbnailEligible
-        && exitThumbnailLoader.status === Loader.Ready
-        && objectAvailable(exitThumbnailLoader.item)
-    readonly property string fallbackReason: plannedFallbackReason()
-    readonly property string visualMode: liveThumbnailReady
-        ? "thumbnail" : exactWindowCandidate ? "monochrome" : "row-fallback"
+        && liveThumbnailLoaderStatus === Loader.Ready
+        && objectAvailable(liveThumbnailItem)
+    readonly property rect targetRect: validatedTargetRect()
+    readonly property bool exactWindowCandidate: promotedCandidateIsExact()
+    readonly property string visualMode: visualModeCommitted
+        ? committedVisualMode : "none"
+    readonly property bool preloadStagingVisible: handoffActive
+        && !visualModeCommitted && capturedOutputExact
+        && (handoffPhase === "captured" || handoffPhase === "promoted")
+        && preloadWindowCandidateExact
     readonly property rect safeSourceRect: rectIsUsable(sourceRect)
         ? sourceRect : Qt.rect(0, 0, Math.max(1, width), Math.max(1, height))
     readonly property rect localTargetRect: rectForOutput(targetRect, targetOutputGeometry)
     readonly property rect animatedRect: interpolatedRect(safeSourceRect, localTargetRect,
-                                                          easedProgress)
-    readonly property real chromeOpacity: 1 - boundedUnit(boundedProgress / 0.45)
-    readonly property real surfaceOpacity: 1 - easedProgress
-    readonly property real windowOverlayOpacity: boundedUnit(boundedProgress / 0.16)
-    readonly property real rowFallbackOpacity: surfaceOpacity
-    readonly property real rowFallbackScale: 1 - 0.06 * easedProgress
+                                                          boundedProgress)
+    readonly property real surfaceOpacity: 1 - boundedProgress
+    readonly property real chromeOpacity: surfaceOpacity
+    readonly property real revealOpacity: boundedUnit(boundedProgress / 0.16)
+    readonly property real thumbnailOpacity: revealOpacity
+    readonly property real fallbackOpacity: revealOpacity * surfaceOpacity
+    readonly property real windowOverlayOpacity: visualMode === "thumbnail"
+        ? thumbnailOpacity : visualMode === "monochrome" ? fallbackOpacity : 0
+    readonly property real rowFallbackOpacity: visualMode === "row-fallback"
+        ? fallbackOpacity : 0
+    readonly property real rowFallbackScale: 1 - 0.06 * boundedProgress
+    property string committedHandoffKey: ""
+    property string committedVisualMode: "none"
+    property bool visualModeCommitted: false
     property bool completionReported: false
+    property string preloadTrackedHandoffKey: ""
+    property string preloadTrackedOutput: ""
+    property var preloadTrackedCandidate: null
+    property rect preloadTrackedSourceRect: Qt.rect(0, 0, 0, 0)
+    property bool preloadTrackedLoaderActive: false
+    property int preloadTrackedLoaderStatus: Loader.Null
+    property var preloadTrackedLoaderItem: null
+    property int preloadReadyFrameCount: 0
+    property bool preloadTwoFrameLatch: false
+    property var preloadTrackedPromotion: null
+    property int preloadPromotedFrameCount: 0
+    property bool preloadPromotionInheritedLatch: false
 
-    visible: handoffActive && outputPromoted
+    visible: handoffActive && capturedOutputExact
+        && (preloadStagingVisible || (visualModeCommitted && resolvedOutputExact))
     enabled: false
     clip: false
 
@@ -62,11 +99,6 @@ Item {
         }
 
         return Math.max(0, Math.min(1, numeric));
-    }
-
-    function smoothstep(value) {
-        const bounded = boundedUnit(value);
-        return bounded * bounded * (3 - 2 * bounded);
     }
 
     function finiteNumber(value) {
@@ -91,6 +123,43 @@ Item {
                 && Math.abs(finiteNumber(first.y) - finiteNumber(second.y)) <= 2
                 && Math.abs(finiteNumber(first.width) - finiteNumber(second.width)) <= 2
                 && Math.abs(finiteNumber(first.height) - finiteNumber(second.height)) <= 2;
+    }
+
+    function rectsEqual(first, second) {
+        return rectIsUsable(first) && rectIsUsable(second)
+            && finiteNumber(first.x) === finiteNumber(second.x)
+            && finiteNumber(first.y) === finiteNumber(second.y)
+            && finiteNumber(first.width) === finiteNumber(second.width)
+            && finiteNumber(first.height) === finiteNumber(second.height);
+    }
+
+    function cameraIsUsable(camera) {
+        return objectAvailable(camera)
+            && Number.isFinite(finiteNumber(camera.offsetX))
+            && Number.isFinite(finiteNumber(camera.offsetY))
+            && Number.isFinite(finiteNumber(camera.zoom))
+            && finiteNumber(camera.zoom) > 0;
+    }
+
+    function camerasEqual(first, second) {
+        return cameraIsUsable(first) && cameraIsUsable(second)
+            && finiteNumber(first.offsetX) === finiteNumber(second.offsetX)
+            && finiteNumber(first.offsetY) === finiteNumber(second.offsetY)
+            && finiteNumber(first.zoom) === finiteNumber(second.zoom);
+    }
+
+    function frozenRecord(value) {
+        return objectAvailable(value) && typeof value === "object"
+            && !Array.isArray(value) && Object.isFrozen(value);
+    }
+
+    function rectValue(rect) {
+        if (!rectIsUsable(rect)) {
+            return Qt.rect(0, 0, 0, 0);
+        }
+
+        return Qt.rect(finiteNumber(rect.x), finiteNumber(rect.y),
+                       finiteNumber(rect.width), finiteNumber(rect.height));
     }
 
     function rectForOutput(globalRect, outputGeometry) {
@@ -157,75 +226,362 @@ Item {
         }
     }
 
-    function windowCandidateIsExact() {
-        if (handoffKind !== "window" || handoffWindowId.length === 0
-                || !rectIsUsable(sourceRect) || !rectIsUsable(targetRect)
-                || !rectIsUsable(targetOutputGeometry)
-                || !outputPromoted || !objectAvailable(windowCandidate)) {
+    function validatedHandoffKey() {
+        if (!objectAvailable(handoff) || capturedOutput.length === 0) {
+            return "";
+        }
+
+        try {
+            if (!frozenRecord(handoff) || !frozenRecord(handoff.camera)
+                    || !frozenRecord(handoff.sourceRect)
+                    || !frozenRecord(handoff.targetFrame)) {
+                return "";
+            }
+            const sessionId = Number(handoff.sessionId);
+            const generation = Number(handoff.generation);
+            const token = Number(handoff.token);
+            const sourceDesktopId = String(handoff.sourceDesktopId);
+            const sourceOutputId = String(handoff.sourceOutputId);
+            const targetDesktopId = String(handoff.targetDesktopId);
+            const targetOutputId = String(handoff.targetOutputId);
+            const targetKind = String(handoff.targetKind);
+            const targetMinimized = handoff.targetMinimized;
+            const targetWindowId = handoff.targetWindowId === undefined
+                || handoff.targetWindowId === null ? "" : String(handoff.targetWindowId);
+            if (!Number.isInteger(sessionId) || sessionId <= 0
+                    || !Number.isInteger(generation) || generation <= 0
+                    || !Number.isInteger(token) || token <= 0
+                    || sourceDesktopId.length === 0 || sourceOutputId.length === 0
+                    || targetDesktopId.length === 0 || targetOutputId.length === 0
+                    || targetOutputId !== capturedOutput
+                    || (handoff.desktopRelation !== "same-desktop"
+                        && handoff.desktopRelation !== "cross-desktop")
+                    || handoff.desktopRelation !== (sourceDesktopId === targetDesktopId
+                        ? "same-desktop" : "cross-desktop")
+                    || (targetKind !== "window" && targetKind !== "desktop-fallback")
+                    || typeof targetMinimized !== "boolean"
+                    || (targetKind === "window" && targetWindowId.length === 0)
+                    || (targetKind === "desktop-fallback" && targetWindowId.length > 0)
+                    || (targetKind === "desktop-fallback" && targetMinimized)
+                    || !cameraIsUsable(handoff.camera)
+                    || !rectIsUsable(handoff.sourceRect)
+                    || !rectIsUsable(handoff.targetFrame)) {
+                return "";
+            }
+
+            return JSON.stringify([sessionId, generation, token, sourceDesktopId,
+                                   sourceOutputId, targetDesktopId, targetOutputId,
+                                   targetKind, targetWindowId, handoff.desktopRelation,
+                                   handoff.camera.offsetX, handoff.camera.offsetY,
+                                   handoff.camera.zoom, handoff.sourceRect.x,
+                                   handoff.sourceRect.y, handoff.sourceRect.width,
+                                   handoff.sourceRect.height]);
+        } catch (error) {
+            return "";
+        }
+    }
+
+    function promotionMatchesHandoff() {
+        if (handoffPhase !== "promoted" || handoffKey.length === 0
+                || handoffKind !== "window" || !objectAvailable(promotion)) {
             return false;
         }
 
         try {
-            if (windowCandidate.deleted === true || windowCandidate.minimized === true
-                    || windowCandidate.internalId === undefined
-                    || windowCandidate.internalId === null
-                    || String(windowCandidate.internalId) !== handoffWindowId
-                    || !rectsMatch(windowCandidate.frameGeometry, targetRect)) {
+            if (!frozenRecord(promotion) || !frozenRecord(promotion.camera)
+                    || !frozenRecord(promotion.sourceRect)
+                    || !frozenRecord(promotion.targetFrame)) {
                 return false;
             }
+            return promotion === handoff
+                && Number(promotion.sessionId) === Number(handoff.sessionId)
+                && Number(promotion.generation) === Number(handoff.generation)
+                && Number(promotion.token) === Number(handoff.token)
+                && String(promotion.sourceDesktopId) === String(handoff.sourceDesktopId)
+                && String(promotion.sourceOutputId) === String(handoff.sourceOutputId)
+                && String(promotion.targetDesktopId) === String(handoff.targetDesktopId)
+                && String(promotion.targetOutputId) === capturedOutput
+                && String(promotion.targetOutputId) === String(handoff.targetOutputId)
+                && promotion.desktopRelation === handoff.desktopRelation
+                && promotion.targetKind === "window"
+                && promotion.targetKind === handoff.targetKind
+                && promotion.targetMinimized === false
+                && handoff.targetMinimized === false
+                && promotion.targetWindowId !== undefined
+                && promotion.targetWindowId !== null
+                && String(promotion.targetWindowId) === handoffWindowId
+                && String(promotion.targetWindowId) === String(handoff.targetWindowId)
+                && camerasEqual(promotion.camera, handoff.camera)
+                && rectsEqual(promotion.sourceRect, handoff.sourceRect)
+                && rectsEqual(promotion.targetFrame, handoff.targetFrame);
         } catch (error) {
             return false;
         }
+    }
 
+    function validatedPromotedOutput() {
+        if (!promotionExact) {
+            return "";
+        }
+
+        try {
+            return String(promotion.targetOutputId);
+        } catch (error) {
+            return "";
+        }
+    }
+
+    function validatedTargetRect() {
+        if (promotionExact) {
+            try {
+                return rectValue(promotion.targetFrame);
+            } catch (error) {
+                return Qt.rect(0, 0, 0, 0);
+            }
+        }
+        if (handoffKey.length === 0) {
+            return Qt.rect(0, 0, 0, 0);
+        }
+
+        try {
+            return rectValue(handoff.targetFrame);
+        } catch (error) {
+            return Qt.rect(0, 0, 0, 0);
+        }
+    }
+
+    function preloadCandidateIsExact() {
+        if ((handoffPhase !== "captured" && handoffPhase !== "promoted")
+                || !capturedOutputExact || handoffKind !== "window"
+                || handoffWindowId.length === 0 || !objectAvailable(windowCandidate)) {
+            return false;
+        }
+
+        try {
+            return windowCandidate.deleted !== true
+                && windowCandidate.internalId !== undefined
+                && windowCandidate.internalId !== null
+                && String(windowCandidate.internalId) === handoffWindowId;
+        } catch (error) {
+            return false;
+        }
+    }
+
+    function promotedCandidateIsExact() {
+        if (!promotionExact || !promotedOutputExact || !preloadWindowCandidateExact
+                || !rectIsUsable(sourceRect) || !rectIsUsable(targetRect)
+                || !rectIsUsable(targetOutputGeometry)) {
+            return false;
+        }
+
+        try {
+            return windowCandidate.minimized !== true
+                && rectsMatch(windowCandidate.frameGeometry, targetRect);
+        } catch (error) {
+            return false;
+        }
+    }
+
+    function preloadIdentityIsUsable() {
+        return preloadStagingVisible && handoffKey.length > 0
+            && activeOutput === capturedOutput
+            && rectsEqual(sourceRect, handoff.sourceRect);
+    }
+
+    function preloadIdentityIsTracked() {
+        return preloadIdentityIsUsable()
+            && preloadTrackedHandoffKey === handoffKey
+            && preloadTrackedOutput === capturedOutput
+            && preloadTrackedCandidate === windowCandidate
+            && rectsEqual(preloadTrackedSourceRect, sourceRect)
+            && preloadTrackedLoaderActive === exitThumbnailLoader.active
+            && preloadTrackedLoaderStatus === liveThumbnailLoaderStatus
+            && preloadTrackedLoaderItem === liveThumbnailItem;
+    }
+
+    function preloadLatchIsExact() {
+        return preloadTwoFrameLatch && preloadReadyFrameCount >= 2
+            && liveThumbnailReady && preloadIdentityIsTracked();
+    }
+
+    function resetPreloadTracking() {
+        preloadTrackedHandoffKey = "";
+        preloadTrackedOutput = "";
+        preloadTrackedCandidate = null;
+        preloadTrackedSourceRect = Qt.rect(0, 0, 0, 0);
+        preloadTrackedLoaderActive = false;
+        preloadTrackedLoaderStatus = Loader.Null;
+        preloadTrackedLoaderItem = null;
+        preloadReadyFrameCount = 0;
+        preloadTwoFrameLatch = false;
+        preloadTrackedPromotion = null;
+        preloadPromotedFrameCount = 0;
+        preloadPromotionInheritedLatch = false;
+    }
+
+    function beginCurrentPreloadIdentity() {
+        if (!preloadIdentityIsUsable()) {
+            resetPreloadTracking();
+            return false;
+        }
+
+        preloadTrackedHandoffKey = handoffKey;
+        preloadTrackedOutput = capturedOutput;
+        preloadTrackedCandidate = windowCandidate;
+        preloadTrackedSourceRect = rectValue(sourceRect);
+        preloadTrackedLoaderActive = exitThumbnailLoader.active;
+        preloadTrackedLoaderStatus = liveThumbnailLoaderStatus;
+        preloadTrackedLoaderItem = liveThumbnailItem;
+        preloadReadyFrameCount = 0;
+        preloadTwoFrameLatch = false;
+        preloadTrackedPromotion = null;
+        preloadPromotedFrameCount = 0;
+        preloadPromotionInheritedLatch = false;
         return true;
     }
 
-    function plannedFallbackReason() {
-        if (handoffKind === "desktop") {
-            return "desktop";
+    function synchronizePromotionResolution() {
+        if (handoffPhase !== "promoted") {
+            preloadTrackedPromotion = null;
+            preloadPromotedFrameCount = 0;
+            preloadPromotionInheritedLatch = false;
+            return false;
         }
-        if (handoffKind !== "window" || handoffWindowId.length === 0) {
-            return "stale-handoff";
+        if (preloadTrackedPromotion !== promotion) {
+            preloadTrackedPromotion = promotion;
+            preloadPromotedFrameCount = 0;
+            preloadPromotionInheritedLatch = promotionExact
+                && promotedOutputExact && exactWindowCandidate
+                && preloadLatchIsExact();
         }
-        if (!rectIsUsable(sourceRect) || !rectIsUsable(targetRect)
-                || !rectIsUsable(targetOutputGeometry)) {
-            return "stale-geometry";
+        return promotionExact && promotedOutputExact && exactWindowCandidate;
+    }
+
+    function handlePreloadIdentityChange() {
+        if (!preloadIdentityIsUsable()) {
+            resetPreloadTracking();
+        } else if (preloadTrackedHandoffKey.length > 0
+                   && !preloadIdentityIsTracked()) {
+            resetPreloadTracking();
         }
-        if (!objectAvailable(windowCandidate)) {
-            return "missing-candidate";
+        synchronizePromotionResolution();
+        synchronizeVisualMode();
+    }
+
+    function advancePreloadFrame() {
+        if (!preloadIdentityIsUsable()) {
+            resetPreloadTracking();
+            synchronizeVisualMode();
+            return false;
+        }
+        if (!preloadIdentityIsTracked() && !beginCurrentPreloadIdentity()) {
+            synchronizeVisualMode();
+            return false;
         }
 
-        try {
-            if (windowCandidate.deleted === true) {
-                return "deleted-candidate";
-            }
-            if (windowCandidate.minimized === true) {
-                return "minimized-candidate";
-            }
-            if (windowCandidate.internalId === undefined
-                    || windowCandidate.internalId === null
-                    || String(windowCandidate.internalId) !== handoffWindowId) {
-                return "stale-window";
-            }
-            if (!outputPromoted) {
-                return "stale-output";
-            }
-            if (!rectsMatch(windowCandidate.frameGeometry, targetRect)) {
-                return "stale-frame";
-            }
-        } catch (error) {
-            return "stale-candidate";
+        // Capture whether the promotion inherited a completed preload before
+        // this rendered frame can advance the latch.
+        const promotionResolved = synchronizePromotionResolution();
+
+        if (liveThumbnailReady) {
+            preloadReadyFrameCount = Math.min(2, preloadReadyFrameCount + 1);
+            preloadTwoFrameLatch = preloadReadyFrameCount >= 2;
+        } else {
+            preloadReadyFrameCount = 0;
+            preloadTwoFrameLatch = false;
         }
 
-        return liveThumbnailEligible ? "" : "missing-thumbnail-source";
+        if (handoffPhase !== "promoted") {
+            return true;
+        }
+
+        preloadPromotedFrameCount = Math.min(2, preloadPromotedFrameCount + 1);
+        if (preloadPromotedFrameCount < 2 || visualModeCommitted) {
+            return true;
+        }
+
+        const nextMode = !promotionResolved ? "row-fallback"
+            : liveThumbnailReady && preloadIdentityIsTracked()
+              ? "thumbnail" : "monochrome";
+        return commitVisualMode(nextMode);
+    }
+
+    function planInitialVisualMode() {
+        if (fallbackOutputExact) {
+            return "row-fallback";
+        }
+        if (handoffPhase !== "promoted") {
+            return "";
+        }
+
+        const promotionResolved = synchronizePromotionResolution();
+        return promotionResolved && preloadPromotionInheritedLatch
+            && preloadLatchIsExact()
+            ? "thumbnail" : "";
+    }
+
+    function planDowngradedVisualMode(currentMode) {
+        if (currentMode === "row-fallback") {
+            return currentMode;
+        }
+        if (fallbackOutputExact || !promotedOutputExact || !exactWindowCandidate) {
+            return "row-fallback";
+        }
+        if (currentMode === "thumbnail" && !liveThumbnailReady) {
+            return "monochrome";
+        }
+
+        return currentMode;
+    }
+
+    function resetCommittedVisualMode(nextHandoffKey) {
+        committedHandoffKey = nextHandoffKey;
+        committedVisualMode = "none";
+        visualModeCommitted = false;
+        completionReported = false;
+    }
+
+    function commitVisualMode(nextMode) {
+        if (nextMode !== "thumbnail" && nextMode !== "monochrome"
+                && nextMode !== "row-fallback") {
+            return false;
+        }
+
+        committedVisualMode = nextMode;
+        visualModeCommitted = true;
+        return true;
+    }
+
+    function synchronizeVisualMode() {
+        const nextHandoffKey = handoffKey;
+        if (!handoffActive || nextHandoffKey.length === 0) {
+            if (committedHandoffKey.length > 0 || visualModeCommitted
+                    || committedVisualMode !== "none" || completionReported) {
+                resetCommittedVisualMode("");
+            }
+            return;
+        }
+        if (committedHandoffKey !== nextHandoffKey) {
+            resetCommittedVisualMode(nextHandoffKey);
+        }
+
+        if (!visualModeCommitted) {
+            const initialMode = planInitialVisualMode();
+            if (initialMode.length > 0) {
+                commitVisualMode(initialMode);
+            }
+            return;
+        }
+
+        const downgradedMode = planDowngradedVisualMode(committedVisualMode);
+        if (downgradedMode !== committedVisualMode) {
+            committedVisualMode = downgradedMode;
+        }
     }
 
     function updateCompletion() {
-        if (!handoffActive || boundedProgress < 1) {
-            completionReported = false;
-            return;
-        }
-        if (completionReported) {
+        if (completionReported || !handoffActive || !visualModeCommitted
+                || !resolvedOutputExact || boundedProgress < 1) {
             return;
         }
 
@@ -233,10 +589,31 @@ Item {
         handoffCompleted(handoff, visualMode);
     }
 
+    onHandoffKeyChanged: handlePreloadIdentityChange()
+    onHandoffPhaseChanged: handlePreloadIdentityChange()
+    onPromotionChanged: handlePreloadIdentityChange()
+    onWindowCandidateChanged: handlePreloadIdentityChange()
+    onHandoffActiveChanged: handlePreloadIdentityChange()
+    onActiveOutputChanged: handlePreloadIdentityChange()
+    onCapturedOutputChanged: handlePreloadIdentityChange()
+    onCapturedOutputExactChanged: handlePreloadIdentityChange()
+    onSourceRectChanged: handlePreloadIdentityChange()
+    onPreloadStagingVisibleChanged: handlePreloadIdentityChange()
+    onPromotedOutputExactChanged: synchronizeVisualMode()
+    onFallbackOutputExactChanged: synchronizeVisualMode()
+    onExactWindowCandidateChanged: synchronizeVisualMode()
+    onLiveThumbnailLoaderStatusChanged: handlePreloadIdentityChange()
+    onLiveThumbnailItemChanged: handlePreloadIdentityChange()
+    onLiveThumbnailReadyChanged: handlePreloadIdentityChange()
     onBoundedProgressChanged: updateCompletion()
-    onHandoffActiveChanged: updateCompletion()
-    onHandoffChanged: completionReported = false
-    Component.onCompleted: updateCompletion()
+    onVisualModeCommittedChanged: updateCompletion()
+    onResolvedOutputExactChanged: updateCompletion()
+    Component.onCompleted: handlePreloadIdentityChange()
+
+    FrameAnimation {
+        running: root.preloadStagingVisible
+        onTriggered: root.advancePreloadFrame()
+    }
 
     Item {
         id: windowHandoffShell
@@ -245,8 +622,9 @@ Item {
         y: root.animatedRect.y
         width: root.animatedRect.width
         height: root.animatedRect.height
-        visible: root.visualMode !== "row-fallback"
-        opacity: root.windowOverlayOpacity
+        visible: root.preloadStagingVisible || root.visualMode === "thumbnail"
+            || root.visualMode === "monochrome"
+        opacity: root.preloadStagingVisible ? 0.001 : root.windowOverlayOpacity
         clip: true
 
         Rectangle {
@@ -259,12 +637,13 @@ Item {
 
             anchors.fill: parent
             active: root.handoffActive && root.liveThumbnailEligible
+                && (!root.visualModeCommitted || root.visualMode === "thumbnail")
             asynchronous: true
 
             sourceComponent: Component {
                 KWin.WindowThumbnail {
                     anchors.fill: parent
-                    wId: root.thumbnailSource
+                    wId: root.handoffWindowId
                 }
             }
         }

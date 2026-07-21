@@ -146,10 +146,14 @@ describe("overview exit handoff integration", () => {
     expect(settle).toContain('type: "settle"');
     expect(settle).toContain("topologyGeneration: overviewTopologyGeneration");
     expect(apply).toMatch(
-      /overviewExitHandoffPromotion = plan\.disposition === "promote"\s*&& plan\.promotion \? plan\.promotion : null;/u,
+      /if \(pendingSceneRetirementBarrier\) \{\s*pendingSceneRetirementContextDrift = true;\s*forceSceneRetirementBarrier\(true\);\s*return false;/u,
     );
     expect(apply).toMatch(
-      /overviewExitHandoffWindow = overviewExitHandoffPromotion && windowCandidate/u,
+      /const nextPromotion = plan\.disposition === "promote"\s*&& plan\.promotion \? plan\.promotion : null;/u,
+    );
+    expect(apply).toContain("overviewExitHandoffPromotion = nextPromotion;");
+    expect(apply).toMatch(
+      /overviewExitHandoffWindow = nextPromotion && windowCandidate/u,
     );
   });
 
@@ -284,16 +288,35 @@ describe("overview exit handoff integration", () => {
   });
 
   it("renders one target-output public thumbnail with safe fallback", () => {
-    expect(scene).toContain("OverviewExitHandoff {");
-    expect(scene).toContain(
-      'root.overviewExitHandoffState.phase === "promoted"',
+    const planApplication = controller.slice(
+      controller.indexOf("function applyOverviewExitHandoffPlan("),
+      controller.indexOf("function overviewExitHandoffIsActive("),
     );
+
+    expect(scene).toContain("OverviewExitHandoff {");
+    expect(scene).toContain("handoffPhase: root.overviewExitHandoffState");
+    expect(scene).toContain("promotion: root.overviewExitHandoffPromotion");
     expect(scene).toContain("activeOutput: root.outputId");
-    expect(scene).toContain("root.overviewExitHandoffCapture.targetOutputId");
+    expect(scene).toContain("capturedOutput: root.overviewExitHandoffCapture");
+    expect(scene).toMatch(
+      /windowCandidate: root\.overviewExitHandoffCapture[\s\S]*targetKind === "window"[\s\S]*sceneEffect\.overviewExitHandoffWindow/u,
+    );
+    expect(scene).not.toContain("thumbnailSource:");
+    expect(scene).not.toContain("promotedOutput:");
     expect(scene).toContain("progress: 1 - root.spatialPresentationProgress");
     expect(scene).toContain("overviewExitOverlaySourceRect()");
     expect(entrypoint).toContain(
       "readonly property var overviewExitHandoffPromotion: controller",
+    );
+    expect(
+      planApplication.indexOf("overviewExitHandoffPromotion = nextPromotion"),
+    ).toBeLessThan(
+      planApplication.indexOf("overviewExitHandoffState = plan.state"),
+    );
+    expect(
+      planApplication.indexOf("overviewExitHandoffWindow = nextPromotion"),
+    ).toBeLessThan(
+      planApplication.indexOf("overviewExitHandoffState = plan.state"),
     );
     expect(entrypoint).toContain("function beginOverviewExitHandoff(");
     expect(entrypoint).toContain("function settleOverviewExitHandoff(");
@@ -302,14 +325,133 @@ describe("overview exit handoff integration", () => {
     );
   });
 
-  it("retires the public scene before clearing its exact session", () => {
-    const immediate = controller.slice(
-      controller.indexOf("function deactivateImmediately("),
-      controller.indexOf("function finalizeInactiveOverviewState("),
-    );
+  it("holds the terminal scene for two frames on every exact output", () => {
     const retirement = controller.slice(
       controller.indexOf("function requestSceneRetirement("),
       controller.indexOf("function handleSceneDeactivated("),
+    );
+    const barrierContext = controller.slice(
+      controller.indexOf("function sceneRetirementBarrierContextIsExact("),
+      controller.indexOf("function commitSceneRetirementVisibility("),
+    );
+    const visibilityCommit = controller.slice(
+      controller.indexOf("function commitSceneRetirementVisibility("),
+      controller.indexOf("function forceSceneRetirementBarrier("),
+    );
+    const registration = controller.slice(
+      controller.indexOf("function registerOverviewSceneRetirementFrame("),
+      controller.indexOf("function invalidateOverviewSceneRetirement("),
+    );
+    const frameContext = scene.slice(
+      scene.indexOf("function sceneRetirementFrameContext("),
+      scene.indexOf("function resetSceneRetirementFrameTracking("),
+    );
+    const frameAdvance = scene.slice(
+      scene.indexOf("function advanceSceneRetirementFrame("),
+      scene.indexOf("function resetPresentationReadinessRegistration("),
+    );
+    const frameSynchronization = scene.slice(
+      scene.indexOf("function synchronizeSceneRetirementFrame("),
+      scene.indexOf("function advanceSceneRetirementFrame("),
+    );
+
+    expect(controller).toContain(
+      "property var pendingSceneRetirementBarrier: null",
+    );
+    expect(controller).toContain(
+      "property var pendingSceneRetirementFrameRegistrations: []",
+    );
+    expect(retirement).toContain(
+      "const outputIds = openingModelOutputIds(model);",
+    );
+    expect(retirement).toMatch(
+      /const barrierContextInvalid = forcedContextDrift === true\s*\|\| overviewContextRefreshPending;/u,
+    );
+    expect(retirement).toMatch(
+      /if \(outputIds === null \|\| barrierContextInvalid\) \{\s*presentationPhase = "retiring";\s*sceneVisible = false;/u,
+    );
+    expect(retirement).toContain("const barrier = Object.freeze({");
+    expect(retirement).toContain("outputIds: Object.freeze(outputIds.slice())");
+    for (const identity of [
+      "handoffPromotion: overviewExitHandoffPromotion",
+      "handoffState: overviewExitHandoffState",
+      "handoffWindow: overviewExitHandoffWindow",
+      "model,",
+      "sessionId,",
+      "token: pendingSceneRetirementToken",
+      "topologyGeneration: overviewTopologyGeneration",
+    ]) {
+      expect(retirement).toContain(identity);
+    }
+    expect(retirement).toMatch(
+      /presentationProgress = 0;\s*presentationPhase = "closing";/u,
+    );
+    expect(retirement).toMatch(
+      /pendingSceneRetirementBarrier = barrier;\s*return true;/u,
+    );
+    expect(barrierContext).toContain(
+      "barrier !== pendingSceneRetirementBarrier",
+    );
+    expect(barrierContext).toContain("barrier.model !== overviewModel");
+    expect(barrierContext).toContain(
+      "sameOpeningOutputIds(outputIds, barrier.outputIds)",
+    );
+    expect(visibilityCommit).toMatch(
+      /clearSceneRetirementBarrier\(\);\s*presentationProgress = 0;\s*presentationPhase = "retiring";\s*sceneVisible = false;/u,
+    );
+    expect(registration).toContain(
+      "pendingSceneRetirementFrameRegistrations = Object.freeze(nextRegistrations)",
+    );
+    expect(registration).toContain(
+      "completeSceneRetirementBarrierIfExact(barrier)",
+    );
+    expect(scene).toMatch(
+      /FrameAnimation \{[\s\S]*running: root\.spatialSceneRetirementFrameContext !== null[\s\S]*onTriggered: root\.advanceSceneRetirementFrame\(\)/u,
+    );
+    expect(frameContext).toContain("barrier !== effect.sceneRetirementBarrier");
+    expect(frameContext).toContain(
+      "barrier.handoffState !== overviewExitHandoffState",
+    );
+    expect(frameAdvance).toMatch(
+      /spatialSceneRetirementFrameCount \+= 1;[\s\S]*spatialSceneRetirementFrameCount !== 2[\s\S]*registerOverviewSceneRetirementFrame/u,
+    );
+    expect(frameAdvance).toContain(
+      "spatialSceneRetirementFrameRegistered = true;",
+    );
+    expect(frameSynchronization).toContain(
+      "const context = sceneRetirementFrameContext();",
+    );
+    expect(frameSynchronization).not.toContain(
+      "const context = spatialSceneRetirementFrameContext;",
+    );
+    expect(entrypoint).toContain(
+      "readonly property var sceneRetirementBarrier: controller",
+    );
+    expect(entrypoint).toContain(
+      "function registerOverviewSceneRetirementFrame(",
+    );
+    expect(entrypoint).toContain("function invalidateOverviewSceneRetirement(");
+    expect(
+      `${barrierContext}\n${visibilityCommit}\n${registration}\n${frameContext}\n${frameAdvance}`,
+    ).not.toMatch(/\bTimer\s*\{|Qt\.callLater|org\.kde\.kwin\.private/u);
+  });
+
+  it("rejects stale retirement owners and reverses an exact barrier in place", () => {
+    const activation = controller.slice(
+      controller.indexOf("function activate()"),
+      controller.indexOf("function deactivate()"),
+    );
+    const registration = controller.slice(
+      controller.indexOf("function registerOverviewSceneRetirementFrame("),
+      controller.indexOf("function completeSceneRetirementBarrierIfExact("),
+    );
+    const invalidation = controller.slice(
+      controller.indexOf("function invalidateOverviewSceneRetirement("),
+      controller.indexOf("function cancelSceneRetirementBarrierForReopen("),
+    );
+    const cancellation = controller.slice(
+      controller.indexOf("function cancelSceneRetirementBarrierForReopen("),
+      controller.indexOf("function requestSceneRetirement("),
     );
     const deactivated = controller.slice(
       controller.indexOf("function handleSceneDeactivated("),
@@ -320,27 +462,59 @@ describe("overview exit handoff integration", () => {
       controller.indexOf("function clearSceneRetirement("),
     );
 
-    expect(controller).toContain("property bool sceneVisible: false");
-    expect(entrypoint).toContain(
-      "visible: controller ? controller.sceneVisible : false",
+    expect(registration).toMatch(
+      /if \(barrier !== pendingSceneRetirementBarrier\) \{\s*return false;/u,
+    );
+    expect(registration).toMatch(
+      /registration\.outputId === outputId \|\| registration\.sceneToken === sceneToken[\s\S]*registration\.outputId === outputId && registration\.sceneToken === sceneToken[\s\S]*return true;[\s\S]*commitSceneRetirementVisibility\(barrier, true\);/u,
+    );
+    expect(invalidation).toMatch(
+      /if \(barrier !== pendingSceneRetirementBarrier\) \{\s*return false;/u,
+    );
+    expect(cancellation).toContain(
+      "sceneRetirementBarrierContextIsExact(barrier)",
+    );
+    expect(cancellation).toMatch(
+      /const refreshAfterReopen = pendingSceneRetirementContextDrift;\s*clearSceneRetirement\(\);\s*pendingPostTransitionLiveRefresh = pendingPostTransitionLiveRefresh\s*\|\| refreshAfterReopen;/u,
+    );
+    expect(cancellation).toContain("clearSceneRetirement();");
+    expect(
+      activation.indexOf("cancelSceneRetirementBarrierForReopen"),
+    ).toBeLessThan(activation.indexOf('cancelOverviewExitHandoff("reopen")'));
+    expect(
+      activation.indexOf('cancelOverviewExitHandoff("reopen")'),
+    ).toBeLessThan(
+      activation.indexOf(
+        'startPresentationTransition("opening", 1, activeSessionId)',
+      ),
+    );
+    expect(controller).toMatch(
+      /function advanceOverviewTopologyGeneration\(\)[\s\S]*pendingSceneRetirementBarrier[\s\S]*forceSceneRetirementBarrier\(true\)/u,
+    );
+    expect(controller).toContain(
+      "onOverviewExitHandoffStateChanged: reconcileSceneRetirementBarrier()",
+    );
+    expect(scene).toMatch(
+      /Component\.onDestruction: \{\s*root\.invalidateTrackedSceneRetirementFrame\(\);/u,
+    );
+    expect(scene).toContain(
+      "onSceneRetirementBarrierChanged: root.synchronizeSceneRetirementFrame()",
+    );
+    expect(scene).toMatch(
+      /const barrier = spatialSceneRetirementTrackedBarrier \|\| sceneRetirementBarrier;[\s\S]*sceneOwnsRetirementBarrier\(barrier\)/u,
+    );
+    const sceneOwnership = scene.slice(
+      scene.indexOf("function sceneOwnsRetirementBarrier("),
+      scene.indexOf("function invalidateTrackedSceneRetirementFrame("),
+    );
+    expect(sceneOwnership).not.toContain(
+      "barrier.outputIds.indexOf(expectedOutputId)",
     );
     expect(entrypoint).toMatch(
-      /onDeactivated:[\s\S]*handleSceneDeactivated\(controller\.pendingSceneRetirementToken,[\s\S]*controller\.pendingSceneRetirementSessionId\)/u,
-    );
-    expect(immediate).toMatch(
-      /presentationPhase === "retiring"\) \{\s*return;/u,
-    );
-    expect(retirement).toMatch(
-      /presentationProgress = 0;[\s\S]*presentationPhase = "retiring";[\s\S]*pendingSceneRetirementSessionId = sessionId;[\s\S]*pendingSceneRetirementToken = nextSceneRetirementToken\(\);[\s\S]*sceneVisible = false;/u,
-    );
-    expect(retirement).toMatch(
-      /presentationPhase === "preparing" && !openingReadinessSceneActivated[\s\S]*sceneVisible = false;[\s\S]*finalizeInactiveOverviewState\(\)/u,
-    );
-    expect(retirement).not.toMatch(
-      /active = false|activeSessionId = 0|overviewModel = null|clearOverviewExitHandoff\(\)/u,
+      /onDeactivated:[\s\S]*controller\.pendingSceneRetirementBarrier[\s\S]*forceSceneRetirementBarrier\(true\)[\s\S]*handleSceneDeactivated\(controller\.pendingSceneRetirementToken,[\s\S]*controller\.pendingSceneRetirementSessionId\)/u,
     );
     expect(deactivated).toMatch(
-      /retirementToken !== pendingSceneRetirementToken[\s\S]*sessionId !== pendingSceneRetirementSessionId[\s\S]*presentationPhase !== "retiring"/u,
+      /retirementToken !== pendingSceneRetirementToken[\s\S]*sessionId !== pendingSceneRetirementSessionId[\s\S]*pendingSceneRetirementBarrier !== null[\s\S]*presentationPhase !== "retiring"/u,
     );
     expect(deactivated).toMatch(
       /const reopen = pendingSceneRetirementReopen;[\s\S]*const contextDrift = pendingSceneRetirementContextDrift;[\s\S]*const completedSessionId = pendingSceneRetirementSessionId;[\s\S]*if \(!reopen\)[\s\S]*finalizeInactiveOverviewState\(\)[\s\S]*queueSceneRestart\(completedSessionId, contextDrift\)/u,
@@ -349,9 +523,8 @@ describe("overview exit handoff integration", () => {
     expect(restart).toMatch(
       /Object\.freeze[\s\S]*restartToken: nextSceneRestartToken\(\)[\s\S]*Qt\.callLater[\s\S]*pendingSceneRestartRequest !== request[\s\S]*presentationPhase !== "closed"[\s\S]*controller\.activate\(\)/u,
     );
-    expect(scene).not.toContain("id: spatialTerminalFallback");
-    expect(scene).toMatch(
-      /id: spatialBackdrop[\s\S]*opacity: root\.spatialPresentationProgress/u,
-    );
+    expect(
+      `${activation}\n${registration}\n${invalidation}\n${cancellation}`,
+    ).not.toMatch(/\bTimer\s*\{|Qt\.callLater|org\.kde\.kwin\.private/u);
   });
 });

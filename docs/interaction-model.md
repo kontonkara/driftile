@@ -251,11 +251,16 @@ while zoom changes or differs from the configured session start.
 
 Ordinary Overview opening animates from the current full-size row into the
 spatial plane while the canvas fades with presentation progress. Closing uses
-the same bounded motion in reverse. A single-window monochrome handoff follows
-that source-to-target morph while an asynchronous exit thumbnail loads, without
-retaining an opaque full-size row. Interactive gestures continue to drive
-presentation progress directly.
-Reopening during that close motion keeps the current session zoom.
+the same bounded motion in reverse. The controller applies easing once and the
+scene consumes that progress directly. An exact public exit thumbnail preloads
+in the captured output's render path before visible promotion. Two matching
+frames latch a ready preload; otherwise two bounded promoted frames choose the
+thumbnail or monochrome fallback once. The committed visual mode can only
+downgrade: an exact thumbnail remains opaque at terminal progress to bridge to
+the native window, while a safe monochrome or row fallback fades out.
+Interactive gestures continue to drive presentation progress directly.
+Reopening during that close motion reverses the same visible session from its
+current progress and keeps the current session zoom.
 
 An unchanged persisted layout with an equivalent projection-relevant live
 snapshot can reuse the last accepted projection synchronously, so a warm
@@ -312,9 +317,12 @@ zoom. The scene remains frozen while a public `KWin.WindowThumbnail` morphs on
 only the target output and the rows and chrome fade without live reflow.
 Desktop selection and minimized, deleted, stale, or topology-invalid targets
 use a safe monochrome or row-scale close instead. Input stays locked during the
-close; reopening an interrupted close clears the stale target and restores the
-session cameras and zoom. The handoff adds no private API, geometry write,
-persistence, or auxiliary timer.
+close. At terminal progress the scene remains rendered until every exact output
+has supplied two matching frame callbacks for the frozen session, model,
+topology, and handoff. Reopening clears that retirement barrier before reversing
+the same session; identity drift, stale callbacks, or scene destruction fail
+closed. The handoff adds no private API, geometry write, persistence, or
+auxiliary timer.
 
 A short mouse, touchpad, or touchscreen tap on empty row space or its workspace
 marker selects an exact non-current workspace and closes Overview on the

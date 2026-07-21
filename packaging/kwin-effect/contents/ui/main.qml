@@ -78,6 +78,8 @@ KWin.SceneEffect {
         && Number.isInteger(controller.openingReadinessEpoch)
         && controller.openingReadinessEpoch > 0
         ? controller.openingReadinessEpoch : 0
+    readonly property var sceneRetirementBarrier: controller
+        ? controller.pendingSceneRetirementBarrier : null
 
     visible: controller ? controller.sceneVisible : false
     delegate: controller ? controller.overviewDelegate : null
@@ -89,6 +91,10 @@ KWin.SceneEffect {
         }
     }
     onDeactivated: {
+        if (controller && controller.pendingSceneRetirementBarrier
+                && typeof controller.forceSceneRetirementBarrier === "function") {
+            controller.forceSceneRetirementBarrier(true);
+        }
         if (controller && typeof controller.handleSceneDeactivated === "function") {
             controller.handleSceneDeactivated(controller.pendingSceneRetirementToken,
                                               controller.pendingSceneRetirementSessionId);
@@ -152,6 +158,18 @@ KWin.SceneEffect {
         return controller && typeof controller.unregisterOverviewSceneReady === "function"
             ? controller.unregisterOverviewSceneReady(epoch, sessionId, model, topologyGeneration,
                                                       outputId, sceneToken, fatal === true) === true : false;
+    }
+
+    function registerOverviewSceneRetirementFrame(barrier, outputId, sceneToken) {
+        return controller && typeof controller.registerOverviewSceneRetirementFrame === "function"
+            ? controller.registerOverviewSceneRetirementFrame(barrier, outputId,
+                                                               sceneToken) === true : false;
+    }
+
+    function invalidateOverviewSceneRetirement(barrier, outputId, sceneToken) {
+        return controller && typeof controller.invalidateOverviewSceneRetirement === "function"
+            ? controller.invalidateOverviewSceneRetirement(barrier, outputId,
+                                                            sceneToken) === true : false;
     }
 
     function beginOverviewExitHandoff(windowCandidate, input) {

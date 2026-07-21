@@ -75,6 +75,8 @@ Rectangle {
         && Number.isInteger(sceneEffect.presentationReadinessEpoch)
         && sceneEffect.presentationReadinessEpoch > 0
         ? sceneEffect.presentationReadinessEpoch : 0
+    readonly property var sceneRetirementBarrier: sceneEffect
+        ? sceneEffect.sceneRetirementBarrier : null
     readonly property bool overviewContextRefreshPending: sceneEffect
         && sceneEffect.overviewContextRefreshPending === true
     readonly property bool overviewContextModelExact: contextModelIsExact()
@@ -288,11 +290,16 @@ Rectangle {
     property var spatialViewportSnapshot: null
     readonly property var spatialPresentationSceneToken: ({})
     readonly property var spatialPresentationReadinessContext: sceneReadinessContext()
+    readonly property var spatialSceneRetirementFrameContext: sceneRetirementFrameContext()
     property int spatialPresentationRegisteredEpoch: 0
     property int spatialPresentationRegisteredSessionId: 0
     property var spatialPresentationRegisteredModel: null
     property int spatialPresentationRegisteredTopologyGeneration: 0
     property string spatialPresentationRegisteredOutputId: ""
+    property var spatialSceneRetirementTrackedBarrier: null
+    property string spatialSceneRetirementTrackedOutputId: ""
+    property int spatialSceneRetirementFrameCount: 0
+    property bool spatialSceneRetirementFrameRegistered: false
     property var spatialColumnDragSource: null
     property string spatialColumnDragSourceDesktopId: ""
     property int spatialColumnDragSourceWorkspaceIndex: -1
@@ -404,6 +411,8 @@ Rectangle {
     onSpatialZoomOwnerChanged: root.finishDesktopSurfaceResidencyBridge()
     onSpatialZoomTransactionChanged: root.finishDesktopSurfaceResidencyBridge()
     onSpatialPresentationReadinessContextChanged: root.synchronizePresentationReadiness()
+    onSpatialSceneRetirementFrameContextChanged: root.synchronizeSceneRetirementFrame()
+    onSceneRetirementBarrierChanged: root.synchronizeSceneRetirementFrame()
     onKeyboardSelectionIdChanged: {
         const target = keyboardSelectionViewportTarget;
         keyboardSelectionViewportTarget = null;
@@ -491,6 +500,7 @@ Rectangle {
     }
     onOverviewZoomGestureDirectionChanged: root.handleExternalSpatialZoomDirectionChanged()
     onOutputIdChanged: {
+        root.synchronizeSceneRetirementFrame();
         if (root.abortPendingWindowFocus("topology")) {
             return;
         }
@@ -698,8 +708,10 @@ Rectangle {
         handleSpatialPresentationPhaseChanged();
         synchronizeSpatialZoomInputState();
         synchronizePresentationReadiness();
+        synchronizeSceneRetirementFrame();
     }
     Component.onDestruction: {
+        root.invalidateTrackedSceneRetirementFrame();
         root.clearPendingWindowFocus();
         root.unregisterPresentationReadiness(true);
         root.cancelActiveWindowSpatialDrag();
@@ -2047,26 +2059,28 @@ Rectangle {
 
         anchors.fill: parent
         handoff: root.overviewExitHandoffCapture
-        windowCandidate: root.overviewExitHandoffState
-            && root.overviewExitHandoffState.phase === "promoted"
-            && root.overviewExitHandoffPromotion
+        handoffPhase: root.overviewExitHandoffState
+            ? root.overviewExitHandoffState.phase : ""
+        promotion: root.overviewExitHandoffPromotion
+        windowCandidate: root.overviewExitHandoffCapture
+            && root.overviewExitHandoffCapture.targetKind === "window"
             && root.sceneEffect ? root.sceneEffect.overviewExitHandoffWindow : null
-        thumbnailSource: root.overviewExitHandoffPromotion
-            && root.overviewExitHandoffPromotion.targetWindowId
-            ? root.overviewExitHandoffPromotion.targetWindowId : ""
         sourceRect: root.overviewExitOverlaySourceRect()
-        targetRect: root.overviewExitHandoffPromotion
-            ? root.overviewExitRectValue(root.overviewExitHandoffPromotion.targetFrame)
-            : root.overviewExitHandoffCapture
-              ? root.overviewExitRectValue(root.overviewExitHandoffCapture.targetFrame)
-              : Qt.rect(0, 0, 1, 1)
         targetOutputGeometry: root.overviewExitOutputGeometry()
         progress: 1 - root.spatialPresentationProgress
         handoffActive: root.spatialExitHandoffActive
         activeOutput: root.outputId
-        promotedOutput: root.overviewExitHandoffCapture
+        capturedOutput: root.overviewExitHandoffCapture
             ? root.overviewExitHandoffCapture.targetOutputId : ""
         z: 24000
+    }
+
+    FrameAnimation {
+        id: spatialSceneRetirementFrameAnimation
+
+        running: root.spatialSceneRetirementFrameContext !== null
+            && !root.spatialSceneRetirementFrameRegistered
+        onTriggered: root.advanceSceneRetirementFrame()
     }
 
     Item {
@@ -11027,6 +11041,172 @@ Rectangle {
         } catch (error) {
             return null;
         }
+    }
+
+    function sceneRetirementFrameContext() {
+        try {
+            const effect = sceneEffect;
+            const barrier = sceneRetirementBarrier;
+            const model = overviewModel;
+            const screen = targetScreen;
+            if (!effect || effect.active !== true || effect.sceneVisible !== true
+                    || !barrier || barrier !== effect.sceneRetirementBarrier
+                    || !Object.isFrozen(barrier) || !Object.isFrozen(barrier.outputIds)
+                    || spatialPresentationPhase !== "closing"
+                    || Math.abs(spatialPresentationProgress) > 0.000001
+                    || !Number.isInteger(barrier.token) || barrier.token <= 0
+                    || !Number.isInteger(barrier.sessionId) || barrier.sessionId <= 0
+                    || barrier.sessionId !== activeOverviewSessionId
+                    || barrier.model !== model || effect.overviewModel !== model
+                    || !Number.isInteger(barrier.topologyGeneration)
+                    || barrier.topologyGeneration <= 0
+                    || barrier.topologyGeneration !== overviewContextGeneration
+                    || barrier.handoffState !== overviewExitHandoffState
+                    || barrier.handoffPromotion !== overviewExitHandoffPromotion
+                    || barrier.handoffWindow !== effect.overviewExitHandoffWindow
+                    || overviewContextRefreshPending || !overviewContextModelExact
+                    || !screen || liveScreenFor(screen) !== screen
+                    || !Number.isFinite(width) || width <= 0
+                    || !Number.isFinite(height) || height <= 0) {
+                return null;
+            }
+
+            const output = projectedOutput(model, screen);
+            const expectedOutputId = output ? String(output.outputId) : "";
+            const geometry = screen.geometry;
+            if (!output || expectedOutputId.length === 0 || outputId !== expectedOutputId
+                    || barrier.outputIds.indexOf(expectedOutputId) < 0
+                    || barrier.outputIds.lastIndexOf(expectedOutputId)
+                        !== barrier.outputIds.indexOf(expectedOutputId)
+                    || !geometry || Number(geometry.width) !== width
+                    || Number(geometry.height) !== height) {
+                return null;
+            }
+
+            let outputMatches = 0;
+            for (const candidateOutput of model.outputs) {
+                if (candidateOutput && String(candidateOutput.outputId) === expectedOutputId) {
+                    outputMatches += 1;
+                }
+            }
+            if (outputMatches !== 1) {
+                return null;
+            }
+
+            return Object.freeze({ barrier, outputId: expectedOutputId });
+        } catch (error) {
+            return null;
+        }
+    }
+
+    function resetSceneRetirementFrameTracking() {
+        spatialSceneRetirementTrackedBarrier = null;
+        spatialSceneRetirementTrackedOutputId = "";
+        spatialSceneRetirementFrameCount = 0;
+        spatialSceneRetirementFrameRegistered = false;
+    }
+
+    function sceneOwnsRetirementBarrier(barrier) {
+        const effect = sceneEffect;
+        const model = overviewModel;
+        if (!barrier || !effect || effect.sceneRetirementBarrier !== barrier
+                || !Object.isFrozen(barrier) || !Object.isFrozen(barrier.outputIds)
+                || effect.active !== true || effect.sceneVisible !== true
+                || barrier.model !== model || effect.overviewModel !== model
+                || !Number.isInteger(barrier.sessionId) || barrier.sessionId <= 0
+                || barrier.sessionId !== activeOverviewSessionId
+                || !Number.isInteger(barrier.topologyGeneration)
+                || barrier.topologyGeneration <= 0
+                || barrier.topologyGeneration !== overviewContextGeneration) {
+            return false;
+        }
+
+        return true;
+    }
+
+    function invalidateTrackedSceneRetirementFrame() {
+        const barrier = spatialSceneRetirementTrackedBarrier || sceneRetirementBarrier;
+        const expectedOutputId = spatialSceneRetirementTrackedBarrier
+            ? spatialSceneRetirementTrackedOutputId : outputId;
+        const effect = sceneEffect;
+        const shouldInvalidate = sceneOwnsRetirementBarrier(barrier);
+        resetSceneRetirementFrameTracking();
+        if (!shouldInvalidate
+                || typeof effect.invalidateOverviewSceneRetirement !== "function") {
+            return false;
+        }
+        try {
+            return effect.invalidateOverviewSceneRetirement(barrier, expectedOutputId,
+                                                            spatialPresentationSceneToken) === true;
+        } catch (error) {
+            return false;
+        }
+    }
+
+    function synchronizeSceneRetirementFrame() {
+        const context = sceneRetirementFrameContext();
+        const tracked = spatialSceneRetirementTrackedBarrier !== null;
+        const matches = tracked && context
+            && spatialSceneRetirementTrackedBarrier === context.barrier
+            && spatialSceneRetirementTrackedOutputId === context.outputId;
+        if (tracked && !matches) {
+            invalidateTrackedSceneRetirementFrame();
+        }
+        if (!context) {
+            invalidateTrackedSceneRetirementFrame();
+            return false;
+        }
+        if (matches) {
+            return matches === true;
+        }
+        if (sceneRetirementBarrier !== context.barrier) {
+            return false;
+        }
+
+        spatialSceneRetirementTrackedBarrier = context.barrier;
+        spatialSceneRetirementTrackedOutputId = context.outputId;
+        spatialSceneRetirementFrameCount = 0;
+        spatialSceneRetirementFrameRegistered = false;
+        return true;
+    }
+
+    function advanceSceneRetirementFrame() {
+        if (!synchronizeSceneRetirementFrame()) {
+            return false;
+        }
+        const context = sceneRetirementFrameContext();
+        if (!context || spatialSceneRetirementFrameRegistered
+                || spatialSceneRetirementTrackedBarrier !== context.barrier
+                || spatialSceneRetirementTrackedOutputId !== context.outputId) {
+            return false;
+        }
+
+        spatialSceneRetirementFrameCount += 1;
+        if (spatialSceneRetirementFrameCount !== 2) {
+            return true;
+        }
+
+        const effect = sceneEffect;
+        let accepted = false;
+        try {
+            accepted = effect
+                && typeof effect.registerOverviewSceneRetirementFrame === "function"
+                && effect.registerOverviewSceneRetirementFrame(
+                    context.barrier, context.outputId,
+                    spatialPresentationSceneToken) === true;
+        } catch (error) {
+            accepted = false;
+        }
+        if (!accepted) {
+            invalidateTrackedSceneRetirementFrame();
+            return false;
+        }
+        if (effect.sceneRetirementBarrier !== context.barrier) {
+            resetSceneRetirementFrameTracking();
+            return true;
+        }
+        spatialSceneRetirementFrameRegistered = true;
+        return true;
     }
 
     function resetPresentationReadinessRegistration() {

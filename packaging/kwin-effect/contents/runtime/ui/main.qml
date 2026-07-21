@@ -49,6 +49,8 @@ QtObject {
     property bool pendingPostTransitionLiveRefresh: false
     property int pendingPresentationTransitionSessionId: 0
     property int pendingPresentationTransitionToken: 0
+    property var pendingSceneRetirementBarrier: null
+    property var pendingSceneRetirementFrameRegistrations: []
     property bool pendingSceneRetirementReopen: false
     property int pendingSceneRetirementSessionId: 0
     property int pendingSceneRetirementToken: 0
@@ -85,7 +87,13 @@ QtObject {
 
     onActiveChanged: syncOverviewTouchpadZoomGesture()
     onLoadingChanged: syncOverviewTouchpadZoomGesture()
-    onOverviewModelChanged: reconcileOverviewZoomInputStatesForModel()
+    onOverviewModelChanged: {
+        reconcileSceneRetirementBarrier();
+        reconcileOverviewZoomInputStatesForModel();
+    }
+    onOverviewExitHandoffStateChanged: reconcileSceneRetirementBarrier()
+    onOverviewExitHandoffPromotionChanged: reconcileSceneRetirementBarrier()
+    onOverviewExitHandoffWindowChanged: reconcileSceneRetirementBarrier()
     onPresentationPhaseChanged: {
         syncOverviewTouchpadZoomGesture();
         scheduleDeferredOverviewZoomLiveRefresh();
@@ -225,6 +233,10 @@ QtObject {
             if (controller.pendingSceneRestartRequest) {
                 return;
             }
+            if (controller.pendingSceneRetirementBarrier) {
+                controller.forceSceneRetirementBarrier(true);
+                return;
+            }
             if (controller.presentationPhase === "preparing") {
                 controller.restartPreparingSceneForContextDrift();
                 return;
@@ -239,6 +251,10 @@ QtObject {
 
         function onWindowRemoved(window) {
             if (controller.pendingSceneRestartRequest) {
+                return;
+            }
+            if (controller.pendingSceneRetirementBarrier) {
+                controller.forceSceneRetirementBarrier(true);
                 return;
             }
             if (controller.presentationPhase === "preparing") {
@@ -1542,6 +1558,12 @@ QtObject {
             }
             if ((presentationPhase === "closing" || interruptedTouchpadGesture)
                     && activeSessionId > 0 && overviewModel) {
+                if (pendingSceneRetirementBarrier
+                        && !cancelSceneRetirementBarrierForReopen(activeSessionId)) {
+                    pendingSceneRetirementReopen = true;
+                    forceSceneRetirementBarrier(true);
+                    return;
+                }
                 cancelOverviewExitHandoff("reopen");
                 startPresentationTransition("opening", 1, activeSessionId);
             }
@@ -1705,11 +1727,177 @@ QtObject {
         return true;
     }
 
+    function clearSceneRetirementBarrier() {
+        pendingSceneRetirementBarrier = null;
+        pendingSceneRetirementFrameRegistrations = [];
+    }
+
     function clearSceneRetirement() {
+        clearSceneRetirementBarrier();
         pendingSceneRetirementReopen = false;
         pendingSceneRetirementSessionId = 0;
         pendingSceneRetirementToken = 0;
         pendingSceneRetirementContextDrift = false;
+    }
+
+    function sceneRetirementBarrierContextIsExact(barrier) {
+        if (!barrier || barrier !== pendingSceneRetirementBarrier
+                || !Object.isFrozen(barrier) || !Object.isFrozen(barrier.outputIds)
+                || !Number.isInteger(barrier.token) || barrier.token <= 0
+                || barrier.token !== pendingSceneRetirementToken
+                || !Number.isInteger(barrier.sessionId) || barrier.sessionId <= 0
+                || barrier.sessionId !== pendingSceneRetirementSessionId
+                || barrier.sessionId !== activeSessionId
+                || barrier.model !== overviewModel
+                || !Number.isInteger(barrier.topologyGeneration)
+                || barrier.topologyGeneration <= 0
+                || barrier.topologyGeneration !== overviewTopologyGeneration
+                || barrier.handoffState !== overviewExitHandoffState
+                || barrier.handoffPromotion !== overviewExitHandoffPromotion
+                || barrier.handoffWindow !== overviewExitHandoffWindow
+                || !active || loading || !sceneVisible
+                || presentationPhase !== "closing"
+                || Math.abs(presentationProgress) > 0.000001) {
+            return false;
+        }
+
+        const outputIds = openingModelOutputIds(overviewModel);
+        return outputIds !== null && sameOpeningOutputIds(outputIds, barrier.outputIds);
+    }
+
+    function commitSceneRetirementVisibility(barrier, contextDrift) {
+        if (!barrier || barrier !== pendingSceneRetirementBarrier
+                || barrier.token !== pendingSceneRetirementToken
+                || barrier.sessionId !== pendingSceneRetirementSessionId
+                || barrier.sessionId !== activeSessionId
+                || !active || !sceneVisible) {
+            return false;
+        }
+
+        pendingSceneRetirementContextDrift = pendingSceneRetirementContextDrift
+            || contextDrift === true;
+        clearSceneRetirementBarrier();
+        presentationProgress = 0;
+        presentationPhase = "retiring";
+        sceneVisible = false;
+        return true;
+    }
+
+    function forceSceneRetirementBarrier(contextDrift) {
+        const barrier = pendingSceneRetirementBarrier;
+        return barrier ? commitSceneRetirementVisibility(barrier, contextDrift === true) : false;
+    }
+
+    function reconcileSceneRetirementBarrier() {
+        const barrier = pendingSceneRetirementBarrier;
+        if (!barrier || sceneRetirementBarrierContextIsExact(barrier)) {
+            return true;
+        }
+        return commitSceneRetirementVisibility(barrier, true);
+    }
+
+    function sceneRetirementFrameRegistrationIsExact(registration, barrier) {
+        return registration && Object.isFrozen(registration)
+            && overviewZoomIdentifierIsValid(registration.outputId)
+            && barrier.outputIds.indexOf(registration.outputId) >= 0
+            && overviewZoomSceneTokenIsValid(registration.sceneToken);
+    }
+
+    function registerOverviewSceneRetirementFrame(barrier, outputId, sceneToken) {
+        if (barrier !== pendingSceneRetirementBarrier) {
+            return false;
+        }
+        if (!sceneRetirementBarrierContextIsExact(barrier)
+                || !overviewZoomIdentifierIsValid(outputId)
+                || barrier.outputIds.indexOf(outputId) < 0
+                || barrier.outputIds.lastIndexOf(outputId) !== barrier.outputIds.indexOf(outputId)
+                || !overviewZoomSceneTokenIsValid(sceneToken)) {
+            commitSceneRetirementVisibility(barrier, true);
+            return false;
+        }
+
+        const registrations = pendingSceneRetirementFrameRegistrations;
+        if (!registrations || !Number.isInteger(registrations.length)
+                || registrations.length > barrier.outputIds.length) {
+            commitSceneRetirementVisibility(barrier, true);
+            return false;
+        }
+        for (const registration of registrations) {
+            if (!sceneRetirementFrameRegistrationIsExact(registration, barrier)) {
+                commitSceneRetirementVisibility(barrier, true);
+                return false;
+            }
+            if (registration.outputId === outputId || registration.sceneToken === sceneToken) {
+                if (registration.outputId === outputId && registration.sceneToken === sceneToken) {
+                    completeSceneRetirementBarrierIfExact(barrier);
+                    return true;
+                }
+                commitSceneRetirementVisibility(barrier, true);
+                return false;
+            }
+        }
+
+        const nextRegistrations = registrations.slice();
+        nextRegistrations.push(Object.freeze({ outputId, sceneToken }));
+        pendingSceneRetirementFrameRegistrations = Object.freeze(nextRegistrations);
+        completeSceneRetirementBarrierIfExact(barrier);
+        return true;
+    }
+
+    function completeSceneRetirementBarrierIfExact(barrier) {
+        if (!sceneRetirementBarrierContextIsExact(barrier)) {
+            commitSceneRetirementVisibility(barrier, true);
+            return false;
+        }
+
+        const registrations = pendingSceneRetirementFrameRegistrations;
+        if (!registrations || registrations.length !== barrier.outputIds.length) {
+            return false;
+        }
+        for (const outputId of barrier.outputIds) {
+            let matches = 0;
+            for (const registration of registrations) {
+                if (!sceneRetirementFrameRegistrationIsExact(registration, barrier)) {
+                    commitSceneRetirementVisibility(barrier, true);
+                    return false;
+                }
+                if (registration.outputId === outputId) {
+                    matches += 1;
+                }
+            }
+            if (matches !== 1) {
+                commitSceneRetirementVisibility(barrier, true);
+                return false;
+            }
+        }
+        return commitSceneRetirementVisibility(barrier, false);
+    }
+
+    function invalidateOverviewSceneRetirement(barrier, outputId, sceneToken) {
+        if (barrier !== pendingSceneRetirementBarrier) {
+            return false;
+        }
+        const localIdentityExact = overviewZoomIdentifierIsValid(outputId)
+            && barrier.outputIds.indexOf(outputId) >= 0
+            && overviewZoomSceneTokenIsValid(sceneToken);
+        if (!localIdentityExact) {
+            pendingSceneRetirementContextDrift = true;
+        }
+        return commitSceneRetirementVisibility(barrier, true);
+    }
+
+    function cancelSceneRetirementBarrierForReopen(sessionId) {
+        const barrier = pendingSceneRetirementBarrier;
+        if (!Number.isInteger(sessionId) || sessionId <= 0
+                || !barrier || barrier.sessionId !== sessionId
+                || !sceneRetirementBarrierContextIsExact(barrier)) {
+            return false;
+        }
+        const refreshAfterReopen = pendingSceneRetirementContextDrift;
+        clearSceneRetirement();
+        pendingPostTransitionLiveRefresh = pendingPostTransitionLiveRefresh
+            || refreshAfterReopen;
+        return true;
     }
 
     function requestSceneRetirement(sessionId, reopen, forcedContextDrift) {
@@ -1719,6 +1907,19 @@ QtObject {
                 finalizeInactiveOverviewState();
             }
             return false;
+        }
+        if (pendingSceneRetirementBarrier) {
+            if (!sceneRetirementBarrierContextIsExact(pendingSceneRetirementBarrier)) {
+                forceSceneRetirementBarrier(true);
+                return false;
+            }
+            pendingSceneRetirementReopen = pendingSceneRetirementReopen || reopen === true;
+            pendingSceneRetirementContextDrift = pendingSceneRetirementContextDrift
+                || forcedContextDrift === true;
+            if (forcedContextDrift === true) {
+                forceSceneRetirementBarrier(true);
+            }
+            return true;
         }
         if (presentationPhase === "retiring") {
             return pendingSceneRetirementSessionId === sessionId
@@ -1736,7 +1937,9 @@ QtObject {
 
         invalidatePresentationTransition();
         presentationProgress = 0;
-        presentationPhase = "retiring";
+        presentationPhase = "closing";
+        const barrierContextInvalid = forcedContextDrift === true
+            || overviewContextRefreshPending;
         const contextDrift = forcedContextDrift === true || overviewContextRefreshPending
             || pendingLiveRefreshAttemptId > 0 || pendingPostTransitionLiveRefresh;
         invalidateOverviewZoomInputStates();
@@ -1753,7 +1956,26 @@ QtObject {
         pendingSceneRetirementToken = nextSceneRetirementToken();
         pendingSceneRetirementReopen = reopen === true;
         pendingSceneRetirementContextDrift = contextDrift;
-        sceneVisible = false;
+
+        const model = overviewModel;
+        const outputIds = openingModelOutputIds(model);
+        if (outputIds === null || barrierContextInvalid) {
+            presentationPhase = "retiring";
+            sceneVisible = false;
+            return true;
+        }
+        const barrier = Object.freeze({
+            handoffPromotion: overviewExitHandoffPromotion,
+            handoffState: overviewExitHandoffState,
+            handoffWindow: overviewExitHandoffWindow,
+            model,
+            outputIds: Object.freeze(outputIds.slice()),
+            sessionId,
+            token: pendingSceneRetirementToken,
+            topologyGeneration: overviewTopologyGeneration
+        });
+        pendingSceneRetirementFrameRegistrations = Object.freeze([]);
+        pendingSceneRetirementBarrier = barrier;
         return true;
     }
 
@@ -1764,6 +1986,7 @@ QtObject {
                     || !Number.isInteger(sessionId) || sessionId <= 0
                     || sessionId !== pendingSceneRetirementSessionId
                     || !active || activeSessionId !== sessionId || !overviewModel
+                    || pendingSceneRetirementBarrier !== null
                     || sceneVisible || presentationPhase !== "retiring") {
                 return false;
             }
@@ -2503,6 +2726,11 @@ QtObject {
     }
 
     function applyOverviewExitHandoffPlan(plan, windowCandidate) {
+        if (pendingSceneRetirementBarrier) {
+            pendingSceneRetirementContextDrift = true;
+            forceSceneRetirementBarrier(true);
+            return false;
+        }
         if (!plan || !plan.state || (plan.disposition !== "promote"
                 && plan.disposition !== "fallback" && plan.disposition !== "cancel"
                 && plan.disposition !== "none")) {
@@ -2510,11 +2738,12 @@ QtObject {
             return false;
         }
 
-        overviewExitHandoffState = plan.state;
-        overviewExitHandoffPromotion = plan.disposition === "promote"
+        const nextPromotion = plan.disposition === "promote"
             && plan.promotion ? plan.promotion : null;
-        overviewExitHandoffWindow = overviewExitHandoffPromotion && windowCandidate
+        overviewExitHandoffPromotion = nextPromotion;
+        overviewExitHandoffWindow = nextPromotion && windowCandidate
             ? windowCandidate : null;
+        overviewExitHandoffState = plan.state;
         if (plan.disposition === "cancel" && presentationPhase === "open"
                 && pendingPostTransitionLiveRefresh) {
             pendingPostTransitionLiveRefresh = false;
@@ -2560,14 +2789,17 @@ QtObject {
     }
 
     function advanceOverviewTopologyGeneration() {
+        overviewTopologyGeneration = overviewTopologyGeneration >= 2147483647
+            ? 1 : overviewTopologyGeneration + 1;
+        if (pendingSceneRetirementBarrier) {
+            pendingSceneRetirementContextDrift = true;
+            forceSceneRetirementBarrier(true);
+            return overviewTopologyGeneration;
+        }
         if (presentationPhase === "retiring") {
-            overviewTopologyGeneration = overviewTopologyGeneration >= 2147483647
-                ? 1 : overviewTopologyGeneration + 1;
             pendingSceneRetirementContextDrift = true;
             return overviewTopologyGeneration;
         }
-        overviewTopologyGeneration = overviewTopologyGeneration >= 2147483647
-            ? 1 : overviewTopologyGeneration + 1;
         if (active && presentationPhase === "preparing") {
             restartPreparingSceneForContextDrift();
         }

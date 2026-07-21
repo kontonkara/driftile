@@ -540,7 +540,7 @@ describe("overview effect package", () => {
 
   it("keeps a fixed scene-effect proxy over the cache-busted controller", () => {
     expect(createHash("sha256").update(main, "utf8").digest("hex")).toBe(
-      "d1b612c2682e37a088c1bdfdd6de75a462427eccc5848ace86dc61af357f2eff",
+      "1d5f9c2f50556499bdc1fbe312f015e5a5428361f3e3a79cc0f82ecb5ddafe2d",
     );
     expect(main).toContain("KWin.SceneEffect {");
     expect(main).toContain("Date.now().toString(36)");
@@ -5070,7 +5070,7 @@ describe("overview effect package", () => {
       /KWin\.(?:SceneView|Workspace)\.[A-Za-z0-9_]+\s*=(?!=)|candidate\.[A-Za-z0-9_]+\s*=(?!=)|\bTimer\s*\{|\.setValue\s*\(/u,
     );
     expect(controller).toMatch(
-      /function onWindowRemoved\(window\) \{\s*if \(controller\.pendingSceneRestartRequest\) \{\s*return;\s*\}\s*if \(controller\.presentationPhase === "preparing"\) \{\s*controller\.restartPreparingSceneForContextDrift\(\);\s*return;\s*\}\s*if \(controller\.presentationPhase === "retiring"\) \{\s*controller\.pendingSceneRetirementContextDrift = true;\s*return;\s*\}\s*controller\.handleOverviewExitWindowRemoved\(window\);\s*controller\.queueDesktopSurfaceLifecycleEvent\(window\);\s*controller\.requestLiveModelRefresh\(\);/u,
+      /function onWindowRemoved\(window\) \{\s*if \(controller\.pendingSceneRestartRequest\) \{\s*return;\s*\}\s*if \(controller\.pendingSceneRetirementBarrier\) \{\s*controller\.forceSceneRetirementBarrier\(true\);\s*return;\s*\}\s*if \(controller\.presentationPhase === "preparing"\) \{\s*controller\.restartPreparingSceneForContextDrift\(\);\s*return;\s*\}\s*if \(controller\.presentationPhase === "retiring"\) \{\s*controller\.pendingSceneRetirementContextDrift = true;\s*return;\s*\}\s*controller\.handleOverviewExitWindowRemoved\(window\);\s*controller\.queueDesktopSurfaceLifecycleEvent\(window\);\s*controller\.requestLiveModelRefresh\(\);/u,
     );
   });
 

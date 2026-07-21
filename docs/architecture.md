@@ -169,16 +169,29 @@ Events travel from KWin through the bridge into the runtime. Commands and result
   this stage.
 - Captures one immutable exit handoff before desktop, minimized-state, or focus
   writes. Exact session, topology, output, desktop, window, and frame ownership
-  promotes a public target-output `KWin.WindowThumbnail`; minimized, removed,
-  stale, desktop-only, or topology-invalid targets retain geometry-free
-  fallback state. Thumbnail construction is asynchronous; during the close its
-  source row stays opaque while loading, `Loader.Ready` promotes the thumbnail,
-  and a Loader error selects the monochrome fallback. If close completion wins
-  the race, the effect leaves from the still-opaque source.
+  begins loading a public `KWin.WindowThumbnail` on the captured target output
+  before visible promotion. A sub-visible staging layer keeps it in the render
+  path and latches readiness only after two exact frames. If that latch is not
+  ready at promotion, two bounded promoted frames choose the thumbnail or the
+  monochrome fallback once. Minimized, removed, stale, desktop-only, or
+  topology-invalid targets remain on a safe fallback path.
+- Commits the visible exit mode once at promotion. An exact ready thumbnail,
+  single-window monochrome shell, or row fallback can only downgrade after that
+  point; late readiness never upgrades the committed view. The controller owns
+  the easing once, and the scene consumes its bounded progress directly. An
+  exact thumbnail remains opaque at terminal progress to bridge to KWin's native
+  window, while monochrome and row fallbacks fade to zero.
 - Freezes the visible workspace index and cameras while that handoff owns the
-  close, blocks scene input, and defers model replacement. Reopening cancels the
-  promoted target before restoring the captured vertical and per-desktop
-  horizontal cameras; session zoom remains controller-owned and unchanged.
+  close, blocks scene input, and defers model replacement. At terminal progress,
+  a frozen identity barrier requires two rendered callbacks from every exact
+  output before retiring the scene. Duplicate exact registrations are
+  idempotent; stale identities and token collisions fail closed. Topology,
+  model, output, or handoff drift and scene destruction invalidate the barrier
+  and force safe retirement without a timer or private API.
+- Reopening clears an active retirement barrier before cancelling the handoff,
+  then reverses from the current progress in the same visible session while
+  restoring the captured vertical and per-desktop horizontal cameras. Session
+  zoom remains controller-owned and unchanged.
 - Accepts a workspace marker or empty-surface activation only after revalidating
   the active effect, exact live screen, projected output, and direct desktop
   object and ID. An exact current target closes without a desktop write; an
