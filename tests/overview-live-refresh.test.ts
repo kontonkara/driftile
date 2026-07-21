@@ -634,7 +634,7 @@ describe("overview live model refresh", () => {
       /function onWindowRemoved\(window\)[\s\S]*requestLiveModelRefresh|function onWindowRemoved\(window\)[\s\S]*closeStaleOverview/u,
     );
     expect(scene).toMatch(
-      /onOverviewModelChanged: \{\s*if \(root\.abortPendingWindowFocus\("stale"\)\) \{\s*return;\s*\}\s*root\.cancelWorkspaceRenameOnDrift\(\);\s*root\.cancelActiveWindowSpatialDrag\(\);\s*root\.cancelActiveColumnSpatialDrag\(\);\s*if \(spatialExitHandoffActive\) \{\s*root\.invalidateSpatialExitHandoff\("stale"\);\s*return;\s*\}\s*root\.cancelSpatialZoomTransaction\(\);\s*root\.discardSpatialZoomTransaction\(\);\s*root\.refreshOverviewSpatialSession\(true\);\s*root\.restartDesktopSurfaceResidency\(\);\s*root\.synchronizeSpatialZoomInputState\(\);\s*\}/u,
+      /onOverviewModelChanged: \{\s*root\.cancelSpatialHorizontalCameraMotion\(\);\s*if \(root\.abortPendingWindowFocus\("stale"\)\) \{\s*return;\s*\}\s*root\.cancelWorkspaceRenameOnDrift\(\);\s*root\.cancelActiveWindowSpatialDrag\(\);\s*root\.cancelActiveColumnSpatialDrag\(\);\s*if \(spatialExitHandoffActive\) \{\s*root\.invalidateSpatialExitHandoff\("stale"\);\s*return;\s*\}\s*root\.cancelSpatialZoomTransaction\(\);\s*root\.discardSpatialZoomTransaction\(\);\s*root\.refreshOverviewSpatialSession\(true\);\s*root\.restartDesktopSurfaceResidency\(\);\s*root\.synchronizeSpatialZoomInputState\(\);\s*\}/u,
     );
     expect(scene).toMatch(
       /function refreshOverviewSpatialSession\(preserveViewport, animateViewport = false\)[\s\S]*Qt\.callLater\(root\.repairKeyboardSelection\);/u,
@@ -664,6 +664,81 @@ describe("overview live model refresh", () => {
     );
     expect(spatialSessionRefresh).not.toMatch(
       /keyboardSelectionId = ""|keyboardHelpVisible = false|searchQuery = ""/u,
+    );
+  });
+
+  it("cancels stale horizontal camera motion across every context generation", () => {
+    const workspaceLifecycle = scene.slice(
+      scene.indexOf("target: KWin.Workspace"),
+      scene.indexOf("Timer {", scene.indexOf("target: KWin.Workspace")),
+    );
+    const motion = scene.slice(
+      scene.indexOf("function spatialHorizontalCameraMotionIsExact("),
+      scene.indexOf("function advanceSpatialHorizontalViewportRevision("),
+    );
+    const resetSession = scene.slice(
+      scene.indexOf("function resetOverviewSession("),
+      scene.indexOf("function scheduleDesktopTopologyRefresh("),
+    );
+    const contextBarrier = scene.slice(
+      scene.indexOf("function beginOverviewContextRefreshBarrier("),
+      scene.indexOf("function finishOverviewContextRefreshBarrier("),
+    );
+    const topologyDrift = scene.slice(
+      scene.indexOf("function handleDesktopTopologyChanged("),
+      scene.indexOf("function scheduleDesktopTopologyRefresh("),
+    );
+    const spatialSessionRefresh = scene.slice(
+      scene.indexOf("function refreshOverviewSpatialSession("),
+      scene.indexOf("function resetSpatialViewport("),
+    );
+    const targetScreenLifecycle = scene.slice(
+      scene.indexOf("target: root.targetScreen"),
+      scene.indexOf("Timer {", scene.indexOf("target: root.targetScreen")),
+    );
+
+    for (const guard of [
+      "activeOverviewSessionId",
+      "activeOverviewActivityId",
+      "overviewModel",
+      "overviewContextGeneration",
+      "desktopTopologyRevision",
+      "outputId",
+      "expectedDesktopId",
+      "workspaceIndex",
+      "spatialHorizontalViewportRevision",
+    ]) {
+      expect(motion).toContain(guard);
+    }
+    expect(motion).toMatch(
+      /function cancelSpatialHorizontalCameraMotion\([\s\S]*spatialHorizontalCameraMotionContext = null;[\s\S]*spatialHorizontalCameraAnimation\.stop\(\);[\s\S]*spatialVisualHorizontalViewportOffset = Number\.NaN;/u,
+    );
+    expect(resetSession).toContain("cancelSpatialHorizontalCameraMotion();");
+    expect(contextBarrier).toContain("cancelSpatialHorizontalCameraMotion();");
+    expect(topologyDrift).toContain("cancelSpatialHorizontalCameraMotion();");
+    expect(spatialSessionRefresh).toContain(
+      "cancelSpatialHorizontalCameraMotion();",
+    );
+    expect(
+      targetScreenLifecycle.match(/cancelSpatialHorizontalCameraMotion\(\);/gu),
+    ).toHaveLength(2);
+
+    for (const signal of [
+      "onCurrentActivityChanged",
+      "onActivitiesChanged",
+      "onScreensChanged",
+      "onVirtualScreenGeometryChanged",
+    ]) {
+      const start = workspaceLifecycle.indexOf(`function ${signal}()`);
+      const next = workspaceLifecycle.indexOf("\n        function ", start + 1);
+      const handler = workspaceLifecycle.slice(
+        start,
+        next >= 0 ? next : workspaceLifecycle.length,
+      );
+      expect(handler).toContain("root.beginOverviewContextRefreshBarrier();");
+    }
+    expect(scene).toMatch(
+      /onOverviewModelChanged: \{[\s\S]*cancelSpatialHorizontalCameraMotion\(\);[\s\S]*refreshOverviewSpatialSession\(true\);/u,
     );
   });
 });

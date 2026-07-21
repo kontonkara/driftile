@@ -2398,7 +2398,7 @@ describe("overview effect package", () => {
     );
 
     expect(scene).toMatch(
-      /onKeyboardSelectionIdChanged: \{[\s\S]*const target = keyboardSelectionViewportTarget;[\s\S]*keyboardSelectionViewportTarget = null;[\s\S]*root\.synchronizeKeyboardSelectionViewport\(target\);/u,
+      /onKeyboardSelectionIdChanged: \{[\s\S]*const target = keyboardSelectionViewportTarget;[\s\S]*const animateVisual = keyboardSelectionViewportAnimateVisual;[\s\S]*keyboardSelectionViewportTarget = null;[\s\S]*root\.synchronizeKeyboardSelectionViewport\(target, animateVisual\);/u,
     );
     expect(spatialLayout).toContain(
       "target = navigationTargetForId(collectNavigationTargets(), selectedTargetId)",
@@ -4012,7 +4012,7 @@ describe("overview effect package", () => {
       /function adoptSpatialVisualContentY\(\)[\s\S]*planSpatialViewport\(spatialVisualContentY\)[\s\S]*spatialVerticalCameraAnimation\.stop\(\);[\s\S]*spatialContentY = plan\.contentY;[\s\S]*spatialVisualContentY = plan\.contentY;/u,
     );
     expect(scene).toMatch(
-      /id: spatialViewportDragHandler[\s\S]*if \(!root\.adoptSpatialVisualContentY\(\)\)[\s\S]*panStartContentY = root\.spatialContentY;/u,
+      /id: spatialViewportDragHandler[\s\S]*root\.adoptSpatialHorizontalCameraMotionOwner\(\)[\s\S]*root\.adoptSpatialVisualContentY\(\)[\s\S]*panStartContentY = root\.spatialContentY;/u,
     );
     expect(wheelNavigation).toMatch(
       /function handleSpatialViewportWheel[\s\S]*spatialVerticalCameraAnimation\.running && !adoptSpatialVisualContentY\(\)[\s\S]*planSpatialWheel\(angleDeltaY, pixelDeltaY\)/u,
@@ -4091,7 +4091,7 @@ describe("overview effect package", () => {
     );
     expect(horizontalSelectionTarget).not.toContain("return false;");
     expect(horizontalSelectionCompletion).toMatch(
-      /horizontalWheelSelectionRequestContextIsExact[\s\S]*collectNavigationTargets\(\)[\s\S]*horizontalWheelSelectionRequestContextIsExact[\s\S]*clearOverviewHorizontalWheelSelectionRequest\(\);[\s\S]*setKeyboardSelectionTarget\(target\)/u,
+      /horizontalWheelSelectionRequestContextIsExact[\s\S]*collectNavigationTargets\(\)[\s\S]*horizontalWheelSelectionRequestContextIsExact[\s\S]*clearOverviewHorizontalWheelSelectionRequest\(\);[\s\S]*setKeyboardSelectionTarget\(target, true\)/u,
     );
     expect(horizontalSelectionGuard).toMatch(
       /requestId !== overviewHorizontalWheelSelectionRequestId[\s\S]*expectedGeometryEpoch !== spatialHorizontalViewportRevision[\s\S]*expectedCardEpoch !== overviewDesktopCardEpoch[\s\S]*overviewHorizontalWheelSelectionStepOffset === 0[\s\S]*Math\.abs\(overviewHorizontalWheelSelectionStepOffset\) > 4[\s\S]*keyboardSelectionId !== expectedSourceTargetId[\s\S]*searchQuery\.length > 0[\s\S]*card\.desktopId === expectedDesktopId/u,
@@ -4261,7 +4261,7 @@ describe("overview effect package", () => {
       "property real spatialLiveCameraReturnViewportOffset: Number.NaN",
     );
     expect(presentationViewportOffset).toMatch(
-      /function spatialPresentationViewportOffsetAt[\s\S]*spatialHorizontalViewportOffsetAt\(index, expectedDesktopId, expectedRevision\)[\s\S]*spatialPresentationPhase !== "opening" && spatialPresentationPhase !== "closing"[\s\S]*index !== currentWorkspaceIndex[\s\S]*expectedDesktopId !== spatialLiveCameraReturnDesktopId[\s\S]*outputId !== spatialLiveCameraReturnOutputId[\s\S]*returnOffset < bounds\.minimum \|\| returnOffset > bounds\.maximum[\s\S]*const progress = Math\.max\(0, Math\.min\(1, spatialPresentationProgress\)\);[\s\S]*return returnOffset \+ \(viewportOffset - returnOffset\) \* progress;/u,
+      /function spatialPresentationViewportOffsetAt[\s\S]*spatialHorizontalViewportOffsetAt\(index, expectedDesktopId, expectedRevision\)[\s\S]*spatialPresentationPhase === "opening" \|\| spatialPresentationPhase === "closing"[\s\S]*index === currentWorkspaceIndex[\s\S]*expectedDesktopId === spatialLiveCameraReturnDesktopId[\s\S]*outputId === spatialLiveCameraReturnOutputId[\s\S]*returnOffset >= bounds\.minimum && returnOffset <= bounds\.maximum[\s\S]*const progress = Math\.max\(0, Math\.min\(1, spatialPresentationProgress\)\);[\s\S]*return returnOffset \+ \(viewportOffset - returnOffset\) \* progress;[\s\S]*spatialHorizontalCameraMotionIsExact\(index, expectedDesktopId, expectedRevision\)[\s\S]*spatialVisualHorizontalViewportOffset : viewportOffset;/u,
     );
     expect(presentationViewportOffset).not.toMatch(
       /spatialHorizontalViewportOffsets\[[^\]]+\]\s*=|setSpatialHorizontalViewportOffset|KWin\./u,
@@ -4273,7 +4273,7 @@ describe("overview effect package", () => {
       /function setSpatialHorizontalViewportOffsetForBounds[\s\S]*spatialHorizontalViewportOffsets\[index\] === normalizedOffset[\s\S]*return true;[\s\S]*spatialHorizontalViewportOffsets\[index\] = normalizedOffset;\s*advanceSpatialHorizontalViewportRevision\(\);/u,
     );
     expect(scene).toMatch(
-      /function onWindowActivated\(\) \{\s*if \(root\.pendingWindowFocusRequest\) \{\s*root\.handlePendingWindowFocusActivation\(KWin\.Workspace\.activeWindow\);\s*return;\s*\}\s*if \(root\.spatialPresentationPhase !== "retiring" && !root\.spatialExitHandoffActive\) \{\s*root\.resolveSpatialLiveCamera\(\);/u,
+      /function onWindowActivated\(\) \{\s*if \(root\.pendingWindowFocusRequest\) \{\s*root\.handlePendingWindowFocusActivation\(KWin\.Workspace\.activeWindow\);\s*return;\s*\}\s*if \(root\.spatialPresentationPhase !== "retiring" && !root\.spatialExitHandoffActive\) \{\s*root\.cancelSpatialHorizontalCameraMotion\(\);\s*root\.resolveSpatialLiveCamera\(\);/u,
     );
     expect(scene).not.toContain("onClientAreaChanged");
     expect(scene).toContain(
@@ -4403,7 +4403,7 @@ describe("overview effect package", () => {
       /handleSpatialHorizontalViewportWheel[\s\S]*detachSpatialLiveCameraForManualOffset\(workspaceIndex, expectedDesktopId,[\s\S]*currentOffset, plan\.viewportOffset\)/u,
     );
     expect(wheelNavigation).toMatch(
-      /function revealHorizontalNavigationTarget[\s\S]*detachSpatialLiveCameraForManualOffset\(workspaceIndex, expectedDesktopId, currentOffset, nextOffset\)/u,
+      /function revealHorizontalNavigationTarget[\s\S]*detachSpatialLiveCameraForManualOffset\(\s*workspaceIndex, expectedDesktopId, currentOffset, nextOffset\)/u,
     );
     expect(liveCamera).toMatch(
       /function detachSpatialLiveCameraForManualOffset[\s\S]*manualSpatialLiveGeometryDetachIsExact\(index, expectedDesktopId, previousOffset,[\s\S]*spatialLiveCameraReturnDesktopId !== expectedDesktopId[\s\S]*spatialLiveCameraReturnOutputId !== outputId[\s\S]*spatialLiveCameraReturnViewportOffset = previousOffset;[\s\S]*spatialLiveGeometryDetachedDesktopId = expectedDesktopId;[\s\S]*spatialLiveGeometryDetachedOutputId = outputId;/u,
@@ -4415,7 +4415,7 @@ describe("overview effect package", () => {
       /function spatialLiveGeometryIsManuallyDetached[\s\S]*spatialLiveGeometryDetachedOutputId === expectedOutputId[\s\S]*spatialLiveGeometryDetachedDesktopId === expectedDesktopId/u,
     );
     expect(scene).toMatch(
-      /function resetOverviewSession\(\) \{\s*cancelWorkspaceRename\(\);\s*cancelSpatialZoomTransaction\(\);\s*clearExternalSpatialZoom\(\);\s*invalidateDesktopTopologyRefresh\(\);\s*resetSpatialLiveCameraSession\(\);/u,
+      /function resetOverviewSession\(\) \{\s*cancelSpatialHorizontalCameraMotion\(\);\s*cancelWorkspaceRename\(\);\s*cancelSpatialZoomTransaction\(\);\s*clearExternalSpatialZoom\(\);\s*invalidateDesktopTopologyRefresh\(\);\s*resetSpatialLiveCameraSession\(\);/u,
     );
     expect(liveCamera).toMatch(
       /function resetSpatialLiveCameraSession\(\) \{\s*resetSpatialLiveCameraRefresh\(\);\s*clearSpatialLiveCameraAttachment\(\);\s*clearSpatialLiveCameraProbe\(\);/u,
@@ -4531,13 +4531,13 @@ describe("overview effect package", () => {
       /function beginWindowSpatialEdgePan\([\s\S]*resetOverviewWheelState\(\);\s*spatialWindowDragSource = source;/u,
     );
     expect(scene).toMatch(
-      /function beginWindowSpatialEdgePan\([\s\S]*if \(!adoptSpatialVisualContentY\(\)[\s\S]*resetOverviewWheelState\(\);\s*spatialWindowDragSource = source;/u,
+      /function beginWindowSpatialEdgePan\([\s\S]*adoptSpatialHorizontalCameraMotion\(workspaceIndex, expectedDesktopId, horizontalBounds\)[\s\S]*adoptSpatialVisualContentY\(\)[\s\S]*resetOverviewWheelState\(\);\s*spatialWindowDragSource = source;/u,
     );
     expect(scene).toMatch(
       /function beginDesktopReorder\([\s\S]*resetOverviewWheelState\(\);\s*desktopReorderActive = true;/u,
     );
     expect(scene).toMatch(
-      /function beginDesktopReorder\([\s\S]*if \(!adoptSpatialVisualContentY\(\)\) \{\s*return;\s*\}[\s\S]*resetOverviewWheelState\(\);\s*desktopReorderActive = true;/u,
+      /function beginDesktopReorder\([\s\S]*adoptSpatialHorizontalCameraMotion\(sourceIndex, expectedDesktopId, horizontalBounds\)[\s\S]*adoptSpatialVisualContentY\(\)[\s\S]*resetOverviewWheelState\(\);\s*desktopReorderActive = true;/u,
     );
     expect(wheelNavigation).toMatch(
       /function resetOverviewWheelState\(\) \{\s*resetOverviewHorizontalWheelState\(\);\s*resetOverviewVerticalWheelState\(\);\s*\}/u,
@@ -4856,7 +4856,7 @@ describe("overview effect package", () => {
       "readonly property bool searchQueryValid: searchQueryPlan !== null",
     );
     expect(scene).toMatch(
-      /onSearchQueryChanged: \{\s*root\.cancelWorkspaceRenameOnDrift\(\);\s*root\.cancelActiveWindowSpatialDrag\(\);\s*root\.cancelActiveColumnSpatialDrag\(\);\s*resetOverviewWheelState\(\);\s*resetWindowWorkspaceHover\(\);\s*cancelKeyboardBoundaryNavigation\(\);\s*Qt\.callLater\(root\.repairKeyboardSelection\);\s*\}/u,
+      /onSearchQueryChanged: \{\s*root\.cancelSpatialHorizontalCameraMotion\(\);\s*root\.cancelWorkspaceRenameOnDrift\(\);\s*root\.cancelActiveWindowSpatialDrag\(\);\s*root\.cancelActiveColumnSpatialDrag\(\);\s*resetOverviewWheelState\(\);\s*resetWindowWorkspaceHover\(\);\s*cancelKeyboardBoundaryNavigation\(\);\s*Qt\.callLater\(root\.repairKeyboardSelection\);\s*\}/u,
     );
     expect(keyHandler).toContain("event.key === Qt.Key_Backspace");
     expect(keyHandler).toContain("root.removeLastSearchCharacter()");

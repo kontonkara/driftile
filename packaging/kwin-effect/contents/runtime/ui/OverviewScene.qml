@@ -153,6 +153,7 @@ Rectangle {
     property bool emptyDesktopAboveFirst: false
     property bool keyboardHelpVisible: false
     property string keyboardSelectionId: ""
+    property bool keyboardSelectionViewportAnimateVisual: false
     property var keyboardSelectionViewportTarget: null
     property int keyboardBoundaryNavigationRequestId: 0
     property bool keyboardBoundaryNavigationPending: false
@@ -269,9 +270,11 @@ Rectangle {
     property real spatialZoomWidth: 0
     property int spatialPresentationWorkspaceIndex: -1
     property var spatialHorizontalDesktopIds: []
+    property var spatialHorizontalCameraMotionContext: null
     property var spatialHorizontalGeometryPlans: []
     property int spatialHorizontalViewportRevision: 0
     property var spatialHorizontalViewportOffsets: []
+    property real spatialVisualHorizontalViewportOffset: Number.NaN
     property var spatialLiveCameraAttachment: null
     property var spatialLiveCameraWindow: null
     property string spatialLiveCameraWindowId: ""
@@ -386,6 +389,7 @@ Rectangle {
         }
     }
     onActiveOverviewSessionIdChanged: {
+        root.cancelSpatialHorizontalCameraMotion();
         if (root.abortPendingWindowFocus("topology")) {
             return;
         }
@@ -393,6 +397,7 @@ Rectangle {
         root.restartDesktopSurfaceResidency();
     }
     onActiveOverviewActivityIdChanged: {
+        root.cancelSpatialHorizontalCameraMotion();
         if (root.abortPendingWindowFocus("topology")) {
             return;
         }
@@ -403,7 +408,10 @@ Rectangle {
             root.restartDesktopSurfaceResidency();
         }
     }
-    onCurrentWorkspaceIndexChanged: root.updateDesktopSurfaceResidency()
+    onCurrentWorkspaceIndexChanged: {
+        root.cancelSpatialHorizontalCameraMotion();
+        root.updateDesktopSurfaceResidency();
+    }
     onOverviewSpatialVisibleRangePlanChanged: root.updateDesktopSurfaceResidency()
     onSpatialExternalZoomActiveChanged: root.finishDesktopSurfaceResidencyBridge()
     onSpatialExternalZoomTransactionChanged: root.finishDesktopSurfaceResidencyBridge()
@@ -416,10 +424,13 @@ Rectangle {
     onSceneRetirementBarrierChanged: root.synchronizeSceneRetirementFrame()
     onKeyboardSelectionIdChanged: {
         const target = keyboardSelectionViewportTarget;
+        const animateVisual = keyboardSelectionViewportAnimateVisual;
         keyboardSelectionViewportTarget = null;
-        root.synchronizeKeyboardSelectionViewport(target);
+        keyboardSelectionViewportAnimateVisual = false;
+        root.synchronizeKeyboardSelectionViewport(target, animateVisual);
     }
     onKeyboardHelpVisibleChanged: {
+        root.cancelSpatialHorizontalCameraMotion();
         if (keyboardHelpVisible) {
             root.cancelSpatialZoomTransaction();
         }
@@ -428,6 +439,7 @@ Rectangle {
     }
     onCurrentDesktopChanged: root.handleCurrentDesktopChanged()
     function handleCurrentDesktopChanged() {
+        root.cancelSpatialHorizontalCameraMotion();
         root.cancelSpatialZoomTransaction();
         if (pendingWindowFocusRequest) {
             if (!pendingWindowFocusRequestIsExact(pendingWindowFocusRequest)) {
@@ -466,6 +478,7 @@ Rectangle {
         root.refreshOverviewSpatialSession(false, spatialPresentationInteractive);
     }
     onOverviewModelChanged: {
+        root.cancelSpatialHorizontalCameraMotion();
         if (root.abortPendingWindowFocus("stale")) {
             return;
         }
@@ -482,9 +495,16 @@ Rectangle {
         root.restartDesktopSurfaceResidency();
         root.synchronizeSpatialZoomInputState();
     }
-    onOverviewAlwaysCenterSingleColumnChanged: root.refreshOverviewSpatialSession(true)
-    onOverviewGapChanged: root.refreshOverviewSpatialSession(true)
+    onOverviewAlwaysCenterSingleColumnChanged: {
+        root.cancelSpatialHorizontalCameraMotion();
+        root.refreshOverviewSpatialSession(true);
+    }
+    onOverviewGapChanged: {
+        root.cancelSpatialHorizontalCameraMotion();
+        root.refreshOverviewSpatialSession(true);
+    }
     onOverviewSpatialLayoutChanged: {
+        root.cancelSpatialHorizontalCameraMotion();
         if (spatialExternalZoomTransaction !== null) {
             if (!root.applyExternalSpatialZoom()) {
                 root.recoverExternalSpatialZoomContext();
@@ -501,6 +521,7 @@ Rectangle {
     }
     onOverviewZoomGestureDirectionChanged: root.handleExternalSpatialZoomDirectionChanged()
     onOutputIdChanged: {
+        root.cancelSpatialHorizontalCameraMotion();
         root.synchronizeSceneRetirementFrame();
         if (root.abortPendingWindowFocus("topology")) {
             return;
@@ -514,6 +535,7 @@ Rectangle {
         root.synchronizeSpatialZoomInputState();
     }
     onDesktopIdsChanged: {
+        root.cancelSpatialHorizontalCameraMotion();
         if (root.abortPendingWindowFocus("topology")) {
             return;
         }
@@ -526,6 +548,7 @@ Rectangle {
         root.synchronizeSpatialZoomInputState();
     }
     onWidthChanged: {
+        root.cancelSpatialHorizontalCameraMotion();
         if (root.abortPendingWindowFocus("topology")) {
             return;
         }
@@ -534,6 +557,7 @@ Rectangle {
         root.cancelSpatialZoomTransaction();
     }
     onHeightChanged: {
+        root.cancelSpatialHorizontalCameraMotion();
         if (root.abortPendingWindowFocus("topology")) {
             return;
         }
@@ -542,6 +566,7 @@ Rectangle {
         root.cancelSpatialZoomTransaction();
     }
     onOverviewContextGenerationChanged: {
+        root.cancelSpatialHorizontalCameraMotion();
         if (root.abortPendingWindowFocus("topology")) {
             return;
         }
@@ -549,6 +574,7 @@ Rectangle {
         root.cancelActiveWindowSpatialDrag();
     }
     onDesktopTopologyRevisionChanged: {
+        root.cancelSpatialHorizontalCameraMotion();
         if (root.abortPendingWindowFocus("topology")) {
             return;
         }
@@ -563,6 +589,7 @@ Rectangle {
     }
     onSpatialZoomSceneRegistrationEligibleChanged: root.synchronizeSpatialZoomInputState()
     onOverviewZoomInputStateRevisionChanged: root.synchronizeSpatialZoomInputState()
+    onOverviewZoomRevisionChanged: root.cancelSpatialHorizontalCameraMotion()
     onSpatialContentYChanged: {
         if (!spatialVisualContentYDeferred) {
             spatialVerticalCameraAnimation.stop();
@@ -572,6 +599,7 @@ Rectangle {
         root.captureSpatialViewportSnapshot();
     }
     onSearchQueryChanged: {
+        root.cancelSpatialHorizontalCameraMotion();
         root.cancelWorkspaceRenameOnDrift();
         root.cancelActiveWindowSpatialDrag();
         root.cancelActiveColumnSpatialDrag();
@@ -848,6 +876,7 @@ Rectangle {
                 return;
             }
             if (root.spatialPresentationPhase !== "retiring" && !root.spatialExitHandoffActive) {
+                root.cancelSpatialHorizontalCameraMotion();
                 root.resolveSpatialLiveCamera();
             }
         }
@@ -1269,6 +1298,7 @@ Rectangle {
         ignoreUnknownSignals: true
 
         function onGeometryChanged() {
+            root.cancelSpatialHorizontalCameraMotion();
             if (root.spatialExitHandoffActive) {
                 root.invalidateSpatialExitHandoff("topology");
             } else {
@@ -1277,6 +1307,7 @@ Rectangle {
         }
 
         function onScaleChanged() {
+            root.cancelSpatialHorizontalCameraMotion();
             if (root.spatialExitHandoffActive) {
                 root.invalidateSpatialExitHandoff("topology");
             } else {
@@ -1311,6 +1342,15 @@ Rectangle {
         property: "spatialVisualContentY"
         easing.type: Easing.OutCubic
         onRunningChanged: root.finishDesktopSurfaceResidencyBridge()
+    }
+
+    NumberAnimation {
+        id: spatialHorizontalCameraAnimation
+
+        target: root
+        property: "spatialVisualHorizontalViewportOffset"
+        easing.type: Easing.OutCubic
+        onFinished: root.completeSpatialHorizontalCameraMotion()
     }
 
     WheelHandler {
@@ -1501,7 +1541,8 @@ Rectangle {
             onActiveChanged: {
                 if (active) {
                     root.resetOverviewWheelState();
-                    if (!root.adoptSpatialVisualContentY()) {
+                    if (!root.adoptSpatialHorizontalCameraMotionOwner()
+                            || !root.adoptSpatialVisualContentY()) {
                         spatialViewportInput.panLayout = null;
                         return;
                     }
@@ -2922,7 +2963,9 @@ Rectangle {
             cancelWindowSpatialDragOwner(source);
             return false;
         }
-        if (!adoptSpatialVisualContentY()
+        const horizontalBounds = spatialHorizontalViewportBounds(workspaceIndex, expectedDesktopId);
+        if (!adoptSpatialHorizontalCameraMotion(workspaceIndex, expectedDesktopId, horizontalBounds)
+                || !adoptSpatialVisualContentY()
                 || !storeSpatialEdgePanScenePoint(sceneX, sceneY)) {
             cancelWindowSpatialDragOwner(source);
             return false;
@@ -2973,7 +3016,9 @@ Rectangle {
             cancelColumnSpatialDragOwner(source);
             return;
         }
-        if (!adoptSpatialVisualContentY() || !storeSpatialEdgePanScenePoint(sceneX, sceneY)) {
+        const horizontalBounds = spatialHorizontalViewportBounds(workspaceIndex, expectedDesktopId);
+        if (!adoptSpatialHorizontalCameraMotion(workspaceIndex, expectedDesktopId, horizontalBounds)
+                || !adoptSpatialVisualContentY() || !storeSpatialEdgePanScenePoint(sceneX, sceneY)) {
             cancelColumnSpatialDragOwner(source);
             return;
         }
@@ -3568,6 +3613,9 @@ Rectangle {
 
     function handleSpatialPresentationPhaseChanged() {
         if (spatialPresentationPhase === "closing" || spatialPresentationPhase === "retiring") {
+            if (!adoptSpatialHorizontalCameraMotionOwner(spatialPresentationPhase === "closing")) {
+                cancelSpatialHorizontalCameraMotion();
+            }
             cancelWorkspaceRename();
             cancelActiveWindowSpatialDrag();
             cancelActiveColumnSpatialDrag();
@@ -3586,12 +3634,14 @@ Rectangle {
             clearSpatialHorizontalViewportDrag();
             spatialViewportInput.panLayout = null;
             spatialViewportInput.panStartContentY = 0;
+            keyboardSelectionViewportAnimateVisual = false;
             keyboardSelectionViewportTarget = null;
             synchronizeSpatialZoomInputState();
             return;
         }
 
         if (spatialPresentationPhase === "preparing" || spatialPresentationPhase === "opening") {
+            cancelSpatialHorizontalCameraMotion();
             cancelSpatialZoomTransaction();
             spatialPresentationWorkspaceIndex = currentWorkspaceIndex >= 0
                 && currentWorkspaceIndex < desktopIds.length ? currentWorkspaceIndex : 0;
@@ -3606,12 +3656,14 @@ Rectangle {
     }
 
     function resetOverviewSession() {
+        cancelSpatialHorizontalCameraMotion();
         cancelWorkspaceRename();
         cancelSpatialZoomTransaction();
         clearExternalSpatialZoom();
         invalidateDesktopTopologyRefresh();
         resetSpatialLiveCameraSession();
         clearSpatialTouchPan();
+        keyboardSelectionViewportAnimateVisual = false;
         keyboardSelectionViewportTarget = null;
         keyboardSelectionId = "";
         keyboardHelpVisible = false;
@@ -3626,6 +3678,7 @@ Rectangle {
     }
 
     function beginOverviewContextRefreshBarrier() {
+        cancelSpatialHorizontalCameraMotion();
         cancelWorkspaceRename();
         cancelActiveWindowSpatialDrag();
         cancelActiveColumnSpatialDrag();
@@ -3640,6 +3693,7 @@ Rectangle {
         clearSpatialHorizontalViewportDrag();
         spatialViewportInput.panLayout = null;
         spatialViewportInput.panStartContentY = 0;
+        keyboardSelectionViewportAnimateVisual = false;
         keyboardSelectionViewportTarget = null;
         if (!adoptSpatialVisualContentY()) {
             spatialVerticalCameraAnimation.stop();
@@ -3821,6 +3875,9 @@ Rectangle {
                 || overviewZoomGestureSessionId !== sceneEffect.activeSessionId) {
             return false;
         }
+        if (!adoptSpatialHorizontalCameraMotionOwner()) {
+            return false;
+        }
 
         const runtime = OverviewRuntime.DriftileOverview;
         if (!runtime || typeof runtime.planOverviewSpatialZoomBegin !== "function") {
@@ -3945,6 +4002,9 @@ Rectangle {
                 || (owner !== "wheel" && owner !== "keyboard" && owner !== "touchscreen")
                 || !spatialZoomInputEligible || !Number.isFinite(anchorSceneY)
                 || anchorSceneY < 0 || anchorSceneY > height) {
+            return false;
+        }
+        if (!adoptSpatialHorizontalCameraMotionOwner()) {
             return false;
         }
 
@@ -4388,6 +4448,7 @@ Rectangle {
     }
 
     function handleDesktopTopologyChanged() {
+        cancelSpatialHorizontalCameraMotion();
         desktopTopologyRefreshPending = true;
         cancelSpatialZoomTransaction();
         desktopTopologyRevision = desktopTopologyRevision >= 2147483646
@@ -4447,6 +4508,7 @@ Rectangle {
     }
 
     function refreshOverviewSpatialSession(preserveViewport, animateViewport = false) {
+        cancelSpatialHorizontalCameraMotion();
         cancelActiveWindowSpatialDrag();
         cancelActiveColumnSpatialDrag();
         const previousViewportSnapshot = preserveViewport === true ? spatialViewportSnapshot : null;
@@ -4586,6 +4648,7 @@ Rectangle {
     }
 
     function refreshSpatialHorizontalViewports(preserveViewport) {
+        cancelSpatialHorizontalCameraMotion();
         const currentDesktopIds = desktopIds;
         if (!desktopIdListShapeIsValid(currentDesktopIds)) {
             spatialHorizontalDesktopIds = [];
@@ -4875,21 +4938,21 @@ Rectangle {
 
     function spatialPresentationViewportOffsetAt(index, expectedDesktopId, expectedRevision) {
         const viewportOffset = spatialHorizontalViewportOffsetAt(index, expectedDesktopId, expectedRevision);
-        if ((spatialPresentationPhase !== "opening" && spatialPresentationPhase !== "closing")
-                || index !== currentWorkspaceIndex || expectedDesktopId !== spatialLiveCameraReturnDesktopId
-                || outputId !== spatialLiveCameraReturnOutputId
-                || !Number.isFinite(spatialLiveCameraReturnViewportOffset)) {
-            return viewportOffset;
+        if ((spatialPresentationPhase === "opening" || spatialPresentationPhase === "closing")
+                && index === currentWorkspaceIndex
+                && expectedDesktopId === spatialLiveCameraReturnDesktopId
+                && outputId === spatialLiveCameraReturnOutputId
+                && Number.isFinite(spatialLiveCameraReturnViewportOffset)) {
+            const bounds = spatialHorizontalViewportBounds(index, expectedDesktopId);
+            const returnOffset = spatialLiveCameraReturnViewportOffset;
+            if (bounds && returnOffset >= bounds.minimum && returnOffset <= bounds.maximum) {
+                const progress = Math.max(0, Math.min(1, spatialPresentationProgress));
+                return returnOffset + (viewportOffset - returnOffset) * progress;
+            }
         }
 
-        const bounds = spatialHorizontalViewportBounds(index, expectedDesktopId);
-        const returnOffset = spatialLiveCameraReturnViewportOffset;
-        if (!bounds || returnOffset < bounds.minimum || returnOffset > bounds.maximum) {
-            return viewportOffset;
-        }
-
-        const progress = Math.max(0, Math.min(1, spatialPresentationProgress));
-        return returnOffset + (viewportOffset - returnOffset) * progress;
+        return spatialHorizontalCameraMotionIsExact(index, expectedDesktopId, expectedRevision)
+            ? spatialVisualHorizontalViewportOffset : viewportOffset;
     }
 
     function spatialHorizontalViewportOffsetForBounds(index, expectedDesktopId, bounds) {
@@ -4924,6 +4987,178 @@ Rectangle {
         spatialHorizontalViewportOffsets[index] = normalizedOffset;
         advanceSpatialHorizontalViewportRevision();
         return spatialHorizontalViewportOffsets[index] === normalizedOffset;
+    }
+
+    function spatialHorizontalCameraMotionIsExact(index, expectedDesktopId, expectedRevision) {
+        return spatialPresentationSettled && spatialHorizontalCameraMotionContextIsCurrent(
+            index, expectedDesktopId, expectedRevision, false);
+    }
+
+    function spatialHorizontalCameraMotionContextIsCurrent(index, expectedDesktopId,
+                                                           expectedRevision, allowClosing = false) {
+        const context = spatialHorizontalCameraMotionContext;
+        const effect = sceneEffect;
+        if (!context || !effect || effect.active !== true || overviewContextRefreshPending
+                || spatialExitHandoffActive
+                || (!spatialPresentationSettled
+                    && !(allowClosing === true && spatialPresentationPhase === "closing"))
+                || !Number.isInteger(index) || index !== context.workspaceIndex
+                || !Number.isInteger(expectedRevision)
+                || expectedRevision !== context.geometryRevision
+                || expectedRevision !== spatialHorizontalViewportRevision
+                || expectedDesktopId !== context.desktopId
+                || desktopIds[index] !== expectedDesktopId
+                || activeOverviewSessionId !== context.sessionId
+                || activeOverviewActivityId !== context.activityId
+                || overviewModel !== context.model || effect.overviewModel !== context.model
+                || overviewContextGeneration !== context.topologyGeneration
+                || desktopTopologyRevision !== context.desktopTopologyRevision
+                || outputId !== context.outputId || width !== context.sceneWidth
+                || height !== context.sceneHeight || overviewZoomRevision !== context.zoomRevision
+                || !Number.isFinite(spatialVisualHorizontalViewportOffset)) {
+            return false;
+        }
+
+        const bounds = spatialHorizontalViewportBounds(index, expectedDesktopId);
+        const logicalOffset = spatialHorizontalViewportOffsetForBounds(index, expectedDesktopId, bounds);
+        return bounds && spatialVisualHorizontalViewportOffset >= bounds.minimum
+            && spatialVisualHorizontalViewportOffset <= bounds.maximum
+            && Number.isFinite(context.targetOffset)
+            && logicalOffset === context.targetOffset;
+    }
+
+    function startSpatialHorizontalCameraMotion(index, expectedDesktopId, fromOffset, toOffset) {
+        const startOffset = fromOffset;
+        const targetOffset = toOffset;
+        const bounds = spatialHorizontalViewportBounds(index, expectedDesktopId);
+        const effect = sceneEffect;
+        const distance = Math.abs(targetOffset - startOffset);
+        const currentOffset = spatialHorizontalViewportOffsetForBounds(
+            index, expectedDesktopId, bounds);
+        if (spatialHorizontalCameraMotionContext !== null || !bounds
+                || !effect || effect.active !== true || !spatialPresentationSettled
+                || overviewContextRefreshPending || spatialExitHandoffActive
+                || spatialTouchPanDragHandler.active || spatialViewportDragHandler.active
+                || spatialHorizontalViewportDragHandler.active
+                || spatialHorizontalRowDragHandler.active || spatialDirectDragActive
+                || desktopReorderActive || spatialZoomOwner.length > 0
+                || spatialExternalZoomActive || spatialExternalZoomTransaction !== null
+                || !Number.isFinite(startOffset) || startOffset < bounds.minimum
+                || startOffset > bounds.maximum || !Number.isFinite(targetOffset)
+                || targetOffset < bounds.minimum || targetOffset > bounds.maximum
+                || currentOffset !== startOffset
+                || !Number.isFinite(distance) || distance <= 0.000001) {
+            return false;
+        }
+
+        const expectedRevision = spatialHorizontalViewportRevision >= 2147483646
+            ? 0 : spatialHorizontalViewportRevision + 1;
+        spatialVisualHorizontalViewportOffset = startOffset;
+        spatialHorizontalCameraMotionContext = Object.freeze({
+            activityId: activeOverviewActivityId,
+            desktopId: expectedDesktopId,
+            desktopTopologyRevision,
+            geometryRevision: expectedRevision,
+            model: overviewModel,
+            outputId,
+            sceneHeight: height,
+            sceneWidth: width,
+            sessionId: activeOverviewSessionId,
+            targetOffset,
+            topologyGeneration: overviewContextGeneration,
+            workspaceIndex: index,
+            zoomRevision: overviewZoomRevision
+        });
+        if (!setSpatialHorizontalViewportOffsetForBounds(
+                index, expectedDesktopId, targetOffset, bounds)) {
+            cancelSpatialHorizontalCameraMotion();
+            return false;
+        }
+        detachSpatialLiveCameraForManualOffset(
+            index, expectedDesktopId, startOffset, targetOffset);
+        spatialHorizontalCameraAnimation.from = startOffset;
+        spatialHorizontalCameraAnimation.to = targetOffset;
+        spatialHorizontalCameraAnimation.duration = Math.max(90, Math.min(160,
+            Math.round(95 + Math.min(1.5, distance / Math.max(1, bounds.sourceWidth)) * 42)));
+        spatialHorizontalCameraAnimation.start();
+        if (!spatialHorizontalCameraMotionIsExact(index, expectedDesktopId, expectedRevision)) {
+            cancelSpatialHorizontalCameraMotion();
+            const rollbackBounds = spatialHorizontalViewportBounds(index, expectedDesktopId);
+            if (rollbackBounds
+                    && spatialHorizontalViewportOffsetForBounds(
+                        index, expectedDesktopId, rollbackBounds) === targetOffset
+                    && startOffset >= rollbackBounds.minimum
+                    && startOffset <= rollbackBounds.maximum) {
+                setSpatialHorizontalViewportOffsetForBounds(
+                    index, expectedDesktopId, startOffset, rollbackBounds);
+            }
+            return false;
+        }
+        return true;
+    }
+
+    function adoptSpatialHorizontalCameraMotion(index, expectedDesktopId, bounds,
+                                                allowClosing = false) {
+        const context = spatialHorizontalCameraMotionContext;
+        if (context === null) {
+            return true;
+        }
+        if (index !== context.workspaceIndex || expectedDesktopId !== context.desktopId
+                || !spatialHorizontalCameraMotionContextIsCurrent(
+                    index, expectedDesktopId, context.geometryRevision, allowClosing === true)) {
+            cancelSpatialHorizontalCameraMotion();
+            return true;
+        }
+
+        const currentBounds = spatialHorizontalViewportBounds(index, expectedDesktopId);
+        const visualOffset = spatialVisualHorizontalViewportOffset;
+        if (!currentBounds || !bounds || bounds.minimum !== currentBounds.minimum
+                || bounds.maximum !== currentBounds.maximum
+                || !Number.isFinite(visualOffset) || visualOffset < currentBounds.minimum
+                || visualOffset > currentBounds.maximum) {
+            cancelSpatialHorizontalCameraMotion();
+            return false;
+        }
+
+        spatialHorizontalCameraMotionContext = null;
+        spatialHorizontalCameraAnimation.stop();
+        const adopted = setSpatialHorizontalViewportOffsetForBounds(
+            index, expectedDesktopId, visualOffset, currentBounds);
+        spatialVisualHorizontalViewportOffset = Number.NaN;
+        return adopted;
+    }
+
+    function adoptSpatialHorizontalCameraMotionOwner(allowClosing = false) {
+        const context = spatialHorizontalCameraMotionContext;
+        if (context === null) {
+            return true;
+        }
+        return adoptSpatialHorizontalCameraMotion(
+            context.workspaceIndex, context.desktopId,
+            spatialHorizontalViewportBounds(context.workspaceIndex, context.desktopId),
+            allowClosing === true);
+    }
+
+    function cancelSpatialHorizontalCameraMotion() {
+        spatialHorizontalCameraMotionContext = null;
+        spatialHorizontalCameraAnimation.stop();
+        spatialVisualHorizontalViewportOffset = Number.NaN;
+        return true;
+    }
+
+    function completeSpatialHorizontalCameraMotion() {
+        const context = spatialHorizontalCameraMotionContext;
+        if (context === null) {
+            return false;
+        }
+        if (!spatialHorizontalCameraMotionIsExact(
+                context.workspaceIndex, context.desktopId, context.geometryRevision)) {
+            cancelSpatialHorizontalCameraMotion();
+            return false;
+        }
+        spatialVisualHorizontalViewportOffset = context.targetOffset;
+        cancelSpatialHorizontalCameraMotion();
+        return true;
     }
 
     function advanceSpatialHorizontalViewportRevision() {
@@ -5360,6 +5595,7 @@ Rectangle {
     }
 
     function applySpatialLiveCameraViewportOffset(index, expectedDesktopId, offset, bounds, expectedGeometryPlan) {
+        cancelSpatialHorizontalCameraMotion();
         if (!bounds || !expectedGeometryPlan || !Number.isFinite(offset)
                 || offset < bounds.minimum || offset > bounds.maximum
                 || spatialHorizontalDesktopIds.length !== desktopIds.length
@@ -5915,23 +6151,26 @@ Rectangle {
             && Math.abs(delta) <= maximumDistance + tolerance;
     }
 
-    function setKeyboardSelectionTarget(target) {
+    function setKeyboardSelectionTarget(target, animateVisual = false) {
         if (!target || typeof target.id !== "string" || target.id.length === 0) {
             return false;
         }
 
         if (keyboardSelectionId === target.id) {
             keyboardSelectionViewportTarget = null;
-            return synchronizeKeyboardSelectionViewport(target);
+            keyboardSelectionViewportAnimateVisual = false;
+            return synchronizeKeyboardSelectionViewport(target, animateVisual);
         }
 
         keyboardSelectionViewportTarget = target;
+        keyboardSelectionViewportAnimateVisual = animateVisual === true;
         keyboardSelectionId = target.id;
         keyboardSelectionViewportTarget = null;
+        keyboardSelectionViewportAnimateVisual = false;
         return keyboardSelectionId === target.id;
     }
 
-    function synchronizeKeyboardSelectionViewport(preferredTarget) {
+    function synchronizeKeyboardSelectionViewport(preferredTarget, animateVisual = false) {
         const selectedTargetId = keyboardSelectionId;
         if (selectedTargetId.length === 0) {
             return false;
@@ -5960,7 +6199,8 @@ Rectangle {
             return false;
         }
         return target.kind !== "window"
-            || revealHorizontalNavigationTarget(workspaceIndex, target.desktopId, target);
+            || revealHorizontalNavigationTarget(
+                workspaceIndex, target.desktopId, target, animateVisual === true);
     }
 
     function planSpatialWorkspaceCenter(workspaceIndex) {
@@ -6291,8 +6531,15 @@ Rectangle {
         const expectedDesktopId = workspaceIndex >= 0 && workspaceIndex < desktopIds.length
             ? desktopIds[workspaceIndex] : "";
         const card = desktopCardAt(workspaceIndex);
-        const bounds = spatialHorizontalViewportBounds(workspaceIndex, expectedDesktopId);
+        let bounds = spatialHorizontalViewportBounds(workspaceIndex, expectedDesktopId);
         if (!card || !bounds || !Number.isFinite(card.projectionScale) || card.projectionScale <= 0) {
+            return false;
+        }
+        if (!adoptSpatialHorizontalCameraMotion(workspaceIndex, expectedDesktopId, bounds)) {
+            return false;
+        }
+        bounds = spatialHorizontalViewportBounds(workspaceIndex, expectedDesktopId);
+        if (!bounds) {
             return false;
         }
 
@@ -6544,7 +6791,9 @@ Rectangle {
                 || snapshot.objects[sourceIndex] !== liveDesktop) {
             return;
         }
-        if (!adoptSpatialVisualContentY()) {
+        const horizontalBounds = spatialHorizontalViewportBounds(sourceIndex, expectedDesktopId);
+        if (!adoptSpatialHorizontalCameraMotion(sourceIndex, expectedDesktopId, horizontalBounds)
+                || !adoptSpatialVisualContentY()) {
             return;
         }
 
@@ -6833,7 +7082,7 @@ Rectangle {
             const targetId = runtime.findOverviewNavigationTarget(keyboardSelectionId, targets, direction);
             const target = typeof targetId === "string" ? navigationTargetForId(targets, targetId) : null;
             if (target) {
-                setKeyboardSelectionTarget(target);
+                setKeyboardSelectionTarget(target, true);
             }
         } catch (error) {
             return;
@@ -6863,7 +7112,7 @@ Rectangle {
             const targetId = runtime.findOverviewSequentialNavigationTarget(keyboardSelectionId, targets, direction);
             const target = typeof targetId === "string" ? navigationTargetForId(targets, targetId) : null;
             if (target) {
-                setKeyboardSelectionTarget(target);
+                setKeyboardSelectionTarget(target, true);
             }
         } catch (error) {
             return;
@@ -6986,7 +7235,7 @@ Rectangle {
         }
 
         keyboardBoundaryNavigationPending = false;
-        setKeyboardSelectionTarget(target);
+        setKeyboardSelectionTarget(target, true);
     }
 
     function finishFailedKeyboardBoundaryNavigation(request) {
@@ -7288,11 +7537,18 @@ Rectangle {
 
     function handleSpatialHorizontalViewportWheel(workspaceIndex, expectedDesktopId, card,
                                                    angleDeltaX, pixelDeltaX) {
-        const bounds = spatialHorizontalViewportBounds(workspaceIndex, expectedDesktopId);
-        const currentOffset = spatialHorizontalViewportOffsetForBounds(workspaceIndex, expectedDesktopId, bounds);
+        let bounds = spatialHorizontalViewportBounds(workspaceIndex, expectedDesktopId);
         if (!bounds || !spatialWheelPresentationIsExact()) {
             return false;
         }
+        if (!adoptSpatialHorizontalCameraMotion(workspaceIndex, expectedDesktopId, bounds)) {
+            return false;
+        }
+        bounds = spatialHorizontalViewportBounds(workspaceIndex, expectedDesktopId);
+        if (!bounds) {
+            return false;
+        }
+        const currentOffset = spatialHorizontalViewportOffsetForBounds(workspaceIndex, expectedDesktopId, bounds);
 
         const plan = planSpatialHorizontalWheel(angleDeltaX, pixelDeltaX, currentOffset,
                                                 card.projectionScale, bounds);
@@ -7315,11 +7571,18 @@ Rectangle {
     }
 
     function handleSpatialHorizontalSelectionWheel(workspaceIndex, expectedDesktopId, card, angleDeltaX) {
-        const bounds = spatialHorizontalViewportBounds(workspaceIndex, expectedDesktopId);
-        const currentOffset = spatialHorizontalViewportOffsetForBounds(workspaceIndex, expectedDesktopId, bounds);
+        let bounds = spatialHorizontalViewportBounds(workspaceIndex, expectedDesktopId);
         if (!bounds || !spatialWheelPresentationIsExact()) {
             return false;
         }
+        if (!adoptSpatialHorizontalCameraMotion(workspaceIndex, expectedDesktopId, bounds)) {
+            return false;
+        }
+        bounds = spatialHorizontalViewportBounds(workspaceIndex, expectedDesktopId);
+        if (!bounds) {
+            return false;
+        }
+        const currentOffset = spatialHorizontalViewportOffsetForBounds(workspaceIndex, expectedDesktopId, bounds);
 
         const plan = planSpatialHorizontalWheel(angleDeltaX, 0, currentOffset, card.projectionScale, bounds);
         if (!spatialHorizontalSelectionWheelPlanIsValid(plan, currentOffset)
@@ -7586,7 +7849,7 @@ Rectangle {
 
         clearOverviewHorizontalWheelSelectionRequest();
         try {
-            setKeyboardSelectionTarget(target);
+            setKeyboardSelectionTarget(target, true);
         } catch (error) {
             return;
         }
@@ -7667,11 +7930,19 @@ Rectangle {
         return selected ? selected.target : null;
     }
 
-    function revealHorizontalNavigationTarget(workspaceIndex, expectedDesktopId, target) {
+    function revealHorizontalNavigationTarget(workspaceIndex, expectedDesktopId, target,
+                                              animateVisual = false) {
         const card = desktopCardAt(workspaceIndex);
-        const bounds = spatialHorizontalViewportBounds(workspaceIndex, expectedDesktopId);
+        let bounds = spatialHorizontalViewportBounds(workspaceIndex, expectedDesktopId);
         if (!card || !bounds || !target || !target.rect || !Number.isFinite(card.projectionScale)
                 || card.projectionScale <= 0) {
+            return false;
+        }
+        if (!adoptSpatialHorizontalCameraMotion(workspaceIndex, expectedDesktopId, bounds)) {
+            return false;
+        }
+        bounds = spatialHorizontalViewportBounds(workspaceIndex, expectedDesktopId);
+        if (!bounds) {
             return false;
         }
 
@@ -7702,10 +7973,19 @@ Rectangle {
         const currentOffset = spatialHorizontalViewportOffsetForBounds(workspaceIndex, expectedDesktopId, bounds);
         const nextOffset = Math.min(bounds.maximum,
                                     Math.max(bounds.minimum, currentOffset + sceneAdjustment / card.projectionScale));
-        if (!setSpatialHorizontalViewportOffsetForBounds(workspaceIndex, expectedDesktopId, nextOffset, bounds)) {
+        if (nextOffset === currentOffset) {
+            return true;
+        }
+        if (animateVisual === true) {
+            return startSpatialHorizontalCameraMotion(
+                workspaceIndex, expectedDesktopId, currentOffset, nextOffset);
+        }
+        if (!setSpatialHorizontalViewportOffsetForBounds(
+                workspaceIndex, expectedDesktopId, nextOffset, bounds)) {
             return false;
         }
-        detachSpatialLiveCameraForManualOffset(workspaceIndex, expectedDesktopId, currentOffset, nextOffset);
+        detachSpatialLiveCameraForManualOffset(
+            workspaceIndex, expectedDesktopId, currentOffset, nextOffset);
         return true;
     }
 
@@ -7714,6 +7994,9 @@ Rectangle {
             return false;
         }
 
+        if (!adoptSpatialHorizontalCameraMotionOwner()) {
+            return false;
+        }
         if (spatialVerticalCameraAnimation.running && !adoptSpatialVisualContentY()) {
             return false;
         }
@@ -7737,6 +8020,9 @@ Rectangle {
 
     function handleSpatialWorkspaceWheel(angleDeltaY) {
         if (!spatialWheelPresentationIsExact()) {
+            return false;
+        }
+        if (!adoptSpatialHorizontalCameraMotionOwner()) {
             return false;
         }
 
@@ -8594,6 +8880,9 @@ Rectangle {
                 || targetIndex >= desktopIds.length
                 || !overviewExitRect(target.desktopSourceRect)
                 || typeof effect.beginOverviewExitHandoff !== "function") {
+            return 0;
+        }
+        if (!adoptSpatialHorizontalCameraMotionOwner()) {
             return 0;
         }
 

@@ -91,6 +91,45 @@ const initialSelection = scene.slice(
   scene.indexOf("function preferredInitialNavigationTarget("),
   scene.indexOf("function navigationTargetPrecedes("),
 );
+const horizontalCameraAnimation = scene.slice(
+  scene.indexOf("id: spatialHorizontalCameraAnimation"),
+  scene.indexOf(
+    "WheelHandler {",
+    scene.indexOf("id: spatialHorizontalCameraAnimation"),
+  ),
+);
+const horizontalCameraMotion = scene.slice(
+  scene.indexOf("function spatialHorizontalCameraMotionIsExact("),
+  scene.indexOf("function advanceSpatialHorizontalViewportRevision("),
+);
+const horizontalViewportWheel = scene.slice(
+  scene.indexOf("function handleSpatialHorizontalViewportWheel("),
+  scene.indexOf("function handleSpatialHorizontalSelectionWheel("),
+);
+const horizontalSelectionWheelCompletion = scene.slice(
+  scene.indexOf("function completeSpatialHorizontalWheelSelection("),
+  scene.indexOf("function horizontalWheelSelectionRequestContextIsExact("),
+);
+const keyboardNavigation = scene.slice(
+  scene.indexOf("function navigateKeyboardSelection("),
+  scene.indexOf("function navigateKeyboardBoundary("),
+);
+const selectionViewportSynchronization = scene.slice(
+  scene.indexOf("function setKeyboardSelectionTarget("),
+  scene.indexOf("function planSpatialWorkspaceCenter("),
+);
+const horizontalReveal = scene.slice(
+  scene.indexOf("function revealHorizontalNavigationTarget("),
+  scene.indexOf("function handleSpatialViewportWheel("),
+);
+const exitHandoff = scene.slice(
+  scene.indexOf("function beginSpatialExitHandoff("),
+  scene.indexOf("function settleSpatialExitHandoff("),
+);
+const presentationPhaseLifecycle = scene.slice(
+  scene.indexOf("function handleSpatialPresentationPhaseChanged("),
+  scene.indexOf("function resetOverviewSession("),
+);
 
 describe("spatial overview navigation geometry", () => {
   it("preserves default clipping while the spatial scene opts into offscreen targets", () => {
@@ -424,6 +463,134 @@ describe("spatial overview navigation geometry", () => {
     );
     expect(horizontalDragLifecycle).toContain(
       "detachSpatialLiveCameraForManualOffset",
+    );
+  });
+
+  it("retargets deliberate horizontal selection from the rendered camera frame", () => {
+    expect(scene).toContain(
+      "property real spatialVisualHorizontalViewportOffset: Number.NaN",
+    );
+    expect(scene).toContain(
+      "property var spatialHorizontalCameraMotionContext: null",
+    );
+    expect(horizontalCameraAnimation).toMatch(
+      /target: root\s*property: "spatialVisualHorizontalViewportOffset"[\s\S]*easing\.type: Easing\.OutCubic/u,
+    );
+    expect(horizontalCameraAnimation).not.toMatch(/loops:|repeat:/u);
+
+    expect(horizontalCameraMotion).toContain(
+      "function startSpatialHorizontalCameraMotion(",
+    );
+    expect(horizontalCameraMotion).toMatch(
+      /const startOffset = fromOffset;[\s\S]*const currentOffset = spatialHorizontalViewportOffsetForBounds\([\s\S]*currentOffset !== startOffset/u,
+    );
+    expect(horizontalCameraMotion).toMatch(
+      /spatialVisualHorizontalViewportOffset = startOffset;[\s\S]*spatialHorizontalCameraMotionContext = Object\.freeze\([\s\S]*setSpatialHorizontalViewportOffsetForBounds\([\s\S]*spatialHorizontalCameraAnimation\.from = startOffset;[\s\S]*spatialHorizontalCameraAnimation\.to = targetOffset;[\s\S]*spatialHorizontalCameraAnimation\.duration = Math\.max\(90, Math\.min\(160,[\s\S]*spatialHorizontalCameraAnimation\.start\(\);/u,
+    );
+    expect(horizontalCameraMotion).toMatch(
+      /if \(!spatialHorizontalCameraMotionIsExact\([\s\S]*cancelSpatialHorizontalCameraMotion\(\);[\s\S]*spatialHorizontalViewportOffsetForBounds\([\s\S]*=== targetOffset[\s\S]*setSpatialHorizontalViewportOffsetForBounds\([\s\S]*startOffset, rollbackBounds\);/u,
+    );
+    expect(horizontalCameraMotion).not.toContain(
+      "distance > bounds.sourceWidth",
+    );
+    expect(horizontalCameraMotion).toContain("!spatialPresentationSettled");
+    expect(horizontalCameraMotion).toContain("spatialExitHandoffActive");
+
+    expect(
+      keyboardNavigation.match(/setKeyboardSelectionTarget\(target, true\);/gu),
+    ).toHaveLength(2);
+    expect(horizontalSelectionWheelCompletion).toContain(
+      "setKeyboardSelectionTarget(target, true);",
+    );
+    expect(selectionViewportSynchronization).toContain(
+      "function setKeyboardSelectionTarget(target, animateVisual = false)",
+    );
+    expect(selectionViewportSynchronization).toContain(
+      "function synchronizeKeyboardSelectionViewport(preferredTarget, animateVisual = false)",
+    );
+    expect(selectionViewportSynchronization).toMatch(
+      /revealHorizontalNavigationTarget\([\s\S]*workspaceIndex, target\.desktopId, target, animateVisual === true\);/u,
+    );
+    expect(horizontalReveal).toMatch(
+      /function revealHorizontalNavigationTarget\(workspaceIndex, expectedDesktopId, target,\s*animateVisual = false\)/u,
+    );
+    expect(horizontalReveal).toMatch(
+      /animateVisual === true[\s\S]*startSpatialHorizontalCameraMotion\(/u,
+    );
+    const revealAdoption = horizontalReveal.indexOf(
+      "adoptSpatialHorizontalCameraMotion(",
+    );
+    const revealAnimationBranch = horizontalReveal.indexOf(
+      "if (animateVisual === true)",
+    );
+    const revealLogicalWrite = horizontalReveal.indexOf(
+      "setSpatialHorizontalViewportOffsetForBounds(",
+    );
+    expect(revealAdoption).toBeGreaterThanOrEqual(0);
+    expect(revealAdoption).toBeLessThan(revealAnimationBranch);
+    expect(revealAnimationBranch).toBeLessThan(revealLogicalWrite);
+    expect(horizontalCameraMotion).not.toMatch(
+      /KWin\.Workspace\.[A-Za-z0-9_]+\s*=|focusWindow\(|forceActiveFocus\(|deactivate\(/u,
+    );
+  });
+
+  it("adopts the current horizontal frame before direct pointer and pixel-wheel input", () => {
+    const dragAdoption = horizontalDragLifecycle.indexOf(
+      "adoptSpatialHorizontalCameraMotion(",
+    );
+    const dragSnapshot = horizontalDragLifecycle.indexOf(
+      "const viewportOffset = spatialHorizontalViewportOffsetForBounds(",
+    );
+    expect(dragAdoption).toBeGreaterThanOrEqual(0);
+    expect(dragAdoption).toBeLessThan(dragSnapshot);
+
+    const wheelAdoption = horizontalViewportWheel.indexOf(
+      "adoptSpatialHorizontalCameraMotion(",
+    );
+    const wheelSnapshot = horizontalViewportWheel.indexOf(
+      "const currentOffset = spatialHorizontalViewportOffsetForBounds(",
+    );
+    expect(wheelAdoption).toBeGreaterThanOrEqual(0);
+    expect(wheelAdoption).toBeLessThan(wheelSnapshot);
+    expect(horizontalViewportWheel).toContain(
+      "setSpatialHorizontalViewportOffsetForBounds(",
+    );
+    expect(horizontalViewportWheel).not.toContain(
+      "startSpatialHorizontalCameraMotion(",
+    );
+    expect(horizontalDragLifecycle).not.toContain(
+      "startSpatialHorizontalCameraMotion(",
+    );
+
+    expect(horizontalCameraMotion).toMatch(
+      /function adoptSpatialHorizontalCameraMotion\([\s\S]*spatialHorizontalCameraMotionContext = null;[\s\S]*spatialHorizontalCameraAnimation\.stop\(\);[\s\S]*setSpatialHorizontalViewportOffsetForBounds\([\s\S]*spatialVisualHorizontalViewportOffset = Number\.NaN;/u,
+    );
+  });
+
+  it("hands exit the same horizontal offset that was rendered", () => {
+    const adoption = exitHandoff.indexOf(
+      "adoptSpatialHorizontalCameraMotionOwner()",
+    );
+    const capture = exitHandoff.indexOf("const offsetX =");
+    expect(adoption).toBeGreaterThanOrEqual(0);
+    expect(adoption).toBeLessThan(capture);
+    expect(exitHandoff).toMatch(
+      /if \(!adoptSpatialHorizontalCameraMotionOwner\(\)\) \{\s*return 0;\s*\}/u,
+    );
+    expect(exitHandoff).toContain(
+      "offsetX = spatialHorizontalViewportOffsetAt(",
+    );
+    expect(exitHandoff).toContain("camera: {");
+    expect(exitHandoff).toContain("offsetX,");
+
+    expect(presentationPhaseLifecycle).toContain(
+      'adoptSpatialHorizontalCameraMotionOwner(spatialPresentationPhase === "closing")',
+    );
+    expect(horizontalCameraMotion).toMatch(
+      /function spatialHorizontalCameraMotionContextIsCurrent\([\s\S]*allowClosing = false\)[\s\S]*allowClosing === true && spatialPresentationPhase === "closing"/u,
+    );
+    expect(horizontalCameraMotion).toMatch(
+      /function spatialHorizontalCameraMotionIsExact\([\s\S]*return spatialPresentationSettled && spatialHorizontalCameraMotionContextIsCurrent\(/u,
     );
   });
 });
