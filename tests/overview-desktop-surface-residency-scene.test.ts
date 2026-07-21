@@ -131,12 +131,12 @@ describe("overview desktop surface residency scene", () => {
   });
 
   it("isolates residency by session, output, activity, and desktop topology", () => {
-    for (const handler of [
-      "onActiveOverviewSessionIdChanged: root.restartDesktopSurfaceResidency()",
+    expect(scene).toContain(
       "onOverviewSpatialVisibleRangePlanChanged: root.updateDesktopSurfaceResidency()",
-    ]) {
-      expect(scene).toContain(handler);
-    }
+    );
+    expect(scene).toMatch(
+      /onActiveOverviewSessionIdChanged: \{[\s\S]*?cancelWorkspaceRenameOnDrift\(\);[\s\S]*?restartDesktopSurfaceResidency\(\);/u,
+    );
     expect(scene).toMatch(
       /onActiveOverviewActivityIdChanged: \{[\s\S]*overviewContextRefreshPending \|\| !overviewContextModelExact[\s\S]*beginOverviewContextRefreshBarrier\(\);[\s\S]*else \{[\s\S]*restartDesktopSurfaceResidency\(\);/u,
     );

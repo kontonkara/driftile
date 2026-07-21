@@ -1427,7 +1427,7 @@ describe("spatial overview column drag lifecycle", () => {
       /Qt\.Key_Escape && spatialColumnDragSource !== null[\s\S]*root\.cancelActiveColumnSpatialDrag\(\)/u,
     );
     expect(overviewScene).toMatch(
-      /onSearchQueryChanged: \{\s*root\.cancelActiveColumnSpatialDrag\(\)/u,
+      /onSearchQueryChanged: \{[\s\S]*?root\.cancelWorkspaceRenameOnDrift\(\);[\s\S]*?root\.cancelActiveColumnSpatialDrag\(\)/u,
     );
     for (const change of [
       "onOverviewModelChanged",
