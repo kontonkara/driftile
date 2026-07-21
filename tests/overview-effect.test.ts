@@ -2405,7 +2405,7 @@ describe("overview effect package", () => {
     );
 
     expect(scene).toMatch(
-      /onKeyboardSelectionIdChanged: \{[\s\S]*const target = keyboardSelectionViewportTarget;[\s\S]*const animateVisual = keyboardSelectionViewportAnimateVisual;[\s\S]*keyboardSelectionViewportTarget = null;[\s\S]*root\.synchronizeKeyboardSelectionViewport\(target, animateVisual\);/u,
+      /onKeyboardSelectionIdChanged: \{[\s\S]*const expectedTargetId = keyboardSelectionId;[\s\S]*const animateVisual = keyboardSelectionViewportAnimateVisual;[\s\S]*keyboardSelectionViewportTarget = null;[\s\S]*Qt\.callLater\(root\.synchronizeKeyboardSelectionViewportTarget,\s*expectedTargetId, animateVisual\);/u,
     );
     expect(spatialLayout).toContain(
       "target = navigationTargetForId(collectNavigationTargets(), selectedTargetId)",
@@ -5801,7 +5801,7 @@ describe("overview effect package", () => {
       "readonly property bool selectedTab: frame !== null && frame.selected === true",
     );
     expect(tab).toMatch(
-      /readonly property bool activationEligible: windowPresentation\.primaryVisualKind === "tab"\s*&& frame !== null\s*&& windowPresentation\.matchesSearch/u,
+      /readonly property bool activationEligible: windowPresentation\.primaryVisualKind === "tab"\s*&& frame !== null && frame\.visible === true\s*&& windowPresentation\.matchesSearch/u,
     );
     expect(tab).toContain(
       "readonly property bool keyboardTarget: activationEligible",

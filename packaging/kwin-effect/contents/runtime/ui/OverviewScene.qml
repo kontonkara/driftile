@@ -440,11 +440,14 @@ Rectangle {
     onSpatialSceneRetirementFrameContextChanged: root.synchronizeSceneRetirementFrame()
     onSceneRetirementBarrierChanged: root.synchronizeSceneRetirementFrame()
     onKeyboardSelectionIdChanged: {
-        const target = keyboardSelectionViewportTarget;
+        const expectedTargetId = keyboardSelectionId;
         const animateVisual = keyboardSelectionViewportAnimateVisual;
         keyboardSelectionViewportTarget = null;
         keyboardSelectionViewportAnimateVisual = false;
-        root.synchronizeKeyboardSelectionViewport(target, animateVisual);
+        if (expectedTargetId.length > 0) {
+            Qt.callLater(root.synchronizeKeyboardSelectionViewportTarget,
+                         expectedTargetId, animateVisual);
+        }
     }
     onKeyboardHelpVisibleChanged: {
         root.cancelSpatialHorizontalCameraMotion();
@@ -6286,6 +6289,15 @@ Rectangle {
                 workspaceIndex, target.desktopId, target, animateVisual === true);
     }
 
+    function synchronizeKeyboardSelectionViewportTarget(expectedTargetId, animateVisual = false) {
+        if (typeof expectedTargetId !== "string" || expectedTargetId.length === 0
+                || keyboardSelectionId !== expectedTargetId) {
+            return false;
+        }
+        const target = navigationTargetForId(collectNavigationTargets(), expectedTargetId);
+        return target ? synchronizeKeyboardSelectionViewport(target, animateVisual) : false;
+    }
+
     function planSpatialWorkspaceCenter(workspaceIndex) {
         const runtime = OverviewRuntime.DriftileOverview;
         if (!runtime || typeof runtime.planOverviewSpatialWorkspaceCenter !== "function") {
@@ -8701,7 +8713,9 @@ Rectangle {
             }
         }
 
-        if (navigationTargetForId(targets, keyboardSelectionId)) {
+        const currentTarget = navigationTargetForId(targets, keyboardSelectionId);
+        if (currentTarget) {
+            synchronizeKeyboardSelectionViewport(currentTarget);
             return;
         }
 

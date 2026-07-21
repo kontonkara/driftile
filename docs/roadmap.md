@@ -2836,3 +2836,17 @@ Release criteria (met):
   built against the target KWin ABI.
 - Existing settings and logical persistence v4 remain compatible; no private
   input API, KWin fork, or polling is introduced.
+
+### Current direction (unreleased)
+
+- Keep long or narrow tabbed Overview columns reachable through the largest
+  safe contiguous chip window, with at least one 28-pixel chip.
+- Reveal keyboard selection, a matching search target, attention, then the
+  selected member in deterministic priority order. Eligible reflows reuse the
+  existing presentation motion; search remains immediate under its input
+  barrier.
+- Retain exactly one logical keyboard and search target for every overflow
+  member without creating an invisible pointer hit area.
+- Fail closed only when the rail cannot fit one safe chip. Rail-local wheel
+  navigation, buttons, and direct hidden-tab dragging remain outside this
+  slice.

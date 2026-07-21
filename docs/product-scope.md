@@ -538,11 +538,16 @@ Driftile must integrate with, not duplicate:
   transient drag, reorder, hover, wheel, pan, boundary, and zoom ownership is
   cancelled. `Escape` and global close remain available, while stale callbacks
   cannot replace the model or release the input barrier.
-- Overview keyboard navigation selects only actionable targets with a visible
-  intersection and never wraps. If the current desktop has no actionable
-  window, its marker precedes unrelated visual targets. Keyboard and short
-  touchscreen activation use the same guarded path as pointer activation;
-  touchscreen long press remains reserved for an eligible window drag.
+- Overview keyboard navigation selects only actionable targets and never wraps.
+  Every represented eligible window retains exactly one bounded target,
+  including overflow members in a tabbed column. A tab rail renders the largest
+  safe contiguous chip window that fits and deterministically reveals keyboard
+  selection, a search match, attention, then the selected member. Non-rendered
+  chips keep logical keyboard and search positions but no pointer hit area. If
+  the current desktop has no actionable window, its marker precedes unrelated
+  visual targets. Keyboard and short touchscreen activation use the same
+  guarded path as pointer activation; touchscreen long press remains reserved
+  for an eligible window drag.
 - Eligible inter-row gaps expose explicit retained-workspace creation. Compact
   row controls and `Insert`, `F2`, and `Delete` provide equivalent create,
   rename, and remove behavior for a workspace marker while preserving

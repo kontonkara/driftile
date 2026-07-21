@@ -49,6 +49,7 @@ describe("overview tab and minimized interactions", () => {
       /id: tabCloseButton[\s\S]*settingEnabled: card\.showWindowCloseButtons[\s\S]*closeEligible: windowPresentation\.closeEligible[\s\S]*surfaceLargeEnough: tabShell\.closeButtonLargeEnough/u,
     );
     expect(closeExact).toContain("tabShell.visible && tabShell.frameIsExact()");
+    expect(closeExact).toContain("tabShell.frame.visible === true");
     expect(closeExact).toContain("windowPresentation.closeEligible");
     expect(closeExact).toContain(
       "card.windowSnapshotCanRequestClose(windowPresentation)",
@@ -83,7 +84,40 @@ describe("overview tab and minimized interactions", () => {
       /const releaseLocalPosition = Qt\.point\(releaseLocalX, releaseLocalY\);\s*return tabShell\.contains\(releaseLocalPosition\)\s*&& !card\.closeButtonContainsPoint\(tabCloseButton, tabShell,\s*releaseLocalPosition\);/u,
     );
     expect(middle).toMatch(
-      /acceptedButtons: Qt\.MiddleButton[\s\S]*enabled: tabShell\.visible && windowPresentation\.closeEligible[\s\S]*if \(!tabShell\.closeIsExact\(\)\) \{\s*return;[\s\S]*card\.windowCloseRequested\(windowPresentation\.candidate,/u,
+      /acceptedButtons: Qt\.MiddleButton[\s\S]*enabled: tabShell\.visible && tabShell\.frame !== null\s*&& tabShell\.frame\.visible === true && windowPresentation\.closeEligible[\s\S]*if \(!tabShell\.closeIsExact\(\)\) \{\s*return;[\s\S]*card\.windowCloseRequested\(windowPresentation\.candidate,/u,
+    );
+  });
+
+  it("keeps logical off-window tabs non-actionable during rail motion", () => {
+    const activationId = tab.indexOf("id: tabActivationHandler");
+    const activation = tab.slice(
+      tab.lastIndexOf("TapHandler {", activationId),
+      tab.indexOf("\n                    TapHandler {", activationId),
+    );
+    const activationExact = tab.slice(
+      tab.indexOf("function activationIsExact()"),
+      tab.indexOf("function armMinimizedActivation("),
+    );
+    const closeExact = tab.slice(
+      tab.indexOf("function closeIsExact()"),
+      tab.indexOf("x: visualFrame ? visualFrame.x : 0"),
+    );
+
+    expect(tab).toMatch(
+      /readonly property bool activationEligible: windowPresentation\.primaryVisualKind === "tab"\s*&& frame !== null && frame\.visible === true\s*&& windowPresentation\.matchesSearch/u,
+    );
+    expect(activation).toContain("enabled: tabShell.activationEligible");
+    expect(activationExact).toMatch(
+      /tabShell\.visible && tabShell\.frameIsExact\(\)\s*&& tabShell\.frame\.visible === true/u,
+    );
+    expect(closeExact).toMatch(
+      /tabShell\.visible && tabShell\.frameIsExact\(\)\s*&& tabShell\.frame\.visible === true/u,
+    );
+    expect(tab).toMatch(
+      /onCloseRequested: \{\s*if \(!tabShell\.closeIsExact\(\)\) \{\s*return;\s*\}\s*card\.windowCloseRequested/u,
+    );
+    expect(tab).toMatch(
+      /acceptedButtons: Qt\.MiddleButton[\s\S]*onTapped: \{\s*if \(!tabShell\.closeIsExact\(\)\) \{\s*return;\s*\}\s*card\.windowCloseRequested/u,
     );
   });
 

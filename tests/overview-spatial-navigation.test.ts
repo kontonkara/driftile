@@ -19,6 +19,18 @@ const navigationVisual = desktopCard.slice(
   desktopCard.indexOf("function navigationVisualForPresentation("),
   desktopCard.indexOf("function windowSnapshotCanActivateMinimizedWindow("),
 );
+const logicalTabClip = desktopCard.slice(
+  desktopCard.indexOf("function clippedLogicalTabNavigationRect("),
+  desktopCard.indexOf("function clippedCardNavigationRect("),
+);
+const tabRailPlanning = desktopCard.slice(
+  desktopCard.indexOf("function buildTabRailPlans("),
+  desktopCard.indexOf("function buildSpatialColumnFrames("),
+);
+const tabRailLifecycle = desktopCard.slice(
+  desktopCard.indexOf("onTabRailPlansChanged:"),
+  desktopCard.indexOf("onSpatialRowGeometryPlanChanged:"),
+);
 const windowPresentation = desktopCard.slice(
   desktopCard.indexOf("id: windowPresentation"),
   desktopCard.indexOf("id: tabShell"),
@@ -118,6 +130,18 @@ const selectionViewportSynchronization = scene.slice(
   scene.indexOf("function setKeyboardSelectionTarget("),
   scene.indexOf("function planSpatialWorkspaceCenter("),
 );
+const keyboardSelectionLifecycle = scene.slice(
+  scene.indexOf("onKeyboardSelectionIdChanged:"),
+  scene.indexOf("onKeyboardHelpVisibleChanged:"),
+);
+const cardNavigationTargetChange = scene.slice(
+  scene.indexOf("onNavigationTargetsChanged:"),
+  scene.indexOf("onDesktopTapped:"),
+);
+const selectionRepair = scene.slice(
+  scene.indexOf("function repairKeyboardSelectionFrom("),
+  scene.indexOf("function searchSummaryIsValid("),
+);
 const horizontalReveal = scene.slice(
   scene.indexOf("function revealHorizontalNavigationTarget("),
   scene.indexOf("function handleSpatialViewportWheel("),
@@ -150,7 +174,7 @@ describe("spatial overview navigation geometry", () => {
 
   it("can retain offscreen mapped targets without escaping card clips", () => {
     expect(collection).toContain(
-      "clippedNavigationRect(visual, sceneItem, includeOffscreen)",
+      "navigationRectForPresentation(presentation, sceneItem",
     );
     expect(collection).toContain(
       "clippedCardNavigationRect(numberGutter, sceneItem, includeOffscreen)",
@@ -287,8 +311,11 @@ describe("spatial overview navigation geometry", () => {
       /if \(presentation\.minimizedWindow[\s\S]*return presentation\.(?:thumbnailTarget|minimizedPlaceholderTarget|tabTarget)/u,
     );
 
-    expect(collection).toContain(
+    expect(navigationVisual).toContain(
       "const visual = navigationVisualForPresentation(presentation);",
+    );
+    expect(collection).toContain(
+      "navigationRectForPresentation(presentation, sceneItem",
     );
     expect(collection.match(/targets\.push\(\{/gu)).toHaveLength(2);
     expect(
@@ -313,7 +340,7 @@ describe("spatial overview navigation geometry", () => {
       "!presentation.matchesSearch || !windowCanNavigate(presentation)",
     );
     expect(collection.indexOf("!presentation.matchesSearch")).toBeLessThan(
-      collection.indexOf("navigationVisualForPresentation(presentation)"),
+      collection.indexOf("navigationRectForPresentation(presentation"),
     );
     expect(
       `${navigationVisual}\n${collection}\n${viewportHitTest}`,
@@ -336,10 +363,10 @@ describe("spatial overview navigation geometry", () => {
     expect(tabRailZ).toBeGreaterThan(columnShellZ);
     expect(tabShell).toContain("parent: tabRailLayer");
     expect(tabShell).toMatch(
-      /readonly property bool activationEligible: windowPresentation\.primaryVisualKind === "tab"\s*&& frame !== null/u,
+      /readonly property bool activationEligible: windowPresentation\.primaryVisualKind === "tab"\s*&& frame !== null && frame\.visible === true\s*&& windowPresentation\.matchesSearch/u,
     );
     expect(tabShell).toMatch(
-      /function activationIsExact\(\) \{\s*return tabShell\.visible && tabShell\.frameIsExact\(\)\s*&& windowPresentation\.primaryVisualKind === "tab"/u,
+      /function activationIsExact\(\) \{\s*return tabShell\.visible && tabShell\.frameIsExact\(\)\s*&& tabShell\.frame\.visible === true\s*&& windowPresentation\.primaryVisualKind === "tab"/u,
     );
     expect(activationHandler).toContain(
       "gesturePolicy: TapHandler.ReleaseWithinBounds",
@@ -369,6 +396,62 @@ describe("spatial overview navigation geometry", () => {
       tabShell.indexOf("card.windowTapped("),
     );
     expect(tabShell).toContain("activationCanceledSerial === serial");
+  });
+
+  it("keeps every bounded tab as one logical target while exposing only visible chips to pointer input", () => {
+    expect(tabRailPlanning).toContain(
+      "plan.chipFrames.length !== column.members.length",
+    );
+    expect(tabRailPlanning).toMatch(
+      /const expectedVisible = memberIndex >= plan\.firstVisibleIndex\s*&& memberIndex <= plan\.lastVisibleIndex;[\s\S]*chip\.visible !== expectedVisible/u,
+    );
+    expect(tabRailPlanning).toMatch(
+      /return plan\.chipFrames\[tiled\.memberIndex\];/u,
+    );
+    expect(navigationVisual).toMatch(
+      /case "tab":\s*return presentation\.tabTarget && presentation\.tabTarget\.visible\s*&& presentation\.tabTarget\.activationEligible === true\s*\? presentation\.tabTarget : null;/u,
+    );
+    expect(navigationVisual).toMatch(
+      /const visibleRect = clippedNavigationRect\(visual, sceneItem, includeOffscreen\);[\s\S]*if \(visibleRect \|\| includeOffscreen !== true[\s\S]*return visibleRect;[\s\S]*typeof frame\.visible !== "boolean"[\s\S]*tabFrameForPresentation\(presentation\.tiledPresentation,[\s\S]*presentation\.windowId\) !== frame[\s\S]*return clippedLogicalTabNavigationRect\(frame, sceneItem\);/u,
+    );
+    expect(navigationVisual).not.toContain("frame.visible !== false");
+    expect(logicalTabClip).toContain(
+      "viewport.mapToItem(sceneItem, frame.x, frame.y",
+    );
+    expect(logicalTabClip).toContain(
+      "const top = Math.max(rect.y, viewportRect.y, cardRect.y)",
+    );
+    expect(logicalTabClip).toContain(
+      "const bottom = Math.min(rect.y + rect.height, viewportRect.y + viewportRect.height",
+    );
+    expect(logicalTabClip).toContain("width: rect.width");
+    expect(logicalTabClip).toContain("x: rect.x");
+    expect(collection.match(/targets\.push\(\{/gu)).toHaveLength(2);
+    expect(
+      collection.match(/id: navigationTargetId\(presentation\.windowId\)/gu),
+    ).toHaveLength(1);
+  });
+
+  it("re-synchronizes an existing keyboard target after the tab rail window moves", () => {
+    expect(keyboardSelectionLifecycle).toMatch(
+      /const expectedTargetId = keyboardSelectionId;[\s\S]*keyboardSelectionViewportTarget = null;[\s\S]*Qt\.callLater\(root\.synchronizeKeyboardSelectionViewportTarget,\s*expectedTargetId, animateVisual\);/u,
+    );
+    expect(keyboardSelectionLifecycle).not.toContain(
+      "synchronizeKeyboardSelectionViewport(target",
+    );
+    expect(selectionViewportSynchronization).toMatch(
+      /function synchronizeKeyboardSelectionViewportTarget\(expectedTargetId, animateVisual = false\) \{[\s\S]*keyboardSelectionId !== expectedTargetId[\s\S]*navigationTargetForId\(collectNavigationTargets\(\), expectedTargetId\);[\s\S]*synchronizeKeyboardSelectionViewport\(target, animateVisual\)/u,
+    );
+    expect(tabRailLifecycle).toContain("card.navigationTargetsChanged();");
+    expect(cardNavigationTargetChange).toMatch(
+      /root\.advanceOverviewDesktopCardEpoch\(\);\s*Qt\.callLater\(root\.repairKeyboardSelection\);/u,
+    );
+    expect(selectionRepair).toMatch(
+      /const currentTarget = navigationTargetForId\(targets, keyboardSelectionId\);\s*if \(currentTarget\) \{\s*synchronizeKeyboardSelectionViewport\(currentTarget\);\s*return;\s*\}/u,
+    );
+    expect(
+      selectionRepair.indexOf("synchronizeKeyboardSelectionViewport"),
+    ).toBeLessThan(selectionRepair.indexOf("preferredInitialNavigationTarget"));
   });
 
   it("pans a spatial row with the right mouse button without widening left-button grabs", () => {

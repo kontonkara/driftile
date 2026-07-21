@@ -415,11 +415,19 @@ updated frames without a retained exit ghost.
 
 Multi-member tabbed columns keep the selected member at its full projected
 size and add a compact tab rail over the column; the controls do not shrink or
-reflow the selected preview. Each tab shows selected, minimized, and attention
-state. Its bounded plain-text label uses the available application or window
-identity and falls back to `Tab N` when no safe label is available. Tab labels
-remain readable independently of the optional `ShowWindowLabels`
-large-thumbnail footer setting.
+reflow the selected preview. The rail shows the largest safe contiguous chip
+window that fits the visible column, with at least one 28-pixel chip. Keyboard
+selection, an active search match, attention, and the selected member anchor
+that window in deterministic priority order. Choosing an overflow member
+reveals it through the existing presentation motion when motion is eligible;
+search updates reveal their match immediately under the existing search input
+barrier. Overflow members retain one logical keyboard and search target each
+but no invisible pointer hit area. If even one safe chip cannot fit, the rail
+fails closed. Each rendered tab shows selected, minimized, and attention state.
+Its bounded plain-text label uses the available application or window identity
+and falls back to `Tab N` when no safe label is available. Tab labels remain
+readable independently of the optional `ShowWindowLabels` large-thumbnail
+footer setting.
 Actionable chips expose hover and pressed feedback without changing their
 geometry.
 
@@ -427,10 +435,12 @@ Windows that were already minimized when Overview opened remain represented,
 and minimized windows use compact actionable placeholders instead of draggable
 thumbnails. Hidden tab members and minimized windows participate in search and
 keyboard navigation. Each window contributes exactly one navigation target:
-its selected preview, minimized placeholder, or tab control. `Enter`, `Return`,
-and `Space` activate that target through the same guarded path. Actionable
-placeholders expose the same hover and pressed feedback as tab chips while
-remaining excluded from every drag path.
+its selected preview, minimized placeholder, rendered tab control, or bounded
+logical position in an overflowed tab rail. A logical overflow target becomes a
+rendered chip before pointer interaction and never creates a hidden hit region.
+`Enter`, `Return`, and `Space` activate that target through the same guarded
+path. Actionable placeholders expose the same hover and pressed feedback as tab
+chips while remaining excluded from every drag path.
 
 A primary mouse click, touchpad tap, or touchscreen tap on a tab control
 activates its exact window. A sufficiently wide closeable tab chip exposes the

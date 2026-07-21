@@ -266,6 +266,22 @@ describe("overview internal presentation motion contracts", () => {
     );
   });
 
+  it("animates tab visibility from the bounded rail frame instead of logical frame presence", () => {
+    expect(motionSnapshots).toMatch(
+      /tabOpacity: tabFrame && presentation\.tabFrame\.visible === true \? 1 : 0/u,
+    );
+    expect(motionVisuals).toMatch(
+      /function presentationMotionTabOpacity\(windowId, logicalFrame\) \{\s*return presentationMotionVisualValue\(\s*windowId, "tabOpacity", logicalFrame && logicalFrame\.visible === true \? 1 : 0\);\s*\}/u,
+    );
+    expect(tabPresentation).toContain("card.presentationMotionTabOpacity(");
+    expect(tabPresentation).toMatch(
+      /readonly property real visualOpacity: card\.presentationMotionTabOpacity\(\s*windowPresentation\.windowId, frame\)/u,
+    );
+    expect(tabPresentation).toMatch(
+      /visible: visualFrame !== null && visualOpacity > 0\.0001\s*&& model\.window && windowPresentation\.matchesSearch/u,
+    );
+  });
+
   it("interpolates selected-tab and minimized markers through adopted visual state", () => {
     expect(tabPresentation).toContain(
       "card.presentationMotionSelectedProgress(",

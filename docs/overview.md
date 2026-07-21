@@ -65,12 +65,18 @@ inconsistent live column fails closed and keeps its solved projection.
 
 Stacked columns show every eligible member in its exact solved or live frame. A
 multi-member tabbed column keeps its selected member at the exact full shared
-frame and overlays a compact tab rail without shrinking the preview. Every real
-member has a tab chip, including minimized members, when the complete rail fits
-the visible column; an undersized rail fails closed instead of exposing partial
-controls. Floating windows retain their output-local geometry. Eligible
-minimized stacked and floating windows use compact placeholders in their
-projected slots instead of thumbnails.
+frame and overlays a compact tab rail without shrinking the preview. When a
+long or narrow column cannot show every member, the rail presents the largest
+safe contiguous window of chips that fits, with at least one 28-pixel chip.
+Keyboard selection, an active search match, attention, and the selected member
+anchor that window in deterministic priority order. Overflow members retain
+one logical keyboard and search target each but expose no invisible pointer hit
+area. Selection and attention use the existing presentation motion when it is
+eligible, while search reveals its match immediately under the existing search
+input barrier. The rail fails closed only when even one safe chip cannot fit.
+Floating windows retain their output-local geometry. Eligible minimized stacked
+and floating windows use compact placeholders in their projected slots instead
+of thumbnails.
 
 The horizontal camera is session-only. It initially matches the authoritative
 layout viewport, follows a valid active tiled window, and can be detached by
@@ -269,10 +275,12 @@ timer.
 
 Every represented eligible window contributes exactly one navigation target. A
 selected non-minimized tabbed member uses its full preview, hidden tabbed
-members use their tab chips when the complete rail fits, and a selected
-minimized member uses its compact placeholder. Eligible minimized stacked and
-floating windows similarly use placeholders. Off-screen targets in an
-instantiated row remain navigable and are revealed when selected.
+members use either a visible tab chip or their bounded logical rail position,
+and a selected minimized member uses its compact placeholder. Eligible
+minimized stacked and floating windows similarly use placeholders. Overflow
+tabs and off-screen targets in an instantiated row remain navigable and are
+revealed when selected, while pointer hit testing remains limited to rendered
+controls.
 
 A short mouse, touchpad, or touchscreen tap on an empty row surface or its
 number marker selects an exact non-current workspace. The same action on the
