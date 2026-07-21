@@ -8,6 +8,7 @@ QtObject {
 
     property bool active: false
     property int activeSessionId: 0
+    property bool sceneVisible: false
     property var desktopSurfaceLifecycleEvent: null
     readonly property int desktopSurfaceLifecycleIdLimit: 512
     readonly property int desktopSurfaceLifecycleIdentifierLimit: 256
@@ -27,6 +28,16 @@ QtObject {
     property int lastActivationAttemptId: 0
     property int lastLiveRefreshAttemptId: 0
     property int lastPresentationTransitionToken: 0
+    property int lastSceneReadinessEpoch: 0
+    property int lastSceneRestartToken: 0
+    property int lastSceneRetirementToken: 0
+    property int openingReadinessEpoch: 0
+    property var openingReadinessExpectedOutputIds: []
+    property var openingReadinessModel: null
+    property var openingReadinessRegistrations: []
+    property bool openingReadinessSceneActivated: false
+    property int openingReadinessSessionId: 0
+    property int openingReadinessTopologyGeneration: 0
     property int pendingActivationAttemptId: 0
     property bool pendingDesktopSurfaceLifecycleGlobal: false
     property var pendingDesktopSurfaceLifecycleScopes: []
@@ -38,6 +49,11 @@ QtObject {
     property bool pendingPostTransitionLiveRefresh: false
     property int pendingPresentationTransitionSessionId: 0
     property int pendingPresentationTransitionToken: 0
+    property bool pendingSceneRetirementReopen: false
+    property int pendingSceneRetirementSessionId: 0
+    property int pendingSceneRetirementToken: 0
+    property bool pendingSceneRetirementContextDrift: false
+    property var pendingSceneRestartRequest: null
     property real presentationProgress: 0
     property string presentationPhase: "closed"
     property bool overviewAlwaysCenterSingleColumn: false
@@ -206,11 +222,33 @@ QtObject {
         ignoreUnknownSignals: true
 
         function onWindowAdded(window) {
+            if (controller.pendingSceneRestartRequest) {
+                return;
+            }
+            if (controller.presentationPhase === "preparing") {
+                controller.restartPreparingSceneForContextDrift();
+                return;
+            }
+            if (controller.presentationPhase === "retiring") {
+                controller.pendingSceneRetirementContextDrift = true;
+                return;
+            }
             controller.queueDesktopSurfaceLifecycleEvent(window);
             controller.requestLiveModelRefresh();
         }
 
         function onWindowRemoved(window) {
+            if (controller.pendingSceneRestartRequest) {
+                return;
+            }
+            if (controller.presentationPhase === "preparing") {
+                controller.restartPreparingSceneForContextDrift();
+                return;
+            }
+            if (controller.presentationPhase === "retiring") {
+                controller.pendingSceneRetirementContextDrift = true;
+                return;
+            }
             controller.handleOverviewExitWindowRemoved(window);
             controller.queueDesktopSurfaceLifecycleEvent(window);
             controller.requestLiveModelRefresh();
@@ -257,7 +295,12 @@ QtObject {
     }
 
     function toggle() {
-        if (active && presentationPhase === "closing") {
+        if (pendingSceneRestartRequest) {
+            clearPendingSceneRestart();
+            return;
+        }
+        if (active && (presentationPhase === "closing"
+                || (presentationPhase === "retiring" && !pendingSceneRetirementReopen))) {
             activate();
         } else if (active || loading) {
             deactivate();
@@ -274,7 +317,7 @@ QtObject {
         } catch (error) {
             return false;
         }
-        if (!active) {
+        if (!active || presentationPhase === "retiring") {
             return false;
         }
 
@@ -604,7 +647,7 @@ QtObject {
         const global = pendingDesktopSurfaceLifecycleGlobal;
         const pendingScopes = pendingDesktopSurfaceLifecycleScopes;
         clearPendingDesktopSurfaceLifecycleEvent();
-        if (!active) {
+        if (!active || presentationPhase === "retiring") {
             return false;
         }
 
@@ -626,7 +669,7 @@ QtObject {
 
         const revision = nextDesktopSurfaceLifecycleRevision();
         desktopSurfaceLifecycleRevision = revision;
-        if (!active) {
+        if (!active || presentationPhase === "retiring") {
             desktopSurfaceLifecycleEvent = null;
             return false;
         }
@@ -1072,7 +1115,11 @@ QtObject {
     }
 
     function overviewZoomInputStateContextIsExact(sessionId, outputId, sceneToken) {
-        if (!Number.isInteger(sessionId) || sessionId <= 0 || sessionId !== activeSessionId || !active || loading || !overviewModel || presentationPhase === "closing" || !overviewZoomIdentifierIsValid(outputId) || !overviewZoomSceneTokenIsValid(sceneToken)) {
+        if (!Number.isInteger(sessionId) || sessionId <= 0 || sessionId !== activeSessionId
+                || !active || loading || !overviewModel
+                || (presentationPhase !== "opening" && presentationPhase !== "open")
+                || !overviewZoomIdentifierIsValid(outputId)
+                || !overviewZoomSceneTokenIsValid(sceneToken)) {
             return false;
         }
 
@@ -1279,7 +1326,8 @@ QtObject {
 
         const boundedProgress = boundedPresentationProgress(numericProgress);
         touchpadGestureProgress = boundedProgress;
-        if (owner === "open" && loading && !active) {
+        if (owner === "open" && ((loading && !active)
+                || (active && presentationPhase === "preparing"))) {
             return true;
         }
         return applyTouchpadGestureProgress(owner, boundedProgress);
@@ -1299,6 +1347,12 @@ QtObject {
         }
         if (!active || loading || activeSessionId <= 0 || !overviewModel) {
             return false;
+        }
+        if (owner === "open" && presentationPhase === "preparing") {
+            if (!committed) {
+                deactivateImmediately();
+            }
+            return true;
         }
 
         const opening = owner === "open" ? committed : !committed;
@@ -1357,12 +1411,22 @@ QtObject {
     }
 
     function activate() {
+        if (pendingSceneRestartRequest) {
+            return;
+        }
         const interruptedTouchpadGesture = !touchpadGestureDispatching
             && touchpadGestureOwner !== "";
         if (interruptedTouchpadGesture) {
             resetTouchpadGestureState();
         }
         if (active) {
+            if (presentationPhase === "retiring") {
+                pendingSceneRetirementReopen = true;
+                return;
+            }
+            if (presentationPhase === "preparing") {
+                return;
+            }
             if ((presentationPhase === "closing" || interruptedTouchpadGesture)
                     && activeSessionId > 0 && overviewModel) {
                 cancelOverviewExitHandoff("reopen");
@@ -1384,9 +1448,12 @@ QtObject {
         activeSessionId = 0;
         clearOverviewContextRefresh();
         clearPendingLiveModelRefresh();
+        clearOpeningReadiness();
+        clearSceneRetirement();
         invalidatePresentationTransition();
         pendingPostTransitionLiveRefresh = false;
         overviewModel = null;
+        sceneVisible = false;
         loading = true;
         presentationProgress = 0;
         presentationPhase = "closed";
@@ -1400,12 +1467,24 @@ QtObject {
     }
 
     function deactivate() {
+        if (pendingSceneRestartRequest) {
+            clearPendingSceneRestart();
+            return;
+        }
         const interruptedTouchpadGesture = !touchpadGestureDispatching
             && touchpadGestureOwner !== "";
         if (interruptedTouchpadGesture) {
             resetTouchpadGestureState();
         }
         if (loading && !active) {
+            deactivateImmediately();
+            return;
+        }
+        if (active && presentationPhase === "retiring") {
+            pendingSceneRetirementReopen = false;
+            return;
+        }
+        if (active && presentationPhase === "preparing") {
             deactivateImmediately();
             return;
         }
@@ -1428,6 +1507,19 @@ QtObject {
     }
 
     function deactivateImmediately() {
+        clearPendingSceneRestart();
+        if (active && presentationPhase === "retiring") {
+            return;
+        }
+        if (!active || activeSessionId <= 0 || !overviewModel || !sceneVisible) {
+            finalizeInactiveOverviewState();
+            return;
+        }
+
+        requestSceneRetirement(activeSessionId);
+    }
+
+    function finalizeInactiveOverviewState() {
         invalidateOverviewZoomInputStates();
         clearDeferredOverviewZoomLiveRefresh();
         resetTouchpadGestureState();
@@ -1435,11 +1527,15 @@ QtObject {
         clearPendingDesktopSurfaceLifecycleEvent();
         desktopSurfaceLifecycleEvent = null;
         clearOverviewExitHandoff();
+        clearOpeningReadiness();
+        clearSceneRetirement();
+        clearPendingSceneRestart();
         invalidatePresentationTransition();
         pendingActivationAttemptId = 0;
         clearOverviewContextRefresh();
         clearPendingLiveModelRefresh();
         layoutStateReader.cancel();
+        sceneVisible = false;
         active = false;
         activeSessionId = 0;
         loading = false;
@@ -1449,11 +1545,418 @@ QtObject {
         presentationPhase = "closed";
     }
 
+    function nextSceneRetirementToken() {
+        const token = lastSceneRetirementToken >= 2147483647
+            ? 1 : lastSceneRetirementToken + 1;
+        lastSceneRetirementToken = token;
+        return token;
+    }
+
+    function nextSceneRestartToken() {
+        const token = lastSceneRestartToken >= 2147483647
+            ? 1 : lastSceneRestartToken + 1;
+        lastSceneRestartToken = token;
+        return token;
+    }
+
+    function clearPendingSceneRestart() {
+        pendingSceneRestartRequest = null;
+    }
+
+    function queueSceneRestart(sessionId, contextDrift) {
+        if (!Number.isInteger(sessionId) || sessionId <= 0
+                || typeof contextDrift !== "boolean" || active || loading
+                || sceneVisible || presentationPhase !== "closed") {
+            return false;
+        }
+
+        const request = Object.freeze({
+            contextDrift,
+            restartToken: nextSceneRestartToken(),
+            sessionId,
+            topologyGeneration: overviewTopologyGeneration
+        });
+        pendingSceneRestartRequest = request;
+        Qt.callLater(function() {
+            if (controller.pendingSceneRestartRequest !== request) {
+                return;
+            }
+            controller.pendingSceneRestartRequest = null;
+            if (controller.active || controller.loading || controller.sceneVisible
+                    || controller.presentationPhase !== "closed"
+                    || controller.plasmaOverviewIsActive()) {
+                return;
+            }
+            controller.activate();
+        });
+        return true;
+    }
+
+    function clearSceneRetirement() {
+        pendingSceneRetirementReopen = false;
+        pendingSceneRetirementSessionId = 0;
+        pendingSceneRetirementToken = 0;
+        pendingSceneRetirementContextDrift = false;
+    }
+
+    function requestSceneRetirement(sessionId, reopen, forcedContextDrift) {
+        if (!Number.isInteger(sessionId) || sessionId <= 0
+                || !active || activeSessionId !== sessionId || !overviewModel) {
+            if (!active || !sceneVisible) {
+                finalizeInactiveOverviewState();
+            }
+            return false;
+        }
+        if (presentationPhase === "retiring") {
+            return pendingSceneRetirementSessionId === sessionId
+                && pendingSceneRetirementToken > 0 && !sceneVisible;
+        }
+        if (!sceneVisible) {
+            finalizeInactiveOverviewState();
+            return false;
+        }
+        if (presentationPhase === "preparing" && !openingReadinessSceneActivated) {
+            sceneVisible = false;
+            finalizeInactiveOverviewState();
+            return true;
+        }
+
+        invalidatePresentationTransition();
+        presentationProgress = 0;
+        presentationPhase = "retiring";
+        const contextDrift = forcedContextDrift === true || overviewContextRefreshPending
+            || pendingLiveRefreshAttemptId > 0 || pendingPostTransitionLiveRefresh;
+        invalidateOverviewZoomInputStates();
+        clearDeferredOverviewZoomLiveRefresh();
+        resetTouchpadGestureState();
+        touchpadGestureDispatching = false;
+        clearPendingDesktopSurfaceLifecycleEvent();
+        clearOpeningReadiness();
+        pendingActivationAttemptId = 0;
+        clearPendingLiveModelRefresh();
+        layoutStateReader.cancel();
+        pendingPostTransitionLiveRefresh = false;
+        pendingSceneRetirementSessionId = sessionId;
+        pendingSceneRetirementToken = nextSceneRetirementToken();
+        pendingSceneRetirementReopen = reopen === true;
+        pendingSceneRetirementContextDrift = contextDrift;
+        sceneVisible = false;
+        return true;
+    }
+
+    function handleSceneDeactivated(retirementToken, sessionId) {
+        if (pendingSceneRetirementToken > 0) {
+            if (!Number.isInteger(retirementToken) || retirementToken <= 0
+                    || retirementToken !== pendingSceneRetirementToken
+                    || !Number.isInteger(sessionId) || sessionId <= 0
+                    || sessionId !== pendingSceneRetirementSessionId
+                    || !active || activeSessionId !== sessionId || !overviewModel
+                    || sceneVisible || presentationPhase !== "retiring") {
+                return false;
+            }
+
+            const reopen = pendingSceneRetirementReopen;
+            const contextDrift = pendingSceneRetirementContextDrift;
+            const completedSessionId = pendingSceneRetirementSessionId;
+            clearSceneRetirement();
+            if (!reopen) {
+                finalizeInactiveOverviewState();
+                return true;
+            }
+            finalizeInactiveOverviewState();
+            return queueSceneRestart(completedSessionId, contextDrift);
+        }
+
+        if (!active && !sceneVisible) {
+            return false;
+        }
+
+        sceneVisible = false;
+        finalizeInactiveOverviewState();
+        return true;
+    }
+
     function prepareOverviewZoomForFreshActivation() {
         invalidateOverviewZoomInputStates();
         clearDeferredOverviewZoomLiveRefresh();
         clearOverviewZoomGestureState();
         assignOverviewSessionZoom(configuredOverviewZoom);
+    }
+
+    function nextSceneReadinessEpoch() {
+        const epoch = lastSceneReadinessEpoch >= 2147483647
+            ? 1 : lastSceneReadinessEpoch + 1;
+        lastSceneReadinessEpoch = epoch;
+        return epoch;
+    }
+
+    function clearOpeningReadiness() {
+        openingReadinessEpoch = 0;
+        openingReadinessExpectedOutputIds = [];
+        openingReadinessModel = null;
+        openingReadinessRegistrations = [];
+        openingReadinessSceneActivated = false;
+        openingReadinessSessionId = 0;
+        openingReadinessTopologyGeneration = 0;
+    }
+
+    function openingModelOutputIds(model) {
+        try {
+            if (!model || !model.outputs || !Number.isInteger(model.outputs.length)
+                    || model.outputs.length < 1 || model.outputs.length > 64) {
+                return null;
+            }
+            const liveOutputs = KWin.Workspace.screens;
+            if (!liveOutputs || !Number.isInteger(liveOutputs.length)
+                    || liveOutputs.length !== model.outputs.length) {
+                return null;
+            }
+
+            const outputIds = [];
+            for (const output of model.outputs) {
+                const outputId = output && overviewZoomIdentifierIsValid(output.outputId)
+                    ? String(output.outputId) : "";
+                if (outputId.length === 0 || outputIds.indexOf(outputId) >= 0) {
+                    return null;
+                }
+                let liveMatches = 0;
+                for (const liveOutput of liveOutputs) {
+                    if (openingOutputMatchesScreen(output, liveOutput)) {
+                        liveMatches += 1;
+                    }
+                }
+                if (liveMatches !== 1) {
+                    return null;
+                }
+                outputIds.push(outputId);
+            }
+            for (const liveOutput of liveOutputs) {
+                let modelMatches = 0;
+                for (const output of model.outputs) {
+                    if (openingOutputMatchesScreen(output, liveOutput)) {
+                        modelMatches += 1;
+                    }
+                }
+                if (modelMatches !== 1) {
+                    return null;
+                }
+            }
+            return outputIds;
+        } catch (error) {
+            return null;
+        }
+    }
+
+    function openingOutputMatchesScreen(output, screen) {
+        if (!output || !screen || output.name === undefined || output.name === null
+                || screen.name === undefined || screen.name === null
+                || String(output.name) !== String(screen.name)) {
+            return false;
+        }
+        const outputManufacturer = output.manufacturer === undefined || output.manufacturer === null
+            ? "" : String(output.manufacturer);
+        const screenManufacturer = screen.manufacturer === undefined || screen.manufacturer === null
+            ? "" : String(screen.manufacturer);
+        const outputModel = output.model === undefined || output.model === null
+            ? "" : String(output.model);
+        const screenModel = screen.model === undefined || screen.model === null
+            ? "" : String(screen.model);
+        const outputSerial = output.serialNumber === undefined || output.serialNumber === null
+            ? "" : String(output.serialNumber);
+        const screenSerial = screen.serialNumber === undefined || screen.serialNumber === null
+            ? "" : String(screen.serialNumber);
+        return outputManufacturer === screenManufacturer && outputModel === screenModel
+            && outputSerial === screenSerial;
+    }
+
+    function sameOpeningOutputIds(first, second) {
+        if (!first || !second || !Number.isInteger(first.length)
+                || !Number.isInteger(second.length) || first.length !== second.length) {
+            return false;
+        }
+        for (let index = 0; index < first.length; index += 1) {
+            if (first[index] !== second[index]) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    function prepareOpeningReadiness(sessionId, model) {
+        const outputIds = openingModelOutputIds(model);
+        if (!Number.isInteger(sessionId) || sessionId <= 0 || !active
+                || activeSessionId !== sessionId || !model || overviewModel !== model
+                || outputIds === null) {
+            finalizeInactiveOverviewState();
+            return false;
+        }
+
+        clearOpeningReadiness();
+        invalidatePresentationTransition();
+        const epoch = nextSceneReadinessEpoch();
+        openingReadinessEpoch = epoch;
+        openingReadinessExpectedOutputIds = outputIds;
+        openingReadinessModel = model;
+        openingReadinessRegistrations = [];
+        openingReadinessSceneActivated = false;
+        openingReadinessSessionId = sessionId;
+        openingReadinessTopologyGeneration = overviewTopologyGeneration;
+        presentationProgress = 0;
+        presentationPhase = "preparing";
+        sceneVisible = true;
+        Qt.callLater(function() {
+            controller.rejectUnstartedOpeningScene(epoch, sessionId, model,
+                                                   controller.openingReadinessTopologyGeneration);
+        });
+        return true;
+    }
+
+    function openingReadinessIdentityIsExact(epoch, sessionId, model, topologyGeneration) {
+        return Number.isInteger(epoch) && epoch > 0 && epoch === openingReadinessEpoch
+            && Number.isInteger(sessionId) && sessionId > 0
+            && sessionId === openingReadinessSessionId && sessionId === activeSessionId
+            && model && model === openingReadinessModel && model === overviewModel
+            && Number.isInteger(topologyGeneration) && topologyGeneration > 0
+            && topologyGeneration === openingReadinessTopologyGeneration
+            && topologyGeneration === overviewTopologyGeneration
+            && active && !loading && sceneVisible && presentationPhase === "preparing"
+            && Math.abs(presentationProgress) <= 0.000001;
+    }
+
+    function openingReadinessContextIsExact(epoch, sessionId, model, topologyGeneration) {
+        const outputIds = openingModelOutputIds(model);
+        return openingReadinessIdentityIsExact(epoch, sessionId, model, topologyGeneration)
+            && outputIds !== null
+            && sameOpeningOutputIds(outputIds, openingReadinessExpectedOutputIds)
+    }
+
+    function rejectUnstartedOpeningScene(epoch, sessionId, model, topologyGeneration) {
+        if (!openingReadinessIdentityIsExact(epoch, sessionId, model, topologyGeneration)
+                || openingReadinessSceneActivated) {
+            return false;
+        }
+
+        sceneVisible = false;
+        finalizeInactiveOverviewState();
+        return true;
+    }
+
+    function acknowledgeOverviewSceneActivated(epoch, sessionId) {
+        if (!openingReadinessContextIsExact(epoch, sessionId, openingReadinessModel,
+                                            openingReadinessTopologyGeneration)) {
+            return false;
+        }
+        if (openingReadinessSceneActivated) {
+            return true;
+        }
+
+        openingReadinessSceneActivated = true;
+        return completeOpeningReadinessIfExact();
+    }
+
+    function registerOverviewSceneReady(epoch, sessionId, model, topologyGeneration,
+                                        outputId, sceneToken) {
+        if (!openingReadinessContextIsExact(epoch, sessionId, model, topologyGeneration)
+                || !overviewZoomIdentifierIsValid(outputId)
+                || openingReadinessExpectedOutputIds.indexOf(outputId) < 0
+                || !overviewZoomSceneTokenIsValid(sceneToken)) {
+            return false;
+        }
+
+        const registrations = openingReadinessRegistrations;
+        for (const registration of registrations) {
+            if (!registration || !overviewZoomIdentifierIsValid(registration.outputId)
+                    || !overviewZoomSceneTokenIsValid(registration.sceneToken)) {
+                requestSceneRetirement(sessionId);
+                return false;
+            }
+            if (registration.outputId === outputId || registration.sceneToken === sceneToken) {
+                if (registration.outputId === outputId && registration.sceneToken === sceneToken) {
+                    return true;
+                }
+                requestSceneRetirement(sessionId);
+                return false;
+            }
+        }
+
+        const nextRegistrations = registrations.slice();
+        nextRegistrations.push({ outputId, sceneToken });
+        openingReadinessRegistrations = nextRegistrations;
+        completeOpeningReadinessIfExact();
+        return true;
+    }
+
+    function unregisterOverviewSceneReady(epoch, sessionId, model, topologyGeneration,
+                                          outputId, sceneToken, fatal) {
+        if (epoch !== openingReadinessEpoch || sessionId !== openingReadinessSessionId
+                || model !== openingReadinessModel
+                || topologyGeneration !== openingReadinessTopologyGeneration) {
+            return false;
+        }
+
+        const registrations = openingReadinessRegistrations;
+        let matchingIndex = -1;
+        for (let index = 0; index < registrations.length; index += 1) {
+            const registration = registrations[index];
+            if (registration && registration.outputId === outputId
+                    && registration.sceneToken === sceneToken) {
+                if (matchingIndex >= 0) {
+                    requestSceneRetirement(sessionId);
+                    return false;
+                }
+                matchingIndex = index;
+            }
+        }
+        if (matchingIndex < 0) {
+            return false;
+        }
+
+        const nextRegistrations = registrations.slice();
+        nextRegistrations.splice(matchingIndex, 1);
+        openingReadinessRegistrations = nextRegistrations;
+        if (fatal === true && active && activeSessionId === sessionId
+                && presentationPhase === "preparing") {
+            requestSceneRetirement(sessionId);
+        }
+        return true;
+    }
+
+    function completeOpeningReadinessIfExact() {
+        const epoch = openingReadinessEpoch;
+        const sessionId = openingReadinessSessionId;
+        const model = openingReadinessModel;
+        const topologyGeneration = openingReadinessTopologyGeneration;
+        if (!openingReadinessSceneActivated
+                || !openingReadinessContextIsExact(epoch, sessionId, model, topologyGeneration)) {
+            return false;
+        }
+
+        const outputIds = openingReadinessExpectedOutputIds;
+        const registrations = openingReadinessRegistrations;
+        if (registrations.length !== outputIds.length) {
+            return false;
+        }
+        for (const outputId of outputIds) {
+            let matches = 0;
+            for (const registration of registrations) {
+                if (registration && registration.outputId === outputId
+                        && overviewZoomSceneTokenIsValid(registration.sceneToken)) {
+                    matches += 1;
+                }
+            }
+            if (matches !== 1) {
+                return false;
+            }
+        }
+
+        clearOpeningReadiness();
+        if (touchpadGestureOwner === "open") {
+            invalidatePresentationTransition();
+            presentationPhase = "opening";
+            presentationProgress = touchpadGestureTarget("open", touchpadGestureProgress);
+            return true;
+        }
+        return startPresentationTransition("opening", 1, sessionId);
     }
 
     function boundedPresentationProgress(value) {
@@ -1542,7 +2045,7 @@ QtObject {
         presentationProgress = target;
 
         if (phase === "closing") {
-            deactivateImmediately();
+            requestSceneRetirement(sessionId);
             return;
         }
 
@@ -1642,15 +2145,7 @@ QtObject {
         overviewModel = model;
         loading = false;
         active = true;
-        if (touchpadGestureOwner === "open") {
-            invalidatePresentationTransition();
-            presentationPhase = "opening";
-            presentationProgress = touchpadGestureTarget("open", touchpadGestureProgress);
-        } else {
-            presentationProgress = 0;
-            startPresentationTransition("opening", 1, attemptId);
-        }
-        return true;
+        return prepareOpeningReadiness(attemptId, model);
     }
 
     function createActivationCache() {
@@ -1836,7 +2331,7 @@ QtObject {
     function invalidateOverviewExitHandoff(reason) {
         const state = overviewExitHandoffState;
         const capture = state ? state.capture : null;
-        if (!overviewExitHandoffIsActive() || !capture
+        if (presentationPhase === "retiring" || !overviewExitHandoffIsActive() || !capture
                 || (reason !== "stale" && reason !== "topology")) {
             return false;
         }
@@ -1916,7 +2411,7 @@ QtObject {
     }
 
     function handleOverviewExitWindowRemoved(window) {
-        return overviewExitHandoffIsActive() && window
+        return presentationPhase !== "retiring" && overviewExitHandoffIsActive() && window
             && window === overviewExitHandoffWindow
             ? invalidateOverviewExitHandoff("stale") : false;
     }
@@ -1927,14 +2422,39 @@ QtObject {
         overviewExitHandoffState = null;
     }
 
+    function restartPreparingSceneForContextDrift() {
+        if (!active || loading || presentationPhase !== "preparing"
+                || activeSessionId <= 0 || !overviewModel || !sceneVisible) {
+            return false;
+        }
+
+        const sessionId = activeSessionId;
+        if (!openingReadinessSceneActivated) {
+            sceneVisible = false;
+            finalizeInactiveOverviewState();
+            return queueSceneRestart(sessionId, true);
+        }
+        return requestSceneRetirement(sessionId, true, true);
+    }
+
     function advanceOverviewTopologyGeneration() {
+        if (presentationPhase === "retiring") {
+            overviewTopologyGeneration = overviewTopologyGeneration >= 2147483647
+                ? 1 : overviewTopologyGeneration + 1;
+            pendingSceneRetirementContextDrift = true;
+            return overviewTopologyGeneration;
+        }
         overviewTopologyGeneration = overviewTopologyGeneration >= 2147483647
             ? 1 : overviewTopologyGeneration + 1;
+        if (active && presentationPhase === "preparing") {
+            restartPreparingSceneForContextDrift();
+        }
         return overviewTopologyGeneration;
     }
 
     function requestOverviewContextRefresh() {
-        if (!active || loading || activeSessionId <= 0 || !overviewModel) {
+        if (!active || loading || activeSessionId <= 0 || !overviewModel
+                || presentationPhase === "retiring") {
             return false;
         }
 
@@ -2004,6 +2524,9 @@ QtObject {
     }
 
     function requestLiveModelRefresh() {
+        if (presentationPhase === "retiring") {
+            return;
+        }
         if (presentationPhase !== "open" || overviewExitHandoffIsActive()) {
             pendingPostTransitionLiveRefresh = true;
             return;

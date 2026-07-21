@@ -119,8 +119,8 @@ describe("overview session zoom scene", () => {
     expect(transaction).toContain(
       "function applyControllerSpatialZoomRollback()",
     );
-    expect(scene).toContain(
-      "Component.onDestruction: root.destroySpatialZoomScene()",
+    expect(scene).toMatch(
+      /Component\.onDestruction:[\s\S]*root\.unregisterPresentationReadiness\(true\);[\s\S]*root\.destroySpatialZoomScene\(\);/u,
     );
     expect(scene).toContain("function discardSpatialZoomTransaction()");
     expect(scene).toMatch(

@@ -36,10 +36,10 @@ describe("overview live model refresh", () => {
 
     expect(lifecycle).toContain("target: KWin.Workspace");
     expect(lifecycle).toMatch(
-      /function onWindowAdded\(window\) \{\s*controller\.queueDesktopSurfaceLifecycleEvent\(window\);\s*controller\.requestLiveModelRefresh\(\);/u,
+      /function onWindowAdded\(window\) \{[\s\S]*pendingSceneRestartRequest[\s\S]*presentationPhase === "preparing"[\s\S]*restartPreparingSceneForContextDrift\(\)[\s\S]*presentationPhase === "retiring"[\s\S]*queueDesktopSurfaceLifecycleEvent\(window\);\s*controller\.requestLiveModelRefresh\(\);/u,
     );
     expect(lifecycle).toMatch(
-      /function onWindowRemoved\(window\) \{\s*controller\.handleOverviewExitWindowRemoved\(window\);\s*controller\.queueDesktopSurfaceLifecycleEvent\(window\);\s*controller\.requestLiveModelRefresh\(\);/u,
+      /function onWindowRemoved\(window\) \{[\s\S]*pendingSceneRestartRequest[\s\S]*presentationPhase === "preparing"[\s\S]*restartPreparingSceneForContextDrift\(\)[\s\S]*presentationPhase === "retiring"[\s\S]*handleOverviewExitWindowRemoved\(window\);\s*controller\.queueDesktopSurfaceLifecycleEvent\(window\);\s*controller\.requestLiveModelRefresh\(\);/u,
     );
     expect(lifecycle).toMatch(
       /function onDesktopsChanged\(\) \{\s*controller\.advanceOverviewTopologyGeneration\(\);\s*controller\.invalidateOverviewExitHandoff\("topology"\);\s*controller\.invalidateOverviewZoomGestureContext\(\);\s*controller\.requestLiveModelRefresh\(\);/u,
@@ -145,7 +145,7 @@ describe("overview live model refresh", () => {
       /try \{\s*if \(!window \|\| window\.desktopWindow !== true\) \{\s*return false;\s*\}\s*\} catch \(error\) \{\s*return false;/u,
     );
     expect(queue).toMatch(
-      /if \(!active\) \{\s*return false;\s*\}[\s\S]*scope = snapshotDesktopSurfaceLifecycleScope\(window\);/u,
+      /if \(!active \|\| presentationPhase === "retiring"\) \{\s*return false;\s*\}[\s\S]*scope = snapshotDesktopSurfaceLifecycleScope\(window\);/u,
     );
     expect(queue.indexOf("window.desktopWindow !== true")).toBeLessThan(
       queue.indexOf("snapshotDesktopSurfaceLifecycleScope(window)"),
@@ -326,7 +326,7 @@ describe("overview live model refresh", () => {
     expect(flush.match(/Qt\.callLater\(/gu)).toHaveLength(1);
     expect(capture.match(/Qt\.callLater\(/gu)).toHaveLength(2);
     expect(flush).toMatch(
-      /clearPendingDesktopSurfaceLifecycleEvent\(\);\s*if \(!active\) \{\s*return false;/u,
+      /clearPendingDesktopSurfaceLifecycleEvent\(\);\s*if \(!active \|\| presentationPhase === "retiring"\) \{\s*return false;/u,
     );
     expect(flush).toContain("scopes.push(Object.freeze({");
     expect(flush).toContain(
@@ -345,7 +345,7 @@ describe("overview live model refresh", () => {
       flush.indexOf("desktopSurfaceLifecycleRevision = revision;"),
     ).toBeLessThan(flush.indexOf("desktopSurfaceLifecycleEvent = event;"));
     expect(flush).toMatch(
-      /desktopSurfaceLifecycleRevision = revision;\s*if \(!active\) \{\s*desktopSurfaceLifecycleEvent = null;\s*return false;/u,
+      /desktopSurfaceLifecycleRevision = revision;\s*if \(!active \|\| presentationPhase === "retiring"\) \{\s*desktopSurfaceLifecycleEvent = null;\s*return false;/u,
     );
     expect(revision).toMatch(
       /desktopSurfaceLifecycleRevision >= 2147483647 \? 1[\s\S]*desktopSurfaceLifecycleRevision \+ 1/u,
@@ -560,7 +560,7 @@ describe("overview live model refresh", () => {
     );
 
     expect(workspaceLifecycle).toMatch(
-      /function onDesktopsChanged\(\) \{\s*root\.cancelActiveColumnSpatialDrag\(\);\s*if \(root\.spatialExitHandoffActive\) \{[\s\S]*root\.handleDesktopTopologyChanged\(\);/u,
+      /function onDesktopsChanged\(\) \{\s*if \(root\.spatialPresentationPhase === "retiring"\) \{\s*return;\s*\}\s*root\.cancelActiveWindowSpatialDrag\(\);\s*root\.cancelActiveColumnSpatialDrag\(\);\s*if \(root\.spatialExitHandoffActive\) \{[\s\S]*root\.handleDesktopTopologyChanged\(\);/u,
     );
     for (const [signal, nextSignal] of [
       ["onCurrentActivityChanged", "onActivitiesChanged"],
@@ -609,24 +609,24 @@ describe("overview live model refresh", () => {
       /function orderedDesktopIds\(expectedTopologyRevision\)[\s\S]*Number\.isInteger\(expectedTopologyRevision\)[\s\S]*for \(const desktop of KWin\.Workspace\.desktops\)/u,
     );
     expect(topologySchedule).toMatch(
-      /if \(!effect \|\| effect\.active !== true \|\| spatialPresentationPhase === "closing"[\s\S]*!expectedModel \|\| expectedSessionId <= 0\) \{\s*desktopTopologyRefreshPending = false;\s*synchronizeSpatialZoomInputState\(\);\s*return false;/u,
+      /if \(!effect \|\| effect\.active !== true[\s\S]*spatialPresentationPhase !== "opening"[\s\S]*spatialPresentationPhase !== "open"[\s\S]*!expectedModel \|\| expectedSessionId <= 0\) \{\s*desktopTopologyRefreshPending = false;\s*synchronizeSpatialZoomInputState\(\);\s*return false;/u,
     );
     expect(topologySchedule).toContain("resetWindowWorkspaceHover();");
     expect(topologySchedule).toMatch(
       /Qt\.callLater\(function\(\) \{\s*root\.completeDesktopTopologyRefresh\(requestId, expectedSessionId, expectedModel\);/u,
     );
     expect(topologyCompletion).toMatch(
-      /requestId !== desktopTopologyRefreshRequestId[\s\S]*spatialPresentationPhase === "closing"[\s\S]*effect\.activeSessionId !== expectedSessionId[\s\S]*overviewModel !== expectedModel[\s\S]*effect\.overviewModel !== expectedModel/u,
+      /requestId !== desktopTopologyRefreshRequestId[\s\S]*spatialPresentationPhase !== "opening"[\s\S]*spatialPresentationPhase !== "open"[\s\S]*effect\.activeSessionId !== expectedSessionId[\s\S]*overviewModel !== expectedModel[\s\S]*effect\.overviewModel !== expectedModel/u,
     );
     expect(workspaceLifecycle).not.toContain("function onWindowAdded");
     expect(workspaceLifecycle).toMatch(
-      /function onWindowRemoved\(window\) \{\s*root\.handleSpatialLiveCameraWindowRemoved\(window\);/u,
+      /function onWindowRemoved\(window\) \{\s*if \(root\.spatialPresentationPhase !== "retiring"\) \{\s*root\.handleSpatialLiveCameraWindowRemoved\(window\);/u,
     );
     expect(workspaceLifecycle).not.toMatch(
       /function onWindowRemoved\(window\)[\s\S]*requestLiveModelRefresh|function onWindowRemoved\(window\)[\s\S]*closeStaleOverview/u,
     );
     expect(scene).toMatch(
-      /onOverviewModelChanged: \{\s*root\.cancelWorkspaceRenameOnDrift\(\);\s*root\.cancelActiveColumnSpatialDrag\(\);\s*if \(spatialExitHandoffActive\) \{\s*root\.invalidateSpatialExitHandoff\("stale"\);\s*return;\s*\}\s*root\.cancelSpatialZoomTransaction\(\);\s*root\.discardSpatialZoomTransaction\(\);\s*root\.refreshOverviewSpatialSession\(true\);\s*root\.restartDesktopSurfaceResidency\(\);\s*root\.synchronizeSpatialZoomInputState\(\);\s*\}/u,
+      /onOverviewModelChanged: \{\s*root\.cancelWorkspaceRenameOnDrift\(\);\s*root\.cancelActiveWindowSpatialDrag\(\);\s*root\.cancelActiveColumnSpatialDrag\(\);\s*if \(spatialExitHandoffActive\) \{\s*root\.invalidateSpatialExitHandoff\("stale"\);\s*return;\s*\}\s*root\.cancelSpatialZoomTransaction\(\);\s*root\.discardSpatialZoomTransaction\(\);\s*root\.refreshOverviewSpatialSession\(true\);\s*root\.restartDesktopSurfaceResidency\(\);\s*root\.synchronizeSpatialZoomInputState\(\);\s*\}/u,
     );
     expect(scene).toMatch(
       /function refreshOverviewSpatialSession\(preserveViewport, animateViewport = false\)[\s\S]*Qt\.callLater\(root\.repairKeyboardSelection\);/u,

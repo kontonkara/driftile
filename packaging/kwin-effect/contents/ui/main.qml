@@ -45,6 +45,7 @@ KWin.SceneEffect {
         : 16
 
     readonly property bool active: controller ? controller.active : false
+    readonly property bool sceneVisible: controller ? controller.sceneVisible : false
     readonly property int activeSessionId: controller && Number.isInteger(controller.activeSessionId)
         && controller.activeSessionId > 0 ? controller.activeSessionId : 0
     readonly property bool loading: controller ? controller.loading : false
@@ -73,9 +74,26 @@ KWin.SceneEffect {
         && typeof controller.presentationPhase === "string"
         ? controller.presentationPhase
         : "closed"
+    readonly property int presentationReadinessEpoch: controller
+        && Number.isInteger(controller.openingReadinessEpoch)
+        && controller.openingReadinessEpoch > 0
+        ? controller.openingReadinessEpoch : 0
 
-    visible: controller ? controller.active : false
+    visible: controller ? controller.sceneVisible : false
     delegate: controller ? controller.overviewDelegate : null
+
+    onActivated: {
+        if (controller && typeof controller.acknowledgeOverviewSceneActivated === "function") {
+            controller.acknowledgeOverviewSceneActivated(controller.openingReadinessEpoch,
+                                                          controller.openingReadinessSessionId);
+        }
+    }
+    onDeactivated: {
+        if (controller && typeof controller.handleSceneDeactivated === "function") {
+            controller.handleSceneDeactivated(controller.pendingSceneRetirementToken,
+                                              controller.pendingSceneRetirementSessionId);
+        }
+    }
 
     KWin.ScreenEdgeHandler {
         edge: effect.configuredScreenEdge
@@ -120,6 +138,20 @@ KWin.SceneEffect {
         if (controller && typeof controller.deactivateImmediately === "function") {
             controller.deactivateImmediately();
         }
+    }
+
+    function registerOverviewSceneReady(epoch, sessionId, model, topologyGeneration,
+                                        outputId, sceneToken) {
+        return controller && typeof controller.registerOverviewSceneReady === "function"
+            ? controller.registerOverviewSceneReady(epoch, sessionId, model, topologyGeneration,
+                                                    outputId, sceneToken) === true : false;
+    }
+
+    function unregisterOverviewSceneReady(epoch, sessionId, model, topologyGeneration,
+                                          outputId, sceneToken, fatal) {
+        return controller && typeof controller.unregisterOverviewSceneReady === "function"
+            ? controller.unregisterOverviewSceneReady(epoch, sessionId, model, topologyGeneration,
+                                                      outputId, sceneToken, fatal === true) === true : false;
     }
 
     function beginOverviewExitHandoff(windowCandidate, input) {

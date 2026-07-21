@@ -6,6 +6,14 @@ const controller = readFileSync(
   new URL("contents/runtime/ui/main.qml", effectRoot),
   "utf8",
 );
+const entrypoint = readFileSync(
+  new URL("contents/ui/main.qml", effectRoot),
+  "utf8",
+);
+const scene = readFileSync(
+  new URL("contents/runtime/ui/OverviewScene.qml", effectRoot),
+  "utf8",
+);
 const reader = readFileSync(
   new URL("contents/runtime/ui/LayoutStateReader.qml", effectRoot),
   "utf8",
@@ -100,6 +108,81 @@ describe("overview activation controller", () => {
     );
     expect(`${controller}\n${reader}`).not.toMatch(
       /org\.kde\.kwin\.private|setInterval|setTimeout/u,
+    );
+  });
+
+  it("waits for one exact ready delegate per output after public activation", () => {
+    const accept = controller.slice(
+      controller.indexOf("function acceptActivationModel("),
+      controller.indexOf("function createActivationCache("),
+    );
+    const prepare = controller.slice(
+      controller.indexOf("function prepareOpeningReadiness("),
+      controller.indexOf("function openingReadinessContextIsExact("),
+    );
+    const register = controller.slice(
+      controller.indexOf("function registerOverviewSceneReady("),
+      controller.indexOf("function unregisterOverviewSceneReady("),
+    );
+    const unregister = controller.slice(
+      controller.indexOf("function unregisterOverviewSceneReady("),
+      controller.indexOf("function completeOpeningReadinessIfExact("),
+    );
+    const complete = controller.slice(
+      controller.indexOf("function completeOpeningReadinessIfExact("),
+      controller.indexOf("function boundedPresentationProgress("),
+    );
+
+    expect(entrypoint).toContain(
+      "visible: controller ? controller.sceneVisible : false",
+    );
+    expect(entrypoint).toMatch(
+      /onActivated:[\s\S]*acknowledgeOverviewSceneActivated\(controller\.openingReadinessEpoch,[\s\S]*controller\.openingReadinessSessionId\)/u,
+    );
+    expect(accept).toContain(
+      "return prepareOpeningReadiness(attemptId, model);",
+    );
+    expect(accept).not.toContain('startPresentationTransition("opening"');
+    expect(prepare).toMatch(
+      /openingReadinessEpoch = epoch;[\s\S]*openingReadinessExpectedOutputIds = outputIds;[\s\S]*openingReadinessModel = model;[\s\S]*openingReadinessTopologyGeneration = overviewTopologyGeneration;[\s\S]*presentationProgress = 0;[\s\S]*presentationPhase = "preparing";[\s\S]*sceneVisible = true;[\s\S]*Qt\.callLater[\s\S]*rejectUnstartedOpeningScene/u,
+    );
+    expect(register).toMatch(
+      /openingReadinessContextIsExact\(epoch, sessionId, model, topologyGeneration\)[\s\S]*openingReadinessExpectedOutputIds\.indexOf\(outputId\)[\s\S]*registration\.outputId === outputId \|\| registration\.sceneToken === sceneToken[\s\S]*requestSceneRetirement\(sessionId\)/u,
+    );
+    expect(complete).toMatch(
+      /openingReadinessSceneActivated[\s\S]*registrations\.length !== outputIds\.length[\s\S]*matches !== 1[\s\S]*clearOpeningReadiness\(\)[\s\S]*startPresentationTransition\("opening", 1, sessionId\)/u,
+    );
+    expect(scene).toContain(
+      "readonly property var spatialPresentationReadinessContext: sceneReadinessContext()",
+    );
+    expect(scene).toContain(
+      "onSpatialPresentationReadinessContextChanged: root.synchronizePresentationReadiness()",
+    );
+    expect(scene).toMatch(
+      /Component\.onDestruction:[\s\S]*unregisterPresentationReadiness\(true\)/u,
+    );
+    expect(scene).toMatch(
+      /function sceneReadinessContext\(\)[\s\S]*effect\.sceneVisible !== true[\s\S]*spatialPresentationPhase !== "preparing"[\s\S]*Number\(geometry\.width\) !== width[\s\S]*spatialLayoutIsValid\(overviewSpatialLayout\)[\s\S]*spatialViewportSnapshot[\s\S]*outputMatches !== 1/u,
+    );
+    expect(controller).toMatch(
+      /function rejectUnstartedOpeningScene[\s\S]*openingReadinessIdentityIsExact[\s\S]*openingReadinessSceneActivated[\s\S]*sceneVisible = false;[\s\S]*finalizeInactiveOverviewState/u,
+    );
+    expect(unregister).toMatch(
+      /openingReadinessRegistrations = nextRegistrations;[\s\S]*fatal === true[\s\S]*requestSceneRetirement\(sessionId\)/u,
+    );
+    expect(unregister).not.toMatch(
+      /openingReadinessRegistrations = nextRegistrations;\s*if \(active/u,
+    );
+    expect(`${controller}\n${scene}`).not.toMatch(/setInterval|setTimeout/u);
+    expect(prepare).not.toMatch(/\bTimer\s*\{/u);
+    expect(controller).toMatch(
+      /function advanceOverviewTopologyGeneration\(\)[\s\S]*presentationPhase === "preparing"[\s\S]*restartPreparingSceneForContextDrift\(\)/u,
+    );
+    expect(controller).toMatch(
+      /function restartPreparingSceneForContextDrift\(\)[\s\S]*openingReadinessSceneActivated[\s\S]*queueSceneRestart\(sessionId, true\)[\s\S]*requestSceneRetirement\(sessionId, true, true\)/u,
+    );
+    expect(controller).toMatch(
+      /function activate\(\)[\s\S]*if \(active\)[\s\S]*presentationPhase === "preparing"[\s\S]*return;[\s\S]*startPresentationTransition\("opening", 1, activeSessionId\)/u,
     );
   });
 });

@@ -355,13 +355,13 @@ describe("overview effect package", () => {
       /presentationPhase !== "open"[\s\S]*invalidatePresentationTransition\(\);[\s\S]*applyTouchpadGestureProgress\(owner, boundedProgress\)/u,
     );
     expect(updateTouchpadGesture).toMatch(
-      /owner !== touchpadGestureOwner[\s\S]*touchpadGestureProgress = boundedProgress;[\s\S]*owner === "open" && loading && !active[\s\S]*applyTouchpadGestureProgress\(owner, boundedProgress\)/u,
+      /owner !== touchpadGestureOwner[\s\S]*touchpadGestureProgress = boundedProgress;[\s\S]*loading && !active[\s\S]*active && presentationPhase === "preparing"[\s\S]*applyTouchpadGestureProgress\(owner, boundedProgress\)/u,
     );
     expect(finishTouchpadGesture).toMatch(
-      /resetTouchpadGestureState\(\);[\s\S]*owner === "open" && loading && !active[\s\S]*!committed[\s\S]*deactivateImmediately\(\);[\s\S]*startPresentationTransition\(phase, target, activeSessionId\)/u,
+      /resetTouchpadGestureState\(\);[\s\S]*owner === "open" && loading && !active[\s\S]*!committed[\s\S]*deactivateImmediately\(\);[\s\S]*presentationPhase === "preparing"[\s\S]*!committed[\s\S]*deactivateImmediately\(\);[\s\S]*startPresentationTransition\(phase, target, activeSessionId\)/u,
     );
     expect(controller).toMatch(
-      /if \(touchpadGestureOwner === "open"\) \{[\s\S]*presentationPhase = "opening";[\s\S]*presentationProgress = touchpadGestureTarget\("open", touchpadGestureProgress\);[\s\S]*\} else \{[\s\S]*startPresentationTransition\("opening", 1, attemptId\);/u,
+      /function completeOpeningReadinessIfExact\(\)[\s\S]*if \(touchpadGestureOwner === "open"\) \{[\s\S]*presentationPhase = "opening";[\s\S]*presentationProgress = touchpadGestureTarget\("open", touchpadGestureProgress\);[\s\S]*startPresentationTransition\("opening", 1, sessionId\);/u,
     );
     expect(controller).toMatch(
       /function activate\(\) \{[\s\S]*interruptedTouchpadGesture[\s\S]*resetTouchpadGestureState\(\);[\s\S]*startPresentationTransition\("opening", 1, activeSessionId\)/u,
@@ -540,7 +540,7 @@ describe("overview effect package", () => {
 
   it("keeps a fixed scene-effect proxy over the cache-busted controller", () => {
     expect(createHash("sha256").update(main, "utf8").digest("hex")).toBe(
-      "4d74b308ff111cfa2accacb7b80ab3db39cb386eda7a3225c172029d70cbd58c",
+      "6089495aaeb2bd41eb4a65845ca581e77a7bffd8abe0ce4c7c2d3f5d61bfbdb7",
     );
     expect(main).toContain("KWin.SceneEffect {");
     expect(main).toContain("Date.now().toString(36)");
@@ -558,7 +558,12 @@ describe("overview effect package", () => {
     );
     expect(main).toContain("readonly property real presentationProgress:");
     expect(main).toContain("readonly property string presentationPhase:");
-    expect(main).toContain("visible: controller ? controller.active : false");
+    expect(main).toContain(
+      "readonly property bool sceneVisible: controller ? controller.sceneVisible : false",
+    );
+    expect(main).toContain(
+      "visible: controller ? controller.sceneVisible : false",
+    );
     expect(main).toContain(
       "delegate: controller ? controller.overviewDelegate : null",
     );
@@ -1492,7 +1497,7 @@ describe("overview effect package", () => {
       "Component.onCompleted: refreshActionSnapshot()",
     );
     expect(presentation).toMatch(
-      /onCandidateChanged: \{\s*refreshActionSnapshot\(\);\s*card\.attentionRevision \+= 1;\s*\}/u,
+      /onCandidateChanged: \{\s*card\.cancelInvalidWindowSpatialDragSource\(windowPresentation\);\s*refreshActionSnapshot\(\);\s*card\.attentionRevision \+= 1;\s*\}/u,
     );
     for (const signal of [
       "Closeable",
@@ -1552,8 +1557,14 @@ describe("overview effect package", () => {
     expect(snapshotClose).toContain(
       "candidate.minimized !== snapshot.minimized",
     );
-    expect(snapshotDrop).toContain("source.dragEligible === true");
+    expect(snapshotDrop).not.toContain("source.dragEligible === true");
     expect(snapshotDrop).toContain("windowCanDrag(source)");
+    expect(snapshotDrop).toContain(
+      "source.spatialDragLifecycleActive === true",
+    );
+    expect(snapshotDrop).toContain(
+      "windowDropSourceDragSnapshotIsExact(source)",
+    );
     expect(desktopCard).toContain(
       "readonly property bool validTarget: containsDrag && card.windowDropHoverOwned",
     );
@@ -1626,7 +1637,7 @@ describe("overview effect package", () => {
     expect(desktopCard.match(/\bDragHandler\s*\{/gu)).toHaveLength(5);
     expect(desktopCard.match(/\bDropArea\s*\{/gu)).toHaveLength(2);
     expect(desktopCard.match(/\.Drag\.active = true;/gu)).toHaveLength(4);
-    expect(desktopCard.match(/\.Drag\.active = false;/gu)).toHaveLength(8);
+    expect(desktopCard.match(/\.Drag\.active = false;/gu)).toHaveLength(9);
     expect(delegate).toMatch(
       /onWindowDropped:\s*\(\s*candidate,\s*expectedWindowId,\s*expectedSourceDesktop,\s*expectedSourceDesktopId,\s*expectedTargetDesktop,\s*expectedTargetDesktopId,\s*expectedScreen,\s*exactTarget\s*\)\s*=>\s*root\.submitWindowSpatialDrop\(\s*candidate,\s*expectedWindowId,\s*expectedSourceDesktop,\s*expectedSourceDesktopId,\s*expectedTargetDesktop,\s*expectedTargetDesktopId,\s*expectedScreen,\s*expectedScreen,\s*exactTarget\s*\)/u,
     );
@@ -3664,7 +3675,7 @@ describe("overview effect package", () => {
       "readonly property bool attentionRequested: card.windowDemandsAttention(candidate)",
     );
     expect(windowPresentation).toMatch(
-      /onCandidateChanged: \{\s*refreshActionSnapshot\(\);\s*card\.attentionRevision \+= 1;\s*\}/u,
+      /onCandidateChanged: \{\s*card\.cancelInvalidWindowSpatialDragSource\(windowPresentation\);\s*refreshActionSnapshot\(\);\s*card\.attentionRevision \+= 1;\s*\}/u,
     );
     expect(windowPresentation).toContain(
       "onAttentionRequestedChanged: card.attentionRevision += 1",
@@ -4176,11 +4187,11 @@ describe("overview effect package", () => {
       /function setSpatialHorizontalViewportOffsetForBounds[\s\S]*spatialHorizontalViewportOffsets\[index\] === normalizedOffset[\s\S]*return true;[\s\S]*spatialHorizontalViewportOffsets\[index\] = normalizedOffset;\s*advanceSpatialHorizontalViewportRevision\(\);/u,
     );
     expect(scene).toMatch(
-      /function onWindowActivated\(\) \{\s*if \(!root\.spatialExitHandoffActive\) \{\s*root\.resolveSpatialLiveCamera\(\);/u,
+      /function onWindowActivated\(\) \{\s*if \(root\.spatialPresentationPhase !== "retiring" && !root\.spatialExitHandoffActive\) \{\s*root\.resolveSpatialLiveCamera\(\);/u,
     );
     expect(scene).not.toContain("onClientAreaChanged");
     expect(scene).toContain(
-      "function onWindowRemoved(window) {\n            root.handleSpatialLiveCameraWindowRemoved(window);",
+      'function onWindowRemoved(window) {\n            if (root.spatialPresentationPhase !== "retiring") {\n                root.handleSpatialLiveCameraWindowRemoved(window);',
     );
     expect(liveCameraConnections).toMatch(
       /target: root\.spatialLiveCameraWindow[\s\S]*enabled: target !== null[\s\S]*function onFrameGeometryChanged\(\) \{\s*root\.applySpatialLiveCamera\(\);/u,
@@ -4759,7 +4770,7 @@ describe("overview effect package", () => {
       "readonly property bool searchQueryValid: searchQueryPlan !== null",
     );
     expect(scene).toMatch(
-      /onSearchQueryChanged: \{\s*root\.cancelWorkspaceRenameOnDrift\(\);\s*root\.cancelActiveColumnSpatialDrag\(\);\s*resetOverviewWheelState\(\);\s*resetWindowWorkspaceHover\(\);\s*cancelKeyboardBoundaryNavigation\(\);\s*Qt\.callLater\(root\.repairKeyboardSelection\);\s*\}/u,
+      /onSearchQueryChanged: \{\s*root\.cancelWorkspaceRenameOnDrift\(\);\s*root\.cancelActiveWindowSpatialDrag\(\);\s*root\.cancelActiveColumnSpatialDrag\(\);\s*resetOverviewWheelState\(\);\s*resetWindowWorkspaceHover\(\);\s*cancelKeyboardBoundaryNavigation\(\);\s*Qt\.callLater\(root\.repairKeyboardSelection\);\s*\}/u,
     );
     expect(keyHandler).toContain("event.key === Qt.Key_Backspace");
     expect(keyHandler).toContain("root.removeLastSearchCharacter()");
@@ -4998,7 +5009,7 @@ describe("overview effect package", () => {
       /KWin\.(?:SceneView|Workspace)\.[A-Za-z0-9_]+\s*=(?!=)|candidate\.[A-Za-z0-9_]+\s*=(?!=)|\bTimer\s*\{|\.setValue\s*\(/u,
     );
     expect(controller).toMatch(
-      /function onWindowRemoved\(window\) \{\s*controller\.handleOverviewExitWindowRemoved\(window\);\s*controller\.queueDesktopSurfaceLifecycleEvent\(window\);\s*controller\.requestLiveModelRefresh\(\);/u,
+      /function onWindowRemoved\(window\) \{\s*if \(controller\.pendingSceneRestartRequest\) \{\s*return;\s*\}\s*if \(controller\.presentationPhase === "preparing"\) \{\s*controller\.restartPreparingSceneForContextDrift\(\);\s*return;\s*\}\s*if \(controller\.presentationPhase === "retiring"\) \{\s*controller\.pendingSceneRetirementContextDrift = true;\s*return;\s*\}\s*controller\.handleOverviewExitWindowRemoved\(window\);\s*controller\.queueDesktopSurfaceLifecycleEvent\(window\);\s*controller\.requestLiveModelRefresh\(\);/u,
     );
   });
 

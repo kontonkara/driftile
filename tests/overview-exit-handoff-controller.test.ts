@@ -165,4 +165,57 @@ describe("overview exit handoff integration", () => {
       /org\.kde\.kwin\.private|candidate\.(?:geometry|frameGeometry)\s*=/u,
     );
   });
+
+  it("retires the public scene before clearing its exact session", () => {
+    const immediate = controller.slice(
+      controller.indexOf("function deactivateImmediately("),
+      controller.indexOf("function finalizeInactiveOverviewState("),
+    );
+    const retirement = controller.slice(
+      controller.indexOf("function requestSceneRetirement("),
+      controller.indexOf("function handleSceneDeactivated("),
+    );
+    const deactivated = controller.slice(
+      controller.indexOf("function handleSceneDeactivated("),
+      controller.indexOf("function prepareOverviewZoomForFreshActivation("),
+    );
+    const restart = controller.slice(
+      controller.indexOf("function queueSceneRestart("),
+      controller.indexOf("function clearSceneRetirement("),
+    );
+
+    expect(controller).toContain("property bool sceneVisible: false");
+    expect(entrypoint).toContain(
+      "visible: controller ? controller.sceneVisible : false",
+    );
+    expect(entrypoint).toMatch(
+      /onDeactivated:[\s\S]*handleSceneDeactivated\(controller\.pendingSceneRetirementToken,[\s\S]*controller\.pendingSceneRetirementSessionId\)/u,
+    );
+    expect(immediate).toMatch(
+      /presentationPhase === "retiring"\) \{\s*return;/u,
+    );
+    expect(retirement).toMatch(
+      /presentationProgress = 0;[\s\S]*presentationPhase = "retiring";[\s\S]*pendingSceneRetirementSessionId = sessionId;[\s\S]*pendingSceneRetirementToken = nextSceneRetirementToken\(\);[\s\S]*sceneVisible = false;/u,
+    );
+    expect(retirement).toMatch(
+      /presentationPhase === "preparing" && !openingReadinessSceneActivated[\s\S]*sceneVisible = false;[\s\S]*finalizeInactiveOverviewState\(\)/u,
+    );
+    expect(retirement).not.toMatch(
+      /active = false|activeSessionId = 0|overviewModel = null|clearOverviewExitHandoff\(\)/u,
+    );
+    expect(deactivated).toMatch(
+      /retirementToken !== pendingSceneRetirementToken[\s\S]*sessionId !== pendingSceneRetirementSessionId[\s\S]*presentationPhase !== "retiring"/u,
+    );
+    expect(deactivated).toMatch(
+      /const reopen = pendingSceneRetirementReopen;[\s\S]*const contextDrift = pendingSceneRetirementContextDrift;[\s\S]*const completedSessionId = pendingSceneRetirementSessionId;[\s\S]*if \(!reopen\)[\s\S]*finalizeInactiveOverviewState\(\)[\s\S]*queueSceneRestart\(completedSessionId, contextDrift\)/u,
+    );
+    expect(deactivated).not.toMatch(/prepareOpeningReadiness|\bactivate\(\)/u);
+    expect(restart).toMatch(
+      /Object\.freeze[\s\S]*restartToken: nextSceneRestartToken\(\)[\s\S]*Qt\.callLater[\s\S]*pendingSceneRestartRequest !== request[\s\S]*presentationPhase !== "closed"[\s\S]*controller\.activate\(\)/u,
+    );
+    expect(scene).not.toContain("id: spatialTerminalFallback");
+    expect(scene).toMatch(
+      /id: spatialBackdrop[\s\S]*opacity: root\.spatialPresentationProgress/u,
+    );
+  });
 });

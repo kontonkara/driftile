@@ -182,8 +182,10 @@ describe("overview exit handoff scene", () => {
       "readonly property real surfaceOpacity: 1 - easedProgress",
     );
     expect(handoff).toMatch(
-      /readonly property real windowOverlayOpacity:\s*1 - boundedUnit/u,
+      /readonly property real windowOverlayOpacity:\s*boundedUnit\(boundedProgress \/ 0\.16\)/u,
     );
+    expect(handoff).toContain("visible: handoffActive && outputPromoted");
+    expect(handoff).not.toMatch(/visible:.*boundedProgress < 1/u);
     expect(handoff).not.toMatch(
       /(?:surfaceOpacity|windowOverlayOpacity):\s*liveThumbnailPending/u,
     );

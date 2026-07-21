@@ -42,13 +42,12 @@ Item {
                                                           easedProgress)
     readonly property real chromeOpacity: 1 - boundedUnit(boundedProgress / 0.45)
     readonly property real surfaceOpacity: 1 - easedProgress
-    readonly property real windowOverlayOpacity:
-        1 - boundedUnit((boundedProgress - 0.84) / 0.16)
+    readonly property real windowOverlayOpacity: boundedUnit(boundedProgress / 0.16)
     readonly property real rowFallbackOpacity: surfaceOpacity
     readonly property real rowFallbackScale: 1 - 0.06 * easedProgress
     property bool completionReported: false
 
-    visible: handoffActive && outputPromoted && boundedProgress < 1
+    visible: handoffActive && outputPromoted
     enabled: false
     clip: false
 

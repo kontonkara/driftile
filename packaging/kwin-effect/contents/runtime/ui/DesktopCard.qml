@@ -22,7 +22,6 @@ Item {
     required property string overviewActivityId
     required property string outputId
     required property string outputName
-    required property real presentationProgress
     required property var screen
     required property string searchQuery
     required property var searchQueryPlan
@@ -166,7 +165,6 @@ Item {
         y: Math.max(6, Math.min(card.height - height - 6, card.viewportOriginY + 8))
         width: 36
         height: 36
-        opacity: card.presentationProgress
         z: 9500
 
         Rectangle {
@@ -288,7 +286,6 @@ Item {
         width: Math.max(0, Math.min(220, card.width - x - 8))
         height: 24
         visible: card.desktopNamePresented && width >= 48
-        opacity: card.presentationProgress
         z: 9500
 
         Rectangle {
@@ -337,7 +334,6 @@ Item {
             enabled: false
             clip: true
             color: "#171e2a"
-            opacity: card.presentationProgress
             radius: 2
             z: -100
 
@@ -1795,7 +1791,6 @@ Item {
             border.color: !plan ? "transparent"
                                : plan.kind === "stack-insertion" ? "#d9ffd166" : "#d986aee8"
             radius: 3
-            opacity: card.presentationProgress
             antialiasing: false
             z: 1
         }
@@ -1814,7 +1809,6 @@ Item {
             enabled: false
             color: plan && plan.kind === "stack-insertion" ? "#fff0b35f" : "#ff9fc5ff"
             radius: 2
-            opacity: card.presentationProgress
             antialiasing: false
             z: 2
         }
@@ -1922,7 +1916,6 @@ Item {
             border.width: frame ? 2 : 0
             border.color: "#d986aee8"
             radius: 3
-            opacity: card.presentationProgress
             antialiasing: false
             z: 1
         }
@@ -1941,7 +1934,6 @@ Item {
                 border.width: 1
                 border.color: "#b8b8d8ff"
                 radius: 2
-                opacity: card.presentationProgress
                 enabled: false
                 z: 2
             }
@@ -1961,7 +1953,6 @@ Item {
             enabled: false
             color: "#ff9fc5ff"
             radius: 2
-            opacity: card.presentationProgress
             antialiasing: false
             z: 3
         }
@@ -2063,7 +2054,6 @@ Item {
         color: "transparent"
         border.width: 2
         border.color: "#86aee8"
-        opacity: card.presentationProgress
         z: 9999
     }
 

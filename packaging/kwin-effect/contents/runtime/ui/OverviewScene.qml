@@ -71,6 +71,10 @@ Rectangle {
         && Number.isInteger(sceneEffect.overviewTopologyGeneration)
         && sceneEffect.overviewTopologyGeneration > 0
         ? sceneEffect.overviewTopologyGeneration : 0
+    readonly property int presentationReadinessEpoch: sceneEffect
+        && Number.isInteger(sceneEffect.presentationReadinessEpoch)
+        && sceneEffect.presentationReadinessEpoch > 0
+        ? sceneEffect.presentationReadinessEpoch : 0
     readonly property bool overviewContextRefreshPending: sceneEffect
         && sceneEffect.overviewContextRefreshPending === true
     readonly property bool overviewContextModelExact: contextModelIsExact()
@@ -279,6 +283,13 @@ Rectangle {
     property int spatialLiveCameraRefreshBudget: 1
     property int spatialLiveCameraRefreshEpoch: 0
     property var spatialViewportSnapshot: null
+    readonly property var spatialPresentationSceneToken: ({})
+    readonly property var spatialPresentationReadinessContext: sceneReadinessContext()
+    property int spatialPresentationRegisteredEpoch: 0
+    property int spatialPresentationRegisteredSessionId: 0
+    property var spatialPresentationRegisteredModel: null
+    property int spatialPresentationRegisteredTopologyGeneration: 0
+    property string spatialPresentationRegisteredOutputId: ""
     property var spatialColumnDragSource: null
     property string spatialColumnDragSourceDesktopId: ""
     property int spatialColumnDragSourceWorkspaceIndex: -1
@@ -379,6 +390,7 @@ Rectangle {
     onSpatialZoomApplyingChanged: root.finishDesktopSurfaceResidencyBridge()
     onSpatialZoomOwnerChanged: root.finishDesktopSurfaceResidencyBridge()
     onSpatialZoomTransactionChanged: root.finishDesktopSurfaceResidencyBridge()
+    onSpatialPresentationReadinessContextChanged: root.synchronizePresentationReadiness()
     onKeyboardSelectionIdChanged: {
         const target = keyboardSelectionViewportTarget;
         keyboardSelectionViewportTarget = null;
@@ -397,7 +409,10 @@ Rectangle {
         if (spatialExitHandoffActive) {
             return;
         }
-        if (spatialPresentationPhase === "closing") {
+        if (spatialPresentationPhase === "closing" || spatialPresentationPhase === "retiring") {
+            if (spatialPresentationPhase === "retiring") {
+                return;
+            }
             if (sceneEffect && typeof sceneEffect.deactivateImmediately === "function") {
                 sceneEffect.deactivateImmediately();
             }
@@ -642,8 +657,10 @@ Rectangle {
         spatialPresentationWorkspaceIndex = currentWorkspaceIndex;
         handleSpatialPresentationPhaseChanged();
         synchronizeSpatialZoomInputState();
+        synchronizePresentationReadiness();
     }
     Component.onDestruction: {
+        root.unregisterPresentationReadiness(true);
         root.cancelActiveWindowSpatialDrag();
         root.cancelActiveColumnSpatialDrag();
         root.destroySpatialZoomScene();
@@ -660,10 +677,12 @@ Rectangle {
                 root.refreshEmptyDesktopBoundarySetting();
             }
             root.synchronizeSpatialZoomInputState();
+            root.synchronizePresentationReadiness();
         }
 
         function onPresentationPhaseChanged() {
             root.handleSpatialPresentationPhaseChanged();
+            root.synchronizePresentationReadiness();
         }
 
         function onItemDroppedOutOfScreen(globalPosition, source, screen) {
@@ -687,6 +706,9 @@ Rectangle {
         ignoreUnknownSignals: true
 
         function onDesktopsChanged() {
+            if (root.spatialPresentationPhase === "retiring") {
+                return;
+            }
             root.cancelActiveWindowSpatialDrag();
             root.cancelActiveColumnSpatialDrag();
             if (root.spatialExitHandoffActive) {
@@ -697,6 +719,9 @@ Rectangle {
         }
 
         function onCurrentActivityChanged() {
+            if (root.spatialPresentationPhase === "retiring") {
+                return;
+            }
             root.beginOverviewContextRefreshBarrier();
             if (root.spatialExitHandoffActive) {
                 root.invalidateSpatialExitHandoff("topology");
@@ -706,6 +731,9 @@ Rectangle {
         }
 
         function onActivitiesChanged() {
+            if (root.spatialPresentationPhase === "retiring") {
+                return;
+            }
             root.beginOverviewContextRefreshBarrier();
             if (root.spatialExitHandoffActive) {
                 root.invalidateSpatialExitHandoff("topology");
@@ -715,6 +743,9 @@ Rectangle {
         }
 
         function onScreensChanged() {
+            if (root.spatialPresentationPhase === "retiring") {
+                return;
+            }
             root.beginOverviewContextRefreshBarrier();
             if (root.spatialExitHandoffActive) {
                 root.invalidateSpatialExitHandoff("topology");
@@ -724,6 +755,9 @@ Rectangle {
         }
 
         function onVirtualScreenGeometryChanged() {
+            if (root.spatialPresentationPhase === "retiring") {
+                return;
+            }
             root.beginOverviewContextRefreshBarrier();
             if (root.spatialExitHandoffActive) {
                 root.invalidateSpatialExitHandoff("topology");
@@ -732,13 +766,15 @@ Rectangle {
         }
 
         function onWindowActivated() {
-            if (!root.spatialExitHandoffActive) {
+            if (root.spatialPresentationPhase !== "retiring" && !root.spatialExitHandoffActive) {
                 root.resolveSpatialLiveCamera();
             }
         }
 
         function onWindowRemoved(window) {
-            root.handleSpatialLiveCameraWindowRemoved(window);
+            if (root.spatialPresentationPhase !== "retiring") {
+                root.handleSpatialLiveCameraWindowRemoved(window);
+            }
         }
     }
 
@@ -1505,7 +1541,6 @@ Rectangle {
                         overviewActivityId: root.activeOverviewActivityId
                         outputId: root.outputId
                         outputName: root.outputName
-                        presentationProgress: root.spatialPresentationProgress
                         previewViewportOffset: root.spatialPresentationViewportOffsetAt(
                                                    desktopCardLoader.index, desktopCardLoader.modelData,
                                                    root.spatialHorizontalViewportRevision)
@@ -1964,7 +1999,8 @@ Rectangle {
         anchors.bottomMargin: Math.max(8, root.outerMargin * 0.3)
         shown: root.spatialZoomHudShown
         zoom: root.overviewZoom
-        opacity: root.spatialExitHandoffActive ? overviewExitHandoffOverlay.chromeOpacity : 1
+        opacity: root.spatialExitHandoffActive
+            ? overviewExitHandoffOverlay.chromeOpacity : root.spatialPresentationProgress
         z: 19000
     }
 
@@ -1976,7 +2012,8 @@ Rectangle {
         anchors.topMargin: Math.max(0, (root.outerMargin - height) / 2)
         visible: root.spatialPresentationSettled && !root.keyboardHelpVisible
                  && root.searchQuery.length === 0
-        opacity: root.spatialExitHandoffActive ? overviewExitHandoffOverlay.chromeOpacity : 1
+        opacity: root.spatialExitHandoffActive
+            ? overviewExitHandoffOverlay.chromeOpacity : root.spatialPresentationProgress
         z: 19000
         onOpenRequested: root.keyboardHelpVisible = true
     }
@@ -1991,7 +2028,8 @@ Rectangle {
                         Math.max(160, searchOverlayText.implicitWidth + 28))
         height: 34
         visible: root.searchQuery.length > 0
-        opacity: root.spatialExitHandoffActive ? overviewExitHandoffOverlay.chromeOpacity : 1
+        opacity: root.spatialExitHandoffActive
+            ? overviewExitHandoffOverlay.chromeOpacity : root.spatialPresentationProgress
         color: "#f21a2230"
         border.width: 1
         border.color: "#86aee8"
@@ -2025,6 +2063,7 @@ Rectangle {
 
         anchors.fill: parent
         active: root.keyboardHelpVisible
+        opacity: root.spatialPresentationProgress
         z: 30000
 
         sourceComponent: Component {
@@ -2237,7 +2276,8 @@ Rectangle {
         width: item ? item.implicitWidth : 0
         height: item ? item.implicitHeight : 0
         active: root.outputLabelLiveScreenCount >= 2
-        opacity: root.spatialExitHandoffActive ? overviewExitHandoffOverlay.chromeOpacity : 1
+        opacity: root.spatialExitHandoffActive
+            ? overviewExitHandoffOverlay.chromeOpacity : root.spatialPresentationProgress
         z: 19000
 
         sourceComponent: Component {
@@ -2257,7 +2297,8 @@ Rectangle {
         width: root.desktopReorderCardWidth
         height: lineHeight
         visible: root.desktopReorderActive && root.desktopReorderInsertionSlot >= 0
-        opacity: root.spatialExitHandoffActive ? overviewExitHandoffOverlay.chromeOpacity : 1
+        opacity: root.spatialExitHandoffActive
+            ? overviewExitHandoffOverlay.chromeOpacity : root.spatialPresentationProgress
         color: "#ffd166"
         radius: lineHeight / 2
         z: 10000
@@ -3386,12 +3427,12 @@ Rectangle {
     }
 
     function handleSpatialPresentationPhaseChanged() {
-        if (spatialPresentationPhase === "closing") {
+        if (spatialPresentationPhase === "closing" || spatialPresentationPhase === "retiring") {
             cancelWorkspaceRename();
             cancelActiveWindowSpatialDrag();
             cancelActiveColumnSpatialDrag();
             cancelSpatialZoomTransaction();
-            if (!spatialExitHandoffActive) {
+            if (spatialPresentationPhase === "closing" && !spatialExitHandoffActive) {
                 spatialPresentationWorkspaceIndex = currentWorkspaceIndex;
             }
             if (!adoptSpatialVisualContentY()) {
@@ -3410,7 +3451,7 @@ Rectangle {
             return;
         }
 
-        if (spatialPresentationPhase === "opening") {
+        if (spatialPresentationPhase === "preparing" || spatialPresentationPhase === "opening") {
             cancelSpatialZoomTransaction();
             spatialPresentationWorkspaceIndex = currentWorkspaceIndex >= 0
                 && currentWorkspaceIndex < desktopIds.length ? currentWorkspaceIndex : 0;
@@ -4220,7 +4261,9 @@ Rectangle {
         const expectedModel = overviewModel;
         const expectedSessionId = effect && Number.isInteger(effect.activeSessionId)
             ? effect.activeSessionId : 0;
-        if (!effect || effect.active !== true || spatialPresentationPhase === "closing"
+        if (!effect || effect.active !== true
+                || (spatialPresentationPhase !== "opening"
+                    && spatialPresentationPhase !== "open")
                 || !expectedModel || expectedSessionId <= 0) {
             desktopTopologyRefreshPending = false;
             synchronizeSpatialZoomInputState();
@@ -4240,7 +4283,8 @@ Rectangle {
     function completeDesktopTopologyRefresh(requestId, expectedSessionId, expectedModel) {
         const effect = sceneEffect;
         if (requestId !== desktopTopologyRefreshRequestId || !effect || effect.active !== true
-                || spatialPresentationPhase === "closing"
+                || (spatialPresentationPhase !== "opening"
+                    && spatialPresentationPhase !== "open")
                 || effect.activeSessionId !== expectedSessionId || overviewModel !== expectedModel
                 || effect.overviewModel !== expectedModel) {
             if (requestId === desktopTopologyRefreshRequestId) {
@@ -10388,6 +10432,153 @@ Rectangle {
         } catch (error) {
             return false;
         }
+    }
+
+    function sceneReadinessContext() {
+        try {
+            const effect = sceneEffect;
+            const model = overviewModel;
+            const screen = targetScreen;
+            const sessionId = activeOverviewSessionId;
+            const epoch = presentationReadinessEpoch;
+            const topologyGeneration = overviewContextGeneration;
+            if (!effect || effect.active !== true || effect.sceneVisible !== true
+                    || spatialPresentationPhase !== "preparing"
+                    || Math.abs(spatialPresentationProgress) > 0.000001
+                    || sessionId <= 0 || epoch <= 0 || topologyGeneration <= 0
+                    || !model || effect.overviewModel !== model
+                    || overviewContextRefreshPending || !overviewContextModelExact
+                    || !screen || liveScreenFor(screen) !== screen
+                    || !Number.isFinite(width) || width <= 0
+                    || !Number.isFinite(height) || height <= 0) {
+                return null;
+            }
+
+            const output = projectedOutput(model, screen);
+            const expectedOutputId = output ? String(output.outputId) : "";
+            const geometry = screen.geometry;
+            if (!output || expectedOutputId.length === 0 || outputId !== expectedOutputId
+                    || !geometry || Number(geometry.width) !== width
+                    || Number(geometry.height) !== height
+                    || !desktopIdListShapeIsValid(desktopIds)
+                    || currentWorkspaceIndex < 0 || currentWorkspaceIndex >= desktopIds.length
+                    || !currentDesktop || liveDesktopFor(currentDesktop,
+                                                         desktopIds[currentWorkspaceIndex]) !== currentDesktop
+                    || !spatialLayoutIsValid(overviewSpatialLayout)
+                    || !spatialViewportSnapshot
+                    || !sameStringList(spatialViewportSnapshot.desktopIds, desktopIds)
+                    || !sameStringList(spatialHorizontalDesktopIds, desktopIds)
+                    || spatialHorizontalGeometryPlans.length !== desktopIds.length
+                    || spatialHorizontalViewportOffsets.length !== desktopIds.length) {
+                return null;
+            }
+
+            let outputMatches = 0;
+            for (const candidateOutput of model.outputs) {
+                if (candidateOutput && String(candidateOutput.outputId) === expectedOutputId) {
+                    outputMatches += 1;
+                }
+            }
+            if (outputMatches !== 1) {
+                return null;
+            }
+
+            for (let index = 0; index < desktopIds.length; index += 1) {
+                const desktopId = desktopIds[index];
+                const context = contextFor(desktopId);
+                if (!context || context.outputId !== expectedOutputId
+                        || context.desktopId !== desktopId
+                        || !spatialHorizontalGeometryPlanAt(index, desktopId,
+                                                            spatialHorizontalViewportRevision)
+                        || !Number.isFinite(spatialHorizontalViewportOffsets[index])) {
+                    return null;
+                }
+            }
+
+            return {
+                epoch,
+                model,
+                outputId: expectedOutputId,
+                sessionId,
+                topologyGeneration
+            };
+        } catch (error) {
+            return null;
+        }
+    }
+
+    function resetPresentationReadinessRegistration() {
+        spatialPresentationRegisteredEpoch = 0;
+        spatialPresentationRegisteredSessionId = 0;
+        spatialPresentationRegisteredModel = null;
+        spatialPresentationRegisteredTopologyGeneration = 0;
+        spatialPresentationRegisteredOutputId = "";
+    }
+
+    function unregisterPresentationReadiness(fatal) {
+        const effect = sceneEffect;
+        const epoch = spatialPresentationRegisteredEpoch;
+        const sessionId = spatialPresentationRegisteredSessionId;
+        const model = spatialPresentationRegisteredModel;
+        const topologyGeneration = spatialPresentationRegisteredTopologyGeneration;
+        const expectedOutputId = spatialPresentationRegisteredOutputId;
+        if (epoch <= 0) {
+            resetPresentationReadinessRegistration();
+            return false;
+        }
+
+        resetPresentationReadinessRegistration();
+        try {
+            return effect && typeof effect.unregisterOverviewSceneReady === "function"
+                && effect.unregisterOverviewSceneReady(epoch, sessionId, model,
+                                                       topologyGeneration, expectedOutputId,
+                                                       spatialPresentationSceneToken,
+                                                       fatal === true) === true;
+        } catch (error) {
+            return false;
+        }
+    }
+
+    function synchronizePresentationReadiness() {
+        const context = spatialPresentationReadinessContext;
+        const registered = spatialPresentationRegisteredEpoch > 0;
+        const registrationMatches = registered && context
+            && spatialPresentationRegisteredEpoch === context.epoch
+            && spatialPresentationRegisteredSessionId === context.sessionId
+            && spatialPresentationRegisteredModel === context.model
+            && spatialPresentationRegisteredTopologyGeneration === context.topologyGeneration
+            && spatialPresentationRegisteredOutputId === context.outputId;
+        if (registered && !registrationMatches) {
+            unregisterPresentationReadiness(false);
+        }
+        if (!context || registrationMatches) {
+            return registrationMatches === true;
+        }
+
+        const effect = sceneEffect;
+        if (!effect || typeof effect.registerOverviewSceneReady !== "function") {
+            return false;
+        }
+
+        spatialPresentationRegisteredEpoch = context.epoch;
+        spatialPresentationRegisteredSessionId = context.sessionId;
+        spatialPresentationRegisteredModel = context.model;
+        spatialPresentationRegisteredTopologyGeneration = context.topologyGeneration;
+        spatialPresentationRegisteredOutputId = context.outputId;
+        let accepted = false;
+        try {
+            accepted = effect.registerOverviewSceneReady(context.epoch, context.sessionId,
+                                                         context.model, context.topologyGeneration,
+                                                         context.outputId,
+                                                         spatialPresentationSceneToken) === true;
+        } catch (error) {
+            accepted = false;
+        }
+        if (!accepted || spatialPresentationPhase !== "preparing"
+                || presentationReadinessEpoch !== context.epoch) {
+            resetPresentationReadinessRegistration();
+        }
+        return accepted;
     }
 
     function outputIdForScreen() {
