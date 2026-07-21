@@ -1363,16 +1363,18 @@ describe("overview effect package", () => {
     expect(focusHandler).toContain(
       "String(selectedDesktop.id) !== expectedDesktopId",
     );
+    expect(focusHandler).toContain(
+      "const activeWindowBaseline = KWin.Workspace.activeWindow;",
+    );
     expect(focusHandler).toMatch(
-      /windowContextIsExact\(candidate, expectedWindowId, liveScreen,\s*liveDesktop, expectedDesktopId,\s*expectedActivityId\)[\s\S]*windowFocusStateIsExact\(candidate, false, true\)/u,
+      /windowFocusStateIsExact\(candidate, false, false\)/u,
     );
     expect(focusHandler).toContain("catch (error)");
-    expect(focusHandler).toContain(
-      "activeWindowBaseline: KWin.Workspace.activeWindow",
-    );
-    expect(focusHandler).toContain('phase: "focus-queued"');
+    expect(focusHandler).toContain("activeWindowBaseline,");
+    expect(focusHandler).toContain('"restore-settle" : "focus-queued"');
+    expect(focusHandler).toContain("restoreSettleAttempt: 0");
     expect(focusHandler).toMatch(
-      /if \(request\.restoredFromMinimized === true\) \{\s*return performPendingWindowFocusWrite\(request\);\s*\}[\s\S]*Qt\.callLater\(function\(\) \{\s*root\.performPendingWindowFocusWrite\(request\);/u,
+      /if \(request\.phase === "restore-settle"\) \{\s*return queuePendingWindowRestoreSettle\(request\);\s*\}[\s\S]*Qt\.callLater\(function\(\) \{\s*root\.performPendingWindowFocusWrite\(request\);/u,
     );
     expect(focusHandler).toMatch(
       /function performPendingWindowFocusWrite\(request\)[\s\S]*activeWindow !== request\.activeWindowBaseline[\s\S]*replacePendingWindowFocusPhase\(request,[\s\S]*"focus-requested"\)[\s\S]*KWin\.Workspace\.activeWindow = requested\.candidate/u,
@@ -1459,12 +1461,15 @@ describe("overview effect package", () => {
     );
     const desktopRequest = focusHandler.indexOf("requestDesktopSelection(");
     const minimizedBranch = focusHandler.indexOf("if (expectedMinimized) {");
+    const activeWindowBaseline = focusHandler.indexOf(
+      "const activeWindowBaseline = KWin.Workspace.activeWindow;",
+    );
     const preRestoreValidation = focusHandler.indexOf(
       "windowFocusStateIsExact(candidate, true, false)",
     );
     const restoreWrite = focusHandler.indexOf("candidate.minimized = false");
     const postRestoreValidation = focusHandler.indexOf(
-      "windowFocusStateIsExact(candidate, false, true)",
+      "windowFocusStateIsExact(candidate, false, false)",
       restoreWrite,
     );
     const requestCreation = focusHandler.indexOf(
@@ -1492,6 +1497,8 @@ describe("overview effect package", () => {
     expect(handoffCapture).toBeGreaterThan(preSelectionValidation);
     expect(desktopRequest).toBeGreaterThan(handoffCapture);
     expect(minimizedBranch).toBeGreaterThan(desktopRequest);
+    expect(activeWindowBaseline).toBeGreaterThan(desktopRequest);
+    expect(activeWindowBaseline).toBeLessThan(minimizedBranch);
     expect(preRestoreValidation).toBeGreaterThan(minimizedBranch);
     expect(restoreWrite).toBeGreaterThan(preRestoreValidation);
     expect(postRestoreValidation).toBeGreaterThan(restoreWrite);
@@ -1505,8 +1512,8 @@ describe("overview effect package", () => {
     expect(focusHandler.match(/candidate\.minimized = false/gu)).toHaveLength(
       1,
     );
-    expect(focusHandler).toContain(
-      "windowFocusStateIsExact(request.candidate, false, true)",
+    expect(focusHandler).toMatch(
+      /const restoreSettling = request && request\.phase === "restore-settle";[\s\S]*windowFocusStateIsExact\(request\.candidate, false,\s*!restoreSettling\)/u,
     );
 
     expect(sceneWithoutWorkspaceManagement).not.toContain(
