@@ -1802,24 +1802,41 @@ set_physical_right_button_state() {
 send_physical_pointer_drag() {
   local coordinate_file=$1
   local plain=${2:-false}
+  local capabilities='{"execute":"qmp_capabilities"}'
   local destination_x
   local destination_y
+  local down_input
   local end_absolute_x
   local end_absolute_y
+  local end_input
   local extra
-  local intermediate_x
-  local intermediate_y
-  local middle_absolute_x
-  local middle_absolute_y
+  local first_absolute_x
+  local first_absolute_y
+  local first_input
+  local first_x
+  local first_y
+  local initial_release_input
+  local input
   local output_height
   local output_width
   local output_x
   local output_y
+  local qmp_pid
+  local qmp_read_descriptor
+  local qmp_write_descriptor
+  local release_required=false
   local result=0
+  local second_absolute_x
+  local second_absolute_y
+  local second_input
+  local second_x
+  local second_y
   local start_absolute_x
   local start_absolute_y
+  local start_input
   local start_x
   local start_y
+  local up_input
 
   IFS=' ' read -r \
     start_x \
@@ -1841,41 +1858,99 @@ send_physical_pointer_drag() {
     "$destination_x" "$output_x" "$output_width") || return 1
   end_absolute_y=$(absolute_pointer_coordinate \
     "$destination_y" "$output_y" "$output_height") || return 1
-  intermediate_x=$(((start_x + destination_x) / 2))
-  intermediate_y=$(((start_y + destination_y) / 2))
-  middle_absolute_x=$(absolute_pointer_coordinate \
-    "$intermediate_x" "$output_x" "$output_width") || return 1
-  middle_absolute_y=$(absolute_pointer_coordinate \
-    "$intermediate_y" "$output_y" "$output_height") || return 1
+  first_x=$(((2 * start_x + destination_x) / 3))
+  first_y=$(((2 * start_y + destination_y) / 3))
+  second_x=$(((start_x + 2 * destination_x) / 3))
+  second_y=$(((start_y + 2 * destination_y) / 3))
+  first_absolute_x=$(absolute_pointer_coordinate \
+    "$first_x" "$output_x" "$output_width") || return 1
+  first_absolute_y=$(absolute_pointer_coordinate \
+    "$first_y" "$output_y" "$output_height") || return 1
+  second_absolute_x=$(absolute_pointer_coordinate \
+    "$second_x" "$output_x" "$output_width") || return 1
+  second_absolute_y=$(absolute_pointer_coordinate \
+    "$second_y" "$output_y" "$output_height") || return 1
 
   absolute_pointer_available || return 1
-  set_pointer_drag_button_state false "$plain" || return 1
+  [[ -S "$qmp_socket" && -x "$overview_zoom_socat_executable" ]] || return 1
 
-  if ! send_absolute_pointer_position "$start_absolute_x" "$start_absolute_y"; then
-    result=1
+  start_input="{\"execute\":\"input-send-event\",\"arguments\":{\"events\":[{\"type\":\"abs\",\"data\":{\"axis\":\"x\",\"value\":$start_absolute_x}},{\"type\":\"abs\",\"data\":{\"axis\":\"y\",\"value\":$start_absolute_y}}]}}"
+  first_input="{\"execute\":\"input-send-event\",\"arguments\":{\"events\":[{\"type\":\"abs\",\"data\":{\"axis\":\"x\",\"value\":$first_absolute_x}},{\"type\":\"abs\",\"data\":{\"axis\":\"y\",\"value\":$first_absolute_y}}]}}"
+  second_input="{\"execute\":\"input-send-event\",\"arguments\":{\"events\":[{\"type\":\"abs\",\"data\":{\"axis\":\"x\",\"value\":$second_absolute_x}},{\"type\":\"abs\",\"data\":{\"axis\":\"y\",\"value\":$second_absolute_y}}]}}"
+  end_input="{\"execute\":\"input-send-event\",\"arguments\":{\"events\":[{\"type\":\"abs\",\"data\":{\"axis\":\"x\",\"value\":$end_absolute_x}},{\"type\":\"abs\",\"data\":{\"axis\":\"y\",\"value\":$end_absolute_y}}]}}"
+  if [[ "$plain" == true ]]; then
+    initial_release_input='{"execute":"input-send-event","arguments":{"events":[{"type":"btn","data":{"down":false,"button":"left"}}]}}'
+    down_input='{"execute":"input-send-event","arguments":{"events":[{"type":"btn","data":{"down":true,"button":"left"}}]}}'
+    up_input=$initial_release_input
+  else
+    initial_release_input='{"execute":"input-send-event","arguments":{"events":[{"type":"btn","data":{"down":false,"button":"left"}},{"type":"btn","data":{"down":false,"button":"right"}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"meta_l"}}}]}}'
+    down_input='{"execute":"input-send-event","arguments":{"events":[{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"meta_l"}}},{"type":"btn","data":{"down":true,"button":"left"}}]}}'
+    up_input=$initial_release_input
   fi
-  sleep 0.1
 
-  if ((result == 0)) && ! set_pointer_drag_button_state true "$plain"; then
-    result=1
+  if ! coproc POINTER_DRAG_QMP {
+    "$overview_zoom_socat_executable" \
+      -t 2 \
+      - \
+      "UNIX-CONNECT:$qmp_socket"
+  }; then
+    return 1
   fi
-  sleep 0.1
+  qmp_pid=$POINTER_DRAG_QMP_PID
+  qmp_read_descriptor=${POINTER_DRAG_QMP[0]}
+  qmp_write_descriptor=${POINTER_DRAG_QMP[1]}
 
-  if ((result == 0)) \
-    && ! send_absolute_pointer_position \
-      "$middle_absolute_x" "$middle_absolute_y"; then
-    result=1
+  IFS= read -r -t 2 -u "$qmp_read_descriptor" _ || result=1
+  for input in \
+    "$capabilities" \
+    "$initial_release_input" \
+    "$start_input"; do
+    if ((result == 0)); then
+      printf '%s\n' "$input" >&"$qmp_write_descriptor" || result=1
+    fi
+    if ((result == 0)); then
+      read_qmp_command_return "$qmp_read_descriptor" || result=1
+    fi
+  done
+
+  sleep 0.1
+  if ((result == 0)); then
+    printf '%s\n' "$down_input" >&"$qmp_write_descriptor" || result=1
   fi
-  sleep 0.1
-
-  if ((result == 0)) \
-    && ! send_absolute_pointer_position "$end_absolute_x" "$end_absolute_y"; then
-    result=1
+  if ((result == 0)); then
+    read_qmp_command_return "$qmp_read_descriptor" || result=1
+    release_required=true
   fi
-  sleep 0.1
 
-  set_pointer_drag_button_state false "$plain" || result=1
-  return "$result"
+  for input in "$first_input" "$second_input" "$end_input"; do
+    sleep 0.1
+    if ((result == 0)); then
+      printf '%s\n' "$input" >&"$qmp_write_descriptor" || result=1
+    fi
+    if ((result == 0)); then
+      read_qmp_command_return "$qmp_read_descriptor" || result=1
+    fi
+  done
+
+  sleep 0.1
+  if ((result == 0)); then
+    printf '%s\n' "$up_input" >&"$qmp_write_descriptor" || result=1
+  fi
+  if ((result == 0)); then
+    read_qmp_command_return "$qmp_read_descriptor" || result=1
+    release_required=false
+  elif [[ "$release_required" == true ]]; then
+    printf '%s\n' "$up_input" >&"$qmp_write_descriptor" || true
+    read_qmp_command_return "$qmp_read_descriptor" >/dev/null 2>&1 || true
+  fi
+
+  exec {qmp_write_descriptor}>&- || true
+  exec {qmp_read_descriptor}<&- || true
+  wait "$qmp_pid" || result=1
+  if ((result != 0)) && [[ "$release_required" == true ]]; then
+    set_pointer_drag_button_state false "$plain" >/dev/null 2>&1 || true
+  fi
+  ((result == 0))
 }
 
 send_plain_pointer_drag() {
