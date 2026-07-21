@@ -171,7 +171,7 @@ function settleTransition(
   if (event.topologyGeneration !== capture.generation) {
     return fallbackTransition(state, "topology");
   }
-  if (capture.targetMinimized || event.targetMinimized) {
+  if (event.targetMinimized) {
     return fallbackTransition(state, "minimized");
   }
   if (capture.targetKind === "desktop-fallback") {
@@ -180,14 +180,18 @@ function settleTransition(
   if (
     event.targetOutputId !== capture.targetOutputId ||
     event.targetDesktopId !== capture.targetDesktopId ||
-    event.targetWindowId !== capture.targetWindowId ||
-    !rectsAreEqual(event.targetFrame, capture.targetFrame)
+    event.targetWindowId !== capture.targetWindowId
   ) {
     return fallbackTransition(state, "stale");
   }
 
-  const promotedState = freezeState(capture, "promoted");
-  return freezeTransition("promote", promotedState, null, capture);
+  const promotion = Object.freeze({
+    ...capture,
+    targetFrame: event.targetFrame,
+    targetMinimized: false,
+  });
+  const promotedState = freezeState(promotion, "promoted");
+  return freezeTransition("promote", promotedState, null, promotion);
 }
 
 function cancelTransition(
@@ -424,18 +428,6 @@ function eventOwnsCapture(
     event.sessionId === capture.sessionId &&
     event.generation === capture.generation &&
     event.token === capture.token
-  );
-}
-
-function rectsAreEqual(
-  left: OverviewExitHandoffRect,
-  right: OverviewExitHandoffRect,
-): boolean {
-  return (
-    left.x === right.x &&
-    left.y === right.y &&
-    left.width === right.width &&
-    left.height === right.height
   );
 }
 

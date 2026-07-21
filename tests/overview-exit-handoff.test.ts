@@ -147,7 +147,6 @@ describe("planOverviewExitHandoffTransition", () => {
     ["output", { targetOutputId: "HDMI-A-1" }],
     ["desktop", { targetDesktopId: "desktop-2" }],
     ["window", { targetWindowId: "window-8" }],
-    ["frame", { targetFrame: rect({ x: 21 }) }],
     ["session", { sessionId: 8 }],
     ["generation", { generation: 12 }],
     ["token", { token: 42 }],
@@ -182,13 +181,10 @@ describe("planOverviewExitHandoffTransition", () => {
     });
   });
 
-  it.each([
-    ["captured minimized target", { targetMinimized: true }, {}],
-    ["newly minimized target", {}, { targetMinimized: true }],
-  ])("uses a geometry-free fallback for a %s", (_label, capture, event) => {
-    const state = requiredCapture(capture);
+  it("uses a geometry-free fallback when the target is still minimized", () => {
+    const state = requiredCapture({ targetMinimized: true });
     const plan = planOverviewExitHandoffTransition({
-      event: settleEvent(state, event),
+      event: settleEvent(state),
       state,
     });
 
@@ -197,6 +193,52 @@ describe("planOverviewExitHandoffTransition", () => {
       promotion: null,
       reason: "minimized",
       state: { phase: "fallback" },
+    });
+  });
+
+  it("promotes restored windows from their exact post-focus frame", () => {
+    const state = requiredCapture({ targetMinimized: true });
+    const targetFrame = rect({ height: 640, width: 880, x: 55, y: 70 });
+    const plan = planOverviewExitHandoffTransition({
+      event: settleEvent(state, { targetFrame, targetMinimized: false }),
+      state,
+    });
+
+    expect(plan).toMatchObject({
+      disposition: "promote",
+      promotion: { targetFrame, targetMinimized: false },
+      state: {
+        capture: { targetFrame, targetMinimized: false },
+        phase: "promoted",
+      },
+    });
+    expect(plan?.promotion).not.toBe(state.capture);
+    expect(state.capture.targetMinimized).toBe(true);
+    expect(state.capture.targetFrame).toEqual({
+      height: 780,
+      width: 620,
+      x: 20,
+      y: 40,
+    });
+    expect(Object.isFrozen(plan?.promotion)).toBe(true);
+    expect(Object.isFrozen(plan?.promotion?.targetFrame)).toBe(true);
+  });
+
+  it("promotes a changed post-focus frame without mutating the capture", () => {
+    const state = requiredCapture();
+    const targetFrame = rect({ height: 720, width: 940, x: 80, y: 35 });
+    const plan = planOverviewExitHandoffTransition({
+      event: settleEvent(state, { targetFrame }),
+      state,
+    });
+
+    expect(plan?.disposition).toBe("promote");
+    expect(plan?.promotion?.targetFrame).toEqual(targetFrame);
+    expect(state.capture.targetFrame).toEqual({
+      height: 780,
+      width: 620,
+      x: 20,
+      y: 40,
     });
   });
 

@@ -23,7 +23,19 @@ describe("overview exit handoff integration", () => {
     );
     const windowSelection = scene.slice(
       scene.indexOf("function focusWindow("),
-      scene.indexOf("function requestDesktopSelection("),
+      scene.indexOf("function createPendingWindowFocusRequest("),
+    );
+    const requestCreation = scene.slice(
+      scene.indexOf("function createPendingWindowFocusRequest("),
+      scene.indexOf("function capturedWindowExitHandoffIsExact("),
+    );
+    const focusWrite = scene.slice(
+      scene.indexOf("function queuePendingWindowFocusWrite("),
+      scene.indexOf("function queuePendingWindowFocusWriteConfirmation("),
+    );
+    const focusSettle = scene.slice(
+      scene.indexOf("function queuePendingWindowFocusSettle("),
+      scene.indexOf("function validatePendingWindowFocusCandidate("),
     );
     const preparation = scene.slice(
       scene.indexOf("function prepareOverviewWindowExitHandoff("),
@@ -49,13 +61,25 @@ describe("overview exit handoff integration", () => {
     expect(
       windowSelection.indexOf("prepareOverviewWindowExitHandoff("),
     ).toBeLessThan(windowSelection.indexOf("candidate.minimized = false"));
-    expect(
-      windowSelection.indexOf("prepareOverviewWindowExitHandoff("),
-    ).toBeLessThan(
-      windowSelection.indexOf("KWin.Workspace.activeWindow = candidate"),
+    expect(windowSelection).toMatch(
+      /pendingWindowFocusRequest = request;\s*return queuePendingWindowFocusWrite\(request\);/u,
     );
-    expect(windowSelection.indexOf("settleSpatialExitHandoff(")).toBeLessThan(
-      windowSelection.indexOf("effect.deactivate()"),
+    expect(requestCreation).toContain("return Object.freeze({");
+    expect(requestCreation).toContain(
+      "activeWindowBaseline: KWin.Workspace.activeWindow",
+    );
+    expect(focusWrite).toContain("Qt.callLater(function() {");
+    expect(focusWrite).toContain(
+      'replacePendingWindowFocusPhase(request,\n                                                                   "focus-requested")',
+    );
+    expect(
+      focusWrite.match(/KWin\.Workspace\.activeWindow\s*=(?!=)/gu),
+    ).toHaveLength(1);
+    expect(focusSettle).toMatch(
+      /pendingWindowFocusRequestIsExact\(request, true\)[\s\S]*Qt\.callLater[\s\S]*completePendingWindowFocus[\s\S]*settleSpatialExitHandoff\(request\.candidate, request\.exitToken\)[\s\S]*clearPendingWindowFocus\(\);[\s\S]*effect\.deactivate\(\);/u,
+    );
+    expect(`${requestCreation}\n${focusWrite}\n${focusSettle}`).not.toMatch(
+      /\bTimer\s*\{|setTimeout|setInterval/u,
     );
   });
 
@@ -87,14 +111,14 @@ describe("overview exit handoff integration", () => {
     );
   });
 
-  it("cancels every post-capture failure and deactivates after cancellation failure", () => {
+  it("cancels every post-capture failure and yields external focus without replay", () => {
     const desktopSelection = scene.slice(
       scene.indexOf("function selectDesktop("),
       scene.indexOf("function focusWindow("),
     );
     const windowSelection = scene.slice(
       scene.indexOf("function focusWindow("),
-      scene.indexOf("function requestDesktopSelection("),
+      scene.indexOf("function createPendingWindowFocusRequest("),
     );
     const cancellation = scene.slice(
       scene.indexOf("function cancelSpatialExitHandoff("),
@@ -103,8 +127,13 @@ describe("overview exit handoff integration", () => {
     const desktopException = desktopSelection.slice(
       desktopSelection.lastIndexOf("} catch (error)"),
     );
-    const windowException = windowSelection.slice(
-      windowSelection.lastIndexOf("} catch (error)"),
+    const abort = scene.slice(
+      scene.indexOf("function abortPendingWindowFocus("),
+      scene.indexOf("function yieldPendingWindowFocusToExternalActivation("),
+    );
+    const externalYield = scene.slice(
+      scene.indexOf("function yieldPendingWindowFocusToExternalActivation("),
+      scene.indexOf("function requestDesktopSelection("),
     );
 
     expect(desktopException).toMatch(
@@ -113,7 +142,7 @@ describe("overview exit handoff integration", () => {
     expect(windowSelection).toMatch(
       /const exitToken = prepareOverviewWindowExitHandoff[\s\S]*if \(exitToken <= 0\) \{[\s\S]*return false;[\s\S]*\}\s*try \{/u,
     );
-    expect(windowException).toMatch(
+    expect(windowSelection).toMatch(
       /catch \(error\) \{\s*cancelSpatialExitHandoff\(\);\s*return false;/u,
     );
     expect(cancellation).toContain("let canceled = false;");
@@ -124,6 +153,58 @@ describe("overview exit handoff integration", () => {
       /catch \(error\) \{\s*canceled = false;\s*\}[\s\S]*if \(!canceled && spatialExitHandoffActive[\s\S]*effect\.deactivateImmediately\(\);/u,
     );
     expect(cancellation).toContain("return canceled;");
+    expect(abort).toMatch(
+      /clearPendingWindowFocus\(\);\s*invalidateSpatialExitHandoff\(reason\);[\s\S]*effect\.deactivate\(\);/u,
+    );
+    expect(externalYield).toMatch(
+      /clearPendingWindowFocus\(\);\s*cancelSpatialExitHandoff\(\);[\s\S]*effect\.deactivate\(\);/u,
+    );
+    expect(`${abort}\n${externalYield}`).not.toMatch(
+      /KWin\.Workspace\.activeWindow\s*=(?!=)/u,
+    );
+  });
+
+  it("requires exact active-window confirmation and invalidates every stale callback", () => {
+    const exactRequest = scene.slice(
+      scene.indexOf("function pendingWindowFocusRequestIsExact("),
+      scene.indexOf("function replacePendingWindowFocusPhase("),
+    );
+    const capturedHandoff = scene.slice(
+      scene.indexOf("function capturedWindowExitHandoffIsExact("),
+      scene.indexOf("function pendingWindowFocusRequestIsExact("),
+    );
+    const focusWrite = scene.slice(
+      scene.indexOf("function queuePendingWindowFocusWrite("),
+      scene.indexOf("function handlePendingWindowFocusActivation("),
+    );
+    const activation = scene.slice(
+      scene.indexOf("function handlePendingWindowFocusActivation("),
+      scene.indexOf("function queuePendingWindowFocusSettle("),
+    );
+    const settle = scene.slice(
+      scene.indexOf("function queuePendingWindowFocusSettle("),
+      scene.indexOf("function validatePendingWindowFocusCandidate("),
+    );
+
+    expect(capturedHandoff).toContain('state.phase === "captured"');
+    expect(exactRequest).toMatch(
+      /pendingWindowFocusRequest !== request[\s\S]*capturedWindowExitHandoffIsExact[\s\S]*KWin\.Workspace\.activeWindow === request\.candidate/u,
+    );
+    expect(focusWrite).toMatch(
+      /root\.pendingWindowFocusRequest !== request[\s\S]*activeWindow !== request\.activeWindowBaseline[\s\S]*yieldPendingWindowFocusToExternalActivation/u,
+    );
+    expect(activation).toMatch(
+      /window === request\.candidate[\s\S]*KWin\.Workspace\.activeWindow === request\.candidate[\s\S]*queuePendingWindowFocusSettle\(request\)[\s\S]*yieldPendingWindowFocusToExternalActivation\(\)/u,
+    );
+    expect(settle).toMatch(
+      /pendingWindowFocusRequest !== request[\s\S]*pendingWindowFocusRequestIsExact\(request, true\)[\s\S]*overviewExitWindowFrame\(request\.candidate\)/u,
+    );
+    expect(scene).toMatch(
+      /function onWindowActivated\(\) \{\s*if \(root\.pendingWindowFocusRequest\) \{\s*root\.handlePendingWindowFocusActivation\(KWin\.Workspace\.activeWindow\);\s*return;/u,
+    );
+    expect(scene).toMatch(
+      /function onPresentationPhaseChanged\(\) \{\s*if \(root\.spatialPresentationPhase !== "open"\s*&& root\.pendingWindowFocusRequest\) \{\s*root\.clearPendingWindowFocus\(\);\s*root\.cancelSpatialExitHandoff\(\);/u,
+    );
   });
 
   it("freezes the closing scene, locks input, and restores an interrupted camera", () => {

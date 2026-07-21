@@ -85,6 +85,9 @@ Rectangle {
     property int spatialExitFrozenWorkspaceIndex: -1
     property int spatialExitHandoffToken: 0
     property bool spatialExitRestoringCamera: false
+    property var pendingWindowFocusRequest: null
+    readonly property var pendingWindowFocusCandidate: pendingWindowFocusRequest
+        ? pendingWindowFocusRequest.candidate : null
     readonly property int spatialLayoutWorkspaceIndex: spatialExitHandoffActive
         && spatialExitFrozenWorkspaceIndex >= 0
         && spatialExitFrozenWorkspaceIndex < desktopIds.length
@@ -364,6 +367,9 @@ Rectangle {
         }
     }
     onOverviewContextRefreshPendingChanged: {
+        if (overviewContextRefreshPending && root.abortPendingWindowFocus("topology")) {
+            return;
+        }
         if (overviewContextRefreshPending) {
             root.beginOverviewContextRefreshBarrier();
         } else if (overviewContextModelExact) {
@@ -371,10 +377,16 @@ Rectangle {
         }
     }
     onActiveOverviewSessionIdChanged: {
+        if (root.abortPendingWindowFocus("topology")) {
+            return;
+        }
         root.cancelWorkspaceRenameOnDrift();
         root.restartDesktopSurfaceResidency();
     }
     onActiveOverviewActivityIdChanged: {
+        if (root.abortPendingWindowFocus("topology")) {
+            return;
+        }
         root.cancelWorkspaceRenameOnDrift();
         if (overviewContextRefreshPending || !overviewContextModelExact) {
             root.beginOverviewContextRefreshBarrier();
@@ -406,6 +418,12 @@ Rectangle {
     onCurrentDesktopChanged: root.handleCurrentDesktopChanged()
     function handleCurrentDesktopChanged() {
         root.cancelSpatialZoomTransaction();
+        if (pendingWindowFocusRequest) {
+            if (!pendingWindowFocusRequestIsExact(pendingWindowFocusRequest)) {
+                abortPendingWindowFocus("topology");
+            }
+            return;
+        }
         if (spatialExitHandoffActive) {
             return;
         }
@@ -437,6 +455,9 @@ Rectangle {
         root.refreshOverviewSpatialSession(false, spatialPresentationInteractive);
     }
     onOverviewModelChanged: {
+        if (root.abortPendingWindowFocus("stale")) {
+            return;
+        }
         root.cancelWorkspaceRenameOnDrift();
         root.cancelActiveWindowSpatialDrag();
         root.cancelActiveColumnSpatialDrag();
@@ -469,6 +490,9 @@ Rectangle {
     }
     onOverviewZoomGestureDirectionChanged: root.handleExternalSpatialZoomDirectionChanged()
     onOutputIdChanged: {
+        if (root.abortPendingWindowFocus("topology")) {
+            return;
+        }
         root.cancelWorkspaceRenameOnDrift();
         root.cancelActiveWindowSpatialDrag();
         root.cancelActiveColumnSpatialDrag();
@@ -478,6 +502,9 @@ Rectangle {
         root.synchronizeSpatialZoomInputState();
     }
     onDesktopIdsChanged: {
+        if (root.abortPendingWindowFocus("topology")) {
+            return;
+        }
         root.cancelWorkspaceRenameOnDrift();
         root.cancelActiveWindowSpatialDrag();
         root.cancelActiveColumnSpatialDrag();
@@ -487,20 +514,32 @@ Rectangle {
         root.synchronizeSpatialZoomInputState();
     }
     onWidthChanged: {
+        if (root.abortPendingWindowFocus("topology")) {
+            return;
+        }
         root.cancelActiveWindowSpatialDrag();
         root.cancelActiveColumnSpatialDrag();
         root.cancelSpatialZoomTransaction();
     }
     onHeightChanged: {
+        if (root.abortPendingWindowFocus("topology")) {
+            return;
+        }
         root.cancelActiveWindowSpatialDrag();
         root.cancelActiveColumnSpatialDrag();
         root.cancelSpatialZoomTransaction();
     }
     onOverviewContextGenerationChanged: {
+        if (root.abortPendingWindowFocus("topology")) {
+            return;
+        }
         root.cancelWorkspaceRenameOnDrift();
         root.cancelActiveWindowSpatialDrag();
     }
     onDesktopTopologyRevisionChanged: {
+        if (root.abortPendingWindowFocus("topology")) {
+            return;
+        }
         root.cancelWorkspaceRenameOnDrift();
         root.cancelActiveWindowSpatialDrag();
     }
@@ -660,6 +699,7 @@ Rectangle {
         synchronizePresentationReadiness();
     }
     Component.onDestruction: {
+        root.clearPendingWindowFocus();
         root.unregisterPresentationReadiness(true);
         root.cancelActiveWindowSpatialDrag();
         root.cancelActiveColumnSpatialDrag();
@@ -671,6 +711,9 @@ Rectangle {
         ignoreUnknownSignals: true
 
         function onActiveChanged() {
+            if (!root.sceneEffect || root.sceneEffect.active !== true) {
+                root.clearPendingWindowFocus();
+            }
             root.cancelSpatialZoomTransaction();
             root.resetOverviewSession();
             if (root.sceneEffect && root.sceneEffect.active === true) {
@@ -681,6 +724,11 @@ Rectangle {
         }
 
         function onPresentationPhaseChanged() {
+            if (root.spatialPresentationPhase !== "open"
+                    && root.pendingWindowFocusRequest) {
+                root.clearPendingWindowFocus();
+                root.cancelSpatialExitHandoff();
+            }
             root.handleSpatialPresentationPhaseChanged();
             root.synchronizePresentationReadiness();
         }
@@ -709,6 +757,9 @@ Rectangle {
             if (root.spatialPresentationPhase === "retiring") {
                 return;
             }
+            if (root.abortPendingWindowFocus("topology")) {
+                return;
+            }
             root.cancelActiveWindowSpatialDrag();
             root.cancelActiveColumnSpatialDrag();
             if (root.spatialExitHandoffActive) {
@@ -720,6 +771,9 @@ Rectangle {
 
         function onCurrentActivityChanged() {
             if (root.spatialPresentationPhase === "retiring") {
+                return;
+            }
+            if (root.abortPendingWindowFocus("topology")) {
                 return;
             }
             root.beginOverviewContextRefreshBarrier();
@@ -734,6 +788,9 @@ Rectangle {
             if (root.spatialPresentationPhase === "retiring") {
                 return;
             }
+            if (root.abortPendingWindowFocus("topology")) {
+                return;
+            }
             root.beginOverviewContextRefreshBarrier();
             if (root.spatialExitHandoffActive) {
                 root.invalidateSpatialExitHandoff("topology");
@@ -744,6 +801,9 @@ Rectangle {
 
         function onScreensChanged() {
             if (root.spatialPresentationPhase === "retiring") {
+                return;
+            }
+            if (root.abortPendingWindowFocus("topology")) {
                 return;
             }
             root.beginOverviewContextRefreshBarrier();
@@ -758,6 +818,9 @@ Rectangle {
             if (root.spatialPresentationPhase === "retiring") {
                 return;
             }
+            if (root.abortPendingWindowFocus("topology")) {
+                return;
+            }
             root.beginOverviewContextRefreshBarrier();
             if (root.spatialExitHandoffActive) {
                 root.invalidateSpatialExitHandoff("topology");
@@ -766,15 +829,65 @@ Rectangle {
         }
 
         function onWindowActivated() {
+            if (root.pendingWindowFocusRequest) {
+                root.handlePendingWindowFocusActivation(KWin.Workspace.activeWindow);
+                return;
+            }
             if (root.spatialPresentationPhase !== "retiring" && !root.spatialExitHandoffActive) {
                 root.resolveSpatialLiveCamera();
             }
         }
 
         function onWindowRemoved(window) {
+            if (root.pendingWindowFocusCandidate === window) {
+                root.abortPendingWindowFocus("stale");
+                return;
+            }
             if (root.spatialPresentationPhase !== "retiring") {
                 root.handleSpatialLiveCameraWindowRemoved(window);
             }
+        }
+    }
+
+    Connections {
+        target: root.pendingWindowFocusCandidate
+        enabled: target !== null
+        ignoreUnknownSignals: true
+
+        function onDestroyed() {
+            root.abortPendingWindowFocus("stale");
+        }
+
+        function onDeletedChanged() {
+            root.validatePendingWindowFocusCandidate();
+        }
+
+        function onManagedChanged() {
+            root.validatePendingWindowFocusCandidate();
+        }
+
+        function onWantsInputChanged() {
+            root.validatePendingWindowFocusCandidate();
+        }
+
+        function onMinimizedChanged() {
+            root.validatePendingWindowFocusCandidate();
+        }
+
+        function onHiddenChanged() {
+            root.validatePendingWindowFocusCandidate();
+        }
+
+        function onOutputChanged() {
+            root.validatePendingWindowFocusCandidate();
+        }
+
+        function onDesktopsChanged() {
+            root.validatePendingWindowFocusCandidate();
+        }
+
+        function onActivitiesChanged() {
+            root.validatePendingWindowFocusCandidate();
         }
     }
 
@@ -8726,6 +8839,9 @@ Rectangle {
     }
 
     function focusWindow(candidate, expectedWindowId, expectedDesktop, expectedDesktopId, expectedScreen) {
+        if (pendingWindowFocusRequest) {
+            return false;
+        }
         const effect = sceneEffect;
         const model = overviewModel;
         const liveScreen = liveScreenFor(expectedScreen);
@@ -8755,14 +8871,12 @@ Rectangle {
         }
 
         try {
-            let desktopSelectionConfirmed = false;
             if (activeDesktop !== liveDesktop || String(activeDesktop.id) !== expectedDesktopId) {
                 if (!requestDesktopSelection(effect, model, liveScreen, expectedOutput, expectedOutputId, liveDesktop,
                                              expectedDesktopId, true)) {
                     cancelSpatialExitHandoff();
                     return false;
                 }
-                desktopSelectionConfirmed = true;
             }
 
             if (expectedMinimized) {
@@ -8792,44 +8906,334 @@ Rectangle {
                 }
             }
 
-            let focusConfirmed = false;
-            const selectedDesktop = currentDesktop;
-            if (selectedDesktop === liveDesktop && String(selectedDesktop.id) === expectedDesktopId && desktopContextIsExact(
-                        effect, model, liveScreen, expectedOutput, expectedOutputId, liveDesktop, expectedDesktopId, true)
-                    && windowContextIsExact(candidate, expectedWindowId, liveScreen, liveDesktop, expectedDesktopId,
-                                            expectedActivityId)
-                    && windowFocusStateIsExact(candidate, false, true)) {
-                try {
-                    if (KWin.Workspace.activeWindow !== candidate) {
-                        KWin.Workspace.activeWindow = candidate;
-                    }
-                    focusConfirmed = KWin.Workspace.activeWindow === candidate;
-                    if (focusConfirmed && expectedMinimized) {
-                        focusConfirmed = desktopContextIsExact(effect, model, liveScreen, expectedOutput,
-                                                               expectedOutputId, liveDesktop, expectedDesktopId, true)
-                            && windowContextIsExact(candidate, expectedWindowId, liveScreen, liveDesktop,
-                                                   expectedDesktopId, expectedActivityId)
-                            && windowFocusStateIsExact(candidate, false, true);
-                    }
-                } catch (error) {
-                    focusConfirmed = false;
-                }
+            const request = createPendingWindowFocusRequest(
+                effect, model, liveScreen, expectedOutput, expectedOutputId,
+                liveDesktop, expectedDesktopId, expectedActivityId,
+                candidate, expectedWindowId, exitToken);
+            if (!request) {
+                cancelSpatialExitHandoff();
+                return false;
             }
-
-            if (focusConfirmed || (!expectedMinimized && desktopSelectionConfirmed)) {
-                if (!settleSpatialExitHandoff(candidate, exitToken)) {
-                    cancelSpatialExitHandoff();
-                    return false;
-                }
-                effect.deactivate();
-                return true;
-            }
-            cancelSpatialExitHandoff();
-            return false;
+            pendingWindowFocusRequest = request;
+            return queuePendingWindowFocusWrite(request);
         } catch (error) {
             cancelSpatialExitHandoff();
             return false;
         }
+    }
+
+    function createPendingWindowFocusRequest(effect, model, liveScreen, expectedOutput,
+                                             expectedOutputId, liveDesktop, expectedDesktopId,
+                                             expectedActivityId, candidate, expectedWindowId,
+                                             exitToken) {
+        try {
+            const selectedDesktop = currentDesktop;
+            if (!Number.isInteger(exitToken) || exitToken <= 0
+                    || selectedDesktop !== liveDesktop
+                    || String(selectedDesktop.id) !== expectedDesktopId
+                    || !desktopContextIsExact(effect, model, liveScreen, expectedOutput,
+                                              expectedOutputId, liveDesktop,
+                                              expectedDesktopId, true)
+                    || !windowContextIsExact(candidate, expectedWindowId, liveScreen,
+                                             liveDesktop, expectedDesktopId,
+                                             expectedActivityId)
+                    || !windowFocusStateIsExact(candidate, false, true)
+                    || candidate.managed !== true
+                    || !capturedWindowExitHandoffIsExact(exitToken, candidate,
+                                                         expectedWindowId,
+                                                         expectedDesktopId,
+                                                         expectedOutputId)) {
+                return null;
+            }
+
+            return Object.freeze({
+                                     activeWindowBaseline: KWin.Workspace.activeWindow,
+                                     activityId: expectedActivityId,
+                                     candidate,
+                                     desktop: liveDesktop,
+                                     desktopId: expectedDesktopId,
+                                     effect,
+                                     exitToken,
+                                     model,
+                                     output: expectedOutput,
+                                     outputId: expectedOutputId,
+                                     phase: "focus-queued",
+                                     screen: liveScreen,
+                                     sessionId: activeOverviewSessionId,
+                                     topologyGeneration: overviewContextGeneration,
+                                     windowId: expectedWindowId
+                                 });
+        } catch (error) {
+            return null;
+        }
+    }
+
+    function capturedWindowExitHandoffIsExact(exitToken, candidate, expectedWindowId,
+                                              expectedDesktopId, expectedOutputId) {
+        const effect = sceneEffect;
+        const state = overviewExitHandoffState;
+        const capture = state ? state.capture : null;
+        return effect && state && state.phase === "captured" && capture
+            && Number.isInteger(exitToken) && exitToken > 0
+            && exitToken === spatialExitHandoffToken && capture.token === exitToken
+            && capture.sessionId === activeOverviewSessionId
+            && capture.generation === overviewContextGeneration
+            && capture.targetKind === "window"
+            && capture.targetWindowId === expectedWindowId
+            && capture.targetDesktopId === expectedDesktopId
+            && capture.targetOutputId === expectedOutputId
+            && effect.overviewExitHandoffWindow === candidate;
+    }
+
+    function pendingWindowFocusRequestIsExact(request, requireActiveCandidate = false) {
+        if (!request || pendingWindowFocusRequest !== request
+                || (request.phase !== "focus-queued"
+                    && request.phase !== "focus-requested"
+                    && request.phase !== "geometry-settle")) {
+            return false;
+        }
+
+        try {
+            const selectedDesktop = currentDesktop;
+            return request.effect === sceneEffect && request.effect.active === true
+                && spatialPresentationPhase === "open"
+                && spatialPresentationProgress >= 1
+                && request.model === overviewModel
+                && request.effect.overviewModel === request.model
+                && request.sessionId === activeOverviewSessionId
+                && request.topologyGeneration === overviewContextGeneration
+                && String(KWin.Workspace.currentActivity) === request.activityId
+                && request.screen === targetScreen
+                && liveScreenFor(request.screen) === request.screen
+                && projectedOutput(request.model, request.screen) === request.output
+                && String(request.output.outputId) === request.outputId
+                && outputId === request.outputId
+                && selectedDesktop === request.desktop
+                && String(selectedDesktop.id) === request.desktopId
+                && liveDesktopFor(request.desktop, request.desktopId) === request.desktop
+                && desktopContextIsExact(request.effect, request.model, request.screen,
+                                         request.output, request.outputId, request.desktop,
+                                         request.desktopId, true)
+                && windowContextIsExact(request.candidate, request.windowId,
+                                        request.screen, request.desktop, request.desktopId,
+                                        request.activityId)
+                && windowFocusStateIsExact(request.candidate, false, true)
+                && request.candidate.managed === true
+                && capturedWindowExitHandoffIsExact(request.exitToken,
+                                                    request.candidate,
+                                                    request.windowId,
+                                                    request.desktopId,
+                                                    request.outputId)
+                && (!requireActiveCandidate
+                    || KWin.Workspace.activeWindow === request.candidate);
+        } catch (error) {
+            return false;
+        }
+    }
+
+    function replacePendingWindowFocusPhase(request, phase) {
+        if (pendingWindowFocusRequest !== request
+                || (phase !== "focus-requested" && phase !== "geometry-settle")) {
+            return null;
+        }
+        const validTransition = (request.phase === "focus-queued"
+                                 && (phase === "focus-requested" || phase === "geometry-settle"))
+            || (request.phase === "focus-requested" && phase === "geometry-settle");
+        if (!validTransition) {
+            return null;
+        }
+
+        const next = Object.freeze({
+                                       activeWindowBaseline: request.activeWindowBaseline,
+                                       activityId: request.activityId,
+                                       candidate: request.candidate,
+                                       desktop: request.desktop,
+                                       desktopId: request.desktopId,
+                                       effect: request.effect,
+                                       exitToken: request.exitToken,
+                                       model: request.model,
+                                       output: request.output,
+                                       outputId: request.outputId,
+                                       phase,
+                                       screen: request.screen,
+                                       sessionId: request.sessionId,
+                                       topologyGeneration: request.topologyGeneration,
+                                       windowId: request.windowId
+                                   });
+        pendingWindowFocusRequest = next;
+        return next;
+    }
+
+    function queuePendingWindowFocusWrite(request) {
+        if (!request || request.phase !== "focus-queued"
+                || pendingWindowFocusRequest !== request) {
+            return false;
+        }
+
+        Qt.callLater(function() {
+            if (root.pendingWindowFocusRequest !== request) {
+                return;
+            }
+            if (!root.pendingWindowFocusRequestIsExact(request)) {
+                root.abortPendingWindowFocus("stale");
+                return;
+            }
+
+            let activeWindow = null;
+            try {
+                activeWindow = KWin.Workspace.activeWindow;
+            } catch (error) {
+                root.abortPendingWindowFocus("stale");
+                return;
+            }
+            if (activeWindow === request.candidate) {
+                root.queuePendingWindowFocusSettle(request);
+                return;
+            }
+            if (activeWindow !== request.activeWindowBaseline) {
+                root.yieldPendingWindowFocusToExternalActivation();
+                return;
+            }
+
+            const requested = root.replacePendingWindowFocusPhase(request,
+                                                                   "focus-requested");
+            if (!requested || !root.pendingWindowFocusRequestIsExact(requested)) {
+                root.abortPendingWindowFocus("stale");
+                return;
+            }
+            try {
+                KWin.Workspace.activeWindow = requested.candidate;
+            } catch (error) {
+                root.abortPendingWindowFocus("stale");
+                return;
+            }
+            if (root.pendingWindowFocusRequest === requested
+                    && KWin.Workspace.activeWindow === requested.candidate) {
+                root.queuePendingWindowFocusSettle(requested);
+                return;
+            }
+            root.queuePendingWindowFocusWriteConfirmation(requested);
+        });
+        return true;
+    }
+
+    function queuePendingWindowFocusWriteConfirmation(request) {
+        if (!request || request.phase !== "focus-requested"
+                || pendingWindowFocusRequest !== request) {
+            return false;
+        }
+        Qt.callLater(function() {
+            if (root.pendingWindowFocusRequest !== request) {
+                return;
+            }
+            if (root.pendingWindowFocusRequestIsExact(request, true)) {
+                root.queuePendingWindowFocusSettle(request);
+                return;
+            }
+            root.yieldPendingWindowFocusToExternalActivation();
+        });
+        return true;
+    }
+
+    function handlePendingWindowFocusActivation(window) {
+        const request = pendingWindowFocusRequest;
+        if (!request) {
+            return false;
+        }
+        if (window === request.candidate
+                && KWin.Workspace.activeWindow === request.candidate
+                && pendingWindowFocusRequestIsExact(request, true)) {
+            return queuePendingWindowFocusSettle(request);
+        }
+        return yieldPendingWindowFocusToExternalActivation();
+    }
+
+    function queuePendingWindowFocusSettle(request) {
+        if (!pendingWindowFocusRequestIsExact(request, true)) {
+            abortPendingWindowFocus("stale");
+            return false;
+        }
+        if (request.phase === "geometry-settle") {
+            return true;
+        }
+        const settling = replacePendingWindowFocusPhase(request, "geometry-settle");
+        if (!settling) {
+            abortPendingWindowFocus("stale");
+            return false;
+        }
+        Qt.callLater(function() {
+            root.completePendingWindowFocus(settling);
+        });
+        return true;
+    }
+
+    function completePendingWindowFocus(request) {
+        if (!request || request.phase !== "geometry-settle"
+                || pendingWindowFocusRequest !== request
+                || !pendingWindowFocusRequestIsExact(request, true)
+                || !overviewExitWindowFrame(request.candidate)) {
+            abortPendingWindowFocus("stale");
+            return false;
+        }
+        if (!settleSpatialExitHandoff(request.candidate, request.exitToken)) {
+            abortPendingWindowFocus("stale");
+            return false;
+        }
+
+        const effect = request.effect;
+        clearPendingWindowFocus();
+        if (!effect || effect !== sceneEffect || effect.active !== true) {
+            return false;
+        }
+        effect.deactivate();
+        return true;
+    }
+
+    function validatePendingWindowFocusCandidate() {
+        const request = pendingWindowFocusRequest;
+        if (!request) {
+            return false;
+        }
+        if (pendingWindowFocusRequestIsExact(request)) {
+            return true;
+        }
+        return abortPendingWindowFocus("stale");
+    }
+
+    function clearPendingWindowFocus() {
+        const hadRequest = pendingWindowFocusRequest !== null;
+        pendingWindowFocusRequest = null;
+        return hadRequest;
+    }
+
+    function abortPendingWindowFocus(reason) {
+        const request = pendingWindowFocusRequest;
+        if (!request || (reason !== "stale" && reason !== "topology")) {
+            return false;
+        }
+
+        clearPendingWindowFocus();
+        invalidateSpatialExitHandoff(reason);
+        const effect = request.effect;
+        if (effect && effect === sceneEffect && effect.active === true) {
+            effect.deactivate();
+        }
+        return true;
+    }
+
+    function yieldPendingWindowFocusToExternalActivation() {
+        const request = pendingWindowFocusRequest;
+        if (!request) {
+            return false;
+        }
+
+        clearPendingWindowFocus();
+        cancelSpatialExitHandoff();
+        const effect = request.effect;
+        if (effect && effect === sceneEffect && effect.active === true) {
+            effect.deactivate();
+        }
+        return true;
     }
 
     function requestDesktopSelection(effect, model, liveScreen, expectedOutput, expectedOutputId, liveDesktop,

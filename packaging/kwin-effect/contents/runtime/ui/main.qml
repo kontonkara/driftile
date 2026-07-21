@@ -2286,7 +2286,7 @@ QtObject {
     function settleOverviewExitHandoff(token, windowCandidate) {
         const state = overviewExitHandoffState;
         const capture = state ? state.capture : null;
-        if (!overviewExitHandoffIsActive() || !capture
+        if (!overviewExitHandoffIsActive() || !capture || state.phase !== "captured"
                 || !Number.isInteger(token) || token <= 0 || token !== capture.token) {
             return false;
         }
@@ -2299,10 +2299,14 @@ QtObject {
                 if (!windowCandidate || windowCandidate !== overviewExitHandoffWindow
                         || windowCandidate.deleted === true
                         || windowCandidate.internalId === undefined
-                        || windowCandidate.internalId === null) {
+                        || windowCandidate.internalId === null
+                        || KWin.Workspace.activeWindow !== windowCandidate) {
                     return invalidateOverviewExitHandoff("stale");
                 }
                 targetWindowId = String(windowCandidate.internalId);
+                if (targetWindowId !== capture.targetWindowId) {
+                    return invalidateOverviewExitHandoff("stale");
+                }
                 targetMinimized = windowCandidate.minimized === true;
                 targetFrame = overviewExitRect(windowCandidate.frameGeometry);
             } catch (error) {

@@ -1326,20 +1326,26 @@ describe("overview effect package", () => {
     );
     expect(focusHandler).toContain("const activeDesktop = currentDesktop;");
     expect(focusHandler).toMatch(
-      /if \(activeDesktop !== liveDesktop \|\| String\(activeDesktop\.id\) !== expectedDesktopId\) \{\s*if \(!requestDesktopSelection\([\s\S]*?true\)\) \{\s*cancelSpatialExitHandoff\(\);\s*return false;\s*\}\s*desktopSelectionConfirmed = true;\s*\}/u,
+      /if \(activeDesktop !== liveDesktop \|\| String\(activeDesktop\.id\) !== expectedDesktopId\) \{\s*if \(!requestDesktopSelection\([\s\S]*?true\)\) \{\s*cancelSpatialExitHandoff\(\);\s*return false;\s*\}\s*\}/u,
     );
     expect(focusHandler).toContain("const selectedDesktop = currentDesktop;");
-    expect(focusHandler).toContain("selectedDesktop === liveDesktop");
+    expect(focusHandler).toContain("selectedDesktop !== liveDesktop");
     expect(focusHandler).toContain(
-      "String(selectedDesktop.id) === expectedDesktopId",
+      "String(selectedDesktop.id) !== expectedDesktopId",
     );
     expect(focusHandler).toMatch(
-      /windowContextIsExact\(candidate, expectedWindowId, liveScreen, liveDesktop, expectedDesktopId,\s*expectedActivityId\)\s*&& windowFocusStateIsExact\(candidate, false, true\)/u,
+      /windowContextIsExact\(candidate, expectedWindowId, liveScreen,\s*liveDesktop, expectedDesktopId,\s*expectedActivityId\)[\s\S]*windowFocusStateIsExact\(candidate, false, true\)/u,
     );
     expect(focusHandler).toContain("catch (error)");
-    expect(focusHandler).toContain("focusConfirmed = false;");
     expect(focusHandler).toContain(
-      "focusConfirmed = KWin.Workspace.activeWindow === candidate;",
+      "activeWindowBaseline: KWin.Workspace.activeWindow",
+    );
+    expect(focusHandler).toContain('phase: "focus-queued"');
+    expect(focusHandler).toMatch(
+      /Qt\.callLater\(function\(\) \{[\s\S]*activeWindow !== request\.activeWindowBaseline[\s\S]*replacePendingWindowFocusPhase\(request,[\s\S]*"focus-requested"\)[\s\S]*KWin\.Workspace\.activeWindow = requested\.candidate/u,
+    );
+    expect(focusHandler).toMatch(
+      /pendingWindowFocusRequestIsExact\(request, true\)[\s\S]*settleSpatialExitHandoff\(request\.candidate, request\.exitToken\)[\s\S]*clearPendingWindowFocus\(\);[\s\S]*effect\.deactivate\(\);/u,
     );
 
     expect(desktopContext).toContain("effect !== sceneEffect");
@@ -1394,14 +1400,19 @@ describe("overview effect package", () => {
       "String(activity) === expectedActivityId",
     );
 
-    expect(focusHandler).toContain("KWin.Workspace.activeWindow !== candidate");
-    expect(focusHandler).toContain("KWin.Workspace.activeWindow = candidate");
+    expect(focusHandler).toContain(
+      "activeWindow !== request.activeWindowBaseline",
+    );
+    expect(focusHandler).toContain(
+      "KWin.Workspace.activeWindow = requested.candidate",
+    );
     expect(
-      focusHandler.match(/KWin\.Workspace\.activeWindow = candidate/gu),
+      focusHandler.match(
+        /KWin\.Workspace\.activeWindow = requested\.candidate/gu,
+      ),
     ).toHaveLength(1);
-    expect(focusHandler.match(/effect\.deactivate\(\)/gu)).toHaveLength(1);
     expect(focusHandler).toMatch(
-      /if \(focusConfirmed \|\| \(!expectedMinimized && desktopSelectionConfirmed\)\) \{\s*if \(!settleSpatialExitHandoff\(candidate, exitToken\)\) \{\s*cancelSpatialExitHandoff\(\);\s*return false;\s*\}\s*effect\.deactivate\(\);\s*return true;\s*\}\s*cancelSpatialExitHandoff\(\);\s*return false;/u,
+      /function completePendingWindowFocus[\s\S]*pendingWindowFocusRequestIsExact\(request, true\)[\s\S]*settleSpatialExitHandoff\(request\.candidate, request\.exitToken\)[\s\S]*clearPendingWindowFocus\(\);[\s\S]*effect\.deactivate\(\);/u,
     );
 
     const minimizedSnapshot = focusHandler.indexOf(
@@ -1410,10 +1421,10 @@ describe("overview effect package", () => {
     const preSelectionValidation = focusHandler.indexOf(
       "windowFocusStateIsExact(candidate, expectedMinimized, false)",
     );
-    const desktopRequest = focusHandler.indexOf("requestDesktopSelection(");
-    const selectedFlag = focusHandler.indexOf(
-      "desktopSelectionConfirmed = true;",
+    const handoffCapture = focusHandler.indexOf(
+      "prepareOverviewWindowExitHandoff(",
     );
+    const desktopRequest = focusHandler.indexOf("requestDesktopSelection(");
     const minimizedBranch = focusHandler.indexOf("if (expectedMinimized) {");
     const preRestoreValidation = focusHandler.indexOf(
       "windowFocusStateIsExact(candidate, true, false)",
@@ -1423,36 +1434,47 @@ describe("overview effect package", () => {
       "windowFocusStateIsExact(candidate, false, true)",
       restoreWrite,
     );
+    const requestCreation = focusHandler.indexOf(
+      "const request = createPendingWindowFocusRequest(",
+    );
+    const requestPublication = focusHandler.indexOf(
+      "pendingWindowFocusRequest = request;",
+    );
     const activeWindowWrite = focusHandler.indexOf(
-      "KWin.Workspace.activeWindow = candidate",
+      "KWin.Workspace.activeWindow = requested.candidate",
     );
     const focusConfirmation = focusHandler.indexOf(
-      "focusConfirmed = KWin.Workspace.activeWindow === candidate;",
+      "KWin.Workspace.activeWindow === requested.candidate",
     );
-    const postFocusValidation = focusHandler.lastIndexOf(
-      "windowFocusStateIsExact(candidate, false, true)",
+    const exactFocusSettle = focusHandler.indexOf(
+      "pendingWindowFocusRequestIsExact(request, true)",
     );
-    const deactivate = focusHandler.indexOf("effect.deactivate()");
+    const deactivate = focusHandler.indexOf(
+      "effect.deactivate()",
+      focusHandler.indexOf("function completePendingWindowFocus("),
+    );
     expect(minimizedSnapshot).toBeGreaterThan(0);
     expect(preSelectionValidation).toBeGreaterThan(0);
     expect(preSelectionValidation).toBeGreaterThan(minimizedSnapshot);
-    expect(desktopRequest).toBeGreaterThan(preSelectionValidation);
-    expect(selectedFlag).toBeGreaterThan(desktopRequest);
-    expect(minimizedBranch).toBeGreaterThan(selectedFlag);
+    expect(handoffCapture).toBeGreaterThan(preSelectionValidation);
+    expect(desktopRequest).toBeGreaterThan(handoffCapture);
+    expect(minimizedBranch).toBeGreaterThan(desktopRequest);
     expect(preRestoreValidation).toBeGreaterThan(minimizedBranch);
     expect(restoreWrite).toBeGreaterThan(preRestoreValidation);
     expect(postRestoreValidation).toBeGreaterThan(restoreWrite);
-    expect(activeWindowWrite).toBeGreaterThan(postRestoreValidation);
+    expect(requestCreation).toBeGreaterThan(postRestoreValidation);
+    expect(requestPublication).toBeGreaterThan(requestCreation);
+    expect(activeWindowWrite).toBeGreaterThan(requestPublication);
     expect(focusConfirmation).toBeGreaterThan(activeWindowWrite);
-    expect(postFocusValidation).toBeGreaterThan(focusConfirmation);
-    expect(deactivate).toBeGreaterThan(focusConfirmation);
+    expect(exactFocusSettle).toBeGreaterThan(requestPublication);
+    expect(deactivate).toBeGreaterThan(exactFocusSettle);
     expect(deactivate).toBeGreaterThan(activeWindowWrite);
     expect(focusHandler.match(/candidate\.minimized = false/gu)).toHaveLength(
       1,
     );
-    expect(
-      focusHandler.match(/windowFocusStateIsExact\(candidate, false, true\)/gu),
-    ).toHaveLength(3);
+    expect(focusHandler).toContain(
+      "windowFocusStateIsExact(request.candidate, false, true)",
+    );
 
     expect(sceneWithoutWorkspaceManagement).not.toContain(
       "KWin.Workspace.stackingOrder",
@@ -2278,7 +2300,7 @@ describe("overview effect package", () => {
       /Component\.onCompleted:[\s\S]*resetOverviewSession\(\);[\s\S]*forceActiveFocus\(\);/u,
     );
     expect(scene).toMatch(
-      /function onActiveChanged\(\) \{\s*root\.cancelSpatialZoomTransaction\(\);\s*root\.resetOverviewSession\(\);/u,
+      /function onActiveChanged\(\) \{[\s\S]*root\.clearPendingWindowFocus\(\);[\s\S]*root\.cancelSpatialZoomTransaction\(\);\s*root\.resetOverviewSession\(\);/u,
     );
     expect(sessionReset).toMatch(
       /function resetOverviewSession\(\)[\s\S]*keyboardSelectionId = "";[\s\S]*keyboardHelpVisible = false;[\s\S]*searchQuery = "";[\s\S]*spatialViewportSnapshot = null;[\s\S]*refreshOverviewSpatialSession\(false\);/u,
@@ -4187,11 +4209,11 @@ describe("overview effect package", () => {
       /function setSpatialHorizontalViewportOffsetForBounds[\s\S]*spatialHorizontalViewportOffsets\[index\] === normalizedOffset[\s\S]*return true;[\s\S]*spatialHorizontalViewportOffsets\[index\] = normalizedOffset;\s*advanceSpatialHorizontalViewportRevision\(\);/u,
     );
     expect(scene).toMatch(
-      /function onWindowActivated\(\) \{\s*if \(root\.spatialPresentationPhase !== "retiring" && !root\.spatialExitHandoffActive\) \{\s*root\.resolveSpatialLiveCamera\(\);/u,
+      /function onWindowActivated\(\) \{\s*if \(root\.pendingWindowFocusRequest\) \{\s*root\.handlePendingWindowFocusActivation\(KWin\.Workspace\.activeWindow\);\s*return;\s*\}\s*if \(root\.spatialPresentationPhase !== "retiring" && !root\.spatialExitHandoffActive\) \{\s*root\.resolveSpatialLiveCamera\(\);/u,
     );
     expect(scene).not.toContain("onClientAreaChanged");
     expect(scene).toContain(
-      'function onWindowRemoved(window) {\n            if (root.spatialPresentationPhase !== "retiring") {\n                root.handleSpatialLiveCameraWindowRemoved(window);',
+      'function onWindowRemoved(window) {\n            if (root.pendingWindowFocusCandidate === window) {\n                root.abortPendingWindowFocus("stale");\n                return;\n            }\n            if (root.spatialPresentationPhase !== "retiring") {\n                root.handleSpatialLiveCameraWindowRemoved(window);',
     );
     expect(liveCameraConnections).toMatch(
       /target: root\.spatialLiveCameraWindow[\s\S]*enabled: target !== null[\s\S]*function onFrameGeometryChanged\(\) \{\s*root\.applySpatialLiveCamera\(\);/u,
