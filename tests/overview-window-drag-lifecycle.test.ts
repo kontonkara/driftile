@@ -227,7 +227,7 @@ describe("overview window drag ownership lifecycle", () => {
       /windowDragSurfaceIsExact\(source, snapshot\.surfaceKind,[\s\S]*snapshot\.surfaceTarget\)/u,
     );
     expect(dragExactness).toMatch(
-      /snapshot\.surfaceKind === "thumbnail"[\s\S]*source\.frame === snapshot\.surfaceFrame[\s\S]*source\.tabFrame === snapshot\.surfaceFrame/u,
+      /snapshot\.surfaceKind === "thumbnail"[\s\S]*frame !== null && frame\.floating === false[\s\S]*frame === snapshot\.surfaceFrame[\s\S]*snapshot\.surfaceKind === "tab" && frame === null[\s\S]*source\.tabFrame === snapshot\.surfaceFrame/u,
     );
     expect(dragExactness).toContain(
       "snapshot.surfaceTarget.width === snapshot.surfaceWidth",

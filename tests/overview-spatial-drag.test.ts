@@ -809,12 +809,19 @@ describe("spatial overview window drag lifecycle", () => {
     expect(windowDragSurfaceLifecycle).toContain(
       "tiledPresentations[windowId] !== tiled",
     );
-    expect(windowDragSurfaceLifecycle).toContain("frame.floating !== false");
+    const commonSurfaceGuard = windowDragSurfaceLifecycle.slice(
+      windowDragSurfaceLifecycle.indexOf(
+        "function windowDragSurfaceIsExact(source, surfaceKind, surfaceTarget)",
+      ),
+      windowDragSurfaceLifecycle.indexOf('if (surfaceKind === "thumbnail")'),
+    );
+    expect(commonSurfaceGuard).not.toContain("frame === null");
+    expect(commonSurfaceGuard).not.toContain("frame.floating");
     expect(windowDragSurfaceLifecycle).toMatch(
-      /if \(surfaceKind === "thumbnail"\) \{[\s\S]*?surfaceTarget === source\.thumbnailTarget[\s\S]*?tiled\.selected === true/u,
+      /if \(surfaceKind === "thumbnail"\) \{[\s\S]*?surfaceTarget === source\.thumbnailTarget[\s\S]*?tiled\.selected === true[\s\S]*?frame !== null[\s\S]*?frame\.floating === false[\s\S]*?source\.frame === frame/u,
     );
     expect(windowDragSurfaceLifecycle).toMatch(
-      /const tabFrame = source\.tabFrame;[\s\S]*?surfaceTarget === source\.tabTarget[\s\S]*?tiled\.selected === false[\s\S]*?tabFrame\.visible === true/u,
+      /const tabFrame = source\.tabFrame;[\s\S]*?surfaceTarget === source\.tabTarget[\s\S]*?tiled\.selected === false[\s\S]*?frame === null[\s\S]*?tabFrame && tabFrame\.visible === true[\s\S]*?tabFrameForPresentation\(tiled, windowId\) === tabFrame[\s\S]*?surfaceTarget\.frame === tabFrame/u,
     );
     expect(
       `${hoverLifecycle}\n${dropValidation}`.match(

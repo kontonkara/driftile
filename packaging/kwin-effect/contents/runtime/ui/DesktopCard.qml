@@ -1757,6 +1757,10 @@ Item {
                                   && !card.spatialDirectDragBlocked)
                             || card.windowDragHandlerOwnsLifecycle(
                                 windowPresentation, "tab", tabShell)
+                        grabPermissions: PointerHandler.CanTakeOverFromHandlersOfSameType
+                                         | PointerHandler.CanTakeOverFromHandlersOfDifferentType
+                                         | PointerHandler.CanTakeOverFromItems
+                                         | PointerHandler.ApprovesCancellation
 
                         onActiveTranslationChanged: {
                             if (tabDragHandler.active
@@ -5286,7 +5290,7 @@ Item {
                     || tiledPresentations[windowId] !== tiled
                     || !Number.isInteger(tiled.columnIndex) || tiled.columnIndex < 0
                     || tiled.columnIndex >= columns.length || !Number.isInteger(tiled.memberIndex)
-                    || tiled.memberIndex < 0 || frame === null || frame.floating !== false) {
+                    || tiled.memberIndex < 0) {
                 return false;
             }
 
@@ -5306,7 +5310,8 @@ Item {
                     && source.primaryVisualKind === "thumbnail"
                     && source.selectedThumbnail === true && tiled.selected === true
                     && tiled.memberIndex === column.selectedMemberIndex
-                    && source.minimizedWindow !== true && source.frame === frame;
+                    && source.minimizedWindow !== true && frame !== null
+                    && frame.floating === false && source.frame === frame;
             }
 
             const tabFrame = source.tabFrame;
@@ -5315,6 +5320,7 @@ Item {
                 && source.selectedThumbnail === false && tiled.selected === false
                 && column.presentation === "tabbed" && column.members.length >= 2
                 && tiled.memberIndex !== column.selectedMemberIndex
+                && frame === null
                 && source.minimizedWindow !== true && source.matchesSearch === true
                 && tabFrame && tabFrame.visible === true && tabFrame.selected === false
                 && tabFrame.memberIndex === tiled.memberIndex
@@ -5471,11 +5477,12 @@ Item {
                     && windowDragSurfaceIsExact(source, snapshot.surfaceKind,
                                                 snapshot.surfaceTarget)
                     && (snapshot.surfaceKind === "thumbnail"
-                        ? source.frame === snapshot.surfaceFrame
-                        : source.tabFrame === snapshot.surfaceFrame)
+                        ? frame !== null && frame.floating === false
+                          && frame === snapshot.surfaceFrame
+                        : snapshot.surfaceKind === "tab" && frame === null
+                          && source.tabFrame === snapshot.surfaceFrame)
                     && snapshot.surfaceTarget.width === snapshot.surfaceWidth
                     && snapshot.surfaceTarget.height === snapshot.surfaceHeight
-                    && frame && frame.floating === false
                     && spatialDragSourceIsOwned(source) && windowSnapshotCanDrag(source)
                     && windowCanDrag(source) && ownedWindowDropTiledPresentationIsExact(source);
         } catch (error) {

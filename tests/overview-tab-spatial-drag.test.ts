@@ -151,10 +151,41 @@ describe("overview visible tab spatial drag", () => {
       /windowDragSurfaceIsExact\(source, snapshot\.surfaceKind,[\s\S]*snapshot\.surfaceTarget\)/u,
     );
     expect(dragExactness).toMatch(
-      /snapshot\.surfaceKind === "thumbnail"\s*\? source\.frame === snapshot\.surfaceFrame\s*: source\.tabFrame === snapshot\.surfaceFrame/u,
+      /snapshot\.surfaceKind === "thumbnail"\s*\? frame !== null && frame\.floating === false\s*&& frame === snapshot\.surfaceFrame\s*: snapshot\.surfaceKind === "tab" && frame === null\s*&& source\.tabFrame === snapshot\.surfaceFrame/u,
     );
     expect(tiledSourceExactness).toContain(
       "windowDragSurfaceIsExact(source, surfaceKind, surfaceTarget)",
+    );
+  });
+
+  it("keeps window-frame invariants specific to the dragged surface", () => {
+    const commonSurfaceValidation = section(
+      dragSurfaceExactness,
+      "function windowDragSurfaceIsExact(",
+      'if (surfaceKind === "thumbnail")',
+    );
+    const thumbnailSurfaceValidation = section(
+      dragSurfaceExactness,
+      'if (surfaceKind === "thumbnail")',
+      "const tabFrame = source.tabFrame;",
+    );
+    const tabSurfaceValidation = section(
+      dragSurfaceExactness,
+      "const tabFrame = source.tabFrame;",
+      "} catch (error)",
+    );
+
+    expect(commonSurfaceValidation).not.toMatch(
+      /frame === null|frame\.floating/u,
+    );
+    expect(thumbnailSurfaceValidation).toMatch(
+      /frame !== null\s*&& frame\.floating === false && source\.frame === frame/u,
+    );
+    expect(tabSurfaceValidation).toMatch(
+      /frame === null[\s\S]*tabFrameForPresentation\(tiled, windowId\) === tabFrame[\s\S]*surfaceTarget\.frame === tabFrame/u,
+    );
+    expect(dragExactness).not.toMatch(
+      /snapshot\.surfaceTarget\.height === snapshot\.surfaceHeight\s*&& frame && frame\.floating === false/u,
     );
   });
 
@@ -181,6 +212,9 @@ describe("overview visible tab spatial drag", () => {
     expect(tabPointerDrag).toContain("target: null");
     expect(tabPointerDrag).toMatch(
       /acceptedDevices: PointerDevice\.Mouse \| PointerDevice\.TouchPad/u,
+    );
+    expect(tabPointerDrag).toMatch(
+      /grabPermissions: PointerHandler\.CanTakeOverFromHandlersOfSameType\s*\| PointerHandler\.CanTakeOverFromHandlersOfDifferentType\s*\| PointerHandler\.CanTakeOverFromItems\s*\| PointerHandler\.ApprovesCancellation/u,
     );
     expect(tabPointerDrag).toMatch(
       /enabled:[\s\S]*(?:tabShell\.(?:spatialDragEligible|dragEligible)|windowPresentation\.dragEligible)[\s\S]*windowDragHandlerOwnsLifecycle\(\s*windowPresentation,\s*"tab",\s*tabShell\)/u,
