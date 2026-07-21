@@ -25,7 +25,11 @@ describe("overview exit handoff scene", () => {
       "required property var promotion",
       "required property var windowCandidate",
       "required property rect sourceRect",
+      "required property string targetActivityId",
+      "required property var targetDesktop",
+      "required property string targetDesktopId",
       "required property rect targetOutputGeometry",
+      "required property var targetScreen",
       "required property real progress",
       "required property bool handoffActive",
       "required property string activeOutput",
@@ -64,9 +68,8 @@ describe("overview exit handoff scene", () => {
       "function preloadCandidateIsExact()",
       "function promotedCandidateIsExact()",
     );
-    const windowShell = sourceBetween(
-      "id: windowHandoffShell",
-      "id: rowFallbackShell",
+    const windowShell = handoff.slice(
+      handoff.indexOf("id: windowHandoffShell"),
     );
 
     expect(handoff).toContain("import org.kde.kwin as KWin");
@@ -126,6 +129,12 @@ describe("overview exit handoff scene", () => {
     expect(promotionGuard).toContain("return promotion === handoff");
     expect(promotionGuard).toContain("frozenRecord(promotion.camera)");
     expect(promotionGuard).toContain(
+      "frozenRecord(promotion.desktopSourceRect)",
+    );
+    expect(promotionGuard).toContain(
+      "rectsEqual(promotion.desktopSourceRect, handoff.desktopSourceRect)",
+    );
+    expect(promotionGuard).toContain(
       "rectsEqual(promotion.sourceRect, handoff.sourceRect)",
     );
     expect(promotionGuard).toContain(
@@ -173,8 +182,8 @@ describe("overview exit handoff scene", () => {
     expect(initialPlanner).toMatch(
       /const promotionResolved = synchronizePromotionResolution\(\);[\s\S]*promotionResolved && preloadPromotionInheritedLatch[\s\S]*preloadLatchIsExact\(\)[\s\S]*\? "thumbnail" : ""/u,
     );
-    expect(initialPlanner).toContain('return "row-fallback";');
-    expect(downgradePlanner).toContain('if (currentMode === "row-fallback")');
+    expect(initialPlanner).toContain('return "desktop";');
+    expect(downgradePlanner).toContain('if (currentMode === "desktop")');
     expect(downgradePlanner).toContain(
       'if (currentMode === "thumbnail" && !liveThumbnailReady)',
     );
@@ -236,12 +245,12 @@ describe("overview exit handoff scene", () => {
     );
     expect(advance).toContain("if (preloadPromotedFrameCount < 2");
     expect(advance).toMatch(
-      /const nextMode = !promotionResolved \? "row-fallback"[\s\S]*liveThumbnailReady && preloadIdentityIsTracked\(\)[\s\S]*\? "thumbnail" : "monochrome";[\s\S]*return commitVisualMode\(nextMode\);/u,
+      /const nextMode = !promotionResolved \? "desktop"[\s\S]*liveThumbnailReady && preloadIdentityIsTracked\(\)[\s\S]*\? "thumbnail" : "monochrome";[\s\S]*return commitVisualMode\(nextMode\);/u,
     );
     expect(handoff).not.toMatch(/Qt\.callLater|\bTimer\s*\{/u);
   });
 
-  it("uses controller easing once and has exact terminal opacity", () => {
+  it("uses controller easing once and keeps exact opaque terminal coverage", () => {
     expect(handoff).toContain(
       "readonly property real boundedProgress: boundedUnit(progress)",
     );
@@ -252,10 +261,19 @@ describe("overview exit handoff scene", () => {
     );
     expect(handoff).toMatch(/localTargetRect,\s*boundedProgress\)/u);
     expect(handoff).toContain(
-      "readonly property real surfaceOpacity: 1 - boundedProgress",
+      "readonly property rect animatedDesktopRect: interpolatedRect(safeDesktopSourceRect,",
     );
     expect(handoff).toContain(
-      "readonly property real chromeOpacity: surfaceOpacity",
+      "readonly property rect safeDesktopSourceRect: validatedDesktopSourceRect()",
+    );
+    expect(handoff).toMatch(
+      /readonly property real desktopBridgeOpacity: desktopBridgeReady\s*\? boundedUnit\(desktopBridgeBlend\) : 0/u,
+    );
+    expect(handoff).toMatch(
+      /readonly property real surfaceOpacity: terminalCoverageMode === "canvas"\s*\|\| desktopBridgeOpacity < 1 \? 1 : 0/u,
+    );
+    expect(handoff).toContain(
+      "readonly property real chromeOpacity: 1 - boundedProgress",
     );
     expect(handoff).toContain(
       "readonly property real revealOpacity: boundedUnit(boundedProgress / 0.16)",
@@ -264,32 +282,105 @@ describe("overview exit handoff scene", () => {
       "readonly property real thumbnailOpacity: revealOpacity",
     );
     expect(handoff).toContain(
-      "readonly property real fallbackOpacity: revealOpacity * surfaceOpacity",
+      "readonly property real fallbackOpacity: revealOpacity * (1 - boundedProgress)",
     );
-    expect(handoff).toContain(
-      "readonly property real rowFallbackScale: 1 - 0.06 * boundedProgress",
+    expect(handoff).toMatch(
+      /readonly property bool terminalCoverageOpaque: terminalCoverageMode === "canvas"[\s\S]*surfaceOpacity >= 1 && desktopBridgeOpacity <= 0[\s\S]*terminalCoverageMode === "bridge" && desktopBridgeReady[\s\S]*desktopBridgeOpacity >= 1 && surfaceOpacity <= 0/u,
     );
+    expect(handoff).not.toContain("id: rowFallbackShell");
+    expect(handoff).not.toContain("rowFallbackScale");
 
     const opacityAt = (
-      mode: "monochrome" | "row-fallback" | "thumbnail",
-      progress: number,
+      mode: "none" | "canvas" | "bridge",
+      ready: boolean,
+      blend: number,
     ) => {
-      const bounded = Math.max(0, Math.min(1, progress));
-      const reveal = Math.max(0, Math.min(1, bounded / 0.16));
-      return mode === "thumbnail" ? reveal : reveal * (1 - bounded);
+      const bridge = ready ? Math.max(0, Math.min(1, blend)) : 0;
+      const surface = mode === "canvas" || bridge < 1 ? 1 : 0;
+      const terminalOpaque =
+        mode === "canvas"
+          ? surface >= 1 && bridge <= 0
+          : mode === "bridge" && ready && bridge >= 1 && surface <= 0;
+      return { bridge, surface, terminalOpaque };
     };
-    expect(opacityAt("thumbnail", 0)).toBe(0);
-    expect(opacityAt("thumbnail", 1)).toBe(1);
-    expect(opacityAt("monochrome", 0)).toBe(0);
-    expect(opacityAt("monochrome", 1)).toBe(0);
-    expect(opacityAt("row-fallback", 0)).toBe(0);
-    expect(opacityAt("row-fallback", 1)).toBe(0);
+    expect(opacityAt("none", true, 0)).toEqual({
+      bridge: 0,
+      surface: 1,
+      terminalOpaque: false,
+    });
+    expect(opacityAt("bridge", true, 1)).toEqual({
+      bridge: 1,
+      surface: 0,
+      terminalOpaque: true,
+    });
+    expect(opacityAt("canvas", false, 0)).toEqual({
+      bridge: 0,
+      surface: 1,
+      terminalOpaque: true,
+    });
+  });
+
+  it("stages one exact public desktop bridge for two rendered frames", () => {
+    const context = sourceBetween(
+      "function desktopBridgeContextIsExact()",
+      "function desktopBridgeItemIsExact(candidate)",
+    );
+    const tracking = sourceBetween(
+      "function resetDesktopBridgeTracking()",
+      "function preloadIdentityIsUsable()",
+    );
+    const bridge = sourceBetween(
+      "id: desktopBridgeShell",
+      "id: windowHandoffShell",
+    );
+
+    expect(handoff.match(/KWin\.DesktopBackground\s*\{/gu)).toHaveLength(1);
+    expect(context).toContain("String(targetDesktop.id) !== targetDesktopId");
+    expect(context).toContain("!handoffActive || !capturedOutputExact");
+    expect(context).toContain(
+      "String(KWin.Workspace.currentActivity) !== targetActivityId",
+    );
+    expect(context).toContain(
+      "for (const liveDesktop of KWin.Workspace.desktops)",
+    );
+    expect(context).toContain("desktopMatches !== 1 || desktopIdMatches !== 1");
+    expect(context).toContain(
+      "for (const liveActivityId of KWin.Workspace.activities)",
+    );
+    expect(context).toContain(
+      "for (const liveScreen of KWin.Workspace.screens)",
+    );
+    expect(tracking).toContain(
+      "desktopBridgeReadyFrameCount = Math.min(2, desktopBridgeReadyFrameCount + 1);",
+    );
+    expect(tracking).toContain(
+      "desktopBridgeTwoFrameLatch = desktopBridgeReadyFrameCount >= 2;",
+    );
+    expect(handoff).toMatch(
+      /FrameAnimation \{\s*running: root\.handoffActive && !root\.desktopBridgeTwoFrameLatch\s*onTriggered: root\.advanceDesktopBridgeFrame\(\)/u,
+    );
+    expect(bridge).toMatch(
+      /x: root\.animatedDesktopRect\.x[\s\S]*visible: root\.handoffActive && root\.capturedOutputExact[\s\S]*desktopBridgeAcceptedItem === root\.desktopBridgeItem[\s\S]*terminalCoverageMode !== "canvas"[\s\S]*opacity: root\.resolvedOutputExact[\s\S]*Math\.max\(0\.001, root\.desktopBridgeOpacity\) : 0\.001/u,
+    );
+    expect(bridge).toMatch(
+      /active: root\.handoffActive && root\.capturedOutputExact\s*&& root\.desktopBridgeContextExact/u,
+    );
+    expect(bridge).toContain("asynchronous: true");
+    expect(bridge).toContain("output: driftileScreen");
+    expect(bridge).toContain("desktop: driftileDesktop");
+    expect(bridge).toContain("activity: driftileActivityId");
+    expect(bridge).toMatch(
+      /property bool driftileContextCaptured: false[\s\S]*Component\.onCompleted:[\s\S]*driftileHandoffKey = root\.handoffKey;[\s\S]*driftileActivityId = root\.targetActivityId;[\s\S]*driftileDesktop = root\.targetDesktop;[\s\S]*driftileContextCaptured = true;[\s\S]*acceptDesktopBridgeCandidate\(desktopBackground\);/u,
+    );
+    expect(handoff).toMatch(
+      /NumberAnimation \{\s*id: desktopBridgeFadeIn[\s\S]*property: "desktopBridgeBlend"[\s\S]*from: 0[\s\S]*to: 1[\s\S]*duration: 90/u,
+    );
   });
 
   it("reports completion only once from the resolved owner", () => {
     const completion = sourceBetween(
       "function updateCompletion()",
-      "onHandoffKeyChanged: handlePreloadIdentityChange()",
+      "onHandoffKeyChanged: {",
     );
 
     expect(handoff).toContain(
@@ -302,7 +393,9 @@ describe("overview exit handoff scene", () => {
     expect(completion).toContain("boundedProgress < 1");
     expect(completion).toContain("completionReported = true;");
     expect(completion).toContain("handoffCompleted(handoff, visualMode);");
-    expect(handoff).toContain("onBoundedProgressChanged: updateCompletion()");
+    expect(handoff).toMatch(
+      /onBoundedProgressChanged: \{\s*synchronizeTerminalCoverageMode\(\);\s*updateCompletion\(\);\s*\}/u,
+    );
     expect(handoff).toContain(
       "onResolvedOutputExactChanged: updateCompletion()",
     );
@@ -344,8 +437,9 @@ describe("overview exit handoff scene", () => {
     expect(handoff).not.toMatch(
       /MouseArea|(?:Tap|Drag|Pinch|Swipe|Wheel|Hover)Handler|Keys\.|focus\s*:|acceptedButtons/u,
     );
+    expect(handoff.match(/\bNumberAnimation\s*\{/gu)).toHaveLength(1);
     expect(handoff).not.toMatch(
-      /\b(?:Timer|Animation|Behavior)\b|Qt\.callLater|setTimeout|callDBus|DBusCall|\.setValue\s*\(/u,
+      /\b(?:Timer|Behavior|SequentialAnimation|ParallelAnimation)\b|Qt\.callLater|setTimeout|callDBus|DBusCall|\.setValue\s*\(/u,
     );
     expect(handoff).not.toMatch(
       /windowCandidate\.(?:frameGeometry|geometry|output|minimized|desktops)\s*=(?!=)/u,

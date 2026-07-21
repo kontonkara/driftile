@@ -169,25 +169,29 @@ Events travel from KWin through the bridge into the runtime. Commands and result
   this stage.
 - Captures one immutable exit handoff before desktop, minimized-state, or focus
   writes. Exact session, topology, output, desktop, window, and frame ownership
-  begins loading a public `KWin.WindowThumbnail` on the captured target output
-  before visible promotion. A sub-visible staging layer keeps it in the render
-  path and latches readiness only after two exact frames. If that latch is not
-  ready at promotion, two bounded promoted frames choose the thumbnail or the
-  monochrome fallback once. Minimized, removed, stale, desktop-only, or
-  topology-invalid targets remain on a safe fallback path.
+  begins loading a public `KWin.WindowThumbnail` and an exact target
+  `KWin.DesktopBackground` on the captured output before visible promotion.
+  Sub-visible staging keeps them in the render path and latches readiness only
+  after two exact frames. If the thumbnail latch is not ready at promotion, two
+  bounded promoted frames choose the thumbnail or monochrome window shell once.
+  Minimized, removed, stale, desktop-only, or topology-invalid window targets
+  remain on the desktop-only path.
 - Commits the visible exit mode once at promotion. An exact ready thumbnail,
-  single-window monochrome shell, or row fallback can only downgrade after that
-  point; late readiness never upgrades the committed view. The controller owns
-  the easing once, and the scene consumes its bounded progress directly. An
-  exact thumbnail remains opaque at terminal progress to bridge to KWin's native
-  window, while monochrome and row fallbacks fade to zero.
+  single-window monochrome shell, or desktop-only mode can only downgrade after
+  that point; late thumbnail readiness never upgrades the committed view. The
+  controller owns the easing once, and the scene consumes its bounded progress
+  directly. The exact Desktop surface expands from its row beneath the target
+  window and remains opaque at terminal progress. Until it is ready, the current
+  spatial canvas stays opaque instead of exposing a uniform row rectangle or
+  transparent frame.
 - Freezes the visible workspace index and cameras while that handoff owns the
   close, blocks scene input, and defers model replacement. At terminal progress,
-  a frozen identity barrier requires two rendered callbacks from every exact
-  output before retiring the scene. Duplicate exact registrations are
-  idempotent; stale identities and token collisions fail closed. Topology,
-  model, output, or handoff drift and scene destruction invalidate the barrier
-  and force safe retirement without a timer or private API.
+  an opaque Desktop bridge or retained canvas covers every output while a frozen
+  identity barrier requires two rendered callbacks from every exact output
+  before retiring the scene. Duplicate exact registrations are idempotent; stale
+  identities and token collisions fail closed. Topology, model, output, or
+  handoff drift and scene destruction invalidate the barrier and force safe
+  retirement without a timer or private API.
 - Reopening clears an active retirement barrier before cancelling the handoff,
   then reverses from the current progress in the same visible session while
   restoring the captured vertical and per-desktop horizontal cameras. Session

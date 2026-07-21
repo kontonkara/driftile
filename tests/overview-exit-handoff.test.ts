@@ -8,9 +8,15 @@ import {
 describe("captureOverviewExitHandoff", () => {
   it("copies and freezes the complete pre-write handoff geometry", () => {
     const camera = { offsetX: -320, offsetY: 540, zoom: 0.5 };
+    const desktopSourceRect = { height: 420, width: 960, x: 40, y: 90 };
     const sourceRect = { height: 240, width: 360, x: 120, y: 180 };
     const targetFrame = { height: 780, width: 620, x: 20, y: 40 };
-    const input = captureInput({ camera, sourceRect, targetFrame });
+    const input = captureInput({
+      camera,
+      desktopSourceRect,
+      sourceRect,
+      targetFrame,
+    });
 
     const state = captureOverviewExitHandoff(input);
 
@@ -24,14 +30,17 @@ describe("captureOverviewExitHandoff", () => {
     expect(Object.isFrozen(state)).toBe(true);
     expect(Object.isFrozen(state?.capture)).toBe(true);
     expect(Object.isFrozen(state?.capture.camera)).toBe(true);
+    expect(Object.isFrozen(state?.capture.desktopSourceRect)).toBe(true);
     expect(Object.isFrozen(state?.capture.sourceRect)).toBe(true);
     expect(Object.isFrozen(state?.capture.targetFrame)).toBe(true);
 
     camera.zoom = 0.25;
+    desktopSourceRect.width = 1;
     sourceRect.x = 900;
     targetFrame.width = 1;
 
     expect(state?.capture.camera.zoom).toBe(0.5);
+    expect(state?.capture.desktopSourceRect.width).toBe(960);
     expect(state?.capture.sourceRect.x).toBe(120);
     expect(state?.capture.targetFrame.width).toBe(620);
   });
@@ -77,6 +86,7 @@ describe("captureOverviewExitHandoff", () => {
   });
 
   it.each([
+    ["zero desktop source height", { desktopSourceRect: rect({ height: 0 }) }],
     ["zero source width", { sourceRect: rect({ width: 0 }) }],
     ["negative target height", { targetFrame: rect({ height: -1 }) }],
     ["non-finite source coordinate", { sourceRect: rect({ x: Infinity }) }],
@@ -381,6 +391,7 @@ function captureInput(
 ): Record<string, unknown> {
   return {
     camera: camera(),
+    desktopSourceRect: rect({ height: 420, width: 960, x: 40, y: 90 }),
     generation: 11,
     sessionId: 7,
     sourceDesktopId: "desktop-1",

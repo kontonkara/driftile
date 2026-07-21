@@ -30,6 +30,7 @@ export interface OverviewExitHandoffCamera {
 
 export interface OverviewExitHandoffCaptureInput {
   readonly camera: OverviewExitHandoffCamera;
+  readonly desktopSourceRect: OverviewExitHandoffRect;
   readonly generation: number;
   readonly sessionId: number;
   readonly sourceDesktopId: string;
@@ -249,6 +250,7 @@ function readCapture(value: unknown): OverviewExitHandoffCapture | null {
   }
 
   const camera = readCamera(value["camera"]);
+  const desktopSourceRect = readRect(value["desktopSourceRect"]);
   const generation = value["generation"];
   const sessionId = value["sessionId"];
   const sourceDesktopId = value["sourceDesktopId"];
@@ -264,6 +266,7 @@ function readCapture(value: unknown): OverviewExitHandoffCapture | null {
 
   if (
     camera === null ||
+    desktopSourceRect === null ||
     !isPositiveGeneration(generation) ||
     !isPositiveGeneration(sessionId) ||
     !isIdentifier(sourceDesktopId) ||
@@ -287,6 +290,7 @@ function readCapture(value: unknown): OverviewExitHandoffCapture | null {
 
   return Object.freeze({
     camera,
+    desktopSourceRect,
     desktopRelation,
     generation,
     sessionId,

@@ -297,6 +297,7 @@ Rectangle {
     property int spatialPresentationRegisteredTopologyGeneration: 0
     property string spatialPresentationRegisteredOutputId: ""
     property var spatialSceneRetirementTrackedBarrier: null
+    property string spatialSceneRetirementTrackedCoverageMode: ""
     property string spatialSceneRetirementTrackedOutputId: ""
     property int spatialSceneRetirementFrameCount: 0
     property bool spatialSceneRetirementFrameRegistered: false
@@ -1590,7 +1591,9 @@ Rectangle {
         width: root.width
         height: Math.max(0, root.desktopIds.length * (root.cardHeight + root.cardGap) - root.cardGap)
         opacity: root.spatialExitHandoffActive
-            ? overviewExitHandoffOverlay.surfaceOpacity : root.spatialPresentationProgress
+            ? overviewExitHandoffOverlay.surfaceOpacity
+            : root.spatialPresentationPhase === "closing" ? 1
+                                                         : root.spatialPresentationProgress
         transform: Scale {
             origin.x: spatialCanvas.width / 2
             origin.y: spatialCanvas.presentationWorkspaceIndex * (root.cardHeight + root.cardGap)
@@ -2066,7 +2069,11 @@ Rectangle {
             && root.overviewExitHandoffCapture.targetKind === "window"
             && root.sceneEffect ? root.sceneEffect.overviewExitHandoffWindow : null
         sourceRect: root.overviewExitOverlaySourceRect()
+        targetActivityId: root.overviewExitTargetActivityId()
+        targetDesktop: root.overviewExitTargetDesktop()
+        targetDesktopId: root.overviewExitTargetDesktopId()
         targetOutputGeometry: root.overviewExitOutputGeometry()
+        targetScreen: root.targetScreen
         progress: 1 - root.spatialPresentationProgress
         handoffActive: root.spatialExitHandoffActive
         activeOutput: root.outputId
@@ -8527,7 +8534,8 @@ Rectangle {
         const target = overviewExitNavigationTarget("window", candidate, expectedWindowId,
                                                     expectedDesktopId, expectedScreen);
         const targetFrame = overviewExitWindowFrame(candidate);
-        if (!target || !targetFrame) {
+        const desktopSourceRect = overviewExitDesktopRowRect(expectedDesktopId);
+        if (!target || !targetFrame || !desktopSourceRect) {
             return 0;
         }
 
@@ -8539,6 +8547,7 @@ Rectangle {
         }
         return beginSpatialExitHandoff(candidate, {
                                            sourceRect: target.rect,
+                                           desktopSourceRect,
                                            targetDesktopId: expectedDesktopId,
                                            targetFrame,
                                            targetKind: "window",
@@ -8561,6 +8570,7 @@ Rectangle {
 
         return beginSpatialExitHandoff(null, {
                                            sourceRect,
+                                           desktopSourceRect: sourceRect,
                                            targetDesktopId: expectedDesktopId,
                                            targetFrame,
                                            targetKind: "desktop-fallback",
@@ -8574,11 +8584,15 @@ Rectangle {
         const effect = sceneEffect;
         const sourceIndex = currentWorkspaceIndex;
         const sourceDesktop = currentDesktop;
+        const targetIndex = target && typeof target.targetDesktopId === "string"
+            ? desktopIds.indexOf(target.targetDesktopId) : -1;
         if (!effect || effect.active !== true || !spatialPresentationSettled
                 || spatialExitHandoffActive || !target || outputId.length === 0
                 || !sourceDesktop || sourceDesktop.id === undefined
                 || sourceDesktop.id === null || sourceIndex < 0
-                || sourceIndex >= desktopIds.length
+                || sourceIndex >= desktopIds.length || targetIndex < 0
+                || targetIndex >= desktopIds.length
+                || !overviewExitRect(target.desktopSourceRect)
                 || typeof effect.beginOverviewExitHandoff !== "function") {
             return 0;
         }
@@ -8592,8 +8606,8 @@ Rectangle {
             return 0;
         }
 
-        spatialExitFrozenWorkspaceIndex = sourceIndex;
-        spatialPresentationWorkspaceIndex = sourceIndex;
+        spatialExitFrozenWorkspaceIndex = targetIndex;
+        spatialPresentationWorkspaceIndex = targetIndex;
         let token = 0;
         try {
             token = Number(effect.beginOverviewExitHandoff(windowCandidate, {
@@ -8602,6 +8616,7 @@ Rectangle {
                                                                     offsetY: spatialContentY,
                                                                     zoom: overviewZoom
                                                                 },
+                                                                desktopSourceRect: target.desktopSourceRect,
                                                                 sourceDesktopId,
                                                                 sourceOutputId: outputId,
                                                                 sourceRect: target.sourceRect,
@@ -8794,6 +8809,51 @@ Rectangle {
 
     function overviewExitOutputGeometry() {
         return overviewExitRectValue(targetScreen ? targetScreen.geometry : null);
+    }
+
+    function overviewExitTargetDesktopId() {
+        const capture = overviewExitHandoffCapture;
+        if (capture && capture.targetDesktopId !== undefined
+                && capture.targetDesktopId !== null) {
+            return String(capture.targetDesktopId);
+        }
+        return currentDesktop && currentDesktop.id !== undefined
+            && currentDesktop.id !== null ? String(currentDesktop.id) : "";
+    }
+
+    function overviewExitTargetDesktop() {
+        const expectedDesktopId = overviewExitTargetDesktopId();
+        if (expectedDesktopId.length === 0) {
+            return null;
+        }
+
+        let match = null;
+        for (const desktop of KWin.Workspace.desktops) {
+            if (String(desktop.id) !== expectedDesktopId) {
+                continue;
+            }
+            if (match !== null) {
+                return null;
+            }
+            match = desktop;
+        }
+        return match;
+    }
+
+    function overviewExitTargetActivityId() {
+        try {
+            const currentActivityId = KWin.Workspace.currentActivity;
+            const modelActivityId = overviewModel
+                && typeof overviewModel.currentActivityId === "string"
+                ? overviewModel.currentActivityId : "";
+            return currentActivityId !== undefined && currentActivityId !== null
+                && modelActivityId.length > 0
+                && String(currentActivityId) === modelActivityId
+                && modelActivityId === activeOverviewActivityId
+                ? modelActivityId : "";
+        } catch (error) {
+            return "";
+        }
     }
 
     function overviewExitOverlaySourceRect() {
@@ -11065,6 +11125,7 @@ Rectangle {
                     || barrier.handoffPromotion !== overviewExitHandoffPromotion
                     || barrier.handoffWindow !== effect.overviewExitHandoffWindow
                     || overviewContextRefreshPending || !overviewContextModelExact
+                    || !overviewExitHandoffOverlay.terminalCoverageOpaque
                     || !screen || liveScreenFor(screen) !== screen
                     || !Number.isFinite(width) || width <= 0
                     || !Number.isFinite(height) || height <= 0) {
@@ -11093,7 +11154,11 @@ Rectangle {
                 return null;
             }
 
-            return Object.freeze({ barrier, outputId: expectedOutputId });
+            const coverageMode = overviewExitHandoffOverlay.terminalCoverageMode;
+            if (coverageMode !== "canvas" && coverageMode !== "bridge") {
+                return null;
+            }
+            return Object.freeze({ barrier, coverageMode, outputId: expectedOutputId });
         } catch (error) {
             return null;
         }
@@ -11101,6 +11166,7 @@ Rectangle {
 
     function resetSceneRetirementFrameTracking() {
         spatialSceneRetirementTrackedBarrier = null;
+        spatialSceneRetirementTrackedCoverageMode = "";
         spatialSceneRetirementTrackedOutputId = "";
         spatialSceneRetirementFrameCount = 0;
         spatialSceneRetirementFrameRegistered = false;
@@ -11148,6 +11214,7 @@ Rectangle {
         const tracked = spatialSceneRetirementTrackedBarrier !== null;
         const matches = tracked && context
             && spatialSceneRetirementTrackedBarrier === context.barrier
+            && spatialSceneRetirementTrackedCoverageMode === context.coverageMode
             && spatialSceneRetirementTrackedOutputId === context.outputId;
         if (tracked && !matches) {
             invalidateTrackedSceneRetirementFrame();
@@ -11164,6 +11231,7 @@ Rectangle {
         }
 
         spatialSceneRetirementTrackedBarrier = context.barrier;
+        spatialSceneRetirementTrackedCoverageMode = context.coverageMode;
         spatialSceneRetirementTrackedOutputId = context.outputId;
         spatialSceneRetirementFrameCount = 0;
         spatialSceneRetirementFrameRegistered = false;
@@ -11177,6 +11245,7 @@ Rectangle {
         const context = sceneRetirementFrameContext();
         if (!context || spatialSceneRetirementFrameRegistered
                 || spatialSceneRetirementTrackedBarrier !== context.barrier
+                || spatialSceneRetirementTrackedCoverageMode !== context.coverageMode
                 || spatialSceneRetirementTrackedOutputId !== context.outputId) {
             return false;
         }

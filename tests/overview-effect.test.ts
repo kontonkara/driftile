@@ -782,7 +782,7 @@ describe("overview effect package", () => {
     expect(desktopCard).toContain("minimizedWindows: true");
     expect(
       qmlSources.join("\n").match(/KWin\.DesktopBackground\s*\{/gu) ?? [],
-    ).toHaveLength(1);
+    ).toHaveLength(2);
     const kwinWrites =
       qmlSources
         .join("\n")

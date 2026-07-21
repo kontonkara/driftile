@@ -30,8 +30,9 @@ or inexact identity, or an unavailable surface, leaves a solid dark fallback
 visible. Surface construction is asynchronous. Each load captures the exact
 context generation, activity, desktop, screen, and output. Only the newest
 matching surface may fade in over 90 ms after it becomes ready; losing that
-exact context unloads it immediately, and a late ready callback leaves the
-fallback visible.
+exact context unloads it immediately. When late public membership makes the
+same row exact again, it starts a new load without waiting for another topology
+event, and a stale callback cannot clear a newer accepted surface.
 Surface admission is independent from card admission, so a search- or
 drag-retained off-screen card does not create a Desktop surface. KWin's Desktop
 selection excludes panels, docks, and notifications.
@@ -118,7 +119,8 @@ The projected canvas fades with presentation progress, so neither asynchronous
 Desktop surfaces nor window thumbnails can expose a full-size intermediate
 flash. The controller eases presentation progress once, and the scene consumes
 that bounded progress directly. Interactive gestures continue to drive progress
-and settle on completion. Closing uses the same motion in reverse. A manually
+and settle on completion. Closing uses the same motion in reverse while retaining
+an opaque canvas until an exact desktop bridge has rendered twice. A manually
 panned current row returns to its live camera during the close motion; reopening
 during that motion reverses the same visible session from its current progress
 without discarding the current session zoom.
@@ -231,22 +233,26 @@ Window activation captures an immutable handoff before any desktop, focus, or
 minimized-state write. It includes the target identity, desktop, output, exact
 Overview rectangle, target frame, and session cameras and zoom. The visible
 scene then stays frozen while an exact public `KWin.WindowThumbnail` preloads in
-the captured target output's render path at sub-visible opacity. Two matching
-frames latch a ready preload. If promotion arrives first, two bounded promoted
-frames choose the thumbnail or monochrome shell once; stale identity chooses the
-row-scale fallback. Subsequent loader or context changes may only downgrade that
-choice. The committed view morphs from the Overview rectangle to the target
-frame while workspace rows and chrome fade without a live reflow. An exact
-thumbnail remains opaque at terminal progress to bridge into the native window,
-while monochrome and row fallbacks fade out completely.
+the captured target output's render path at sub-visible opacity. In parallel, an
+exact public Desktop surface for the target desktop, activity, and output is
+staged for two rendered frames. If promotion arrives first, two bounded promoted
+frames choose the thumbnail or monochrome shell once; stale window identity
+chooses the desktop-only path. The committed window mode may only downgrade. The
+Desktop surface expands from its row to the output and replaces the fading
+spatial canvas only after it is ready. Until then the canvas stays opaque. The
+target thumbnail morphs from its Overview rectangle to the native frame above
+that surface, so neither a uniform row rectangle nor a transparent terminal
+frame is presented.
 
-Input remains locked throughout the close. At terminal progress, the frozen
-scene retires only after every exact output has rendered two matching frame
-callbacks for the same session, model, topology, and handoff. Reopening clears
-that barrier and reverses the same visible session from its current progress;
-any deferred model refresh resumes after the opening settles. Identity drift or
-scene destruction rejects stale callbacks and fails closed. This handoff adds no
-private API, geometry write, persistence, or auxiliary timer.
+Input remains locked throughout the close. At terminal progress, either the
+two-frame Desktop bridge or the retained spatial canvas still covers every
+output. The frozen scene then retires only after every exact output has rendered
+two matching frame callbacks for the same session, model, topology, and handoff.
+Reopening clears that barrier and reverses the same visible session from its
+current progress; any deferred model refresh resumes after the opening settles.
+Identity drift or scene destruction rejects stale callbacks and fails closed.
+This handoff adds no private API, geometry write, persistence, or auxiliary
+timer.
 
 Every represented eligible window contributes exactly one navigation target. A
 selected non-minimized tabbed member uses its full preview, hidden tabbed

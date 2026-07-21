@@ -2590,6 +2590,7 @@ QtObject {
         try {
             state = runtime.captureOverviewExitHandoff({
                                                            camera: input.camera,
+                                                           desktopSourceRect: input.desktopSourceRect,
                                                            generation: overviewTopologyGeneration,
                                                            sessionId: activeSessionId,
                                                            sourceDesktopId: input.sourceDesktopId,

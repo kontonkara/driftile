@@ -287,7 +287,7 @@ describe("overview exit handoff integration", () => {
     );
   });
 
-  it("renders one target-output public thumbnail with safe fallback", () => {
+  it("renders target-output public window and desktop bridges", () => {
     const planApplication = controller.slice(
       controller.indexOf("function applyOverviewExitHandoffPlan("),
       controller.indexOf("function overviewExitHandoffIsActive("),
@@ -298,6 +298,14 @@ describe("overview exit handoff integration", () => {
     expect(scene).toContain("promotion: root.overviewExitHandoffPromotion");
     expect(scene).toContain("activeOutput: root.outputId");
     expect(scene).toContain("capturedOutput: root.overviewExitHandoffCapture");
+    expect(scene).toContain(
+      "targetActivityId: root.overviewExitTargetActivityId()",
+    );
+    expect(scene).toContain("targetDesktop: root.overviewExitTargetDesktop()");
+    expect(scene).toContain(
+      "targetDesktopId: root.overviewExitTargetDesktopId()",
+    );
+    expect(scene).toContain("targetScreen: root.targetScreen");
     expect(scene).toMatch(
       /windowCandidate: root\.overviewExitHandoffCapture[\s\S]*targetKind === "window"[\s\S]*sceneEffect\.overviewExitHandoffWindow/u,
     );
@@ -305,6 +313,11 @@ describe("overview exit handoff integration", () => {
     expect(scene).not.toContain("promotedOutput:");
     expect(scene).toContain("progress: 1 - root.spatialPresentationProgress");
     expect(scene).toContain("overviewExitOverlaySourceRect()");
+    expect(scene).toContain("desktopSourceRect: target.desktopSourceRect");
+    expect(controller).toContain("desktopSourceRect: input.desktopSourceRect");
+    expect(scene).toMatch(
+      /const targetIndex = target[\s\S]*desktopIds\.indexOf\(target\.targetDesktopId\)[\s\S]*spatialExitFrozenWorkspaceIndex = targetIndex;[\s\S]*spatialPresentationWorkspaceIndex = targetIndex;/u,
+    );
     expect(entrypoint).toContain(
       "readonly property var overviewExitHandoffPromotion: controller",
     );
@@ -412,6 +425,12 @@ describe("overview exit handoff integration", () => {
     expect(frameContext).toContain(
       "barrier.handoffState !== overviewExitHandoffState",
     );
+    expect(frameContext).toContain(
+      "!overviewExitHandoffOverlay.terminalCoverageOpaque",
+    );
+    expect(frameContext).toMatch(
+      /const coverageMode = overviewExitHandoffOverlay\.terminalCoverageMode;[\s\S]*coverageMode !== "canvas" && coverageMode !== "bridge"[\s\S]*Object\.freeze\(\{ barrier, coverageMode, outputId: expectedOutputId \}\)/u,
+    );
     expect(frameAdvance).toMatch(
       /spatialSceneRetirementFrameCount \+= 1;[\s\S]*spatialSceneRetirementFrameCount !== 2[\s\S]*registerOverviewSceneRetirementFrame/u,
     );
@@ -420,6 +439,9 @@ describe("overview exit handoff integration", () => {
     );
     expect(frameSynchronization).toContain(
       "const context = sceneRetirementFrameContext();",
+    );
+    expect(frameSynchronization).toContain(
+      "spatialSceneRetirementTrackedCoverageMode === context.coverageMode",
     );
     expect(frameSynchronization).not.toContain(
       "const context = spatialSceneRetirementFrameContext;",
