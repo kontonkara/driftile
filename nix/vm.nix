@@ -676,7 +676,7 @@ let
           -p "tabtitle=$base_title" \
           -p "LocalTabTitleFormat=$base_title" \
           -p "RemoteTabTitleFormat=$base_title" \
-          -e ${pkgs.coreutils}/bin/sleep 480 \
+          -e ${pkgs.coreutils}/bin/sleep 1200 \
           >>/tmp/driftile-vm-konsole.log 2>&1 &
         process_pid=$!
         printf -v "$pid_variable" '%s' "$process_pid"

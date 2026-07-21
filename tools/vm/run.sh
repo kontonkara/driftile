@@ -288,7 +288,7 @@ monitor_guest() {
     [same-stack]=false
   )
 
-  for ((attempt = 0; attempt < 3000; attempt += 1)); do
+  for ((attempt = 0; attempt < 4500; attempt += 1)); do
     for key_name in \
       bracket-right \
       close-window \
@@ -582,7 +582,7 @@ monitor_guest() {
     sleep 0.2
   done
 
-  printf 'The VM did not report Driftile status within 600 seconds.\n' >&2
+  printf 'The VM did not report Driftile status within 900 seconds.\n' >&2
   set_physical_pointer_drag_state false >/dev/null 2>&1 || true
   finish_full_vm_monitor || true
   return 1
