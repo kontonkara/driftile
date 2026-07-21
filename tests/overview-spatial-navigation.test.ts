@@ -298,7 +298,24 @@ describe("spatial overview navigation geometry", () => {
       /function activationIsExact\(\) \{\s*return tabShell\.visible && tabShell\.frameIsExact\(\)\s*&& windowPresentation\.primaryVisualKind === "tab"/u,
     );
     expect(tabShell).toMatch(
-      /onTapped: \{\s*if \(!tabShell\.activationIsExact\(\)\) \{\s*return;\s*\}\s*card\.windowTapped\(/u,
+      /TapHandler \{\s*id: tabActivationHandler[\s\S]*gesturePolicy: TapHandler\.DragThreshold/u,
+    );
+    expect(tabShell).toContain("property int activationGestureSerial: 0");
+    expect(tabShell).toContain(
+      "property var minimizedActivationSnapshot: null",
+    );
+    expect(tabShell).toContain("minimizedActivationSnapshot = Object.freeze({");
+    expect(tabShell).toMatch(
+      /onGrabChanged: \(transition, point\) =>\s*tabShell\.handleActivationGrabChanged\(transition, point\)/u,
+    );
+    expect(tabShell).toMatch(
+      /PointerDevice\.GrabPassive[\s\S]*EventPoint\.Pressed[\s\S]*armMinimizedActivation\(point\)[\s\S]*PointerDevice\.UngrabPassive[\s\S]*EventPoint\.Released[\s\S]*Qt\.callLater/u,
+    );
+    expect(tabShell).toMatch(
+      /onTapped:[\s\S]*activationTappedSerial = serial;[\s\S]*minimizedActivationSnapshot = null;[\s\S]*dispatchExactActivation\(serial, snapshot\)/u,
+    );
+    expect(tabShell.indexOf("activationConsumedSerial = serial;")).toBeLessThan(
+      tabShell.indexOf("card.windowTapped("),
     );
   });
 

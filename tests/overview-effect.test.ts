@@ -5748,12 +5748,24 @@ describe("overview effect package", () => {
     expect(tab).toContain(
       "acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad | PointerDevice.TouchScreen",
     );
+    expect(tab).toContain("id: tabActivationHandler");
     expect(tab).toContain("gesturePolicy: TapHandler.DragThreshold");
+    expect(tab).toContain("const candidate = windowPresentation.candidate;");
     expect(tab).toContain(
-      "card.windowTapped(windowPresentation.candidate, windowPresentation.windowId,",
+      "const expectedWindowId = windowPresentation.windowId;",
     );
-    expect(tab).toContain("windowPresentation.sourceDesktopId,");
-    expect(tab).toContain("windowPresentation.sourceScreen)");
+    expect(tab).toContain(
+      "const expectedDesktop = windowPresentation.sourceDesktop;",
+    );
+    expect(tab).toContain(
+      "const expectedDesktopId = windowPresentation.sourceDesktopId;",
+    );
+    expect(tab).toContain(
+      "const expectedScreen = windowPresentation.sourceScreen;",
+    );
+    expect(tab).toContain(
+      "card.windowTapped(candidate, expectedWindowId, expectedDesktop,",
+    );
     expect(tab).toContain("acceptedButtons: Qt.MiddleButton");
     expect(tab).toContain(
       "acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad",
@@ -5794,6 +5806,83 @@ describe("overview effect package", () => {
     );
   });
 
+  it("recovers exact minimized tab releases without widening drag grabs", () => {
+    const tabStart = desktopCard.indexOf("id: tabShell");
+    const tab = desktopCard.slice(
+      tabStart,
+      desktopCard.indexOf("id: thumbnailShell", tabStart),
+    );
+    const activationHandlerId = tab.indexOf("id: tabActivationHandler");
+    const activationHandler = tab.slice(
+      tab.lastIndexOf("TapHandler {", activationHandlerId),
+      tab.indexOf("\n                    TapHandler {", activationHandlerId),
+    );
+    const recovery = tab.slice(
+      tab.indexOf("function armMinimizedActivation("),
+      tab.indexOf("function closeIsExact("),
+    );
+    const dispatch = tab.slice(
+      tab.indexOf("function dispatchExactActivation("),
+      tab.indexOf("function handleActivationGrabChanged("),
+    );
+
+    expect(tabStart).toBeGreaterThanOrEqual(0);
+    expect(activationHandlerId).toBeGreaterThanOrEqual(0);
+    expect(activationHandler).toContain(
+      "gesturePolicy: TapHandler.DragThreshold",
+    );
+    expect(activationHandler).not.toContain("TapHandler.ReleaseWithinBounds");
+    expect(recovery).toMatch(
+      /point\.state !== EventPoint\.Pressed[\s\S]*!minimizedTab[\s\S]*!activationIsExact\(\)[\s\S]*minimizedActivationSnapshot = Object\.freeze/u,
+    );
+    expect(recovery).toMatch(
+      /candidate: windowPresentation\.candidate[\s\S]*windowId: windowPresentation\.windowId[\s\S]*sourceDesktop: windowPresentation\.sourceDesktop[\s\S]*sourceScreen: windowPresentation\.sourceScreen/u,
+    );
+    expect(recovery).toMatch(
+      /frame: tabShell\.frame[\s\S]*overviewContextGeneration: card\.overviewContextGeneration[\s\S]*overviewActivityId: card\.overviewActivityId[\s\S]*outputId: card\.outputId/u,
+    );
+    expect(recovery).toMatch(
+      /pointId,[\s\S]*device: point\.device[\s\S]*localX: localPosition\.x[\s\S]*sceneX: scenePosition\.x/u,
+    );
+    expect(recovery).not.toMatch(/(?:point|eventPoint):\s*point\b/u);
+    expect(recovery).toMatch(
+      /snapshot === minimizedActivationSnapshot[\s\S]*activationTappedSerial !== snapshot\.serial[\s\S]*activationCanceledSerial !== snapshot\.serial[\s\S]*activationConsumedSerial !== snapshot\.serial/u,
+    );
+    expect(recovery).toMatch(
+      /PointerDevice\.CancelGrabPassive[\s\S]*PointerDevice\.CancelGrabExclusive[\s\S]*disarmMinimizedActivation\(\)/u,
+    );
+    expect(recovery).toMatch(
+      /PointerDevice\.UngrabPassive[\s\S]*EventPoint\.Released[\s\S]*Qt\.callLater/u,
+    );
+    expect(recovery).toMatch(
+      /deltaX \* deltaX \+ deltaY \* deltaY <= threshold \* threshold[\s\S]*snapshot\.localX \+ release\.sceneX - snapshot\.sceneX[\s\S]*tabShell\.contains\(Qt\.point/u,
+    );
+
+    expect(activationHandler).toContain(
+      "onCanceled: tabShell.disarmMinimizedActivation()",
+    );
+    expect(activationHandler).toContain(
+      "onLongPressed: tabShell.disarmMinimizedActivation()",
+    );
+    expect(activationHandler).toMatch(
+      /onEnabledChanged:[\s\S]*if \(!enabled\)[\s\S]*disarmMinimizedActivation\(\)/u,
+    );
+    const pressedChanged = activationHandler.slice(
+      activationHandler.indexOf("onPressedChanged:"),
+      activationHandler.indexOf("onTapped:"),
+    );
+    expect(pressedChanged).toContain(
+      "activationSceneDisplacementIsWithinThreshold(",
+    );
+    expect(pressedChanged).not.toContain("point.state");
+
+    expect(dispatch.indexOf("activationConsumedSerial = serial;")).toBeLessThan(
+      dispatch.indexOf("card.windowTapped("),
+    );
+    expect(`${recovery}\n${activationHandler}`).not.toMatch(
+      /\bTimer\s*\{|org\.kde\.kwin\.private|\.setValue\s*\(/u,
+    );
+  });
   it("loads the runtime through the fail-closed adapter boundary", () => {
     expect(controller).toContain('import "../code/main.js" as OverviewRuntime');
     expect(controller).toContain("OverviewRuntime.DriftileOverview");

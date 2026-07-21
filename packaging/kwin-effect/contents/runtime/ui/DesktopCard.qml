@@ -1028,6 +1028,23 @@ Item {
                     readonly property bool keyboardTarget: activationEligible
                     readonly property bool keyboardSelected: keyboardTarget
                         && card.keyboardSelectionId === card.navigationTargetId(windowPresentation.windowId)
+                    property int activationGestureSerial: 0
+                    property int activationTappedSerial: -1
+                    property int activationCanceledSerial: -1
+                    property int activationConsumedSerial: -1
+                    property var minimizedActivationSnapshot: null
+
+                    function nextActivationGestureSerial() {
+                        if (activationGestureSerial >= 2147483646) {
+                            activationTappedSerial = -1;
+                            activationCanceledSerial = -1;
+                            activationConsumedSerial = -1;
+                            activationGestureSerial = 1;
+                        } else {
+                            activationGestureSerial += 1;
+                        }
+                        return activationGestureSerial;
+                    }
 
                     function frameIsExact() {
                         return frame !== null
@@ -1040,6 +1057,178 @@ Item {
                             && windowPresentation.primaryVisualKind === "tab"
                             && windowPresentation.matchesSearch
                             && card.windowCanNavigate(windowPresentation);
+                    }
+
+                    function armMinimizedActivation(point) {
+                        const serial = nextActivationGestureSerial();
+                        minimizedActivationSnapshot = null;
+                        if (!point || point.state !== EventPoint.Pressed
+                                || !tabActivationHandler.enabled || !minimizedTab
+                                || !activationIsExact()) {
+                            return;
+                        }
+
+                        const localPosition = point.position;
+                        const scenePosition = point.scenePosition;
+                        const pointId = point.id;
+                        if (!localPosition || !scenePosition || !Number.isFinite(pointId)
+                                || !Number.isFinite(localPosition.x)
+                                || !Number.isFinite(localPosition.y)
+                                || !Number.isFinite(scenePosition.x)
+                                || !Number.isFinite(scenePosition.y)
+                                || !Number.isFinite(tabShell.width)
+                                || !Number.isFinite(tabShell.height)
+                                || tabShell.width <= 0 || tabShell.height <= 0
+                                || !tabShell.contains(Qt.point(localPosition.x, localPosition.y))) {
+                            activationCanceledSerial = serial;
+                            return;
+                        }
+
+                        minimizedActivationSnapshot = Object.freeze({
+                            serial,
+                            candidate: windowPresentation.candidate,
+                            windowId: windowPresentation.windowId,
+                            sourceDesktop: windowPresentation.sourceDesktop,
+                            sourceDesktopId: windowPresentation.sourceDesktopId,
+                            sourceScreen: windowPresentation.sourceScreen,
+                            frame: tabShell.frame,
+                            overviewContextGeneration: card.overviewContextGeneration,
+                            overviewActivityId: card.overviewActivityId,
+                            outputId: card.outputId,
+                            pointId,
+                            device: point.device,
+                            localX: localPosition.x,
+                            localY: localPosition.y,
+                            sceneX: scenePosition.x,
+                            sceneY: scenePosition.y,
+                            width: tabShell.width,
+                            height: tabShell.height
+                        });
+                    }
+
+                    function disarmMinimizedActivation(expectedSnapshot) {
+                        const snapshot = minimizedActivationSnapshot;
+                        if (!snapshot || (expectedSnapshot !== undefined
+                                && expectedSnapshot !== null && expectedSnapshot !== snapshot)) {
+                            return;
+                        }
+                        activationCanceledSerial = snapshot.serial;
+                        minimizedActivationSnapshot = null;
+                    }
+
+                    function activationSnapshotMatchesCurrent(snapshot) {
+                        return snapshot !== null && snapshot !== undefined
+                            && snapshot.serial === activationGestureSerial
+                            && snapshot.candidate === windowPresentation.candidate
+                            && snapshot.windowId === windowPresentation.windowId
+                            && snapshot.sourceDesktop === windowPresentation.sourceDesktop
+                            && snapshot.sourceDesktopId === windowPresentation.sourceDesktopId
+                            && snapshot.sourceScreen === windowPresentation.sourceScreen
+                            && snapshot.frame === tabShell.frame
+                            && snapshot.overviewContextGeneration === card.overviewContextGeneration
+                            && snapshot.overviewActivityId === card.overviewActivityId
+                            && snapshot.outputId === card.outputId
+                            && snapshot.width === tabShell.width
+                            && snapshot.height === tabShell.height
+                            && tabShell.minimizedTab && tabActivationHandler.enabled
+                            && tabShell.activationIsExact();
+                    }
+
+                    function armedActivationSnapshotIsExact(snapshot) {
+                        return snapshot === minimizedActivationSnapshot
+                            && activationTappedSerial !== snapshot.serial
+                            && activationCanceledSerial !== snapshot.serial
+                            && activationConsumedSerial !== snapshot.serial
+                            && activationSnapshotMatchesCurrent(snapshot);
+                    }
+
+                    function activationSceneDisplacementIsWithinThreshold(snapshot, sceneX, sceneY) {
+                        const threshold = tabActivationHandler.dragThreshold;
+                        if (!snapshot || !Number.isFinite(sceneX) || !Number.isFinite(sceneY)
+                                || !Number.isFinite(threshold) || threshold < 0) {
+                            return false;
+                        }
+                        const deltaX = sceneX - snapshot.sceneX;
+                        const deltaY = sceneY - snapshot.sceneY;
+                        return deltaX * deltaX + deltaY * deltaY <= threshold * threshold;
+                    }
+
+                    function activationReleaseIsInside(snapshot, release) {
+                        if (!release || release.serial !== snapshot.serial
+                                || release.pointId !== snapshot.pointId
+                                || release.device !== snapshot.device
+                                || !activationSceneDisplacementIsWithinThreshold(
+                                    snapshot, release.sceneX, release.sceneY)) {
+                            return false;
+                        }
+                        const releaseLocalX = snapshot.localX + release.sceneX - snapshot.sceneX;
+                        const releaseLocalY = snapshot.localY + release.sceneY - snapshot.sceneY;
+                        return Number.isFinite(releaseLocalX) && Number.isFinite(releaseLocalY)
+                            && tabShell.contains(Qt.point(releaseLocalX, releaseLocalY));
+                    }
+
+                    function dispatchExactActivation(serial, snapshot) {
+                        if (serial !== activationGestureSerial
+                                || activationConsumedSerial === serial
+                                || (snapshot && !activationSnapshotMatchesCurrent(snapshot))
+                                || !tabShell.activationIsExact()) {
+                            return false;
+                        }
+
+                        const candidate = windowPresentation.candidate;
+                        const expectedWindowId = windowPresentation.windowId;
+                        const expectedDesktop = windowPresentation.sourceDesktop;
+                        const expectedDesktopId = windowPresentation.sourceDesktopId;
+                        const expectedScreen = windowPresentation.sourceScreen;
+                        activationConsumedSerial = serial;
+                        if (minimizedActivationSnapshot
+                                && minimizedActivationSnapshot.serial === serial) {
+                            minimizedActivationSnapshot = null;
+                        }
+                        card.windowTapped(candidate, expectedWindowId, expectedDesktop,
+                                          expectedDesktopId, expectedScreen);
+                        return true;
+                    }
+
+                    function handleActivationGrabChanged(transition, point) {
+                        if (transition === PointerDevice.GrabPassive
+                                && point && point.state === EventPoint.Pressed) {
+                            armMinimizedActivation(point);
+                            return;
+                        }
+                        if (transition === PointerDevice.CancelGrabPassive
+                                || transition === PointerDevice.CancelGrabExclusive) {
+                            disarmMinimizedActivation();
+                            return;
+                        }
+                        if (transition !== PointerDevice.UngrabPassive) {
+                            return;
+                        }
+
+                        const snapshot = minimizedActivationSnapshot;
+                        if (!snapshot || !point || point.state !== EventPoint.Released
+                                || !Number.isFinite(point.id)
+                                || !point.scenePosition
+                                || !Number.isFinite(point.scenePosition.x)
+                                || !Number.isFinite(point.scenePosition.y)) {
+                            disarmMinimizedActivation(snapshot);
+                            return;
+                        }
+                        const release = Object.freeze({
+                            serial: snapshot.serial,
+                            pointId: point.id,
+                            device: point.device,
+                            sceneX: point.scenePosition.x,
+                            sceneY: point.scenePosition.y
+                        });
+                        Qt.callLater(() => {
+                            if (tabShell.armedActivationSnapshotIsExact(snapshot)
+                                    && tabShell.activationReleaseIsInside(snapshot, release)) {
+                                tabShell.dispatchExactActivation(snapshot.serial, snapshot);
+                            } else {
+                                tabShell.disarmMinimizedActivation(snapshot);
+                            }
+                        });
                     }
 
                     function closeIsExact() {
@@ -1133,6 +1322,8 @@ Item {
                     }
 
                     TapHandler {
+                        id: tabActivationHandler
+
                         acceptedButtons: Qt.LeftButton
                         acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad | PointerDevice.TouchScreen
                         gesturePolicy: TapHandler.DragThreshold
@@ -1140,14 +1331,32 @@ Item {
                             && card.desktop && card.screen && card.columnDragActiveSource === null
                             && card.columnPointerHoverSource === null
                             && card.columnPointerPressSource === null && !card.spatialDirectDragBlocked
-                        onTapped: {
-                            if (!tabShell.activationIsExact()) {
-                                return;
+                        onEnabledChanged: {
+                            if (!enabled) {
+                                tabShell.disarmMinimizedActivation();
                             }
-                            card.windowTapped(windowPresentation.candidate, windowPresentation.windowId,
-                                              windowPresentation.sourceDesktop,
-                                              windowPresentation.sourceDesktopId,
-                                              windowPresentation.sourceScreen);
+                        }
+                        onCanceled: tabShell.disarmMinimizedActivation()
+                        onLongPressed: tabShell.disarmMinimizedActivation()
+                        onGrabChanged: (transition, point) =>
+                            tabShell.handleActivationGrabChanged(transition, point)
+                        onPressedChanged: {
+                            const snapshot = tabShell.minimizedActivationSnapshot;
+                            const scenePosition = point.scenePosition;
+                            if (!pressed && snapshot && (!scenePosition
+                                    || !tabShell.activationSceneDisplacementIsWithinThreshold(
+                                        snapshot, scenePosition.x, scenePosition.y))) {
+                                tabShell.disarmMinimizedActivation(snapshot);
+                            }
+                        }
+                        onTapped: {
+                            const serial = tabShell.activationGestureSerial;
+                            const snapshot = tabShell.minimizedActivationSnapshot;
+                            tabShell.activationTappedSerial = serial;
+                            if (snapshot && snapshot.serial === serial) {
+                                tabShell.minimizedActivationSnapshot = null;
+                            }
+                            tabShell.dispatchExactActivation(serial, snapshot);
                         }
                     }
 
