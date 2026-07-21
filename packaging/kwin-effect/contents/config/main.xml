@@ -30,7 +30,7 @@
       <default>0.5</default>
     </entry>
     <entry name="ShowWindowLabels" type="Bool">
-      <label>Show window labels</label>
+      <label>Show labels on large window thumbnails</label>
       <default>false</default>
     </entry>
     <entry name="ShowApplicationIdentity" type="Bool">

@@ -5873,7 +5873,7 @@ describe("overview effect package", () => {
       /PointerDevice\.UngrabPassive[\s\S]*EventPoint\.Released[\s\S]*Qt\.callLater/u,
     );
     expect(recovery).toMatch(
-      /deltaX \* deltaX \+ deltaY \* deltaY <= threshold \* threshold[\s\S]*snapshot\.localX \+ release\.sceneX - snapshot\.sceneX[\s\S]*tabShell\.contains\(Qt\.point/u,
+      /deltaX \* deltaX \+ deltaY \* deltaY <= threshold \* threshold[\s\S]*snapshot\.localX \+ release\.sceneX - snapshot\.sceneX[\s\S]*const releaseLocalPosition = Qt\.point[\s\S]*tabShell\.contains\(releaseLocalPosition\)[\s\S]*!card\.closeButtonContainsPoint\(tabCloseButton, tabShell,/u,
     );
 
     expect(activationHandler).toContain(

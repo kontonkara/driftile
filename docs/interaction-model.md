@@ -397,18 +397,27 @@ Multi-member tabbed columns keep the selected member at its full projected
 size and add a compact tab rail over the column; the controls do not shrink or
 reflow the selected preview. Each tab shows selected, minimized, and attention
 state. Its bounded plain-text label uses the available application or window
-identity and falls back to `Tab N` when no safe label is available.
+identity and falls back to `Tab N` when no safe label is available. Tab labels
+remain readable independently of the optional `ShowWindowLabels`
+large-thumbnail footer setting.
+Actionable chips expose hover and pressed feedback without changing their
+geometry.
 
 Windows that were already minimized when Overview opened remain represented,
 and minimized windows use compact actionable placeholders instead of draggable
 thumbnails. Hidden tab members and minimized windows participate in search and
 keyboard navigation. Each window contributes exactly one navigation target:
 its selected preview, minimized placeholder, or tab control. `Enter`, `Return`,
-and `Space` activate that target through the same guarded path.
+and `Space` activate that target through the same guarded path. Actionable
+placeholders expose the same hover and pressed feedback as tab chips while
+remaining excluded from every drag path.
 
 A primary mouse click, touchpad tap, or touchscreen tap on a tab control
-activates its exact window. A middle mouse or touchpad click closes an eligible
-window only while the same exact close checks still pass. Stale column
+activates its exact window. A sufficiently wide closeable tab chip exposes the
+same optional close button as other window surfaces. Its exclusive guarded
+release cannot also activate the tab or begin a drag. A middle mouse or
+touchpad click closes any eligible visible tab only while the same exact close
+checks still pass, including the chip for the selected member. Stale column
 membership, geometry, output, desktop, activity, or window identity disables
 the control instead of falling through to another action.
 

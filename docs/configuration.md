@@ -25,11 +25,13 @@ swipe to open and a down swipe to close by default. Configure or disable the
 gesture from the effect's settings. Finger counts range from `3` to `5`. A
 pointer screen edge can also open the effect and is disabled by default.
 
-The same page controls backdrop color, zoom, window labels, application
-identity and icons, close buttons, state badges, desktop names, and output
-names. See [Spatial Overview](overview.md) for interaction details. Use a
-different finger count from Driftile's desktop navigation and Plasma's built-in
-Overview, or disable the overlapping gesture, so each direction has one owner.
+The same page controls backdrop color, zoom, large-thumbnail label footers,
+application identity and icons, close buttons, state badges, desktop names, and
+output names. Tab chips and minimized placeholders retain compact bounded labels
+independently of the `ShowWindowLabels` thumbnail-footer setting. See
+[Spatial Overview](overview.md) for interaction details. Use a different finger
+count from Driftile's desktop navigation and Plasma's built-in Overview, or
+disable the overlapping gesture, so each direction has one owner.
 The configured zoom is the starting scale for each fresh Overview session;
 interactive zoom never rewrites it. When touchpad gesture support is enabled,
 the configured `3`- to `5`-finger count is also used by KWin's touchpad
@@ -37,11 +39,12 @@ pinch-to-zoom gesture on supported backends. Touchscreen zoom always uses two
 touch points and does not add another setting.
 
 Window close buttons remain disabled by default. When enabled, eligible,
-sufficiently large previews and minimized placeholders keep a close control
-visible for mouse, touchpad, and touchscreen input. Its touch target is
+sufficiently large previews, tab chips, and minimized placeholders keep a close
+control visible for mouse, touchpad, and touchscreen input. Its touch target is
 modestly enlarged without changing layout. Releasing outside cancels; an exact
 guarded close never activates or drags the window and changes no persisted
-layout state.
+layout state. An eligible visible tab can also be closed with a guarded middle
+click, including the selected tab.
 
 Home Manager leaves these KConfig values unmanaged by default. It can manage
 them independently of package installation:

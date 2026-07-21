@@ -63,10 +63,13 @@ column with guarded public live KWin geometry; an incomplete, stale, or
 inconsistent live column fails closed and keeps its solved projection.
 
 Stacked columns show every eligible member in its exact solved or live frame. A
-tabbed column shows only its selected member at the exact full shared frame.
-The Overview does not add a synthetic tab strip, member guide, or thumbnail
-inset. Floating windows retain their output-local geometry. Minimized windows
-are excluded from the main spatial plane.
+multi-member tabbed column keeps its selected member at the exact full shared
+frame and overlays a compact tab rail without shrinking the preview. Every real
+member has a tab chip, including minimized members, when the complete rail fits
+the visible column; an undersized rail fails closed instead of exposing partial
+controls. Floating windows retain their output-local geometry. Eligible
+minimized stacked and floating windows use compact placeholders in their
+projected slots instead of thumbnails.
 
 The horizontal camera is session-only. It initially matches the authoritative
 layout viewport, follows a valid active tiled window, and can be detached by
@@ -245,10 +248,12 @@ any deferred model refresh resumes after the opening settles. Identity drift or
 scene destruction rejects stale callbacks and fails closed. This handoff adds no
 private API, geometry write, persistence, or auxiliary timer.
 
-Only the selected member of a tabbed column is a target in the spatial plane.
-Unselected tabbed members and minimized windows do not receive synthetic
-targets. Off-screen targets in an instantiated row remain navigable and are
-revealed when selected.
+Every represented eligible window contributes exactly one navigation target. A
+selected non-minimized tabbed member uses its full preview, hidden tabbed
+members use their tab chips when the complete rail fits, and a selected
+minimized member uses its compact placeholder. Eligible minimized stacked and
+floating windows similarly use placeholders. Off-screen targets in an
+instantiated row remain navigable and are revealed when selected.
 
 A short mouse, touchpad, or touchscreen tap on an empty row surface or its
 number marker selects an exact non-current workspace. The same action on the
@@ -351,19 +356,21 @@ disabled by default and can be enabled independently:
 
 - desktop names;
 - output names;
-- window labels;
+- large-thumbnail label footers;
 - application identity and icons;
 - window close buttons;
 - window state badges.
 
 Invalid or non-boolean values fall back to disabled. Search fields remain
-available when their visual labels are hidden. When window close buttons are
-enabled, eligible sufficiently large previews and minimized placeholders keep
-their close controls visible for mouse, touchpad, and touchscreen input. The
-touch target is modestly enlarged without changing layout. Releasing outside
-the control cancels; an exact guarded close is consumed without activating or
-dragging the window. Appearance options do not alter layout geometry or
-persistence, and the setting remains disabled by default.
+available when their visual labels are hidden. The `ShowWindowLabels` setting
+controls only large-thumbnail footers; tab chips and minimized placeholders
+always keep their compact bounded labels. When window close buttons are enabled, eligible
+sufficiently large previews, tab chips, and minimized placeholders keep their
+close controls visible for mouse, touchpad, and touchscreen input. The touch
+target is modestly enlarged without changing layout. Releasing outside cancels;
+an exact guarded close is consumed without activating or dragging the window.
+Appearance options do not alter layout geometry or persistence, and the setting
+remains disabled by default.
 
 Backdrop color and the fresh-session zoom are configurable. Zoom accepts values
 from `0.2` through `0.75` and defaults to `0.5`; interactive session changes do

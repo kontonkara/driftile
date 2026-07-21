@@ -1028,6 +1028,7 @@ Item {
                     readonly property bool keyboardTarget: activationEligible
                     readonly property bool keyboardSelected: keyboardTarget
                         && card.keyboardSelectionId === card.navigationTargetId(windowPresentation.windowId)
+                    readonly property bool closeButtonLargeEnough: width >= 64 && height >= 20
                     property int activationGestureSerial: 0
                     property int activationTappedSerial: -1
                     property int activationCanceledSerial: -1
@@ -1079,7 +1080,9 @@ Item {
                                 || !Number.isFinite(tabShell.width)
                                 || !Number.isFinite(tabShell.height)
                                 || tabShell.width <= 0 || tabShell.height <= 0
-                                || !tabShell.contains(Qt.point(localPosition.x, localPosition.y))) {
+                                || !tabShell.contains(Qt.point(localPosition.x, localPosition.y))
+                                || card.closeButtonContainsPoint(tabCloseButton, tabShell,
+                                                                 localPosition)) {
                             activationCanceledSerial = serial;
                             return;
                         }
@@ -1163,8 +1166,13 @@ Item {
                         }
                         const releaseLocalX = snapshot.localX + release.sceneX - snapshot.sceneX;
                         const releaseLocalY = snapshot.localY + release.sceneY - snapshot.sceneY;
-                        return Number.isFinite(releaseLocalX) && Number.isFinite(releaseLocalY)
-                            && tabShell.contains(Qt.point(releaseLocalX, releaseLocalY));
+                        if (!Number.isFinite(releaseLocalX) || !Number.isFinite(releaseLocalY)) {
+                            return false;
+                        }
+                        const releaseLocalPosition = Qt.point(releaseLocalX, releaseLocalY);
+                        return tabShell.contains(releaseLocalPosition)
+                            && !card.closeButtonContainsPoint(tabCloseButton, tabShell,
+                                                              releaseLocalPosition);
                     }
 
                     function dispatchExactActivation(serial, snapshot) {
@@ -1234,7 +1242,7 @@ Item {
 
                     function closeIsExact() {
                         return tabShell.visible && tabShell.frameIsExact()
-                            && windowPresentation.primaryVisualKind === "tab"
+                            && windowPresentation.matchesSearch
                             && windowPresentation.closeEligible
                             && card.windowSnapshotCanRequestClose(windowPresentation);
                     }
@@ -1245,8 +1253,10 @@ Item {
                     height: frame ? frame.height : 0
                     visible: frame !== null && model.window && windowPresentation.matchesSearch
                     opacity: windowPresentation.opacity
-                    color: selectedTab ? "#e63a4960"
-                                       : minimizedTab ? "#dc252e3d" : "#dc111824"
+                    color: tabActivationHandler.pressed ? "#f24b6482"
+                        : tabHoverHandler.hovered ? "#e641526b"
+                        : selectedTab ? "#e63a4960"
+                        : minimizedTab ? "#dc252e3d" : "#dc111824"
                     border.width: keyboardSelected || activeTab ? 2 : 1
                     border.color: keyboardSelected ? "#ffd166"
                                                    : attentionTab ? "#e2556f"
@@ -1275,8 +1285,10 @@ Item {
                         anchors.leftMargin: tabApplicationIcon.iconAvailable
                             ? tabApplicationIcon.x + tabApplicationIcon.width + 4
                             : tabShell.attentionTab ? 8 : 5
-                        anchors.rightMargin: tabMinimizedMarker.visible ? 13 : 5
-                        text: card.showWindowLabels && windowPresentation.windowLabel !== null
+                        anchors.rightMargin: tabCloseButton.visible
+                            ? (tabMinimizedMarker.visible ? 34 : 22)
+                            : tabMinimizedMarker.visible ? 13 : 5
+                        text: windowPresentation.windowLabel !== null
                             ? windowPresentation.windowLabel.primary
                             : `Tab ${tabShell.frame ? tabShell.frame.memberIndex + 1 : ""}`
                         color: tabShell.minimizedTab ? "#aebbd0" : "#f3f7ff"
@@ -1322,6 +1334,45 @@ Item {
                         z: 1
                     }
 
+                    WindowCloseButton {
+                        id: tabCloseButton
+
+                        anchors.right: parent.right
+                        anchors.verticalCenter: parent.verticalCenter
+                        anchors.rightMargin: tabShell.minimizedTab ? 16 : 4
+                        width: 14
+                        height: 14
+                        settingEnabled: card.showWindowCloseButtons
+                        closeEligible: windowPresentation.closeEligible
+                        keyboardSelected: tabShell.keyboardSelected
+                        surfaceLargeEnough: tabShell.closeButtonLargeEnough
+                        enabled: card.interactionEligible && !card.spatialDirectDragBlocked
+                            && card.columnDragActiveSource === null
+                            && card.columnPointerHoverSource === null
+                            && card.columnPointerPressSource === null
+                        z: 4
+                        onCloseRequested: {
+                            if (!tabShell.closeIsExact()) {
+                                return;
+                            }
+                            card.windowCloseRequested(windowPresentation.candidate,
+                                                      windowPresentation.windowId,
+                                                      windowPresentation.sourceDesktop,
+                                                      windowPresentation.sourceDesktopId,
+                                                      windowPresentation.sourceScreen);
+                        }
+                    }
+
+                    HoverHandler {
+                        id: tabHoverHandler
+
+                        acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
+                        enabled: tabShell.visible && card.interactionEligible
+                            && (tabShell.activationEligible || windowPresentation.closeEligible)
+                            && !card.spatialDirectDragBlocked
+                        cursorShape: Qt.PointingHandCursor
+                    }
+
                     TapHandler {
                         id: tabActivationHandler
 
@@ -1350,7 +1401,12 @@ Item {
                                 tabShell.disarmMinimizedActivation(snapshot);
                             }
                         }
-                        onTapped: {
+                        onTapped: point => {
+                            if (card.closeButtonContainsPoint(tabCloseButton, tabShell,
+                                                              point.position)) {
+                                tabShell.disarmMinimizedActivation();
+                                return;
+                            }
                             const serial = tabShell.activationGestureSerial;
                             const snapshot = tabShell.minimizedActivationSnapshot;
                             tabShell.activationTappedSerial = serial;
@@ -1364,7 +1420,7 @@ Item {
                     TapHandler {
                         acceptedButtons: Qt.MiddleButton
                         acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
-                        enabled: tabShell.activationEligible && windowPresentation.closeEligible
+                        enabled: tabShell.visible && windowPresentation.closeEligible
                             && card.interactionEligible && card.columnDragActiveSource === null
                             && card.columnPointerHoverSource === null
                             && card.columnPointerPressSource === null && !card.spatialDirectDragBlocked
@@ -1846,7 +1902,9 @@ Item {
                     height: frame ? frame.height : 0
                     visible: frame !== null && model.window && windowPresentation.minimizedWindow
                              && windowPresentation.matchesSearch
-                    color: "#dc252e3d"
+                    color: minimizedPlaceholderActivationHandler.pressed ? "#f23e4d65"
+                        : minimizedPlaceholderHoverHandler.hovered ? "#e6323e52"
+                        : "#dc252e3d"
                     border.width: 1
                     border.color: "#66758b"
                     radius: 3
@@ -1948,7 +2006,19 @@ Item {
                                                                     windowPresentation.sourceScreen)
                     }
 
+                    HoverHandler {
+                        id: minimizedPlaceholderHoverHandler
+
+                        acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
+                        enabled: minimizedPlaceholderShell.visible
+                            && minimizedPlaceholderShell.activationEligible
+                            && !card.spatialDirectDragBlocked
+                        cursorShape: Qt.PointingHandCursor
+                    }
+
                     TapHandler {
+                        id: minimizedPlaceholderActivationHandler
+
                         acceptedButtons: Qt.LeftButton
                         acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad | PointerDevice.TouchScreen
                         gesturePolicy: TapHandler.DragThreshold
