@@ -43,14 +43,14 @@ describe("overview exit handoff integration", () => {
     );
     const focusQueue = scene.slice(
       scene.indexOf("function queuePendingWindowFocusWrite("),
-      scene.indexOf("function queuePendingWindowRestoreSettle("),
+      scene.indexOf("function advancePendingWindowRestorePublication("),
     );
-    const restoreQueue = scene.slice(
-      scene.indexOf("function queuePendingWindowRestoreSettle("),
-      scene.indexOf("function replacePendingWindowRestoreSettleAttempt("),
+    const restorePublication = scene.slice(
+      scene.indexOf("function advancePendingWindowRestorePublication("),
+      scene.indexOf("function replacePendingWindowFocusFrame("),
     );
-    const restoreAttempts = scene.slice(
-      scene.indexOf("function replacePendingWindowRestoreSettleAttempt("),
+    const focusFrames = scene.slice(
+      scene.indexOf("function replacePendingWindowFocusFrame("),
       scene.indexOf("function performPendingWindowFocusWrite("),
     );
     const focusWrite = scene.slice(
@@ -86,10 +86,10 @@ describe("overview exit handoff integration", () => {
       windowSelection.indexOf("prepareOverviewWindowExitHandoff("),
     ).toBeLessThan(windowSelection.indexOf("candidate.minimized = false"));
     expect(windowSelection).toMatch(
-      /pendingWindowFocusRequest = request;\s*return queuePendingWindowFocusWrite\(request\);/u,
+      /pendingWindowFocusRequest = request;[\s\S]*candidate\.minimized = false;[\s\S]*return queuePendingWindowFocusWrite\(request\);/u,
     );
     expect(windowSelection).toMatch(
-      /const activeWindowBaseline = KWin\.Workspace\.activeWindow;[\s\S]*candidate\.minimized = false;[\s\S]*candidate, expectedWindowId, exitToken, expectedMinimized,[\s\S]*activeWindowBaseline\);/u,
+      /const activeWindowBaseline = KWin\.Workspace\.activeWindow;[\s\S]*candidate, expectedWindowId, exitToken, expectedMinimized,[\s\S]*activeWindowBaseline\);[\s\S]*pendingWindowFocusRequest = request;[\s\S]*candidate\.minimized = false;/u,
     );
     expect(requestCreation).toContain("return Object.freeze({");
     expect(requestCreation).toContain("activeWindowBaseline,");
@@ -97,9 +97,9 @@ describe("overview exit handoff integration", () => {
       'typeof restoredFromMinimized !== "boolean"',
     );
     expect(requestCreation).toContain(
-      'phase: restoredFromMinimized && candidate.hidden === true\n                                         ? "restore-settle" : "focus-queued"',
+      'phase: restoredFromMinimized\n                                         ? "restore-requested" : "focus-queued"',
     );
-    expect(requestCreation).toContain("restoreSettleAttempt: 0");
+    expect(requestCreation).toContain("focusFrame: 0");
     expect(requestCreation).toContain("restoredFromMinimized,");
     expect(capturedHandoff).toContain(
       'typeof expectedTargetMinimized === "boolean"',
@@ -113,11 +113,9 @@ describe("overview exit handoff integration", () => {
     expect(phaseReplacement).toContain(
       "restoredFromMinimized: request.restoredFromMinimized",
     );
-    expect(phaseReplacement).toContain(
-      "restoreSettleAttempt: request.restoreSettleAttempt",
-    );
+    expect(phaseReplacement).toContain("focusFrame: 0");
     expect(focusQueue).toMatch(
-      /request\.phase !== "restore-settle"[\s\S]*request\.phase !== "focus-queued"[\s\S]*if \(request\.phase === "restore-settle"\) \{\s*return queuePendingWindowRestoreSettle\(request\);\s*\}[\s\S]*Qt\.callLater\(function\(\) \{\s*root\.performPendingWindowFocusWrite\(request\);\s*\}\);/u,
+      /request\.phase !== "focus-queued"[\s\S]*Qt\.callLater\(function\(\) \{\s*root\.performPendingWindowFocusWrite\(request\);\s*\}\);/u,
     );
     expect(focusQueue).not.toMatch(/KWin\.Workspace\.activeWindow\s*=(?!=)/u);
     expect(focusWrite).not.toContain("Qt.callLater(function() {");
@@ -134,11 +132,11 @@ describe("overview exit handoff integration", () => {
       "effect.deactivate();",
     );
     expect(
-      `${requestCreation}\n${capturedHandoff}\n${exactRequest}\n${phaseReplacement}\n${focusQueue}\n${restoreQueue}\n${restoreAttempts}\n${focusWrite}\n${focusSettle}`,
+      `${requestCreation}\n${capturedHandoff}\n${exactRequest}\n${phaseReplacement}\n${focusQueue}\n${restorePublication}\n${focusFrames}\n${focusWrite}\n${focusSettle}`,
     ).not.toMatch(/\bTimer\s*\{|setTimeout|setInterval/u);
   });
 
-  it("bounds minimized restore settlement before any focus write", () => {
+  it("publishes minimized restores before activation and bounds compositor settlement", () => {
     const candidateConnections = scene.slice(
       scene.indexOf("target: root.pendingWindowFocusCandidate"),
       scene.indexOf("target: root.workspaceRenameDesktop"),
@@ -159,84 +157,94 @@ describe("overview exit handoff integration", () => {
       scene.indexOf("function replacePendingWindowFocusPhase("),
       scene.indexOf("function queuePendingWindowFocusWrite("),
     );
-    const restoreQueue = scene.slice(
-      scene.indexOf("function queuePendingWindowRestoreSettle("),
-      scene.indexOf("function replacePendingWindowRestoreSettleAttempt("),
+    const restorePublication = scene.slice(
+      scene.indexOf("function advancePendingWindowRestorePublication("),
+      scene.indexOf("function replacePendingWindowFocusFrame("),
     );
-    const restoreAttempts = scene.slice(
-      scene.indexOf("function replacePendingWindowRestoreSettleAttempt("),
+    const frameSettlement = scene.slice(
+      scene.indexOf("function replacePendingWindowFocusFrame("),
       scene.indexOf("function performPendingWindowFocusWrite("),
     );
     const focusWrite = scene.slice(
       scene.indexOf("function performPendingWindowFocusWrite("),
       scene.indexOf("function queuePendingWindowFocusWriteConfirmation("),
     );
-    const activation = scene.slice(
+    const activationAdvance = scene.slice(
+      scene.indexOf("function advancePendingWindowFocusActivation("),
       scene.indexOf("function handlePendingWindowFocusActivation("),
-      scene.indexOf("function queuePendingWindowFocusSettle("),
     );
 
     const baselineCapture = windowSelection.indexOf(
       "const activeWindowBaseline = KWin.Workspace.activeWindow;",
     );
-    const restoreWrite = windowSelection.indexOf(
-      "candidate.minimized = false;",
-    );
     const requestCreationCall = windowSelection.indexOf(
       "const request = createPendingWindowFocusRequest(",
     );
+    const requestPublication = windowSelection.indexOf(
+      "pendingWindowFocusRequest = request;",
+    );
+    const restoreWrite = windowSelection.indexOf(
+      "candidate.minimized = false;",
+    );
     expect(baselineCapture).toBeGreaterThanOrEqual(0);
-    expect(restoreWrite).toBeGreaterThan(baselineCapture);
-    expect(requestCreationCall).toBeGreaterThan(restoreWrite);
-    expect(windowSelection).toMatch(
-      /candidate\.minimized = false;[\s\S]*windowFocusStateIsExact\(candidate, false, false\)[\s\S]*activeWindowBaseline\);/u,
-    );
+    expect(requestCreationCall).toBeGreaterThan(baselineCapture);
+    expect(requestPublication).toBeGreaterThan(requestCreationCall);
+    expect(restoreWrite).toBeGreaterThan(requestPublication);
 
     expect(requestCreation).toMatch(
-      /windowFocusStateIsExact\(candidate, false,\s*!restoredFromMinimized\)/u,
+      /windowFocusStateIsExact\(candidate,\s*restoredFromMinimized,\s*false\)/u,
     );
     expect(requestCreation).toMatch(
-      /return Object\.freeze\(\{[\s\S]*activeWindowBaseline,[\s\S]*phase: restoredFromMinimized && candidate\.hidden === true\s*\? "restore-settle" : "focus-queued",[\s\S]*restoreSettleAttempt: 0,[\s\S]*restoredFromMinimized,/u,
+      /focusFrame: 0,[\s\S]*phase: restoredFromMinimized\s*\? "restore-requested" : "focus-queued",[\s\S]*restoredFromMinimized,/u,
     );
     expect(exactRequest).toMatch(
-      /const restoreSettling = request && request\.phase === "restore-settle";[\s\S]*restoreSettling && request\.restoredFromMinimized !== true[\s\S]*Number\.isInteger\(request\.restoreSettleAttempt\)[\s\S]*request\.restoreSettleAttempt < 0[\s\S]*request\.restoreSettleAttempt > 2/u,
+      /const restoreRequested = request && request\.phase === "restore-requested";[\s\S]*const transientHiddenAllowed = request[\s\S]*request\.restoredFromMinimized === true[\s\S]*request\.phase !== "geometry-settle"/u,
     );
     expect(exactRequest).toMatch(
-      /windowFocusStateIsExact\(request\.candidate, false,\s*!restoreSettling\)/u,
+      /Number\.isInteger\(request\.focusFrame\)[\s\S]*request\.focusFrame < 0[\s\S]*request\.focusFrame > pendingWindowFocusFrameLimit/u,
     );
     expect(exactRequest).toMatch(
-      /!requireActiveCandidate[\s\S]*\(!restoreSettling[\s\S]*KWin\.Workspace\.activeWindow === request\.candidate\)/u,
+      /restoreRequested\s*\? typeof request\.candidate\.minimized === "boolean"\s*: windowFocusStateIsExact\(request\.candidate, false,[\s\S]*!transientHiddenAllowed\)/u,
     );
-
     expect(phaseReplacement).toMatch(
-      /request\.phase === "restore-settle"\s*&& phase === "focus-queued"/u,
+      /request\.phase === "restore-requested"\s*&& phase === "focus-queued"/u,
     );
-    expect(phaseReplacement).toContain(
-      "restoreSettleAttempt: request.restoreSettleAttempt",
+    expect(phaseReplacement).toMatch(
+      /request\.phase === "focus-requested"[\s\S]*phase === "visibility-settle"[\s\S]*request\.phase === "visibility-settle" && phase === "geometry-settle"/u,
     );
-    expect(restoreQueue).toMatch(
+    expect(phaseReplacement).toContain("focusFrame: 0");
+
+    expect(restorePublication).toMatch(
       /activeWindow !== request\.candidate\s*&& activeWindow !== request\.activeWindowBaseline[\s\S]*yieldPendingWindowFocusToExternalActivation\(\)/u,
     );
-    expect(restoreQueue).toMatch(
-      /request\.candidate\.hidden !== true[\s\S]*replacePendingWindowFocusPhase\(request, "focus-queued"\)[\s\S]*pendingWindowFocusRequestIsExact\(queued\)[\s\S]*queuePendingWindowFocusWrite\(queued\)/u,
+    expect(restorePublication).toMatch(
+      /request\.candidate\.minimized !== true[\s\S]*replacePendingWindowFocusPhase\(request, "focus-queued"\)[\s\S]*queuePendingWindowFocusWrite\(queued\)/u,
     );
-    expect(restoreQueue).toMatch(
-      /request\.restoreSettleAttempt >= 2[\s\S]*abortPendingWindowFocus\("stale"\)[\s\S]*replacePendingWindowRestoreSettleAttempt\(request\)[\s\S]*Qt\.callLater\(function\(\) \{\s*if \(root\.pendingWindowFocusRequest === next\) \{\s*root\.queuePendingWindowRestoreSettle\(next\);/u,
+    expect(frameSettlement).toMatch(
+      /request\.focusFrame >= pendingWindowFocusFrameLimit[\s\S]*abortPendingWindowFocus\("stale"\)[\s\S]*replacePendingWindowFocusFrame\(request\)/u,
     );
-    expect(restoreAttempts).toMatch(
-      /request\.restoreSettleAttempt >= 2[\s\S]*const next = Object\.freeze\(\{[\s\S]*phase: request\.phase,[\s\S]*restoreSettleAttempt: request\.restoreSettleAttempt \+ 1,[\s\S]*pendingWindowFocusRequest = next;/u,
+    expect(frameSettlement).toContain("focusFrame: request.focusFrame + 1");
+    expect(scene).toMatch(
+      /FrameAnimation \{\s*running: root\.pendingWindowFocusRequest !== null[\s\S]*"restore-requested"[\s\S]*"visibility-settle"[\s\S]*onTriggered: root\.advancePendingWindowFocusFrame\(\)/u,
     );
     expect(candidateConnections).toMatch(
-      /function onHiddenChanged\(\) \{[\s\S]*request\.phase === "restore-settle"[\s\S]*Qt\.callLater\(function\(\) \{\s*if \(root\.pendingWindowFocusRequest === request\) \{\s*root\.queuePendingWindowRestoreSettle\(request\);\s*\}\s*\}\);[\s\S]*return;[\s\S]*root\.validatePendingWindowFocusCandidate\(\);/u,
+      /function onMinimizedChanged\(\) \{[\s\S]*request\.phase === "restore-requested"[\s\S]*root\.advancePendingWindowRestorePublication\(request\)/u,
     );
-    expect(activation).toMatch(
-      /request\.phase === "restore-settle"[\s\S]*activeWindow = KWin\.Workspace\.activeWindow[\s\S]*window === activeWindow[\s\S]*activeWindow === request\.candidate[\s\S]*activeWindow === request\.activeWindowBaseline[\s\S]*pendingWindowFocusRequestIsExact\(request\)[\s\S]*return true;[\s\S]*yieldPendingWindowFocusToExternalActivation\(\)/u,
+    expect(candidateConnections).toMatch(
+      /function onHiddenChanged\(\) \{[\s\S]*request\.phase === "focus-requested"[\s\S]*request\.phase === "visibility-settle"[\s\S]*root\.advancePendingWindowFocusActivation\(request\)/u,
     );
+
     expect(focusWrite).toMatch(
-      /request\.phase !== "focus-queued"[\s\S]*replacePendingWindowFocusPhase\(request,[\s\S]*"focus-requested"\)[\s\S]*KWin\.Workspace\.activeWindow = requested\.candidate/u,
+      /activeWindow === request\.candidate[\s\S]*request\.restoredFromMinimized !== true[\s\S]*activeWindow !== request\.candidate[\s\S]*activeWindow !== request\.activeWindowBaseline[\s\S]*replacePendingWindowFocusPhase\(request,[\s\S]*"focus-requested"\)[\s\S]*KWin\.Workspace\.activeWindow = requested\.candidate/u,
+    );
+    expect(activationAdvance).toMatch(
+      /activeWindow !== request\.candidate[\s\S]*request\.phase === "focus-requested"[\s\S]*activeWindow === request\.activeWindowBaseline[\s\S]*yieldPendingWindowFocusToExternalActivation\(\)/u,
+    );
+    expect(activationAdvance).toMatch(
+      /request\.candidate\.hidden === true[\s\S]*"visibility-settle"[\s\S]*pendingWindowFocusRequestIsExact\(settling, true\)/u,
     );
     expect(
-      `${candidateConnections}\n${requestCreation}\n${exactRequest}\n${phaseReplacement}\n${restoreQueue}\n${restoreAttempts}\n${focusWrite}\n${activation}`,
+      `${candidateConnections}\n${requestCreation}\n${exactRequest}\n${phaseReplacement}\n${restorePublication}\n${frameSettlement}\n${focusWrite}\n${activationAdvance}`,
     ).not.toMatch(/\bTimer\s*\{|setTimeout|setInterval|setImmediate/u);
   });
 
@@ -304,7 +312,7 @@ describe("overview exit handoff integration", () => {
       /const exitToken = prepareOverviewWindowExitHandoff[\s\S]*if \(exitToken <= 0\) \{[\s\S]*return false;[\s\S]*\}\s*try \{/u,
     );
     expect(windowSelection).toMatch(
-      /catch \(error\) \{\s*cancelSpatialExitHandoff\(\);\s*return false;/u,
+      /catch \(error\) \{\s*if \(pendingWindowFocusRequest\) \{\s*abortPendingWindowFocus\("stale"\);\s*\} else \{\s*cancelSpatialExitHandoff\(\);\s*\}\s*return false;/u,
     );
     expect(cancellation).toContain("let canceled = false;");
     expect(cancellation).toContain(
@@ -355,23 +363,26 @@ describe("overview exit handoff integration", () => {
     expect(capturedHandoff).toMatch(
       /capture\.targetMinimized === expectedTargetMinimized/u,
     );
+    expect(exactRequest).toContain(
+      'const transientHiddenAllowed = request\n            && request.restoredFromMinimized === true\n            && request.phase !== "geometry-settle";',
+    );
     expect(exactRequest).toMatch(
-      /pendingWindowFocusRequest !== request[\s\S]*windowFocusStateIsExact\(request\.candidate, false,\s*!restoreSettling\)[\s\S]*capturedWindowExitHandoffIsExact\(request\.exitToken,[\s\S]*request\.restoredFromMinimized\)[\s\S]*!restoreSettling[\s\S]*KWin\.Workspace\.activeWindow === request\.candidate/u,
+      /pendingWindowFocusRequest !== request[\s\S]*windowFocusStateIsExact\(request\.candidate, false,[\s\S]*!transientHiddenAllowed\)[\s\S]*capturedWindowExitHandoffIsExact\(request\.exitToken,[\s\S]*request\.restoredFromMinimized\)[\s\S]*!restoreRequested[\s\S]*KWin\.Workspace\.activeWindow === request\.candidate/u,
     );
     expect(focusQueue).toMatch(
-      /request\.phase === "restore-settle"[\s\S]*return queuePendingWindowRestoreSettle\(request\);[\s\S]*Qt\.callLater[\s\S]*root\.performPendingWindowFocusWrite\(request\);/u,
+      /request\.phase !== "focus-queued"[\s\S]*Qt\.callLater[\s\S]*root\.performPendingWindowFocusWrite\(request\);/u,
     );
     expect(focusWrite).toMatch(
-      /pendingWindowFocusRequest !== request[\s\S]*pendingWindowFocusRequestIsExact\(request\)[\s\S]*activeWindow !== request\.activeWindowBaseline[\s\S]*yieldPendingWindowFocusToExternalActivation/u,
+      /pendingWindowFocusRequest !== request[\s\S]*pendingWindowFocusRequestIsExact\(request\)[\s\S]*activeWindow !== request\.candidate[\s\S]*activeWindow !== request\.activeWindowBaseline[\s\S]*yieldPendingWindowFocusToExternalActivation/u,
     );
     expect(focusWrite).toMatch(
-      /KWin\.Workspace\.activeWindow = requested\.candidate;[\s\S]*const current = pendingWindowFocusRequest;[\s\S]*current\.candidate === requested\.candidate[\s\S]*current\.exitToken === requested\.exitToken[\s\S]*pendingWindowFocusRequestIsExact\(current, true\)[\s\S]*queuePendingWindowFocusSettle\(current\)/u,
+      /KWin\.Workspace\.activeWindow = requested\.candidate;[\s\S]*const current = pendingWindowFocusRequest;[\s\S]*current\.candidate === requested\.candidate[\s\S]*current\.exitToken === requested\.exitToken[\s\S]*current\.phase === "geometry-settle"[\s\S]*advancePendingWindowFocusActivation\(current\)/u,
     );
     expect(activation).toMatch(
-      /request\.phase === "restore-settle"[\s\S]*window === activeWindow[\s\S]*activeWindow === request\.candidate[\s\S]*activeWindow === request\.activeWindowBaseline[\s\S]*pendingWindowFocusRequestIsExact\(request\)[\s\S]*return true;[\s\S]*yieldPendingWindowFocusToExternalActivation\(\)[\s\S]*window === request\.candidate[\s\S]*pendingWindowFocusRequestIsExact\(request, true\)[\s\S]*queuePendingWindowFocusSettle\(request\)[\s\S]*yieldPendingWindowFocusToExternalActivation\(\)/u,
+      /request\.phase === "restore-requested"[\s\S]*request\.phase === "focus-queued"[\s\S]*window === activeWindow[\s\S]*activeWindow === request\.candidate[\s\S]*activeWindow === request\.activeWindowBaseline[\s\S]*pendingWindowFocusRequestIsExact\(request\)[\s\S]*yieldPendingWindowFocusToExternalActivation\(\)[\s\S]*request\.phase === "focus-requested"[\s\S]*request\.phase === "visibility-settle"[\s\S]*advancePendingWindowFocusActivation\(request\)[\s\S]*yieldPendingWindowFocusToExternalActivation\(\)/u,
     );
     expect(settle).toMatch(
-      /pendingWindowFocusRequest !== request[\s\S]*pendingWindowFocusRequestIsExact\(request, true\)[\s\S]*overviewExitWindowFrame\(request\.candidate\)/u,
+      /pendingWindowFocusRequestIsExact\(request, true\)[\s\S]*windowFocusStateIsExact\(request\.candidate, false, true\)[\s\S]*overviewExitWindowFrame\(request\.candidate\)/u,
     );
     expect(scene).toMatch(
       /function onWindowActivated\(\) \{\s*if \(root\.pendingWindowFocusRequest\) \{\s*root\.handlePendingWindowFocusActivation\(KWin\.Workspace\.activeWindow\);\s*return;/u,

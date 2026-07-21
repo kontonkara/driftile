@@ -90,6 +90,7 @@ Rectangle {
     property var pendingWindowFocusRequest: null
     readonly property var pendingWindowFocusCandidate: pendingWindowFocusRequest
         ? pendingWindowFocusRequest.candidate : null
+    readonly property int pendingWindowFocusFrameLimit: 12
     readonly property int spatialLayoutWorkspaceIndex: spatialExitHandoffActive
         && spatialExitFrozenWorkspaceIndex >= 0
         && spatialExitFrozenWorkspaceIndex < desktopIds.length
@@ -930,17 +931,19 @@ Rectangle {
         }
 
         function onMinimizedChanged() {
+            const request = root.pendingWindowFocusRequest;
+            if (request && request.phase === "restore-requested") {
+                root.advancePendingWindowRestorePublication(request);
+                return;
+            }
             root.validatePendingWindowFocusCandidate();
         }
 
         function onHiddenChanged() {
             const request = root.pendingWindowFocusRequest;
-            if (request && request.phase === "restore-settle") {
-                Qt.callLater(function() {
-                    if (root.pendingWindowFocusRequest === request) {
-                        root.queuePendingWindowRestoreSettle(request);
-                    }
-                });
+            if (request && (request.phase === "focus-requested"
+                            || request.phase === "visibility-settle")) {
+                root.advancePendingWindowFocusActivation(request);
                 return;
             }
             root.validatePendingWindowFocusCandidate();
@@ -2157,6 +2160,14 @@ Rectangle {
         running: root.spatialSceneRetirementFrameContext !== null
             && !root.spatialSceneRetirementFrameRegistered
         onTriggered: root.advanceSceneRetirementFrame()
+    }
+
+    FrameAnimation {
+        running: root.pendingWindowFocusRequest !== null
+            && (root.pendingWindowFocusRequest.phase === "restore-requested"
+                || root.pendingWindowFocusRequest.phase === "focus-requested"
+                || root.pendingWindowFocusRequest.phase === "visibility-settle")
+        onTriggered: root.advancePendingWindowFocusFrame()
     }
 
     Item {
@@ -9318,22 +9329,6 @@ Rectangle {
                     cancelSpatialExitHandoff();
                     return false;
                 }
-
-                try {
-                    candidate.minimized = false;
-                } catch (error) {
-                    cancelSpatialExitHandoff();
-                    return false;
-                }
-
-                if (!desktopContextIsExact(effect, model, liveScreen, expectedOutput, expectedOutputId, liveDesktop,
-                                           expectedDesktopId, true)
-                        || !windowContextIsExact(candidate, expectedWindowId, liveScreen, liveDesktop,
-                                                 expectedDesktopId, expectedActivityId)
-                        || !windowFocusStateIsExact(candidate, false, false) || candidate.managed !== true) {
-                    cancelSpatialExitHandoff();
-                    return false;
-                }
             }
 
             const request = createPendingWindowFocusRequest(
@@ -9346,9 +9341,28 @@ Rectangle {
                 return false;
             }
             pendingWindowFocusRequest = request;
+            if (expectedMinimized) {
+                try {
+                    candidate.minimized = false;
+                } catch (error) {
+                    abortPendingWindowFocus("stale");
+                    return false;
+                }
+                const current = pendingWindowFocusRequest;
+                if (current === request) {
+                    return advancePendingWindowRestorePublication(request);
+                }
+                return current && current.candidate === request.candidate
+                    && current.exitToken === request.exitToken
+                    && current.phase !== "restore-requested";
+            }
             return queuePendingWindowFocusWrite(request);
         } catch (error) {
-            cancelSpatialExitHandoff();
+            if (pendingWindowFocusRequest) {
+                abortPendingWindowFocus("stale");
+            } else {
+                cancelSpatialExitHandoff();
+            }
             return false;
         }
     }
@@ -9369,8 +9383,9 @@ Rectangle {
                     || !windowContextIsExact(candidate, expectedWindowId, liveScreen,
                                              liveDesktop, expectedDesktopId,
                                              expectedActivityId)
-                    || !windowFocusStateIsExact(candidate, false,
-                                                !restoredFromMinimized)
+                    || !windowFocusStateIsExact(candidate,
+                                                restoredFromMinimized,
+                                                false)
                     || candidate.managed !== true
                     || typeof restoredFromMinimized !== "boolean"
                     || !capturedWindowExitHandoffIsExact(exitToken, candidate,
@@ -9392,9 +9407,9 @@ Rectangle {
                                      model,
                                      output: expectedOutput,
                                      outputId: expectedOutputId,
-                                     phase: restoredFromMinimized && candidate.hidden === true
-                                         ? "restore-settle" : "focus-queued",
-                                     restoreSettleAttempt: 0,
+                                     focusFrame: 0,
+                                     phase: restoredFromMinimized
+                                         ? "restore-requested" : "focus-queued",
                                      restoredFromMinimized,
                                      screen: liveScreen,
                                      sessionId: activeOverviewSessionId,
@@ -9427,15 +9442,20 @@ Rectangle {
     }
 
     function pendingWindowFocusRequestIsExact(request, requireActiveCandidate = false) {
-        const restoreSettling = request && request.phase === "restore-settle";
+        const restoreRequested = request && request.phase === "restore-requested";
+        const transientHiddenAllowed = request
+            && request.restoredFromMinimized === true
+            && request.phase !== "geometry-settle";
         if (!request || pendingWindowFocusRequest !== request
-                || (!restoreSettling && request.phase !== "focus-queued"
+                || (!restoreRequested && request.phase !== "focus-queued"
                     && request.phase !== "focus-requested"
+                    && request.phase !== "visibility-settle"
                     && request.phase !== "geometry-settle")
-                || (restoreSettling && request.restoredFromMinimized !== true)
-                || !Number.isInteger(request.restoreSettleAttempt)
-                || request.restoreSettleAttempt < 0
-                || request.restoreSettleAttempt > 2) {
+                || (restoreRequested && request.restoredFromMinimized !== true)
+                || typeof request.restoredFromMinimized !== "boolean"
+                || !Number.isInteger(request.focusFrame)
+                || request.focusFrame < 0
+                || request.focusFrame > pendingWindowFocusFrameLimit) {
             return false;
         }
 
@@ -9463,8 +9483,10 @@ Rectangle {
                 && windowContextIsExact(request.candidate, request.windowId,
                                         request.screen, request.desktop, request.desktopId,
                                         request.activityId)
-                && windowFocusStateIsExact(request.candidate, false,
-                                           !restoreSettling)
+                && (restoreRequested
+                    ? typeof request.candidate.minimized === "boolean"
+                    : windowFocusStateIsExact(request.candidate, false,
+                                              !transientHiddenAllowed))
                 && request.candidate.managed === true
                 && capturedWindowExitHandoffIsExact(request.exitToken,
                                                     request.candidate,
@@ -9473,7 +9495,7 @@ Rectangle {
                                                     request.outputId,
                                                     request.restoredFromMinimized)
                 && (!requireActiveCandidate
-                    || (!restoreSettling
+                    || (!restoreRequested
                         && KWin.Workspace.activeWindow === request.candidate));
         } catch (error) {
             return false;
@@ -9483,14 +9505,17 @@ Rectangle {
     function replacePendingWindowFocusPhase(request, phase) {
         if (pendingWindowFocusRequest !== request
                 || (phase !== "focus-queued" && phase !== "focus-requested"
+                    && phase !== "visibility-settle"
                     && phase !== "geometry-settle")) {
             return null;
         }
-        const validTransition = (request.phase === "restore-settle"
+        const validTransition = (request.phase === "restore-requested"
                                  && phase === "focus-queued")
             || (request.phase === "focus-queued"
                                  && (phase === "focus-requested" || phase === "geometry-settle"))
-            || (request.phase === "focus-requested" && phase === "geometry-settle");
+            || (request.phase === "focus-requested"
+                && (phase === "visibility-settle" || phase === "geometry-settle"))
+            || (request.phase === "visibility-settle" && phase === "geometry-settle");
         if (!validTransition) {
             return null;
         }
@@ -9503,11 +9528,11 @@ Rectangle {
                                        desktopId: request.desktopId,
                                        effect: request.effect,
                                        exitToken: request.exitToken,
+                                       focusFrame: 0,
                                        model: request.model,
                                        output: request.output,
                                        outputId: request.outputId,
                                        phase,
-                                       restoreSettleAttempt: request.restoreSettleAttempt,
                                        restoredFromMinimized: request.restoredFromMinimized,
                                        screen: request.screen,
                                        sessionId: request.sessionId,
@@ -9519,14 +9544,9 @@ Rectangle {
     }
 
     function queuePendingWindowFocusWrite(request) {
-        if (!request || (request.phase !== "restore-settle"
-                         && request.phase !== "focus-queued")
+        if (!request || request.phase !== "focus-queued"
                 || pendingWindowFocusRequest !== request) {
             return false;
-        }
-
-        if (request.phase === "restore-settle") {
-            return queuePendingWindowRestoreSettle(request);
         }
 
         Qt.callLater(function() {
@@ -9535,8 +9555,8 @@ Rectangle {
         return true;
     }
 
-    function queuePendingWindowRestoreSettle(request) {
-        if (!request || request.phase !== "restore-settle"
+    function advancePendingWindowRestorePublication(request) {
+        if (!request || request.phase !== "restore-requested"
                 || pendingWindowFocusRequest !== request
                 || !pendingWindowFocusRequestIsExact(request)) {
             abortPendingWindowFocus("stale");
@@ -9555,7 +9575,7 @@ Rectangle {
             return yieldPendingWindowFocusToExternalActivation();
         }
 
-        if (request.candidate.hidden !== true) {
+        if (request.candidate.minimized !== true) {
             const queued = replacePendingWindowFocusPhase(request, "focus-queued");
             if (!queued || !pendingWindowFocusRequestIsExact(queued)) {
                 abortPendingWindowFocus("stale");
@@ -9563,30 +9583,17 @@ Rectangle {
             }
             return queuePendingWindowFocusWrite(queued);
         }
-        if (request.restoreSettleAttempt >= 2) {
-            abortPendingWindowFocus("stale");
-            return false;
-        }
-
-        const next = replacePendingWindowRestoreSettleAttempt(request);
-        if (!next || !pendingWindowFocusRequestIsExact(next)) {
-            abortPendingWindowFocus("stale");
-            return false;
-        }
-        Qt.callLater(function() {
-            if (root.pendingWindowFocusRequest === next) {
-                root.queuePendingWindowRestoreSettle(next);
-            }
-        });
         return true;
     }
 
-    function replacePendingWindowRestoreSettleAttempt(request) {
-        if (!request || request.phase !== "restore-settle"
+    function replacePendingWindowFocusFrame(request) {
+        if (!request || (request.phase !== "restore-requested"
+                         && request.phase !== "focus-requested"
+                         && request.phase !== "visibility-settle")
                 || pendingWindowFocusRequest !== request
-                || !Number.isInteger(request.restoreSettleAttempt)
-                || request.restoreSettleAttempt < 0
-                || request.restoreSettleAttempt >= 2) {
+                || !Number.isInteger(request.focusFrame)
+                || request.focusFrame < 0
+                || request.focusFrame >= pendingWindowFocusFrameLimit) {
             return null;
         }
 
@@ -9598,11 +9605,11 @@ Rectangle {
                                        desktopId: request.desktopId,
                                        effect: request.effect,
                                        exitToken: request.exitToken,
+                                       focusFrame: request.focusFrame + 1,
                                        model: request.model,
                                        output: request.output,
                                        outputId: request.outputId,
                                        phase: request.phase,
-                                       restoreSettleAttempt: request.restoreSettleAttempt + 1,
                                        restoredFromMinimized: request.restoredFromMinimized,
                                        screen: request.screen,
                                        sessionId: request.sessionId,
@@ -9611,6 +9618,35 @@ Rectangle {
                                    });
         pendingWindowFocusRequest = next;
         return next;
+    }
+
+    function advancePendingWindowFocusFrame() {
+        const request = pendingWindowFocusRequest;
+        if (!request || (request.phase !== "restore-requested"
+                         && request.phase !== "focus-requested"
+                         && request.phase !== "visibility-settle")) {
+            return false;
+        }
+
+        if (request.phase === "restore-requested") {
+            advancePendingWindowRestorePublication(request);
+        } else {
+            advancePendingWindowFocusActivation(request);
+        }
+        if (pendingWindowFocusRequest !== request) {
+            return true;
+        }
+        if (request.focusFrame >= pendingWindowFocusFrameLimit) {
+            abortPendingWindowFocus("stale");
+            return false;
+        }
+
+        const next = replacePendingWindowFocusFrame(request);
+        if (!next || !pendingWindowFocusRequestIsExact(next)) {
+            abortPendingWindowFocus("stale");
+            return false;
+        }
+        return true;
     }
 
     function performPendingWindowFocusWrite(request) {
@@ -9630,10 +9666,12 @@ Rectangle {
             abortPendingWindowFocus("stale");
             return false;
         }
-        if (activeWindow === request.candidate) {
+        if (activeWindow === request.candidate
+                && request.restoredFromMinimized !== true) {
             return queuePendingWindowFocusSettle(request);
         }
-        if (activeWindow !== request.activeWindowBaseline) {
+        if (activeWindow !== request.candidate
+                && activeWindow !== request.activeWindowBaseline) {
             yieldPendingWindowFocusToExternalActivation();
             return false;
         }
@@ -9653,9 +9691,14 @@ Rectangle {
 
         const current = pendingWindowFocusRequest;
         if (current && current.candidate === requested.candidate
-                && current.exitToken === requested.exitToken
-                && pendingWindowFocusRequestIsExact(current, true)) {
-            return queuePendingWindowFocusSettle(current);
+                && current.exitToken === requested.exitToken) {
+            if (current.phase === "geometry-settle") {
+                return true;
+            }
+            if (current.phase === "focus-requested"
+                    || current.phase === "visibility-settle") {
+                return advancePendingWindowFocusActivation(current);
+            }
         }
         if (pendingWindowFocusRequest === requested) {
             return queuePendingWindowFocusWriteConfirmation(requested);
@@ -9672,13 +9715,48 @@ Rectangle {
             if (root.pendingWindowFocusRequest !== request) {
                 return;
             }
-            if (root.pendingWindowFocusRequestIsExact(request, true)) {
-                root.queuePendingWindowFocusSettle(request);
-                return;
-            }
-            root.yieldPendingWindowFocusToExternalActivation();
+            root.advancePendingWindowFocusActivation(request);
         });
         return true;
+    }
+
+    function advancePendingWindowFocusActivation(request) {
+        if (!request || (request.phase !== "focus-requested"
+                         && request.phase !== "visibility-settle")
+                || pendingWindowFocusRequest !== request
+                || !pendingWindowFocusRequestIsExact(request)) {
+            abortPendingWindowFocus("stale");
+            return false;
+        }
+
+        let activeWindow = null;
+        try {
+            activeWindow = KWin.Workspace.activeWindow;
+        } catch (error) {
+            abortPendingWindowFocus("stale");
+            return false;
+        }
+        if (activeWindow !== request.candidate) {
+            if (request.phase === "focus-requested"
+                    && activeWindow === request.activeWindowBaseline) {
+                return true;
+            }
+            return yieldPendingWindowFocusToExternalActivation();
+        }
+
+        if (request.candidate.hidden === true) {
+            if (request.phase === "visibility-settle") {
+                return true;
+            }
+            const settling = replacePendingWindowFocusPhase(
+                request, "visibility-settle");
+            if (!settling || !pendingWindowFocusRequestIsExact(settling, true)) {
+                abortPendingWindowFocus("stale");
+                return false;
+            }
+            return true;
+        }
+        return queuePendingWindowFocusSettle(request);
     }
 
     function handlePendingWindowFocusActivation(window) {
@@ -9686,7 +9764,8 @@ Rectangle {
         if (!request) {
             return false;
         }
-        if (request.phase === "restore-settle") {
+        if (request.phase === "restore-requested"
+                || request.phase === "focus-queued") {
             let activeWindow = null;
             try {
                 activeWindow = KWin.Workspace.activeWindow;
@@ -9703,14 +9782,22 @@ Rectangle {
         }
         if (window === request.candidate
                 && KWin.Workspace.activeWindow === request.candidate
+                && (request.phase === "focus-requested"
+                    || request.phase === "visibility-settle")) {
+            return advancePendingWindowFocusActivation(request);
+        }
+        if (window === request.candidate
+                && KWin.Workspace.activeWindow === request.candidate
+                && request.phase === "geometry-settle"
                 && pendingWindowFocusRequestIsExact(request, true)) {
-            return queuePendingWindowFocusSettle(request);
+            return true;
         }
         return yieldPendingWindowFocusToExternalActivation();
     }
 
     function queuePendingWindowFocusSettle(request) {
-        if (!pendingWindowFocusRequestIsExact(request, true)) {
+        if (!pendingWindowFocusRequestIsExact(request, true)
+                || !windowFocusStateIsExact(request.candidate, false, true)) {
             abortPendingWindowFocus("stale");
             return false;
         }

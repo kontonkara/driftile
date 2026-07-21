@@ -12001,6 +12001,21 @@ let
           || ! overview_component_errors_after "$journal_cursor"; then
           record_focus_state \
             "physical Overview minimized-tab click did not restore the hidden member exactly"
+          {
+            printf 'overview restore effect active: %s\n' \
+              "$(effect_active_state "$overview_plugin_id" 2>/dev/null || true)"
+            printf 'overview restore A minimized: %s\n' \
+              "$(window_minimized_state "$title_a" 2>/dev/null || true)"
+            printf 'overview restore active caption: %s\n' \
+              "$(active_window_caption 2>/dev/null || true)"
+            printf 'overview restore frames: A=%s B=%s C=%s\n' \
+              "$(window_frame "$title_a" 2>/dev/null || true)" \
+              "$(window_frame "$title_b" 2>/dev/null || true)" \
+              "$(window_frame "$title_c" 2>/dev/null || true)"
+            printf 'overview restore KWin pid: expected=%s actual=%s\n' \
+              "$process_id" \
+              "$(kwin_process_id 2>/dev/null || true)"
+          } >> /tmp/shared/driftile-focus-diagnostics
           return 1
         fi
 

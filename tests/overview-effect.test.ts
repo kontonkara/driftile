@@ -1367,17 +1367,17 @@ describe("overview effect package", () => {
       "const activeWindowBaseline = KWin.Workspace.activeWindow;",
     );
     expect(focusHandler).toMatch(
-      /windowFocusStateIsExact\(candidate, false, false\)/u,
+      /windowFocusStateIsExact\(candidate,\s*restoredFromMinimized,\s*false\)/u,
     );
     expect(focusHandler).toContain("catch (error)");
     expect(focusHandler).toContain("activeWindowBaseline,");
-    expect(focusHandler).toContain('"restore-settle" : "focus-queued"');
-    expect(focusHandler).toContain("restoreSettleAttempt: 0");
+    expect(focusHandler).toContain('? "restore-requested" : "focus-queued"');
+    expect(focusHandler).toContain("focusFrame: 0");
     expect(focusHandler).toMatch(
-      /if \(request\.phase === "restore-settle"\) \{\s*return queuePendingWindowRestoreSettle\(request\);\s*\}[\s\S]*Qt\.callLater\(function\(\) \{\s*root\.performPendingWindowFocusWrite\(request\);/u,
+      /function queuePendingWindowFocusWrite\(request\)[\s\S]*request\.phase !== "focus-queued"[\s\S]*Qt\.callLater\(function\(\) \{\s*root\.performPendingWindowFocusWrite\(request\);/u,
     );
     expect(focusHandler).toMatch(
-      /function performPendingWindowFocusWrite\(request\)[\s\S]*activeWindow !== request\.activeWindowBaseline[\s\S]*replacePendingWindowFocusPhase\(request,[\s\S]*"focus-requested"\)[\s\S]*KWin\.Workspace\.activeWindow = requested\.candidate/u,
+      /function performPendingWindowFocusWrite\(request\)[\s\S]*activeWindow !== request\.candidate[\s\S]*activeWindow !== request\.activeWindowBaseline[\s\S]*replacePendingWindowFocusPhase\(request,[\s\S]*"focus-requested"\)[\s\S]*KWin\.Workspace\.activeWindow = requested\.candidate/u,
     );
     expect(focusHandler).toMatch(
       /pendingWindowFocusRequestIsExact\(request, true\)[\s\S]*settleSpatialExitHandoff\(request\.candidate, request\.exitToken\)[\s\S]*clearPendingWindowFocus\(\);[\s\S]*effect\.deactivate\(\);/u,
@@ -1468,10 +1468,6 @@ describe("overview effect package", () => {
       "windowFocusStateIsExact(candidate, true, false)",
     );
     const restoreWrite = focusHandler.indexOf("candidate.minimized = false");
-    const postRestoreValidation = focusHandler.indexOf(
-      "windowFocusStateIsExact(candidate, false, false)",
-      restoreWrite,
-    );
     const requestCreation = focusHandler.indexOf(
       "const request = createPendingWindowFocusRequest(",
     );
@@ -1482,7 +1478,7 @@ describe("overview effect package", () => {
       "KWin.Workspace.activeWindow = requested.candidate",
     );
     const focusConfirmation = focusHandler.indexOf(
-      "pendingWindowFocusRequestIsExact(current, true)",
+      "advancePendingWindowFocusActivation(current)",
     );
     const exactFocusSettle = focusHandler.indexOf(
       "pendingWindowFocusRequestIsExact(request, true)",
@@ -1500,10 +1496,9 @@ describe("overview effect package", () => {
     expect(activeWindowBaseline).toBeGreaterThan(desktopRequest);
     expect(activeWindowBaseline).toBeLessThan(minimizedBranch);
     expect(preRestoreValidation).toBeGreaterThan(minimizedBranch);
-    expect(restoreWrite).toBeGreaterThan(preRestoreValidation);
-    expect(postRestoreValidation).toBeGreaterThan(restoreWrite);
-    expect(requestCreation).toBeGreaterThan(postRestoreValidation);
+    expect(requestCreation).toBeGreaterThan(preRestoreValidation);
     expect(requestPublication).toBeGreaterThan(requestCreation);
+    expect(restoreWrite).toBeGreaterThan(requestPublication);
     expect(activeWindowWrite).toBeGreaterThan(requestPublication);
     expect(focusConfirmation).toBeGreaterThan(activeWindowWrite);
     expect(exactFocusSettle).toBeGreaterThan(requestPublication);
@@ -1513,7 +1508,7 @@ describe("overview effect package", () => {
       1,
     );
     expect(focusHandler).toMatch(
-      /const restoreSettling = request && request\.phase === "restore-settle";[\s\S]*windowFocusStateIsExact\(request\.candidate, false,\s*!restoreSettling\)/u,
+      /const transientHiddenAllowed = request[\s\S]*request\.restoredFromMinimized === true[\s\S]*request\.phase !== "geometry-settle"[\s\S]*windowFocusStateIsExact\(request\.candidate, false,[\s\S]*!transientHiddenAllowed\)/u,
     );
 
     expect(sceneWithoutWorkspaceManagement).not.toContain(
