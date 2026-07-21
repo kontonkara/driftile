@@ -10079,7 +10079,7 @@ Rectangle {
     function claimColumnWorkspaceGapPreview(dropArea, drag, expectedGapIndex) {
         const source = drag ? drag.source : null;
         const plan = planColumnWorkspaceGapDrop(dropArea, drag, expectedGapIndex);
-        const basisFingerprint = workspaceGapPreviewContextIsExact(source, plan, expectedGapIndex)
+        const basisFingerprint = columnWorkspaceGapPreviewContextIsExact(source, plan, expectedGapIndex)
             ? captureWorkspaceGapBasisFingerprint(source, plan) : null;
         if (typeof basisFingerprint !== "string" || !/^[0-9a-f]{64}$/.test(basisFingerprint)) {
             releaseWorkspaceGapPreview(expectedGapIndex);

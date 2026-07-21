@@ -1474,6 +1474,12 @@ describe("spatial overview column drag lifecycle", () => {
   });
 
   it("submits same-output column and workspace-gap commands with explicit v3 scope", () => {
+    expect(columnWorkspaceGapLifecycle).toMatch(
+      /function claimColumnWorkspaceGapPreview[\s\S]*columnWorkspaceGapPreviewContextIsExact\(source, plan, expectedGapIndex\)[\s\S]*captureWorkspaceGapBasisFingerprint\(source, plan\)/u,
+    );
+    expect(columnWorkspaceGapLifecycle).not.toMatch(
+      /function claimColumnWorkspaceGapPreview[\s\S]*const basisFingerprint = workspaceGapPreviewContextIsExact\(/u,
+    );
     expect(columnWorkspaceGapLifecycle).toContain(
       "source.sourceScreen === targetScreen",
     );
