@@ -51,6 +51,8 @@ describe("overview spatial drop command channel", () => {
       "readonly property double maximumRequestId: Number.MAX_SAFE_INTEGER",
     );
     expect(writer).not.toContain("property double lastRequestId");
+    expect(writer).toContain('typeof basisFingerprint !== "string"');
+    expect(writer).toContain("!/^[0-9a-f]{64}$/.test(basisFingerprint)");
     expect(writer).toContain("Number.isSafeInteger(createdAt)");
     expect(writer).toContain("Number.isSafeInteger(previous)");
     expect(writer).toContain("const createdAt = Date.now();");
@@ -64,7 +66,9 @@ describe("overview spatial drop command channel", () => {
 
   it("durably reserves each bounded request id across effect reloads", () => {
     const submit = writer.slice(
-      writer.indexOf("function submitSpatialDropCommand(source, target)"),
+      writer.indexOf(
+        "function submitSpatialDropCommand(source, target, basisFingerprint)",
+      ),
       writer.indexOf("function reserveNextRequestId()"),
     );
     const reservation = writer.slice(
@@ -118,9 +122,17 @@ describe("overview spatial drop command channel", () => {
     expect(writer).toContain('import "../code/main.js" as OverviewRuntime');
     expect(writer).toContain("OverviewRuntime.DriftileOverview");
     expect(writer).toContain("runtime.encodeSpatialDropCommand({");
+    expect(writer).toContain("basisFingerprint,");
     expect(writer).toContain('format: "driftile-spatial-drop"');
-    expect(writer).toContain("version: 3");
+    expect(writer).toContain("version: 4");
 
+    const validateFingerprint = writer.indexOf(
+      "!/^[0-9a-f]{64}$/.test(basisFingerprint)",
+    );
+    const reserve = writer.indexOf(
+      "reserveNextRequestId()",
+      validateFingerprint,
+    );
     const encode = writer.indexOf("runtime.encodeSpatialDropCommand({");
     const write = writer.indexOf(
       "commandSettings.setValue(commandKey, document);",
@@ -136,7 +148,9 @@ describe("overview spatial drop command channel", () => {
     );
     const invoke = writer.indexOf("applyCommandCall.call();", exactReadBack);
 
-    expect(encode).toBeGreaterThan(0);
+    expect(validateFingerprint).toBeGreaterThan(0);
+    expect(reserve).toBeGreaterThan(validateFingerprint);
+    expect(encode).toBeGreaterThan(reserve);
     expect(write).toBeGreaterThan(encode);
     expect(sync).toBeGreaterThan(write);
     expect(readBack).toBeGreaterThan(sync);
@@ -237,7 +251,9 @@ describe("overview spatial drop command channel", () => {
       "readonly property OverviewSpatialDropWriter spatialDropWriter",
     );
     const submit = controller.slice(
-      controller.indexOf("function submitSpatialDropCommand(source, target)"),
+      controller.indexOf(
+        "function submitSpatialDropCommand(source, target, basisFingerprint)",
+      ),
       controller.indexOf("function applyTouchpadGestureSettings("),
     );
 
@@ -245,14 +261,26 @@ describe("overview spatial drop command channel", () => {
       /if \(!active \|\| loading \|\| activeSessionId <= 0 \|\| !overviewModel[\s\S]*presentationPhase !== "opening" && presentationPhase !== "open"\)\) \{[\s\S]*return false;/u,
     );
     expect(submit).toContain(
-      "return spatialDropWriter.submitSpatialDropCommand(source, target);",
+      "return spatialDropWriter.submitSpatialDropCommand(source, target, basisFingerprint);",
+    );
+    expect(submit).toContain('typeof basisFingerprint !== "string"');
+    expect(submit).toContain(
+      "function captureSpatialDropBasisFingerprint(source, target)",
+    );
+    expect(submit).toContain(
+      "runtime.overviewSpatialDropBasisContextKeys(source, target)",
+    );
+    expect(submit).toMatch(
+      /const values = \[\s*Number\(screen\.devicePixelRatio\),\s*Number\(outputGeometry\.x\),\s*Number\(outputGeometry\.y\),\s*Number\(outputGeometry\.width\),\s*Number\(outputGeometry\.height\),\s*Number\(workArea\.x\),\s*Number\(workArea\.y\),\s*Number\(workArea\.width\),\s*Number\(workArea\.height\)\s*\];/u,
     );
     expect(submit.match(/submitSpatialDropCommand/gu)).toHaveLength(2);
   });
 
   it("bridges scene views to the guarded controller entry point", () => {
     const bridge = effectRoot.slice(
-      effectRoot.indexOf("function submitSpatialDropCommand(source, target)"),
+      effectRoot.indexOf(
+        "function submitSpatialDropCommand(source, target, basisFingerprint)",
+      ),
       effectRoot.indexOf("function syncTouchpadGestureSettings("),
     );
 
@@ -260,7 +288,7 @@ describe("overview spatial drop command channel", () => {
       'typeof controller.submitSpatialDropCommand === "function"',
     );
     expect(bridge).toContain(
-      "controller.submitSpatialDropCommand(source, target) === true",
+      "controller.submitSpatialDropCommand(source, target, basisFingerprint) === true",
     );
     expect(bridge).toContain(": false;");
     expect(bridge).not.toMatch(

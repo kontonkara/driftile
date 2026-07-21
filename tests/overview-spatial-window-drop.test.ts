@@ -5,6 +5,7 @@ import { LAYOUT_PERSISTENCE_LIMITS } from "../src/core/layout-persistence";
 import {
   buildOverviewSpatialWindowDropPlan,
   hitTestOverviewSpatialWindowDrop,
+  hitTestOverviewSpatialWindowDropWithHysteresis,
   type OverviewSpatialWindowDropPlanInput,
 } from "../src/overview/spatial-window-drop";
 
@@ -227,6 +228,24 @@ describe("buildOverviewSpatialWindowDropPlan", () => {
       buildOverviewSpatialWindowDropPlan({
         rows: [
           {
+            activityId: "activity-a",
+            columns: [],
+            desktopId: "desktop-a",
+            frame: {
+              height: 1,
+              width: Number.MIN_VALUE,
+              x: LAYOUT_PERSISTENCE_LIMITS.numericMagnitude,
+              y: 0,
+            },
+            outputId: "output-a",
+          },
+        ],
+      }),
+    ).toBeNull();
+    expect(
+      buildOverviewSpatialWindowDropPlan({
+        rows: [
+          {
             ...fixture().rows[0],
             frame: {
               height: 500,
@@ -287,8 +306,8 @@ describe("hitTestOverviewSpatialWindowDrop", () => {
   });
 
   it("uses half-open column boundaries and exact stack midpoints", () => {
-    expect(hit(99.999, 250)?.kind).toBe("column-boundary");
-    expect(hit(100, 250)).toMatchObject({
+    expect(hit(111.999, 250)?.kind).toBe("column-boundary");
+    expect(hit(112, 250)).toMatchObject({
       kind: "stack-insertion",
       position: "before",
       targetWindowId: "window-a2",
@@ -303,29 +322,101 @@ describe("hitTestOverviewSpatialWindowDrop", () => {
       position: "after",
       targetWindowId: "window-a1",
     });
-    expect(hit(450, 250)).toMatchObject({
+    expect(hit(462, 250)).toMatchObject({
       kind: "stack-insertion",
       position: "after",
       targetWindowId: "window-b1",
     });
-    expect(hit(450, 250)).not.toHaveProperty("targetColumnId");
+    expect(hit(462, 250)).not.toHaveProperty("targetColumnId");
   });
 
-  it("uses exact mixed stack frames and leaves visual gaps untargeted", () => {
-    expect(hit(110, 60)).toBeNull();
-    expect(hit(120, 60)).toMatchObject({
+  it("maps the full column body to the nearest visible stack member", () => {
+    expect(hit(113, 60)).toMatchObject({
       position: "before",
       targetWindowId: "window-a1",
     });
-    expect(hit(200, 150)).toBeNull();
-    expect(hit(200, 169.999)).toBeNull();
-    expect(hit(200, 170)).toMatchObject({
+    expect(hit(200, 150)).toMatchObject({
+      position: "after",
+      targetWindowId: "window-a1",
+    });
+    expect(hit(200, 159.999)).toMatchObject({
+      position: "after",
+      targetWindowId: "window-a1",
+    });
+    expect(hit(200, 160)).toMatchObject({
       position: "before",
       targetWindowId: "window-a2",
     });
     expect(hit(200, 310)).toMatchObject({
       position: "after",
       targetWindowId: "window-a2",
+    });
+  });
+
+  it("keeps seam and outer-edge snap bands usable without layout gaps", () => {
+    const plan = buildOverviewSpatialWindowDropPlan({
+      rows: [
+        {
+          activityId: "activity",
+          columns: [
+            {
+              frame: { height: 100, width: 100, x: 0, y: 0 },
+              members: [
+                {
+                  frame: { height: 100, width: 100, x: 0, y: 0 },
+                  windowId: "left-window",
+                },
+              ],
+            },
+            {
+              frame: { height: 100, width: 100, x: 100, y: 0 },
+              members: [
+                {
+                  frame: { height: 100, width: 100, x: 100, y: 0 },
+                  windowId: "right-window",
+                },
+              ],
+            },
+          ],
+          desktopId: "desktop",
+          frame: { height: 100, width: 200, x: 0, y: 0 },
+          outputId: "output",
+        },
+      ],
+    });
+
+    expect(
+      hitTestOverviewSpatialWindowDrop(plan, { x: 0, y: 50 }),
+    ).toMatchObject({
+      kind: "column-boundary",
+      position: "before",
+      targetWindowId: "left-window",
+    });
+    expect(
+      hitTestOverviewSpatialWindowDrop(plan, { x: 50, y: 50 }),
+    ).toMatchObject({
+      kind: "stack-insertion",
+      targetWindowId: "left-window",
+    });
+    expect(
+      hitTestOverviewSpatialWindowDrop(plan, { x: 100, y: 50 }),
+    ).toMatchObject({
+      kind: "column-boundary",
+      position: "after",
+      targetWindowId: "left-window",
+    });
+    expect(
+      hitTestOverviewSpatialWindowDrop(plan, { x: 150, y: 50 }),
+    ).toMatchObject({
+      kind: "stack-insertion",
+      targetWindowId: "right-window",
+    });
+    expect(
+      hitTestOverviewSpatialWindowDrop(plan, { x: 199.999, y: 50 }),
+    ).toMatchObject({
+      kind: "column-boundary",
+      position: "after",
+      targetWindowId: "right-window",
     });
   });
 
@@ -503,6 +594,198 @@ describe("hitTestOverviewSpatialWindowDrop", () => {
         },
       ),
     );
+  });
+
+  it("keeps stack centers and snap seams reachable for tiny scene geometry", () => {
+    fc.assert(
+      fc.property(
+        fc.integer({ max: 1_000, min: 1 }),
+        fc.integer({ max: 100, min: 0 }),
+        (widthMilli, gapMilli) => {
+          const width = widthMilli / 1_000;
+          const gap = gapMilli / 1_000;
+          const rightLeft = width + gap;
+          const rowWidth = rightLeft + width;
+          const plan = buildOverviewSpatialWindowDropPlan({
+            rows: [
+              {
+                activityId: "activity",
+                columns: [
+                  {
+                    frame: { height: 1, width, x: 0, y: 0 },
+                    members: [
+                      {
+                        frame: { height: 1, width, x: 0, y: 0 },
+                        windowId: "left-window",
+                      },
+                    ],
+                  },
+                  {
+                    frame: { height: 1, width, x: rightLeft, y: 0 },
+                    members: [
+                      {
+                        frame: { height: 1, width, x: rightLeft, y: 0 },
+                        windowId: "right-window",
+                      },
+                    ],
+                  },
+                ],
+                desktopId: "desktop",
+                frame: { height: 1, width: rowWidth, x: 0, y: 0 },
+                outputId: "output",
+              },
+            ],
+          });
+          const inset = width * 0.25;
+          const seamMiddle = (width - inset + rightLeft + inset) / 2;
+
+          expect(plan).not.toBeNull();
+          expect(
+            hitTestOverviewSpatialWindowDrop(plan, {
+              x: width / 2,
+              y: 0.5,
+            }),
+          ).toMatchObject({
+            kind: "stack-insertion",
+            targetWindowId: "left-window",
+          });
+          expect(
+            hitTestOverviewSpatialWindowDrop(plan, {
+              x: seamMiddle,
+              y: 0.5,
+            }),
+          ).toMatchObject({
+            kind: "column-boundary",
+            position: "after",
+            targetWindowId: "left-window",
+          });
+          expect(
+            hitTestOverviewSpatialWindowDrop(plan, {
+              x: rightLeft + width / 2,
+              y: 0.5,
+            }),
+          ).toMatchObject({
+            kind: "stack-insertion",
+            targetWindowId: "right-window",
+          });
+        },
+      ),
+    );
+  });
+
+  it("retains only the previous canonical target inside a bounded exit margin", () => {
+    const plan = buildOverviewSpatialWindowDropPlan(fixture());
+    const previous = hitTestOverviewSpatialWindowDrop(plan, { x: 200, y: 99 });
+
+    expect(previous).toMatchObject({
+      kind: "stack-insertion",
+      position: "before",
+      targetWindowId: "window-a1",
+    });
+    expect(
+      hitTestOverviewSpatialWindowDrop(plan, { x: 200, y: 105.999 }),
+    ).toMatchObject({ position: "after", targetWindowId: "window-a1" });
+    expect(
+      hitTestOverviewSpatialWindowDropWithHysteresis(
+        plan,
+        { x: 200, y: 105.999 },
+        previous,
+      ),
+    ).toBe(previous);
+    expect(
+      hitTestOverviewSpatialWindowDropWithHysteresis(
+        plan,
+        { x: 200, y: 106 },
+        previous,
+      ),
+    ).toMatchObject({ position: "after", targetWindowId: "window-a1" });
+
+    const boundary = hitTestOverviewSpatialWindowDrop(plan, { x: 350, y: 250 });
+    expect(
+      hitTestOverviewSpatialWindowDropWithHysteresis(
+        plan,
+        { x: 335, y: 250 },
+        boundary,
+      ),
+    ).toBe(boundary);
+    expect(
+      hitTestOverviewSpatialWindowDropWithHysteresis(
+        plan,
+        { x: 331, y: 250 },
+        boundary,
+      ),
+    ).toMatchObject({
+      kind: "stack-insertion",
+      targetWindowId: "window-a2",
+    });
+  });
+
+  it("clamps hysteresis margins and fails closed for foreign targets", () => {
+    const plan = buildOverviewSpatialWindowDropPlan(fixture());
+    const previous = hitTestOverviewSpatialWindowDrop(plan, { x: 200, y: 99 });
+    const foreignPlan = buildOverviewSpatialWindowDropPlan(fixture());
+    const foreignTarget = hitTestOverviewSpatialWindowDrop(foreignPlan, {
+      x: 200,
+      y: 99,
+    });
+
+    if (previous === null) {
+      throw new Error("expected a canonical target");
+    }
+
+    expect(
+      hitTestOverviewSpatialWindowDropWithHysteresis(
+        plan,
+        { x: 200, y: 123.999 },
+        previous,
+        Number.MAX_SAFE_INTEGER,
+      ),
+    ).toBe(previous);
+    expect(
+      hitTestOverviewSpatialWindowDropWithHysteresis(
+        plan,
+        { x: 200, y: 124 },
+        previous,
+        Number.MAX_SAFE_INTEGER,
+      ),
+    ).toMatchObject({ position: "after", targetWindowId: "window-a1" });
+    expect(
+      hitTestOverviewSpatialWindowDropWithHysteresis(
+        plan,
+        { x: 200, y: 100 },
+        previous,
+        -100,
+      ),
+    ).toMatchObject({ position: "after", targetWindowId: "window-a1" });
+    expect(
+      hitTestOverviewSpatialWindowDropWithHysteresis(
+        plan,
+        { x: 200, y: 99 },
+        Object.freeze({ ...previous }),
+      ),
+    ).toBeNull();
+    expect(
+      hitTestOverviewSpatialWindowDropWithHysteresis(
+        plan,
+        { x: 200, y: 99 },
+        foreignTarget,
+      ),
+    ).toBeNull();
+    expect(
+      hitTestOverviewSpatialWindowDropWithHysteresis(
+        plan,
+        { x: 200, y: 99 },
+        previous,
+        Number.NaN,
+      ),
+    ).toBeNull();
+    expect(
+      hitTestOverviewSpatialWindowDropWithHysteresis(
+        plan,
+        { x: 200, y: 100 },
+        null,
+      ),
+    ).toMatchObject({ position: "after", targetWindowId: "window-a1" });
   });
 
   it("contains no cache, timer, weak collection, or live KWin scan", () => {

@@ -1,9 +1,10 @@
 import { LAYOUT_PERSISTENCE_LIMITS } from "../core/layout-persistence";
 
 export const SPATIAL_DROP_COMMAND_FORMAT = "driftile-spatial-drop";
-export const SPATIAL_DROP_COMMAND_VERSION = 3;
+export const SPATIAL_DROP_COMMAND_VERSION = 4;
+export const SPATIAL_DROP_BASIS_FINGERPRINT_CHARACTERS = 64;
 
-const MAXIMUM_COMMAND_IDENTIFIER_FIELDS = 8;
+const MAXIMUM_COMMAND_IDENTIFIER_FIELDS = 9;
 const MAXIMUM_JSON_IDENTIFIER_EXPANSION = 6;
 const MAXIMUM_COMMAND_STRUCTURE_IDENTIFIER_UNITS = 4;
 
@@ -67,6 +68,7 @@ export type SpatialDropTarget =
   | SpatialDropWorkspaceGapTarget;
 
 export interface SpatialDropCommand {
+  readonly basisFingerprint: string;
   readonly createdAt: number;
   readonly format: typeof SPATIAL_DROP_COMMAND_FORMAT;
   readonly requestId: number;
@@ -76,6 +78,7 @@ export interface SpatialDropCommand {
 }
 
 const COMMAND_KEYS = [
+  "basisFingerprint",
   "createdAt",
   "format",
   "requestId",
@@ -153,6 +156,7 @@ function readCommand(value: unknown): SpatialDropCommand | null {
     return null;
   }
 
+  const basisFingerprint = candidate["basisFingerprint"];
   const createdAt = candidate["createdAt"];
   const format = candidate["format"];
   const requestId = candidate["requestId"];
@@ -161,6 +165,7 @@ function readCommand(value: unknown): SpatialDropCommand | null {
   const version = candidate["version"];
 
   if (
+    !isBasisFingerprint(basisFingerprint) ||
     format !== SPATIAL_DROP_COMMAND_FORMAT ||
     version !== SPATIAL_DROP_COMMAND_VERSION ||
     !isPositiveSafeInteger(requestId) ||
@@ -173,6 +178,7 @@ function readCommand(value: unknown): SpatialDropCommand | null {
   }
 
   return Object.freeze({
+    basisFingerprint,
     createdAt,
     format,
     requestId,
@@ -180,6 +186,14 @@ function readCommand(value: unknown): SpatialDropCommand | null {
     target,
     version,
   });
+}
+
+function isBasisFingerprint(value: unknown): value is string {
+  return (
+    typeof value === "string" &&
+    value.length === SPATIAL_DROP_BASIS_FINGERPRINT_CHARACTERS &&
+    /^[0-9a-f]{64}$/u.test(value)
+  );
 }
 
 function readSource(value: unknown): SpatialDropSource | null {

@@ -5,6 +5,7 @@ import { LAYOUT_PERSISTENCE_LIMITS } from "../src/core/layout-persistence";
 import {
   decodeSpatialDropCommand,
   encodeSpatialDropCommand,
+  SPATIAL_DROP_BASIS_FINGERPRINT_CHARACTERS,
   SPATIAL_DROP_COMMAND_FORMAT,
   SPATIAL_DROP_COMMAND_LIMITS,
   SPATIAL_DROP_COMMAND_VERSION,
@@ -17,6 +18,8 @@ const codecSource = readFileSync(
   new URL("../src/overview/spatial-drop-command.ts", import.meta.url),
   "utf8",
 );
+
+const basisFingerprint = "0123456789abcdef".repeat(4);
 
 const source = Object.freeze({
   activityId: "activity-source",
@@ -89,6 +92,7 @@ function command(
   spatialSource: SpatialDropSource = source,
 ): SpatialDropCommand {
   return {
+    basisFingerprint,
     createdAt: 1_751_000_000_000,
     format: SPATIAL_DROP_COMMAND_FORMAT,
     requestId: 41,
@@ -108,6 +112,7 @@ describe("spatial drop command codec", () => {
     expect(Object.isFrozen(decoded)).toBe(true);
     expect(Object.isFrozen(decoded?.source)).toBe(true);
     expect(Object.isFrozen(decoded?.target)).toBe(true);
+    expect(decoded?.basisFingerprint).toBe(basisFingerprint);
     expect(encodeSpatialDropCommand(decoded)).toBe(encoded);
   });
 
@@ -171,6 +176,7 @@ describe("spatial drop command codec", () => {
   });
 
   it("reuses persistence identifier bounds and keeps documents small", () => {
+    expect(SPATIAL_DROP_BASIS_FINGERPRINT_CHARACTERS).toBe(64);
     expect(SPATIAL_DROP_COMMAND_LIMITS.identifierCharacters).toBe(
       LAYOUT_PERSISTENCE_LIMITS.identifierCharacters,
     );
@@ -235,10 +241,18 @@ describe("spatial drop command codec", () => {
   });
 
   it.each([
+    { ...command(), basisFingerprint: "" },
+    { ...command(), basisFingerprint: "a".repeat(63) },
+    { ...command(), basisFingerprint: "a".repeat(65) },
+    { ...command(), basisFingerprint: `A${"a".repeat(63)}` },
+    { ...command(), basisFingerprint: "g".repeat(64) },
+    { ...command(), basisFingerprint: 1 },
+    { ...command(), basisFingerprint: undefined },
     { ...command(), format: "other" },
     { ...command(), version: 1 },
     { ...command(), version: 2 },
-    { ...command(), version: 4 },
+    { ...command(), version: 3 },
+    { ...command(), version: 5 },
     { ...command(), requestId: 0 },
     { ...command(), requestId: 1.5 },
     { ...command(), requestId: Number.MAX_SAFE_INTEGER + 1 },

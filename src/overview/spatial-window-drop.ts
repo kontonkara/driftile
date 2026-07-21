@@ -66,6 +66,8 @@ interface OverviewSpatialWindowDropMemberPlan {
   readonly afterTarget: OverviewSpatialWindowDropStackInsertionTarget;
   readonly beforeTarget: OverviewSpatialWindowDropStackInsertionTarget;
   readonly bottom: number;
+  readonly hitBottom: number;
+  readonly hitTop: number;
   readonly left: number;
   readonly right: number;
   readonly split: number;
@@ -127,6 +129,10 @@ interface BuildState {
 }
 
 const MAXIMUM_GEOMETRY_MAGNITUDE = LAYOUT_PERSISTENCE_LIMITS.numericMagnitude;
+const PREFERRED_BOUNDARY_SNAP_BAND = 12;
+const MAXIMUM_BOUNDARY_SNAP_FRACTION = 0.25;
+const DEFAULT_HYSTERESIS_EXIT_MARGIN = 6;
+const MAXIMUM_HYSTERESIS_EXIT_MARGIN = 24;
 
 export function buildOverviewSpatialWindowDropPlan(
   input: unknown,
@@ -177,50 +183,47 @@ export function hitTestOverviewSpatialWindowDrop(
   point: unknown,
 ): OverviewSpatialWindowDropTarget | null {
   try {
-    const candidate = record(plan);
-
-    if (
-      candidate === null ||
-      candidate[planBrand] !== true ||
-      !Object.isFrozen(candidate) ||
-      !isBoundedPoint(point)
-    ) {
+    const rows = readPlanRows(plan);
+    const position = readPoint(point);
+    if (rows === null || position === null) {
       return null;
     }
 
-    const rows = candidate["rows"];
-    if (!Array.isArray(rows) || !Object.isFrozen(rows)) {
+    return hitTestPlanRows(rows, position);
+  } catch {
+    return null;
+  }
+}
+
+export function hitTestOverviewSpatialWindowDropWithHysteresis(
+  plan: unknown,
+  point: unknown,
+  previousTarget: unknown,
+  exitMargin: unknown = DEFAULT_HYSTERESIS_EXIT_MARGIN,
+): OverviewSpatialWindowDropTarget | null {
+  try {
+    const rows = readPlanRows(plan);
+    const position = readPoint(point);
+    const margin = readHysteresisExitMargin(exitMargin);
+    if (rows === null || position === null || margin === null) {
       return null;
     }
 
-    const row = findRow(rows as readonly unknown[], point.y);
-    if (row === null || point.x < row.left || point.x >= row.right) {
+    if (previousTarget === null || previousTarget === undefined) {
+      return hitTestPlanRows(rows, position);
+    }
+    if (!Object.isFrozen(previousTarget)) {
       return null;
     }
 
-    if (row.emptyTarget !== null) {
-      return row.emptyTarget;
-    }
-
-    const zone = findHorizontalZone(row.zones, point.x);
-    if (zone === null) {
+    const previousBounds = exactTargetHitBounds(rows, previousTarget);
+    if (previousBounds === null) {
       return null;
     }
 
-    if (zone.kind === "boundary") {
-      return zone.target;
-    }
-
-    if (point.y < zone.top || point.y >= zone.bottom) {
-      return null;
-    }
-
-    const member = findMember(zone.members, point.y);
-    if (member === null || point.x < member.left || point.x >= member.right) {
-      return null;
-    }
-
-    return point.y < member.split ? member.beforeTarget : member.afterTarget;
+    return pointIsInsideExpandedRect(position, previousBounds, margin)
+      ? (previousTarget as OverviewSpatialWindowDropTarget)
+      : hitTestPlanRows(rows, position);
   } catch {
     return null;
   }
@@ -352,10 +355,15 @@ function buildColumnPlan(
     return null;
   }
 
+  const hitMembers = extendMemberHitZones(members, frame);
+  if (hitMembers === null) {
+    return null;
+  }
+
   return {
     anchorWindowId: firstMember.beforeTarget.targetWindowId,
     frame,
-    members: Object.freeze(members),
+    members: hitMembers,
   };
 }
 
@@ -404,11 +412,55 @@ function buildMemberPlan(
       targetWindowId: windowId,
     }),
     bottom: frame.bottom,
+    hitBottom: frame.bottom,
+    hitTop: frame.top,
     left: frame.left,
     right: frame.right,
     split,
     top: frame.top,
   });
+}
+
+function extendMemberHitZones(
+  members: readonly OverviewSpatialWindowDropMemberPlan[],
+  columnFrame: GeometryRect,
+): readonly OverviewSpatialWindowDropMemberPlan[] | null {
+  const result: OverviewSpatialWindowDropMemberPlan[] = [];
+
+  for (let index = 0; index < members.length; index += 1) {
+    const member = members[index];
+    const previous = members[index - 1];
+    const next = members[index + 1];
+    if (member === undefined) {
+      return null;
+    }
+
+    const hitTop = previous
+      ? previous.bottom + (member.top - previous.bottom) / 2
+      : columnFrame.top;
+    const hitBottom = next
+      ? member.bottom + (next.top - member.bottom) / 2
+      : columnFrame.bottom;
+    if (
+      !isBoundedCoordinate(hitTop) ||
+      !isBoundedCoordinate(hitBottom) ||
+      hitTop > member.top ||
+      hitBottom < member.bottom ||
+      hitBottom <= hitTop
+    ) {
+      return null;
+    }
+
+    result.push(
+      Object.freeze({
+        ...member,
+        hitBottom: normalizeZero(hitBottom),
+        hitTop: normalizeZero(hitTop),
+      }),
+    );
+  }
+
+  return Object.freeze(result);
 }
 
 function buildHorizontalZones(
@@ -422,23 +474,49 @@ function buildHorizontalZones(
     return null;
   }
 
-  const zones: OverviewSpatialWindowDropHorizontalZone[] = [];
-  if (rowFrame.left < first.frame.left) {
-    zones.push(
-      boundaryZone(
-        rowFrame.left,
-        first.frame.left,
-        context,
-        "before",
-        first.anchorWindowId,
-      ),
+  const stackIntervals: GeometryRect[] = [];
+  for (const column of columns) {
+    const inset = Math.min(
+      PREFERRED_BOUNDARY_SNAP_BAND,
+      (column.frame.right - column.frame.left) * MAXIMUM_BOUNDARY_SNAP_FRACTION,
     );
+    const left = normalizeZero(column.frame.left + inset);
+    const right = normalizeZero(column.frame.right - inset);
+    if (
+      !isBoundedCoordinate(left) ||
+      !isBoundedCoordinate(right) ||
+      right <= left
+    ) {
+      return null;
+    }
+    stackIntervals.push({
+      bottom: column.frame.bottom,
+      left,
+      right,
+      top: column.frame.top,
+    });
   }
+
+  const firstStack = stackIntervals[0];
+  if (firstStack === undefined || firstStack.left <= rowFrame.left) {
+    return null;
+  }
+
+  const zones: OverviewSpatialWindowDropHorizontalZone[] = [
+    boundaryZone(
+      rowFrame.left,
+      firstStack.left,
+      context,
+      "before",
+      first.anchorWindowId,
+    ),
+  ];
 
   for (let index = 0; index < columns.length; index += 1) {
     const column = columns[index];
+    const stack = stackIntervals[index];
 
-    if (column === undefined) {
+    if (column === undefined || stack === undefined) {
       return null;
     }
 
@@ -446,19 +524,20 @@ function buildHorizontalZones(
       Object.freeze({
         bottom: column.frame.bottom,
         kind: "column",
-        left: column.frame.left,
+        left: stack.left,
         members: column.members,
-        right: column.frame.right,
+        right: stack.right,
         top: column.frame.top,
       }),
     );
 
     const next = columns[index + 1];
-    if (next !== undefined && column.frame.right < next.frame.left) {
+    const nextStack = stackIntervals[index + 1];
+    if (next !== undefined && nextStack !== undefined) {
       zones.push(
         boundaryZone(
-          column.frame.right,
-          next.frame.left,
+          stack.right,
+          nextStack.left,
           context,
           "after",
           column.anchorWindowId,
@@ -472,17 +551,19 @@ function buildHorizontalZones(
     return null;
   }
 
-  if (last.frame.right < rowFrame.right) {
-    zones.push(
-      boundaryZone(
-        last.frame.right,
-        rowFrame.right,
-        context,
-        "after",
-        last.anchorWindowId,
-      ),
-    );
+  const lastStack = stackIntervals[stackIntervals.length - 1];
+  if (lastStack === undefined || lastStack.right >= rowFrame.right) {
+    return null;
   }
+  zones.push(
+    boundaryZone(
+      lastStack.right,
+      rowFrame.right,
+      context,
+      "after",
+      last.anchorWindowId,
+    ),
+  );
 
   return Object.freeze(zones);
 }
@@ -505,6 +586,168 @@ function boundaryZone(
       targetWindowId,
     }),
   });
+}
+
+function readPlanRows(plan: unknown): readonly unknown[] | null {
+  const candidate = record(plan);
+  if (
+    candidate === null ||
+    candidate[planBrand] !== true ||
+    !Object.isFrozen(candidate)
+  ) {
+    return null;
+  }
+
+  const rows = candidate["rows"];
+  return Array.isArray(rows) && Object.isFrozen(rows) ? rows : null;
+}
+
+function readPoint(value: unknown): OverviewSpatialWindowDropPoint | null {
+  const candidate = record(value);
+  if (candidate === null) {
+    return null;
+  }
+
+  const x = candidate["x"];
+  const y = candidate["y"];
+  return isBoundedCoordinate(x) && isBoundedCoordinate(y)
+    ? { x: normalizeZero(x), y: normalizeZero(y) }
+    : null;
+}
+
+function hitTestPlanRows(
+  rows: readonly unknown[],
+  point: OverviewSpatialWindowDropPoint,
+): OverviewSpatialWindowDropTarget | null {
+  const row = findRow(rows, point.y);
+  if (row === null || point.x < row.left || point.x >= row.right) {
+    return null;
+  }
+
+  if (row.emptyTarget !== null) {
+    return row.emptyTarget;
+  }
+
+  const zone = findHorizontalZone(row.zones, point.x);
+  if (zone === null) {
+    return null;
+  }
+
+  if (zone.kind === "boundary") {
+    return zone.target;
+  }
+
+  if (point.y < zone.top || point.y >= zone.bottom) {
+    return null;
+  }
+
+  const member = findMember(zone.members, point.y);
+  if (member === null) {
+    return null;
+  }
+
+  return point.y < member.split ? member.beforeTarget : member.afterTarget;
+}
+
+function readHysteresisExitMargin(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value)
+    ? Math.min(
+        MAXIMUM_HYSTERESIS_EXIT_MARGIN,
+        Math.max(0, normalizeZero(value)),
+      )
+    : null;
+}
+
+function exactTargetHitBounds(
+  rows: readonly unknown[],
+  target: unknown,
+): GeometryRect | null {
+  const candidate = record(target);
+  const rowIndex = candidate?.["rowIndex"];
+  if (
+    candidate === null ||
+    !Object.isFrozen(candidate) ||
+    !Number.isSafeInteger(rowIndex) ||
+    (rowIndex as number) < 0 ||
+    (rowIndex as number) >= rows.length
+  ) {
+    return null;
+  }
+
+  const row = rows[rowIndex as number] as
+    OverviewSpatialWindowDropRowPlan | undefined;
+  if (row === undefined || !validRowPlanBoundary(row)) {
+    return null;
+  }
+  if (row.emptyTarget === target) {
+    return {
+      bottom: row.bottom,
+      left: row.left,
+      right: row.right,
+      top: row.top,
+    };
+  }
+  if (row.emptyTarget !== null) {
+    return null;
+  }
+
+  for (const zone of row.zones) {
+    if (!validHorizontalZoneBoundary(zone)) {
+      return null;
+    }
+    if (zone.kind === "boundary") {
+      if (zone.target === target) {
+        return {
+          bottom: row.bottom,
+          left: zone.left,
+          right: zone.right,
+          top: row.top,
+        };
+      }
+      continue;
+    }
+    if (!Object.isFrozen(zone.members)) {
+      return null;
+    }
+
+    for (const member of zone.members) {
+      if (!validMemberPlanBoundary(member)) {
+        return null;
+      }
+      if (member.beforeTarget === target) {
+        return {
+          bottom: member.split,
+          left: zone.left,
+          right: zone.right,
+          top: member.hitTop,
+        };
+      }
+      if (member.afterTarget === target) {
+        return {
+          bottom: member.hitBottom,
+          left: zone.left,
+          right: zone.right,
+          top: member.split,
+        };
+      }
+    }
+  }
+
+  return null;
+}
+
+function pointIsInsideExpandedRect(
+  point: OverviewSpatialWindowDropPoint,
+  rect: GeometryRect,
+  margin: number,
+): boolean {
+  const left = Math.max(-MAXIMUM_GEOMETRY_MAGNITUDE, rect.left - margin);
+  const right = Math.min(MAXIMUM_GEOMETRY_MAGNITUDE, rect.right + margin);
+  const top = Math.max(-MAXIMUM_GEOMETRY_MAGNITUDE, rect.top - margin);
+  const bottom = Math.min(MAXIMUM_GEOMETRY_MAGNITUDE, rect.bottom + margin);
+  return (
+    point.x >= left && point.x < right && point.y >= top && point.y < bottom
+  );
 }
 
 function findRow(
@@ -576,9 +819,9 @@ function findMember(
       return null;
     }
 
-    if (y < member.top) {
+    if (y < member.hitTop) {
       high = middle - 1;
-    } else if (y >= member.bottom) {
+    } else if (y >= member.hitBottom) {
       low = middle + 1;
     } else {
       return member;
@@ -626,6 +869,11 @@ function validMemberPlanBoundary(
     isBoundedCoordinate(value.top) &&
     isBoundedCoordinate(value.bottom) &&
     value.bottom > value.top &&
+    isBoundedCoordinate(value.hitTop) &&
+    isBoundedCoordinate(value.hitBottom) &&
+    value.hitTop <= value.top &&
+    value.hitBottom >= value.bottom &&
+    value.hitBottom > value.hitTop &&
     isBoundedCoordinate(value.split) &&
     value.split > value.top &&
     value.split < value.bottom
@@ -656,7 +904,10 @@ function readRect(value: unknown): GeometryRect | null {
   const right = x + width;
   const bottom = y + height;
 
-  return isBoundedCoordinate(right) && isBoundedCoordinate(bottom)
+  return isBoundedCoordinate(right) &&
+    isBoundedCoordinate(bottom) &&
+    right > x &&
+    bottom > y
     ? {
         bottom: normalizeZero(bottom),
         left: normalizeZero(x),
@@ -699,18 +950,6 @@ function isIdentifier(value: unknown): value is string {
   }
 
   return true;
-}
-
-function isBoundedPoint(
-  value: unknown,
-): value is OverviewSpatialWindowDropPoint {
-  const candidate = record(value);
-
-  return (
-    candidate !== null &&
-    isBoundedCoordinate(candidate["x"]) &&
-    isBoundedCoordinate(candidate["y"])
-  );
 }
 
 function isBoundedCoordinate(value: unknown): value is number {

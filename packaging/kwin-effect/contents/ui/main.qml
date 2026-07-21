@@ -174,9 +174,9 @@ KWin.SceneEffect {
             ? controller.cancelOverviewExitHandoff(type) === true : false;
     }
 
-    function submitSpatialDropCommand(source, target) {
+    function submitSpatialDropCommand(source, target, basisFingerprint) {
         return controller && typeof controller.submitSpatialDropCommand === "function"
-            ? controller.submitSpatialDropCommand(source, target) === true
+            ? controller.submitSpatialDropCommand(source, target, basisFingerprint) === true
             : false;
     }
 

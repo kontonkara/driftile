@@ -149,9 +149,10 @@ import {
   type LayoutPersistenceHydrationPlan,
   type LayoutPersistenceHydrationRestoreBaselineValue,
 } from "./core/layout-persistence-hydration";
-import type {
-  LayoutPersistenceCatalogSnapshot,
-  LayoutPersistenceTopologyV2,
+import {
+  mergeLayoutPersistenceCatalog,
+  type LayoutPersistenceCatalogSnapshot,
+  type LayoutPersistenceTopologyV2,
 } from "./core/layout-persistence-catalog";
 import { planKnownOutputLayoutHydration } from "./core/layout-persistence-known-output";
 import { matchPersistedOutputs } from "./core/layout-persistence-match";
@@ -161,6 +162,7 @@ import {
 } from "./core/layout-persistence-capture";
 import {
   decodeLayoutPersistence,
+  LAYOUT_PERSISTENCE_LIMITS,
   type LayoutPersistenceV4,
 } from "./core/layout-persistence";
 import {
@@ -190,7 +192,16 @@ import {
   type PointerVerticalResize,
   type PointerVerticalResizeEdge,
 } from "./core/pointer-resize";
+import {
+  fingerprintOverviewSpatialDropBasis,
+  overviewSpatialDropBasisContextKeys,
+} from "./overview/spatial-drop-basis";
 import type { SpatialDropCommand } from "./overview/spatial-drop-command";
+import {
+  projectOverviewLayout,
+  type OverviewLiveLayout,
+  type OverviewLiveWindowHeightBounds,
+} from "./overview/layout-view";
 import type { OverviewWorkspaceCommand } from "./overview/workspace-command";
 import type {
   KWinOutput,
@@ -633,12 +644,14 @@ interface SpatialWorkspaceCreationReservation {
   readonly baseline: SpatialWorkspaceCreationBaseline;
   readonly result: DesktopCreationResult;
   settled: boolean;
+  readonly targetGeometryFingerprint: string;
 }
 
 interface SpatialWorkspaceGapPreparation {
   readonly baseline: SpatialWorkspaceCreationBaseline;
   readonly desktopIds: readonly string[];
   readonly insertionPosition: number;
+  readonly targetGeometryFingerprint: string;
 }
 
 interface OutputTransferTransaction {
@@ -1730,6 +1743,76 @@ export class RuntimeController {
     return this.managedWindows.size;
   }
 
+  captureOverviewSpatialDropBasisFingerprint(
+    command: Pick<SpatialDropCommand, "source" | "target">,
+  ): string | null {
+    if (!this.layoutCaptureReady()) {
+      return null;
+    }
+
+    try {
+      const document = this.captureLayoutState();
+      const live = this.overviewSpatialDropLiveLayout();
+      if (document === null || live === null) {
+        return null;
+      }
+
+      const state = decodeLayoutPersistence(document);
+      const topology = this.currentLayoutPersistenceTopology();
+      if (!state.ok || topology === null) {
+        return null;
+      }
+      const catalog = mergeLayoutPersistenceCatalog(null, {
+        state: state.value,
+        topology,
+      });
+      if (!catalog.ok) {
+        return null;
+      }
+
+      const projected = projectOverviewLayout(catalog.document, live);
+      if (!projected.ok) {
+        return null;
+      }
+
+      const contextKeys = overviewSpatialDropBasisContextKeys(
+        command.source,
+        command.target,
+      );
+      if (contextKeys === null) {
+        return null;
+      }
+      const contextGeometries: Array<{
+        readonly activityId: string;
+        readonly desktopId: string;
+        readonly fingerprint: string;
+        readonly outputId: string;
+      }> = [];
+      for (const key of contextKeys) {
+        const geometry = this.geometry.contextGeometry(
+          outputId(key.outputId),
+          desktopId(key.desktopId),
+        );
+        if (!geometry) {
+          return null;
+        }
+        contextGeometries.push({ ...key, fingerprint: geometry.fingerprint });
+      }
+
+      const fingerprint = fingerprintOverviewSpatialDropBasis({
+        alwaysCenterSingleColumn: this.alwaysCenterSingleColumn,
+        contextGeometries,
+        gap: this.gap,
+        model: projected.value,
+        source: command.source,
+        target: command.target,
+      });
+      return fingerprint;
+    } catch {
+      return null;
+    }
+  }
+
   captureLayoutState(): string | null {
     if (!this.layoutCaptureReady()) {
       return null;
@@ -1833,6 +1916,40 @@ export class RuntimeController {
       );
       return null;
     }
+  }
+
+  private overviewSpatialDropLiveLayout(): OverviewLiveLayout | null {
+    const currentActivity = this.activities.current();
+    if (!currentActivity) {
+      return null;
+    }
+
+    const activityIds =
+      this.workspace.activities && this.workspace.activities.length > 0
+        ? [...this.workspace.activities]
+        : [String(currentActivity)];
+    const windowIds: string[] = [];
+    const windowHeightBounds: OverviewLiveWindowHeightBounds[] = [];
+
+    for (const observed of this.observer.snapshot()) {
+      const source = this.observer.source(observed.id);
+      windowIds.push(observed.id);
+      const bounds = source
+        ? overviewSpatialDropWindowHeightBounds(source, observed.id)
+        : null;
+      if (bounds) {
+        windowHeightBounds.push(bounds);
+      }
+    }
+
+    return {
+      activityIds,
+      currentActivityId: String(currentActivity),
+      desktopIds: this.workspace.desktops.map((desktop) => desktop.id),
+      outputs: this.workspace.screens.map(layoutPersistenceOutputDescriptor),
+      windowHeightBounds,
+      windowIds,
+    };
   }
 
   private captureFloatingWindowPlacement(
@@ -3344,6 +3461,15 @@ export class RuntimeController {
   }
 
   executeSpatialDrop(command: SpatialDropCommand): boolean {
+    const basisFingerprint =
+      this.captureOverviewSpatialDropBasisFingerprint(command);
+    if (
+      basisFingerprint === null ||
+      command.basisFingerprint !== basisFingerprint
+    ) {
+      return false;
+    }
+
     const target = command.target;
 
     if (target.kind === "workspace-gap") {
@@ -3567,6 +3693,7 @@ export class RuntimeController {
       baseline: preparation.baseline,
       result: created,
       settled: false,
+      targetGeometryFingerprint: preparation.targetGeometryFingerprint,
     };
     this.activeSpatialWorkspaceCreation = reservation;
     const resolved: ResolvedSpatialDropCommand = {
@@ -3581,6 +3708,16 @@ export class RuntimeController {
     let applied = false;
 
     try {
+      const createdGeometry = this.geometry.contextGeometry(
+        outputId(target.outputId),
+        desktopId(created.desktopId),
+      );
+      if (
+        !createdGeometry ||
+        createdGeometry.fingerprint !== reservation.targetGeometryFingerprint
+      ) {
+        return false;
+      }
       applied = this.executeResolvedSpatialDrop(resolved, reservation);
       return applied;
     } finally {
@@ -3680,6 +3817,14 @@ export class RuntimeController {
         return null;
       }
 
+      const targetGeometry = this.geometry.contextGeometry(
+        outputId(target.outputId),
+        desktopId(target.anchorDesktopId),
+      );
+      if (!targetGeometry) {
+        return null;
+      }
+
       const desktops = [...this.workspace.desktops];
       const desktopIds = desktops.map((desktop) => desktop.id);
       const uniqueDesktopIds = new Set(desktopIds);
@@ -3744,6 +3889,7 @@ export class RuntimeController {
         },
         desktopIds,
         insertionPosition,
+        targetGeometryFingerprint: targetGeometry.fingerprint,
       };
     } catch {
       return null;
@@ -35826,6 +35972,56 @@ function validDecorationMargin(value: number): number | null {
   }
 
   return value > 0 ? value : 0;
+}
+
+function overviewSpatialDropWindowHeightBounds(
+  window: KWinWindow,
+  windowId: string,
+): OverviewLiveWindowHeightBounds | null {
+  const maximumMagnitude = LAYOUT_PERSISTENCE_LIMITS.numericMagnitude;
+  const frameHeight = window.frameGeometry.height;
+  const clientHeight = window.clientGeometry.height;
+  const minimumClientHeight = window.minSize.height;
+  const rawMaximumClientHeight = window.maxSize.height;
+  const rawDecorationHeight = frameHeight - clientHeight;
+
+  if (
+    windowId.length === 0 ||
+    windowId.length > LAYOUT_PERSISTENCE_LIMITS.identifierCharacters ||
+    !Number.isFinite(frameHeight) ||
+    frameHeight < 0 ||
+    !Number.isFinite(clientHeight) ||
+    clientHeight < 0 ||
+    !Number.isFinite(rawDecorationHeight) ||
+    rawDecorationHeight < -1e-6 ||
+    rawDecorationHeight > maximumMagnitude ||
+    !Number.isFinite(minimumClientHeight) ||
+    minimumClientHeight < 0 ||
+    minimumClientHeight > maximumMagnitude
+  ) {
+    return null;
+  }
+
+  const decorationHeight = rawDecorationHeight > 0 ? rawDecorationHeight : 0;
+  const maximumClientHeight =
+    Number.isFinite(rawMaximumClientHeight) &&
+    rawMaximumClientHeight > 0 &&
+    rawMaximumClientHeight <= maximumMagnitude
+      ? rawMaximumClientHeight
+      : Number.POSITIVE_INFINITY;
+  if (
+    maximumClientHeight !== Number.POSITIVE_INFINITY &&
+    maximumClientHeight < minimumClientHeight
+  ) {
+    return null;
+  }
+
+  return {
+    decorationHeight,
+    maximumClientHeight,
+    minimumClientHeight,
+    windowId,
+  };
 }
 
 function validDecorationExtent(

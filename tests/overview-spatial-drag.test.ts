@@ -480,10 +480,11 @@ describe("spatial overview window drag lifecycle", () => {
   it("caches one exact card-local spatial target for hover and drop", () => {
     expect(desktopCard).toContain("required property string outputId");
     expect(desktopCard).toMatch(
-      /signal windowDropped\(var candidate, string expectedWindowId, var expectedSourceDesktop,\s*string expectedSourceDesktopId, var expectedTargetDesktop,\s*string expectedTargetDesktopId, var expectedScreen, var exactTarget\)/u,
+      /signal windowDropped\(var candidate, string expectedWindowId, var expectedSourceDesktop,\s*string expectedSourceDesktopId, var expectedTargetDesktop,\s*string expectedTargetDesktopId, var expectedScreen, var exactTarget,\s*string basisFingerprint\)/u,
     );
     expect(desktopCard).toContain("property var windowDropHoverSnapshot: null");
     expect(desktopCard).toContain("property var windowDropHoverTarget: null");
+    expect(desktopCard).toContain("property var windowDropHoverPreview: null");
     expect(dropPlanner).toContain("function buildWindowDropPlannerSnapshot()");
     expect(dropPlanner).toContain(
       "runtime.buildOverviewSpatialWindowDropPlan({",
@@ -519,8 +520,16 @@ describe("spatial overview window drag lifecycle", () => {
     );
     expect(hoverLifecycle).toContain("windowDropHoverSnapshot = snapshot");
     expect(hoverLifecycle).toContain("windowDropHoverTarget = target");
+    expect(hoverLifecycle).toContain("windowDropHoverPreview = preview");
     expect(hoverLifecycle).toContain("windowDropHoverSnapshot = null");
     expect(hoverLifecycle).toContain("windowDropHoverTarget = null");
+    expect(hoverLifecycle).toContain("windowDropHoverPreview = null");
+    expect(hoverLifecycle).toMatch(
+      /const preview = planWindowDropPreview\(source, target, snapshot\);[\s\S]*?!snapshot \|\| !target \|\| !preview[\s\S]*?windowDropHoverSnapshot = snapshot;[\s\S]*?windowDropHoverTarget = target;\s*windowDropHoverPreview = preview;/u,
+    );
+    expect(hoverLifecycle).toContain(
+      "windowDropPreviewIsExact(windowDropHoverPreview, source,",
+    );
     expect(dropArea).toContain(
       "const exactTarget = card.windowDropHoverTarget;",
     );
@@ -531,19 +540,25 @@ describe("spatial overview window drag lifecycle", () => {
       ),
     );
     expect(dropArea).toContain(
-      "card.desktop, card.desktopId, card.screen, exactTarget);",
+      "card.desktop, card.desktopId, card.screen, exactTarget,",
     );
+    expect(dropArea).toContain("exactPreview.basisFingerprint);");
+    expect(dropArea).toContain(
+      "card.windowDropPreviewIsExact(exactPreview, source, exactTarget,",
+    );
+    expect(dropArea).toContain("card.windowDropHoverOwnershipMatches(source)");
+    expect(dropArea).not.toContain("card.moveWindowDropHover(source, drop)");
   });
 
   it("solves the final bounded window frame from the cached exact drop target", () => {
     expect(dropArea).toContain(
       "readonly property var spatialPreview: validTarget",
     );
-    expect(dropArea).toContain(
-      "card.planWindowDropPreview(card.windowDropHoverSource,",
-    );
+    expect(dropArea).toContain("card.windowDropHoverPreview");
+    expect(dropArea).not.toContain("card.planWindowDropPreview(");
     expect(dropArea).toContain("id: spatialWindowDropPreviewSurface");
     expect(dropArea).toContain("id: spatialWindowDropPreviewMarker");
+    expect(dropArea).toContain("windowDropArea.spatialPreview.affectedFrames");
     expect(dropArea).toMatch(/anchors\.fill: parent\s*clip: true/u);
     expect(dropArea).toContain('plan.kind === "empty-row"');
     expect(dropArea).toContain('plan.kind === "stack-insertion"');
@@ -553,6 +568,20 @@ describe("spatial overview window drag lifecycle", () => {
     expect(dropPlanner).toContain(
       "function planWindowDropPreview(source, target, snapshot)",
     );
+    expect(dropPlanner).toContain(
+      "function windowDropPreviewIsExact(preview, source, target, snapshot)",
+    );
+    expect(dropPlanner).toContain("affectedFrames: geometry.affectedFrames");
+    expect(dropPlanner).toContain("sourceWindowId: prospective.sourceWindowId");
+    expect(dropPlanner).toContain("const seenWindowIds = Object.create(null)");
+    expect(dropPlanner).toContain("seenWindowIds[frame.windowId] === true");
+    expect(dropPlanner).toContain(
+      "frame.windowId === prospective.sourceWindowId",
+    );
+    expect(dropPlanner).toContain(
+      "!windowDropPreviewFramesMatch(projected, previousFrame)",
+    );
+    expect(dropPlanner).toContain("sourceFrameCount !== 1");
     expect(dropPlanner).toContain(
       "windowDropPlannerTargetIsExact(target, snapshot)",
     );
@@ -572,12 +601,10 @@ describe("spatial overview window drag lifecycle", () => {
     expect(dropPlanner).toContain(
       "columns.push(windowDropPreviewSingletonColumn(sourceState))",
     );
+    expect(dropPlanner).toContain("height: frame.height * projectionScale");
+    expect(dropPlanner).toContain("width: frame.width * projectionScale");
     expect(dropPlanner).toContain(
-      "height: sourceFrame.height * projectionScale",
-    );
-    expect(dropPlanner).toContain("width: sourceFrame.width * projectionScale");
-    expect(dropPlanner).toContain(
-      "x: viewportOriginX + (sourceFrame.x - plan.camera.base) * projectionScale",
+      "x: viewportOriginX + (frame.x - plan.camera.base) * projectionScale",
     );
     expect(dropPlanner).not.toContain("sourceFrame.x - logicalViewportOffset");
     expect(dropPlanner).toContain("Object.isFrozen(plan.camera)");
@@ -597,20 +624,24 @@ describe("spatial overview window drag lifecycle", () => {
     );
   });
 
-  it("reuses the cached target and only resolves a new frame when its zone changes", () => {
+  it("owns one cached preview and resolves it only when the exact zone changes", () => {
     const hoverMove = hoverLifecycle.slice(
       hoverLifecycle.indexOf("function moveWindowDropHoverToPositions("),
       hoverLifecycle.indexOf("function rejectWindowDropHover("),
     );
-    expect(hoverMove).toContain(
-      "const target = hitWindowDropPlannerSnapshot(windowDropHoverSnapshot, localPosition);",
+    expect(hoverMove).toMatch(
+      /const target = hitWindowDropPlannerSnapshot\(windowDropHoverSnapshot, localPosition,\s*windowDropHoverTarget\);/u,
+    );
+    expect(dropPlanner).toContain(
+      "runtime.hitTestOverviewSpatialWindowDropWithHysteresis(",
     );
     expect(hoverMove).toMatch(
-      /if \(windowDropHoverTarget !== target\) \{\s*windowDropHoverTarget = target;\s*\}/u,
+      /if \(windowDropHoverTarget !== target\) \{[\s\S]*?const preview = planWindowDropPreview\(source, target, windowDropHoverSnapshot\);[\s\S]*?windowDropHoverTarget = target;\s*windowDropHoverPreview = preview;\s*\}/u,
     );
     expect(hoverMove).not.toMatch(
-      /buildWindowDropPlannerSnapshot|planWindowDropPreview|planOverviewSpatialRowGeometry/u,
+      /buildWindowDropPlannerSnapshot|planOverviewSpatialRowGeometry/u,
     );
+    expect(hoverMove.match(/planWindowDropPreview/gu)).toHaveLength(1);
   });
 
   it("uses only visible tab members and keeps same-workspace drops local", () => {
@@ -686,12 +717,12 @@ describe("spatial overview window drag lifecycle", () => {
     );
   });
 
-  it("rejects singleton boundary no-ops and retains a multi-member self anchor", () => {
+  it("finishes same-position drops as explicit local no-ops", () => {
     expect(dropPlanner).toContain(
       "originalSourceColumnIndex = sourceLocation.columnIndex",
     );
     expect(dropPlanner).toMatch(
-      /if \(movedColumn && insertionIndex === originalSourceColumnIndex\) \{\s*return null;\s*\}/u,
+      /if \(movedColumn && insertionIndex === originalSourceColumnIndex\) \{[\s\S]*?noop: true,[\s\S]*?sourceWindowId: sourceState\.windowId/u,
     );
     expect(dropPlanner).toMatch(
       /if \(target\.targetWindowId === sourceState\.windowId\) \{\s*retainedSourceAnchorIndex = sourceLocation\.columnIndex;\s*\}/u,
@@ -701,6 +732,10 @@ describe("spatial overview window drag lifecycle", () => {
     );
     expect(dropPlanner).toContain(
       "Presentation is geometry-neutral for this one-member preview; runtime policy owns the commit value.",
+    );
+    expect(dropArea).toContain("if (exactPreview.noop === true)");
+    expect(dropArea.indexOf("drop.accepted = true;")).toBeLessThan(
+      dropArea.indexOf("if (exactPreview.noop === true)"),
     );
   });
 
@@ -1315,7 +1350,14 @@ describe("spatial overview column drag lifecycle", () => {
       "const exactTarget = card.columnDropHoverTarget",
     );
     expect(columnDropArea).toContain(
-      "card.columnDropPreviewIsExact(card.columnDropHoverPreview, source, exactTarget,",
+      "card.columnDropPreviewIsExact(exactPreview, source, exactTarget,",
+    );
+    expect(columnDropArea).toContain("exactPreview.basisFingerprint);");
+    expect(columnDropArea).toContain(
+      "card.columnDropHoverOwnershipMatches(source)",
+    );
+    expect(columnDropArea).not.toContain(
+      "card.moveColumnDropHover(source, drop)",
     );
     expect(columnDropArea.indexOf("card.clearColumnDropHover();")).toBeLessThan(
       columnDropArea.indexOf("card.columnDropped("),
@@ -1439,7 +1481,7 @@ describe("spatial overview column drag lifecycle", () => {
     ]) {
       const start = overviewScene.indexOf(change);
       expect(start).toBeGreaterThanOrEqual(0);
-      expect(overviewScene.slice(start, start + 260)).toContain(
+      expect(overviewScene.slice(start, start + 520)).toContain(
         "cancelActiveColumnSpatialDrag()",
       );
     }

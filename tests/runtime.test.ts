@@ -17,9 +17,11 @@ import {
 } from "../src/runtime";
 
 const CREATED_AT = 1_751_000_000_000;
+const BASIS_FINGERPRINT = "0123456789abcdef".repeat(4);
 
 function command(requestId = 41, createdAt = CREATED_AT): SpatialDropCommand {
   return {
+    basisFingerprint: BASIS_FINGERPRINT,
     createdAt,
     format: "driftile-spatial-drop",
     requestId,

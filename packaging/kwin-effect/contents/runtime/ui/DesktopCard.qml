@@ -26,6 +26,7 @@ Item {
     required property string searchQuery
     required property var searchQueryPlan
     required property int searchResultCount
+    required property var spatialDropBasisProvider
     required property bool spatialDirectDragBlocked
     required property bool showApplicationIcons
     required property bool showApplicationIdentity
@@ -46,13 +47,14 @@ Item {
     signal desktopReorderReleased(string expectedDesktopId, real sceneX, real sceneY)
     signal navigationTargetsChanged()
     signal columnDropped(var source, var expectedTargetDesktop, string expectedTargetDesktopId,
-                         var expectedScreen, var exactTarget)
+                         var expectedScreen, var exactTarget, string basisFingerprint)
     signal columnSpatialDragStarted(var source, real sceneX, real sceneY)
     signal columnSpatialDragMoved(var source, real sceneX, real sceneY)
     signal columnSpatialDragFinished(var source)
     signal windowDropped(var candidate, string expectedWindowId, var expectedSourceDesktop,
                          string expectedSourceDesktopId, var expectedTargetDesktop,
-                         string expectedTargetDesktopId, var expectedScreen, var exactTarget)
+                         string expectedTargetDesktopId, var expectedScreen, var exactTarget,
+                         string basisFingerprint)
     signal windowCloseRequested(var candidate, string expectedWindowId, var expectedDesktop,
                                 string expectedDesktopId, var expectedScreen)
     signal windowSpatialDragStarted(var source, real sceneX, real sceneY)
@@ -147,6 +149,7 @@ Item {
     property var windowDropHoverScreen: null
     property var windowDropHoverSnapshot: null
     property var windowDropHoverTarget: null
+    property var windowDropHoverPreview: null
     property bool windowDropHoverCrossWorkspace: false
 
     opacity: searchDeemphasized ? 0.42 : 1
@@ -1762,10 +1765,7 @@ Item {
 
         readonly property bool validTarget: containsDrag && card.windowDropHoverOwned
             && card.windowDropHoverTarget !== null && card.windowDropHoverOwnershipIsValid()
-        readonly property var spatialPreview: validTarget
-            ? card.planWindowDropPreview(card.windowDropHoverSource,
-                                         card.windowDropHoverTarget,
-                                         card.windowDropHoverSnapshot) : null
+        readonly property var spatialPreview: validTarget ? card.windowDropHoverPreview : null
 
         anchors.fill: parent
         clip: true
@@ -1813,6 +1813,27 @@ Item {
             z: 2
         }
 
+        Repeater {
+            model: windowDropArea.spatialPreview ? windowDropArea.spatialPreview.affectedFrames : []
+
+            Rectangle {
+                required property var modelData
+
+                x: modelData.x
+                y: modelData.y
+                width: modelData.width
+                height: modelData.height
+                visible: !windowDropArea.spatialPreview
+                    || modelData.windowId !== windowDropArea.spatialPreview.sourceWindowId
+                enabled: false
+                color: "#1f86aee8"
+                border.width: 1
+                border.color: "#a6b8d8ff"
+                radius: 2
+                z: 1
+            }
+        }
+
         onEntered: drag => drag.accepted = card.windowDropIsValid(drag.source, drag.keys)
             ? card.claimWindowDropHover(drag.source, drag)
             : card.rejectWindowDropHover()
@@ -1829,14 +1850,17 @@ Item {
         }
         onDropped: drop => {
             const source = drop.source;
-            if (!card.windowDropIsValid(source, drop.keys) || !card.moveWindowDropHover(source, drop)) {
+            if (!card.windowDropIsValid(source, drop.keys)
+                    || !card.windowDropHoverOwnershipMatches(source)) {
                 card.clearWindowDropHover();
                 drop.accepted = false;
                 return;
             }
 
             const exactTarget = card.windowDropHoverTarget;
-            if (!card.windowDropPlannerTargetIsExact(exactTarget, card.windowDropHoverSnapshot)) {
+            const exactPreview = card.windowDropHoverPreview;
+            if (!card.windowDropPreviewIsExact(exactPreview, source, exactTarget,
+                                               card.windowDropHoverSnapshot)) {
                 card.clearWindowDropHover();
                 drop.accepted = false;
                 return;
@@ -1845,8 +1869,12 @@ Item {
             drop.action = Qt.MoveAction;
             drop.accepted = true;
             card.clearWindowDropHover();
+            if (exactPreview.noop === true) {
+                return;
+            }
             card.windowDropped(source.candidate, source.windowId, source.sourceDesktop, source.sourceDesktopId,
-                               card.desktop, card.desktopId, card.screen, exactTarget);
+                               card.desktop, card.desktopId, card.screen, exactTarget,
+                               exactPreview.basisFingerprint);
         }
 
         Connections {
@@ -1974,14 +2002,15 @@ Item {
         onDropped: drop => {
             const source = drop.source;
             if (!card.columnDropIsValid(source, drop.keys)
-                    || !card.moveColumnDropHover(source, drop)) {
+                    || !card.columnDropHoverOwnershipMatches(source)) {
                 card.clearColumnDropHover();
                 drop.accepted = false;
                 return;
             }
 
             const exactTarget = card.columnDropHoverTarget;
-            if (!card.columnDropPreviewIsExact(card.columnDropHoverPreview, source, exactTarget,
+            const exactPreview = card.columnDropHoverPreview;
+            if (!card.columnDropPreviewIsExact(exactPreview, source, exactTarget,
                                                card.columnDropHoverSnapshot)) {
                 card.clearColumnDropHover();
                 drop.accepted = false;
@@ -1991,7 +2020,8 @@ Item {
             drop.action = Qt.MoveAction;
             drop.accepted = true;
             card.clearColumnDropHover();
-            card.columnDropped(source, card.desktop, card.desktopId, card.screen, exactTarget);
+            card.columnDropped(source, card.desktop, card.desktopId, card.screen, exactTarget,
+                               exactPreview.basisFingerprint);
         }
 
         Connections {
@@ -4051,7 +4081,9 @@ Item {
             }
             const prospective = buildColumnDropPreviewColumns(source, target, snapshot);
             const geometry = prospective ? solveColumnDropPreviewGeometry(prospective, snapshot) : null;
-            if (!geometry) {
+            const basisFingerprint = geometry
+                ? captureWindowDropBasisFingerprint(source, target) : null;
+            if (!geometry || basisFingerprint === null) {
                 return null;
             }
 
@@ -4075,6 +4107,7 @@ Item {
             }
 
             return Object.freeze({
+                basisFingerprint,
                 columnFrame: geometry.columnFrame,
                 kind: target.kind,
                 marker,
@@ -4091,6 +4124,8 @@ Item {
     function columnDropPreviewIsExact(preview, source, target, snapshot) {
         return preview && Object.isFrozen(preview) && preview.source === source
             && preview.target === target && preview.snapshot === snapshot
+            && typeof preview.basisFingerprint === "string"
+            && /^[0-9a-f]{64}$/.test(preview.basisFingerprint)
             && Object.isFrozen(preview.columnFrame) && Object.isFrozen(preview.memberFrames)
             && columnDropSourceIsExact(source) && columnDropPlannerTargetIsExact(target, snapshot)
             && columnDropPreviewMemberFramesAreExact(preview.memberFrames, source, snapshot)
@@ -4322,7 +4357,8 @@ Item {
         try {
             const snapshot = buildWindowDropPlannerSnapshot();
             const target = hitWindowDropPlannerSnapshot(snapshot, localPosition);
-            if (!snapshot || !target || !windowDropSourceWorkspaceRelationIsExact(source)) {
+            const preview = planWindowDropPreview(source, target, snapshot);
+            if (!snapshot || !target || !preview || !windowDropSourceWorkspaceRelationIsExact(source)) {
                 clearWindowDropHover();
                 return false;
             }
@@ -4335,6 +4371,7 @@ Item {
             windowDropHoverScreen = screen;
             windowDropHoverSnapshot = snapshot;
             windowDropHoverTarget = target;
+            windowDropHoverPreview = preview;
             windowDropHoverCrossWorkspace = crossWorkspace;
             windowDropHoverOwned = true;
             if (crossWorkspace) {
@@ -4365,14 +4402,21 @@ Item {
             return false;
         }
 
-        const target = hitWindowDropPlannerSnapshot(windowDropHoverSnapshot, localPosition);
+        const target = hitWindowDropPlannerSnapshot(windowDropHoverSnapshot, localPosition,
+                                                    windowDropHoverTarget);
         if (!target) {
             clearWindowDropHover();
             return false;
         }
 
         if (windowDropHoverTarget !== target) {
+            const preview = planWindowDropPreview(source, target, windowDropHoverSnapshot);
+            if (!preview) {
+                clearWindowDropHover();
+                return false;
+            }
             windowDropHoverTarget = target;
+            windowDropHoverPreview = preview;
         }
         if (windowDropHoverCrossWorkspace) {
             windowWorkspaceHoverMoved(source, windowDropHoverDesktop, windowDropHoverDesktopId,
@@ -4418,6 +4462,7 @@ Item {
         windowDropHoverScreen = null;
         windowDropHoverSnapshot = null;
         windowDropHoverTarget = null;
+        windowDropHoverPreview = null;
         windowDropHoverCrossWorkspace = false;
     }
 
@@ -4446,7 +4491,9 @@ Item {
                     && windowDropHoverDesktop === desktop && windowDropHoverDesktopId === desktopId
                     && windowDropHoverScreen === screen && windowDropTargetIsExact()
                     && windowDropPlannerSnapshotIsExact(windowDropHoverSnapshot)
-                    && windowDropPlannerTargetMatchesSnapshot(windowDropHoverTarget, windowDropHoverSnapshot);
+                    && windowDropPlannerTargetMatchesSnapshot(windowDropHoverTarget, windowDropHoverSnapshot)
+                    && windowDropPreviewIsExact(windowDropHoverPreview, source,
+                                                windowDropHoverTarget, windowDropHoverSnapshot);
         } catch (error) {
             return false;
         }
@@ -4705,7 +4752,7 @@ Item {
         }
     }
 
-    function hitWindowDropPlannerSnapshot(snapshot, localPosition) {
+    function hitWindowDropPlannerSnapshot(snapshot, localPosition, previousTarget = null) {
         try {
             if (!windowDropPlannerSnapshotIsExact(snapshot)
                     || !spatialDragScenePointIsFinite(localPosition)) {
@@ -4716,7 +4763,13 @@ Item {
             if (!runtime || typeof runtime.hitTestOverviewSpatialWindowDrop !== "function") {
                 return null;
             }
-            const target = runtime.hitTestOverviewSpatialWindowDrop(snapshot.plan, localPosition);
+            const previousTargetIsExact = previousTarget !== null
+                && windowDropPlannerTargetMatchesSnapshot(previousTarget, snapshot);
+            const target = previousTargetIsExact
+                && typeof runtime.hitTestOverviewSpatialWindowDropWithHysteresis === "function"
+                ? runtime.hitTestOverviewSpatialWindowDropWithHysteresis(
+                      snapshot.plan, localPosition, previousTarget)
+                : runtime.hitTestOverviewSpatialWindowDrop(snapshot.plan, localPosition);
             return windowDropPlannerTargetMatchesSnapshot(target, snapshot) ? target : null;
         } catch (error) {
             return null;
@@ -4747,6 +4800,48 @@ Item {
         }
     }
 
+    function captureWindowDropBasisFingerprint(source, target) {
+        try {
+            const sourceSnapshot = source && source.scope === "column"
+                ? source.columnDragSnapshot : source ? source.windowDragSnapshot : null;
+            if (!sourceSnapshot || !target || typeof spatialDropBasisProvider !== "function") {
+                return null;
+            }
+            const canonicalSource = {
+                activityId: sourceSnapshot.activityId,
+                desktopId: sourceSnapshot.desktopId,
+                outputId: sourceSnapshot.outputId,
+                scope: source && source.scope === "column" ? "column" : "window",
+                windowId: source && source.scope === "column"
+                    ? sourceSnapshot.selectedWindowId : sourceSnapshot.windowId
+            };
+            let canonicalTarget = null;
+            if (target.kind === "empty-row") {
+                canonicalTarget = {
+                    activityId: target.activityId,
+                    desktopId: target.desktopId,
+                    kind: target.kind,
+                    outputId: target.outputId
+                };
+            } else if (target.kind === "column-boundary" || target.kind === "stack-insertion") {
+                canonicalTarget = {
+                    activityId: target.activityId,
+                    desktopId: target.desktopId,
+                    kind: target.kind,
+                    outputId: target.outputId,
+                    position: target.position,
+                    targetWindowId: target.targetWindowId
+                };
+            }
+            const fingerprint = canonicalTarget
+                ? spatialDropBasisProvider(canonicalSource, canonicalTarget) : null;
+            return typeof fingerprint === "string" && /^[0-9a-f]{64}$/.test(fingerprint)
+                ? fingerprint : null;
+        } catch (error) {
+            return null;
+        }
+    }
+
     function planWindowDropPreview(source, target, snapshot) {
         try {
             if (!windowDropPlannerTargetIsExact(target, snapshot)
@@ -4754,12 +4849,28 @@ Item {
                 return null;
             }
 
-            const surface = solveWindowDropPreviewSurface(source, target, snapshot);
-            if (!surface) {
+            const prospective = buildWindowDropPreviewColumns(source, target, snapshot);
+            const geometry = prospective
+                ? solveWindowDropPreviewGeometry(prospective, snapshot) : null;
+            const basisFingerprint = geometry
+                ? captureWindowDropBasisFingerprint(source, target) : null;
+            if (!geometry || basisFingerprint === null) {
                 return null;
             }
+            const surface = geometry.surface;
             if (target.kind === "empty-row") {
-                return Object.freeze({ kind: target.kind, marker: null, surface });
+                return Object.freeze({
+                    affectedFrames: geometry.affectedFrames,
+                    basisFingerprint,
+                    kind: geometry.noop ? "noop" : target.kind,
+                    marker: null,
+                    noop: geometry.noop,
+                    snapshot,
+                    source,
+                    sourceWindowId: prospective.sourceWindowId,
+                    surface,
+                    target
+                });
             }
 
             const frames = snapshot.previewFrames[target.targetWindowId];
@@ -4780,7 +4891,18 @@ Item {
                     y: target.position === "before" ? frame.y : frame.y + frame.height - thickness
                 });
                 return windowDropPreviewFrameIsBounded(marker, snapshot)
-                    ? Object.freeze({ kind: target.kind, marker, surface }) : null;
+                    ? Object.freeze({
+                          affectedFrames: geometry.affectedFrames,
+                          basisFingerprint,
+                          kind: geometry.noop ? "noop" : target.kind,
+                          marker: geometry.noop ? null : marker,
+                          noop: geometry.noop,
+                          snapshot,
+                          source,
+                          sourceWindowId: prospective.sourceWindowId,
+                          surface,
+                          target
+                      }) : null;
             }
 
             if (target.kind !== "column-boundary") {
@@ -4796,16 +4918,42 @@ Item {
                 y: frame.y
             });
             return windowDropPreviewFrameIsBounded(marker, snapshot)
-                ? Object.freeze({ kind: target.kind, marker, surface }) : null;
+                ? Object.freeze({
+                      affectedFrames: geometry.affectedFrames,
+                      basisFingerprint,
+                      kind: geometry.noop ? "noop" : target.kind,
+                      marker: geometry.noop ? null : marker,
+                      noop: geometry.noop,
+                      snapshot,
+                      source,
+                      sourceWindowId: prospective.sourceWindowId,
+                      surface,
+                      target
+                  }) : null;
         } catch (error) {
             return null;
         }
     }
 
-    function solveWindowDropPreviewSurface(source, target, snapshot) {
-        const prospective = buildWindowDropPreviewColumns(source, target, snapshot);
-        if (!prospective) {
+    function solveWindowDropPreviewGeometry(prospective, snapshot) {
+        if (!prospective || typeof prospective.noop !== "boolean") {
             return null;
+        }
+        if (prospective.noop) {
+            const currentFrames = snapshot.previewFrames[prospective.sourceWindowId];
+            const currentFrame = currentFrames ? currentFrames.memberFrame : null;
+            if (!currentFrame || !windowDropPreviewFrameIsBounded(currentFrame, snapshot)) {
+                return null;
+            }
+            const sourceFrame = Object.freeze({
+                height: Number(currentFrame.height),
+                width: Number(currentFrame.width),
+                windowId: prospective.sourceWindowId,
+                x: Number(currentFrame.x),
+                y: Number(currentFrame.y)
+            });
+            const affectedFrames = Object.freeze([sourceFrame]);
+            return Object.freeze({ affectedFrames, noop: true, surface: sourceFrame });
         }
 
         const outputGeometry = windowDropPreviewRect(snapshot.screen.geometry);
@@ -4849,27 +4997,116 @@ Item {
         }
 
         let sourceFrame = null;
+        const affectedFrames = [];
+        const seenWindowIds = Object.create(null);
         for (const frame of plan.windowFrames) {
-            if (frame.windowId !== prospective.sourceWindowId) {
+            const column = Number.isInteger(frame.columnIndex)
+                && frame.columnIndex >= 0 && frame.columnIndex < prospective.columns.length
+                ? prospective.columns[frame.columnIndex] : null;
+            const selected = column && (column.presentation !== "tabbed"
+                || frame.memberIndex === column.selectedMemberIndex);
+            if (!selected || typeof frame.windowId !== "string" || frame.windowId.length === 0
+                    || seenWindowIds[frame.windowId] === true
+                    || !projectionGeometryScalarsAreValid(frame.x, frame.y, frame.width, frame.height)) {
                 continue;
             }
-            if (sourceFrame !== null) {
-                return null;
+            seenWindowIds[frame.windowId] = true;
+            const projected = Object.freeze({
+                height: frame.height * projectionScale,
+                width: frame.width * projectionScale,
+                windowId: frame.windowId,
+                x: viewportOriginX + (frame.x - plan.camera.base) * projectionScale,
+                y: viewportOriginY + frame.y * projectionScale
+            });
+            if (!windowDropPreviewFrameIsRenderable(projected, snapshot)) {
+                if (frame.windowId === prospective.sourceWindowId) {
+                    return null;
+                }
+                continue;
             }
-            sourceFrame = frame;
+            if (frame.windowId === prospective.sourceWindowId) {
+                if (sourceFrame !== null) {
+                    return null;
+                }
+                sourceFrame = projected;
+            }
+
+            const previousFrames = snapshot.previewFrames[frame.windowId];
+            const previousFrame = previousFrames ? previousFrames.memberFrame : null;
+            if (frame.windowId === prospective.sourceWindowId
+                    || !windowDropPreviewFramesMatch(projected, previousFrame)) {
+                affectedFrames.push(projected);
+            }
         }
-        if (!sourceFrame || !projectionGeometryScalarsAreValid(sourceFrame.x, sourceFrame.y,
-                                                                sourceFrame.width, sourceFrame.height)) {
+        if (!sourceFrame || affectedFrames.length === 0 || affectedFrames.length > 4096) {
             return null;
         }
-
-        const surface = Object.freeze({
-            height: sourceFrame.height * projectionScale,
-            width: sourceFrame.width * projectionScale,
-            x: viewportOriginX + (sourceFrame.x - plan.camera.base) * projectionScale,
-            y: viewportOriginY + sourceFrame.y * projectionScale
+        let sourceFrameCount = 0;
+        for (const frame of affectedFrames) {
+            if (frame.windowId === prospective.sourceWindowId) {
+                sourceFrameCount += 1;
+            }
+        }
+        if (sourceFrameCount !== 1 || prospective.noop && affectedFrames.length !== 1) {
+            return null;
+        }
+        Object.freeze(affectedFrames);
+        return Object.freeze({
+            affectedFrames,
+            noop: prospective.noop,
+            surface: sourceFrame
         });
-        return windowDropPreviewFrameIsRenderable(surface, snapshot) ? surface : null;
+    }
+
+    function windowDropPreviewFramesMatch(first, second) {
+        return first && second && Number(first.x) === Number(second.x)
+            && Number(first.y) === Number(second.y)
+            && Number(first.width) === Number(second.width)
+            && Number(first.height) === Number(second.height);
+    }
+
+    function windowDropPreviewIsExact(preview, source, target, snapshot) {
+        try {
+            if (!preview || !Object.isFrozen(preview) || preview.source !== source
+                    || preview.target !== target || preview.snapshot !== snapshot
+                    || typeof preview.basisFingerprint !== "string"
+                    || !/^[0-9a-f]{64}$/.test(preview.basisFingerprint)
+                    || typeof preview.noop !== "boolean"
+                    || typeof preview.sourceWindowId !== "string"
+                    || preview.sourceWindowId.length === 0 || source.windowId !== preview.sourceWindowId
+                    || !windowDropPlannerTargetIsExact(target, snapshot)
+                    || !windowDropPreviewFrameIsRenderable(preview.surface, snapshot)
+                    || !Object.isFrozen(preview.surface)
+                    || !indexedListHasBoundedLength(preview.affectedFrames, 1, 4096)
+                    || !Object.isFrozen(preview.affectedFrames)
+                    || preview.kind !== (preview.noop ? "noop" : target.kind)
+                    || preview.noop && (preview.marker !== null || preview.affectedFrames.length !== 1)
+                    || preview.marker !== null
+                    && (!Object.isFrozen(preview.marker)
+                        || !windowDropPreviewFrameIsBounded(preview.marker, snapshot))) {
+                return false;
+            }
+
+            const seenWindowIds = Object.create(null);
+            let sourceFrameCount = 0;
+            for (const frame of preview.affectedFrames) {
+                if (!frame || !Object.isFrozen(frame) || typeof frame.windowId !== "string"
+                        || frame.windowId.length === 0 || seenWindowIds[frame.windowId] === true
+                        || !windowDropPreviewFrameIsRenderable(frame, snapshot)) {
+                    return false;
+                }
+                seenWindowIds[frame.windowId] = true;
+                if (frame.windowId === preview.sourceWindowId) {
+                    sourceFrameCount += 1;
+                    if (!windowDropPreviewFramesMatch(frame, preview.surface)) {
+                        return false;
+                    }
+                }
+            }
+            return sourceFrameCount === 1;
+        } catch (error) {
+            return false;
+        }
     }
 
     function buildWindowDropPreviewColumns(source, target, snapshot) {
@@ -4904,6 +5141,7 @@ Item {
             return {
                 activeColumnIndex: 0,
                 columns,
+                noop: false,
                 sourceWindowId: sourceState.windowId
             };
         }
@@ -4919,7 +5157,19 @@ Item {
 
     function buildWindowDropStackPreviewColumns(sourceState, target, columns, sameContext) {
         if (target.targetWindowId === sourceState.windowId) {
-            return null;
+            if (!sameContext) {
+                return null;
+            }
+            const location = windowDropPreviewLocation(columns, sourceState.windowId);
+            if (!location) {
+                return null;
+            }
+            return {
+                activeColumnIndex: location.columnIndex,
+                columns,
+                noop: true,
+                sourceWindowId: sourceState.windowId
+            };
         }
 
         let sourceLocation = null;
@@ -4944,13 +5194,21 @@ Item {
                 ? targetLocation.memberIndex - 1 : targetLocation.memberIndex;
             const insertionIndex = targetAfterRemoval + (target.position === "after" ? 1 : 0);
             if (insertionIndex === sourceLocation.memberIndex) {
-                return null;
+                column.members.splice(sourceLocation.memberIndex, 0, moved);
+                column.selectedMemberIndex = sourceLocation.memberIndex;
+                return {
+                    activeColumnIndex: sourceLocation.columnIndex,
+                    columns,
+                    noop: true,
+                    sourceWindowId: sourceState.windowId
+                };
             }
             column.members.splice(insertionIndex, 0, moved);
             column.selectedMemberIndex = insertionIndex;
             return {
                 activeColumnIndex: sourceLocation.columnIndex,
                 columns,
+                noop: false,
                 sourceWindowId: sourceState.windowId
             };
         }
@@ -4979,6 +5237,7 @@ Item {
         return {
             activeColumnIndex: targetLocation.columnIndex,
             columns,
+            noop: false,
             sourceWindowId: sourceState.windowId
         };
     }
@@ -4994,6 +5253,14 @@ Item {
             }
             originalSourceColumnIndex = sourceLocation.columnIndex;
             if (columns[sourceLocation.columnIndex].members.length === 1) {
+                if (target.targetWindowId === sourceState.windowId) {
+                    return {
+                        activeColumnIndex: sourceLocation.columnIndex,
+                        columns,
+                        noop: true,
+                        sourceWindowId: sourceState.windowId
+                    };
+                }
                 movedColumn = columns.splice(sourceLocation.columnIndex, 1)[0];
             } else {
                 const retained = retainWindowDropPreviewSource(
@@ -5018,12 +5285,19 @@ Item {
         }
         const insertionIndex = targetColumnIndex + (target.position === "after" ? 1 : 0);
         if (movedColumn && insertionIndex === originalSourceColumnIndex) {
-            return null;
+            columns.splice(originalSourceColumnIndex, 0, movedColumn);
+            return {
+                activeColumnIndex: originalSourceColumnIndex,
+                columns,
+                noop: true,
+                sourceWindowId: sourceState.windowId
+            };
         }
         columns.splice(insertionIndex, 0, movedColumn || windowDropPreviewSingletonColumn(sourceState));
         return {
             activeColumnIndex: insertionIndex,
             columns,
+            noop: false,
             sourceWindowId: sourceState.windowId
         };
     }

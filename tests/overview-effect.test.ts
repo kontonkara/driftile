@@ -540,7 +540,7 @@ describe("overview effect package", () => {
 
   it("keeps a fixed scene-effect proxy over the cache-busted controller", () => {
     expect(createHash("sha256").update(main, "utf8").digest("hex")).toBe(
-      "6089495aaeb2bd41eb4a65845ca581e77a7bffd8abe0ce4c7c2d3f5d61bfbdb7",
+      "e47e22890a6ccf7f0f85aa865fc99fffd9b45cae839b12fb81e26770f5e429a1",
     );
     expect(main).toContain("KWin.SceneEffect {");
     expect(main).toContain("Date.now().toString(36)");
@@ -1601,8 +1601,9 @@ describe("overview effect package", () => {
       "onPositionChanged: drag => drag.accepted = card.windowDropIsValid(drag.source, drag.keys)",
     );
     expect(desktopCard).toContain(
-      "if (!card.windowDropIsValid(source, drop.keys) || !card.moveWindowDropHover(source, drop))",
+      "|| !card.windowDropHoverOwnershipMatches(source))",
     );
+    expect(liveDrop).not.toContain("moveWindowDropHover(source, drop)");
   });
 
   it("submits one exact live window through a guarded spatial drop", () => {
@@ -1654,14 +1655,14 @@ describe("overview effect package", () => {
       "overviewActivityId: root.activeOverviewActivityId",
     );
     expect(desktopCard).toMatch(
-      /signal windowDropped\(var candidate, string expectedWindowId, var expectedSourceDesktop,\s*string expectedSourceDesktopId, var expectedTargetDesktop,\s*string expectedTargetDesktopId, var expectedScreen, var exactTarget\)/u,
+      /signal windowDropped\(var candidate, string expectedWindowId, var expectedSourceDesktop,\s*string expectedSourceDesktopId, var expectedTargetDesktop,\s*string expectedTargetDesktopId, var expectedScreen, var exactTarget,\s*string basisFingerprint\)/u,
     );
     expect(desktopCard.match(/\bDragHandler\s*\{/gu)).toHaveLength(5);
     expect(desktopCard.match(/\bDropArea\s*\{/gu)).toHaveLength(2);
     expect(desktopCard.match(/\.Drag\.active = true;/gu)).toHaveLength(4);
     expect(desktopCard.match(/\.Drag\.active = false;/gu)).toHaveLength(9);
     expect(delegate).toMatch(
-      /onWindowDropped:\s*\(\s*candidate,\s*expectedWindowId,\s*expectedSourceDesktop,\s*expectedSourceDesktopId,\s*expectedTargetDesktop,\s*expectedTargetDesktopId,\s*expectedScreen,\s*exactTarget\s*\)\s*=>\s*root\.submitWindowSpatialDrop\(\s*candidate,\s*expectedWindowId,\s*expectedSourceDesktop,\s*expectedSourceDesktopId,\s*expectedTargetDesktop,\s*expectedTargetDesktopId,\s*expectedScreen,\s*expectedScreen,\s*exactTarget\s*\)/u,
+      /onWindowDropped:\s*\(\s*candidate,\s*expectedWindowId,\s*expectedSourceDesktop,\s*expectedSourceDesktopId,\s*expectedTargetDesktop,\s*expectedTargetDesktopId,\s*expectedScreen,\s*exactTarget,\s*basisFingerprint\s*\)\s*=>\s*root\.submitWindowSpatialDrop\(\s*candidate,\s*expectedWindowId,\s*expectedSourceDesktop,\s*expectedSourceDesktopId,\s*expectedTargetDesktop,\s*expectedTargetDesktopId,\s*expectedScreen,\s*expectedScreen,\s*exactTarget,\s*basisFingerprint\s*\)/u,
     );
 
     expect(transaction).toContain("const effect = sceneEffect;");
@@ -1705,7 +1706,7 @@ describe("overview effect package", () => {
     ]) {
       expect(transaction).toContain(field);
     }
-    expect(transaction).toContain("}, target) === true;");
+    expect(transaction).toContain("}, target, basisFingerprint) === true;");
     expect(transaction.match(/windowSpatialDropSceneIsExact\(/gu)).toHaveLength(
       1,
     );
@@ -1825,7 +1826,14 @@ describe("overview effect package", () => {
       /root\.claimWorkspaceGapPreview\(\s*workspaceGapDropArea, drag, workspaceGapDropSlot\.index\)/u,
     );
     expect(gapDelegate).toContain(
-      "root.submitWindowWorkspaceGapDrop(drop.source, plan, root.targetScreen)",
+      "root.submitWindowWorkspaceGapDrop(drop.source, plan, root.targetScreen,",
+    );
+    expect(gapDelegate).toContain("basisFingerprint);");
+    expect(gapDelegate).toMatch(
+      /onDropped: drop => \{\s*const exactPreview = root\.workspaceGapPreviewSource === drop\.source\s*&& root\.workspaceGapPreviewIndex === workspaceGapDropSlot\.index\s*&& root\.workspaceGapPreviewIsExact\(\);\s*const plan = exactPreview \? root\.workspaceGapPreviewPlan : null;/u,
+    );
+    expect(gapDelegate).not.toMatch(
+      /onDropped: drop => \{[\s\S]*?planWorkspaceGapDrop\(workspaceGapDropArea, drop/u,
     );
     expect(gapDelegate).toMatch(
       /drop\.action = accepted \? Qt\.MoveAction : Qt\.IgnoreAction;[\s\S]*drop\.accepted = accepted;/u,
@@ -1833,7 +1841,7 @@ describe("overview effect package", () => {
     expect(gapDelegate).toMatch(
       /readonly property var plan: root\.workspaceGapPreviewSource !== null[\s\S]*root\.workspaceGapPreviewSourceId\(root\.workspaceGapPreviewSource\)[\s\S]*root\.workspaceGapPreviewPlan !== null \? root\.workspaceGapPreviewPlan : null[\s\S]*x: root\.cardX[\s\S]*y: plan \? plan\.lineY - workspaceGapDropSlot\.y - height \/ 2[\s\S]*width: root\.cardWidth[\s\S]*visible: plan !== null/u,
     );
-    expect(gapDelegate).not.toContain("workspaceGapPreviewIsExact()");
+    expect(gapDelegate).toContain("workspaceGapPreviewIsExact()");
     expect(gapDelegate).toContain(
       "onExited: root.releaseWorkspaceGapPreview(workspaceGapDropSlot.index)",
     );
@@ -1857,7 +1865,7 @@ describe("overview effect package", () => {
     expect(planning).toContain("windowDesktopDropCandidateIsExact(");
     expect(planning).toContain("clearInvalidWorkspaceGapPreview()");
     expect(planning).toMatch(
-      /function claimWorkspaceGapPreview[\s\S]*!workspaceGapPreviewContextIsExact\(source, plan, expectedGapIndex\)/u,
+      /function claimWorkspaceGapPreview[\s\S]*workspaceGapPreviewContextIsExact\(source, plan, expectedGapIndex\)[\s\S]*captureWorkspaceGapBasisFingerprint\(source, plan\)/u,
     );
     expect(planning).toMatch(
       /function clearInvalidWorkspaceGapPreview[\s\S]*!workspaceGapPreviewIsExact\(\)/u,
@@ -1896,14 +1904,14 @@ describe("overview effect package", () => {
     );
 
     expect(crossOutput).toMatch(
-      /if \(targetHit\.kind === "workspace-gap"\) \{\s*submitWindowWorkspaceGapDrop\(source, targetHit\.plan, expectedTargetScreen\);\s*return;\s*\}/u,
+      /if \(targetHit\.kind === "workspace-gap"\) \{\s*const basisFingerprint = captureWorkspaceGapBasisFingerprint\(source, targetHit\.plan\);\s*submitWindowWorkspaceGapDrop\(source, targetHit\.plan, expectedTargetScreen,\s*basisFingerprint\);\s*return;\s*\}/u,
     );
     expect(crossOutput).toContain(
       "const workspaceGapPlan = planWorkspaceGapDropAtRootPoint(localPosition);",
     );
   });
 
-  it("moves one exact live window across outputs and compensates partial writes", () => {
+  it("routes one exact live window across outputs and compensates partial writes", () => {
     const sourceHandlers = desktopCard.slice(
       desktopCard.indexOf("id: thumbnailDragHandler"),
       desktopCard.indexOf("id: windowDropArea"),
@@ -1982,12 +1990,16 @@ describe("overview effect package", () => {
     expect(targetResolution).toContain(
       "targetCard.planCrossOutputWindowDropTarget(source, targetHit.localPosition)",
     );
-    expect(targetResolution).toMatch(
-      /if \(exactTarget\) \{[\s\S]*?submitWindowSpatialDrop\([\s\S]*?source\.sourceScreen, targetCard\.screen, exactTarget\);\s*return;\s*\}[\s\S]*?moveWindowAcrossOutputs\(/u,
+    expect(targetResolution).toContain(
+      'typeof sourceCard.crossOutputWindowDropSourceIsExact === "function"',
     );
     expect(targetResolution).toContain(
-      "moveWindowAcrossOutputs(source.candidate, source.windowId, source.sourceDesktop,",
+      "sourceCard.crossOutputWindowDropSourceIsExact(source)",
     );
+    expect(targetResolution).toMatch(
+      /if \(exactTarget && typeof basisFingerprint === "string"[\s\S]*?submitWindowSpatialDrop\([\s\S]*?source\.sourceScreen, targetCard\.screen, exactTarget,\s*basisFingerprint\);\s*return;\s*\}/u,
+    );
+    expect(targetResolution).not.toContain("moveWindowAcrossOutputs(");
 
     expect(transaction).toContain(
       'typeof KWin.Workspace.sendClientToScreen !== "function"',

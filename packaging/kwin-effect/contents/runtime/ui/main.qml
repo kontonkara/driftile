@@ -715,13 +715,126 @@ QtObject {
         deactivate();
     }
 
-    function submitSpatialDropCommand(source, target) {
+    function submitSpatialDropCommand(source, target, basisFingerprint) {
         if (!active || loading || activeSessionId <= 0 || !overviewModel
+                || typeof basisFingerprint !== "string" || !/^[0-9a-f]{64}$/.test(basisFingerprint)
                 || (presentationPhase !== "opening" && presentationPhase !== "open")) {
             return false;
         }
 
-        return spatialDropWriter.submitSpatialDropCommand(source, target);
+        return spatialDropWriter.submitSpatialDropCommand(source, target, basisFingerprint);
+    }
+
+    function captureSpatialDropBasisFingerprint(source, target) {
+        try {
+            const runtime = OverviewRuntime.DriftileOverview;
+            const sessionId = activeSessionId;
+            const model = overviewModel;
+            const screens = KWin.Workspace.screens;
+            const desktops = KWin.Workspace.desktops;
+            if (!runtime || typeof runtime.fingerprintOverviewSpatialDropBasis !== "function"
+                    || typeof runtime.overviewSpatialDropBasisContextKeys !== "function"
+                    || !model || !screens || !desktops
+                    || !active || loading || sessionId <= 0
+                    || !Number.isInteger(screens.length) || screens.length < 1 || screens.length > 32
+                    || !Number.isInteger(desktops.length) || desktops.length < 1 || desktops.length > 512) {
+                return null;
+            }
+
+            const contextKeys = runtime.overviewSpatialDropBasisContextKeys(source, target);
+            if (!contextKeys || !Object.isFrozen(contextKeys)
+                    || !Number.isInteger(contextKeys.length)
+                    || contextKeys.length < 1 || contextKeys.length > 3) {
+                return null;
+            }
+            const contextGeometries = [];
+            for (const key of contextKeys) {
+                const screen = exactSpatialDropScreen(key.outputId, screens);
+                const desktop = exactSpatialDropDesktop(key.desktopId, desktops);
+                const fingerprint = spatialDropContextGeometryFingerprint(screen, desktop);
+                if (!screen || !desktop || fingerprint === null) {
+                    return null;
+                }
+                contextGeometries.push({
+                                           activityId: key.activityId,
+                                           desktopId: key.desktopId,
+                                           fingerprint,
+                                           outputId: key.outputId
+                                       });
+            }
+
+            const fingerprint = runtime.fingerprintOverviewSpatialDropBasis({
+                                                                                alwaysCenterSingleColumn: overviewAlwaysCenterSingleColumn,
+                                                                                contextGeometries,
+                                                                                gap: overviewGap,
+                                                                                model,
+                                                                                source,
+                                                                                target
+                                                                            });
+            return active && !loading && activeSessionId === sessionId && overviewModel === model
+                && (presentationPhase === "opening" || presentationPhase === "open")
+                && typeof fingerprint === "string" && /^[0-9a-f]{64}$/.test(fingerprint)
+                ? fingerprint : null;
+        } catch (error) {
+            return null;
+        }
+    }
+
+    function exactSpatialDropScreen(expectedOutputId, screens) {
+        let match = null;
+        for (const screen of screens) {
+            if (screen && String(screen.name) === expectedOutputId) {
+                if (match !== null) {
+                    return null;
+                }
+                match = screen;
+            }
+        }
+        return match;
+    }
+
+    function exactSpatialDropDesktop(expectedDesktopId, desktops) {
+        let match = null;
+        for (const desktop of desktops) {
+            if (desktop && String(desktop.id) === expectedDesktopId) {
+                if (match !== null) {
+                    return null;
+                }
+                match = desktop;
+            }
+        }
+        return match;
+    }
+
+    function spatialDropContextGeometryFingerprint(screen, desktop) {
+        try {
+            if (!screen || !desktop || !screen.geometry) {
+                return null;
+            }
+            const outputGeometry = screen.geometry;
+            const workArea = KWin.Workspace.clientArea(KWin.Workspace.MaximizeArea,
+                                                       screen, desktop);
+            const values = [
+                Number(screen.devicePixelRatio),
+                Number(outputGeometry.x),
+                Number(outputGeometry.y),
+                Number(outputGeometry.width),
+                Number(outputGeometry.height),
+                Number(workArea.x),
+                Number(workArea.y),
+                Number(workArea.width),
+                Number(workArea.height)
+            ];
+            if (values.some(value => !Number.isFinite(value))
+                    || values.some(value => Math.abs(value) > 1000000)
+                    || values[0] <= 0 || values[3] <= 0 || values[4] <= 0
+                    || values[7] <= 0 || values[8] <= 0) {
+                return null;
+            }
+            return values.join("\u0000");
+        } catch (error) {
+            return null;
+        }
     }
 
     function submitWorkspaceCommand(context, action) {

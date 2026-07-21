@@ -43485,7 +43485,13 @@ describe("RuntimeController", () => {
     );
     flushManualScheduler(setup.scheduler);
 
-    expect(setup.desktopIds).toContain(external.id);
+    expect(setup.createdDesktop).toBeNull();
+    expect(setup.removeCount).toBe(1);
+    expect(setup.desktopIds).toEqual([
+      external.id,
+      setup.sourceDesktop.id,
+      setup.trailingDesktop.id,
+    ]);
     expect(setup.dragged.window.output).toBe(setup.sourceOutput);
     expect(setup.dragged.window.desktops).toEqual([setup.sourceDesktop]);
     expect(
@@ -43709,6 +43715,116 @@ describe("RuntimeController", () => {
     ).toBe(false);
     expect(setup.createCount).toBe(0);
     expect(setup.removeCount).toBe(0);
+    expect(setup.desktopIds).toEqual([
+      setup.sourceDesktop.id,
+      setup.trailingDesktop.id,
+    ]);
+    expectTrackedWindowState([setup.peer, setup.dragged], trackedBefore);
+  });
+
+  it("rejects a spatial preview after its layout basis changes", () => {
+    const setup = createSpatialDropRuntimeFixture();
+    const command = spatialDropCommand(setup, {
+      kind: "column-boundary",
+      position: "after",
+      targetWindowId: "tail",
+    });
+
+    expect(
+      runtimeLayout(setup.controller).setActiveColumnWidth(
+        windowId(String(setup.active.window.internalId)),
+        { kind: "fixed", value: 261 },
+      ),
+    ).toEqual({ kind: "fixed", value: 260 });
+    const before = runtimeLayout(setup.controller).snapshot(
+      outputId(setup.output.name),
+      desktopId(setup.desktop.id),
+      FALLBACK_ACTIVITY_ID,
+    );
+    const trackedBefore = captureTrackedWindowState(setup.windows);
+    const activationCount = setup.fixture.activationCount;
+
+    expect(setup.controller.executeSpatialDrop(command)).toBe(false);
+    expect(
+      runtimeLayout(setup.controller).snapshot(
+        outputId(setup.output.name),
+        desktopId(setup.desktop.id),
+        FALLBACK_ACTIVITY_ID,
+      ),
+    ).toEqual(before);
+    expectTrackedWindowState(setup.windows, trackedBefore);
+    expect(setup.fixture.workspace.activeWindow).toBe(setup.active.window);
+    expect(setup.fixture.activationCount).toBe(activationCount);
+  });
+
+  it("rejects a spatial preview after its work area changes", () => {
+    const setup = createSpatialDropRuntimeFixture();
+    const command = spatialDropCommand(setup, {
+      kind: "column-boundary",
+      position: "after",
+      targetWindowId: "tail",
+    });
+    const clientArea = setup.fixture.workspace.clientArea.bind(
+      setup.fixture.workspace,
+    );
+    Object.defineProperty(setup.fixture.workspace, "clientArea", {
+      configurable: true,
+      value: (
+        option: number,
+        output: KWinOutput,
+        desktop: KWinVirtualDesktop,
+      ) => {
+        const area = clientArea(option, output, desktop);
+        return { ...area, width: area.width - 1 };
+      },
+    });
+    const before = runtimeLayout(setup.controller).snapshot(
+      outputId(setup.output.name),
+      desktopId(setup.desktop.id),
+      FALLBACK_ACTIVITY_ID,
+    );
+    const trackedBefore = captureTrackedWindowState(setup.windows);
+
+    expect(setup.controller.executeSpatialDrop(command)).toBe(false);
+    expect(
+      runtimeLayout(setup.controller).snapshot(
+        outputId(setup.output.name),
+        desktopId(setup.desktop.id),
+        FALLBACK_ACTIVITY_ID,
+      ),
+    ).toEqual(before);
+    expectTrackedWindowState(setup.windows, trackedBefore);
+    expect(setup.fixture.workspace.activeWindow).toBe(setup.active.window);
+  });
+
+  it("rolls back a workspace whose work area differs from its preview anchor", () => {
+    const setup = createWorkspaceGapDropRuntimeFixture();
+    const clientArea = setup.fixture.workspace.clientArea.bind(
+      setup.fixture.workspace,
+    );
+    Object.defineProperty(setup.fixture.workspace, "clientArea", {
+      configurable: true,
+      value: (
+        option: number,
+        output: KWinOutput,
+        desktop: KWinVirtualDesktop,
+      ) => {
+        const area = clientArea(option, output, desktop);
+        return desktop.id.startsWith("desktop-created-")
+          ? { ...area, width: area.width - 1 }
+          : area;
+      },
+    });
+    const trackedBefore = captureTrackedWindowState([
+      setup.peer,
+      setup.dragged,
+    ]);
+
+    expect(
+      setup.controller.executeSpatialDrop(workspaceGapDropCommand(setup)),
+    ).toBe(false);
+    expect(setup.createCount).toBe(1);
+    expect(setup.removeCount).toBe(1);
     expect(setup.desktopIds).toEqual([
       setup.sourceDesktop.id,
       setup.trailingDesktop.id,
@@ -44089,7 +44205,7 @@ describe("RuntimeController", () => {
       setup.fixture.workspace.activeWindow = setup.target.window;
       flushManualScheduler(setup.scheduler);
       const publicationCount = setup.published.length;
-      const command: SpatialDropCommand = {
+      const command = spatialDropCommandWithBasis(setup.controller, {
         createdAt: 1,
         format: "driftile-spatial-drop",
         requestId: 1,
@@ -44108,8 +44224,8 @@ describe("RuntimeController", () => {
           position: "after",
           targetWindowId: "target",
         },
-        version: 3,
-      };
+        version: 4,
+      });
 
       expect(setup.controller.executeSpatialDrop(command)).toBe(true);
       expect(
@@ -44245,7 +44361,7 @@ describe("RuntimeController", () => {
       desktopId(setup.targetDesktop.id),
       FALLBACK_ACTIVITY_ID,
     );
-    const command: SpatialDropCommand = {
+    const command = spatialDropCommandWithBasis(setup.controller, {
       createdAt: 1,
       format: "driftile-spatial-drop",
       requestId: 1,
@@ -44264,8 +44380,8 @@ describe("RuntimeController", () => {
         position: "after",
         targetWindowId: "stale-window",
       },
-      version: 3,
-    };
+      version: 4,
+    });
 
     expect(setup.controller.executeSpatialDrop(command)).toBe(false);
     expect(
@@ -44297,7 +44413,7 @@ describe("RuntimeController", () => {
       });
       setup.fixture.setCurrentDesktop(setup.targetOutput, setup.targetDesktop);
       flushManualScheduler(setup.scheduler);
-      const command: SpatialDropCommand = {
+      const command = spatialDropCommandWithBasis(setup.controller, {
         createdAt: 1,
         format: "driftile-spatial-drop",
         requestId: 1,
@@ -44314,8 +44430,8 @@ describe("RuntimeController", () => {
           kind: "empty-row",
           outputId: setup.targetOutput.name,
         },
-        version: 3,
-      };
+        version: 4,
+      });
 
       expect(setup.controller.executeSpatialDrop(command)).toBe(true);
       expect(
@@ -44994,7 +45110,7 @@ describe("RuntimeController", () => {
 
   it("moves a window into an exact empty cross-output row", () => {
     const setup = createEmptyExternalPointerDropRuntimeFixture();
-    const command: SpatialDropCommand = {
+    const command = spatialDropCommandWithBasis(setup.controller, {
       createdAt: 1,
       format: "driftile-spatial-drop",
       requestId: 1,
@@ -45011,8 +45127,8 @@ describe("RuntimeController", () => {
         kind: "empty-row",
         outputId: setup.targetOutput.name,
       },
-      version: 3,
-    };
+      version: 4,
+    });
 
     expect(setup.controller.executeSpatialDrop(command)).toBe(true);
     expect(
@@ -45030,6 +45146,51 @@ describe("RuntimeController", () => {
       ).map((column) => column.windowIds),
     ).toEqual([["dragged"]]);
     expect(setup.dragged.window.output).toBe(setup.targetOutput);
+  });
+
+  it("rejects a cross-output spatial preview after target scale changes", () => {
+    const setup = createExternalPointerDropRuntimeFixture();
+    const command = externalSpatialDropCommand(setup, {
+      kind: "column-boundary",
+      position: "after",
+      targetWindowId: "target",
+    });
+    const sourceBefore = runtimeLayout(setup.controller).snapshot(
+      outputId(setup.sourceOutput.name),
+      desktopId(setup.sourceDesktop.id),
+      FALLBACK_ACTIVITY_ID,
+    );
+    const targetBefore = runtimeLayout(setup.controller).snapshot(
+      outputId(setup.targetOutput.name),
+      desktopId(setup.targetDesktop.id),
+      FALLBACK_ACTIVITY_ID,
+    );
+    const trackedBefore = captureTrackedWindowState([
+      setup.dragged,
+      setup.target,
+    ]);
+    Object.defineProperty(setup.targetOutput, "devicePixelRatio", {
+      configurable: true,
+      value: 2,
+    });
+
+    expect(setup.controller.executeSpatialDrop(command)).toBe(false);
+    expect(setup.fixture.outputTransferCount).toBe(0);
+    expect(
+      runtimeLayout(setup.controller).snapshot(
+        outputId(setup.sourceOutput.name),
+        desktopId(setup.sourceDesktop.id),
+        FALLBACK_ACTIVITY_ID,
+      ),
+    ).toEqual(sourceBefore);
+    expect(
+      runtimeLayout(setup.controller).snapshot(
+        outputId(setup.targetOutput.name),
+        desktopId(setup.targetDesktop.id),
+        FALLBACK_ACTIVITY_ID,
+      ),
+    ).toEqual(targetBefore);
+    expectTrackedWindowState([setup.dragged, setup.target], trackedBefore);
   });
 
   it("rejects a settled minimized cross-output target without transfer writes", () => {
@@ -52243,7 +52404,7 @@ function workspaceGapDropCommand(
     { readonly kind: "workspace-gap" }
   >;
 } {
-  return {
+  return spatialDropCommandWithBasis(setup.controller, {
     createdAt: 1,
     format: "driftile-spatial-drop",
     requestId: 1,
@@ -52262,8 +52423,8 @@ function workspaceGapDropCommand(
       outputId: setup.targetOutput.name,
       position: "after",
     },
-    version: 3,
-  };
+    version: 4,
+  });
 }
 
 function overviewWorkspaceCommand(
@@ -52292,14 +52453,14 @@ function workspaceGapColumnDropCommand(
 } {
   const command = workspaceGapDropCommand(setup);
 
-  return {
+  return spatialDropCommandWithBasis(setup.controller, {
     ...command,
     source: {
       ...command.source,
       scope: "column",
       windowId: String(setup.peer.window.internalId),
     },
-  };
+  });
 }
 
 function createSpatialDropRuntimeFixture(): SpatialDropRuntimeFixture {
@@ -52368,7 +52529,7 @@ function spatialDropCommand(
         readonly targetWindowId: string;
       },
 ): SpatialDropCommand {
-  return {
+  return spatialDropCommandWithBasis(setup.controller, {
     createdAt: 1,
     format: "driftile-spatial-drop",
     requestId: 1,
@@ -52385,8 +52546,8 @@ function spatialDropCommand(
       outputId: setup.output.name,
       ...target,
     },
-    version: 3,
-  };
+    version: 4,
+  });
 }
 
 function spatialColumnDropCommand(
@@ -52399,10 +52560,10 @@ function spatialColumnDropCommand(
 ): SpatialDropCommand {
   const command = spatialDropCommand(setup, target);
 
-  return {
+  return spatialDropCommandWithBasis(setup.controller, {
     ...command,
     source: { ...command.source, scope: "column" },
-  };
+  });
 }
 
 function externalSpatialDropCommand(
@@ -52419,7 +52580,7 @@ function externalSpatialDropCommand(
         readonly targetWindowId: string;
       },
 ): SpatialDropCommand {
-  return {
+  return spatialDropCommandWithBasis(setup.controller, {
     createdAt: 1,
     format: "driftile-spatial-drop",
     requestId: 1,
@@ -52436,8 +52597,8 @@ function externalSpatialDropCommand(
       outputId: setup.targetOutput.name,
       ...target,
     },
-    version: 3,
-  };
+    version: 4,
+  });
 }
 
 function externalSpatialColumnDropCommand(
@@ -52450,10 +52611,24 @@ function externalSpatialColumnDropCommand(
 ): SpatialDropCommand {
   const command = externalSpatialDropCommand(setup, target);
 
-  return {
+  return spatialDropCommandWithBasis(setup.controller, {
     ...command,
     source: { ...command.source, scope: "column" },
-  };
+  });
+}
+
+function spatialDropCommandWithBasis<
+  Command extends Omit<SpatialDropCommand, "basisFingerprint">,
+>(
+  controller: RuntimeController,
+  command: Command,
+): Command & Pick<SpatialDropCommand, "basisFingerprint"> {
+  const basisFingerprint =
+    controller.captureOverviewSpatialDropBasisFingerprint(command);
+  if (basisFingerprint === null) {
+    throw new Error("could not capture overview spatial drop basis");
+  }
+  return { ...command, basisFingerprint };
 }
 
 function runtimeLayout(controller: RuntimeController): LayoutEngine {

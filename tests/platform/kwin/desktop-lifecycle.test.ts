@@ -1009,6 +1009,32 @@ describe("DesktopLifecycle", () => {
     expect(fixture.desktops).toEqual([first, second]);
   });
 
+  it("rolls back its exact reservation after an unrelated topology insertion", () => {
+    const first = { id: "desktop-1" };
+    const second = { id: "desktop-2" };
+    const fixture = createLifecycleFixture([first, second]);
+    fixture.reconcile();
+    const result = fixture.lifecycle.createDesktopAtPosition(1, [
+      first.id,
+      second.id,
+    ]);
+
+    if (!result) {
+      throw new Error("missing topology-drift rollback creation result");
+    }
+
+    const external = fixture.insertExternalDesktop(0, "desktop-external");
+    expect(fixture.lifecycle.validateCreatedDesktopReservation(result)).toBe(
+      false,
+    );
+    expect(fixture.lifecycle.rollbackCreatedDesktop(result)).toBe(true);
+    expect(fixture.desktops).toEqual([external, first, second]);
+    expect(fixture.removeCount).toBe(1);
+    expect(fixture.lifecycle.ownedDesktopCount).toBe(0);
+    fixture.reconcile();
+    expect(fixture.lifecycle.unsettled).toBe(false);
+  });
+
   it("never rolls back an occupied, selected, or stale created desktop", () => {
     const first = { id: "desktop-1" };
     const second = { id: "desktop-2" };

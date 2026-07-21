@@ -529,7 +529,17 @@ export class DesktopLifecycle {
   }
 
   commitCreatedDesktop(result: DesktopCreationResult): boolean {
-    if (!this.validateCreatedDesktopReservation(result)) {
+    if (!this.ownsCreatedDesktopReservation(result)) {
+      return false;
+    }
+
+    const topology = this.desktopTopologySnapshot();
+
+    if (
+      !topology ||
+      createdDesktopReservationIndex(result, topology) === null
+    ) {
+      this.invalidateCreatedDesktopReservation(result);
       return false;
     }
 
@@ -546,12 +556,15 @@ export class DesktopLifecycle {
 
     const topology = this.desktopTopologySnapshot();
 
-    if (!topology || !creationMatchesTopology(result, topology)) {
+    if (
+      !topology ||
+      createdDesktopReservationIndex(result, topology) === null
+    ) {
       this.invalidateCreatedDesktopReservation(result);
       return false;
     }
 
-    return true;
+    return creationMatchesTopology(result, topology);
   }
 
   rollbackCreatedDesktop(result: DesktopCreationResult): boolean {
@@ -561,14 +574,18 @@ export class DesktopLifecycle {
       this.mutationCallActive ||
       typeof this.workspace.removeDesktop !== "function" ||
       !this.workspace.desktopsChanged ||
-      !this.validateCreatedDesktopReservation(result)
+      !this.ownsCreatedDesktopReservation(result)
     ) {
       return false;
     }
 
     const topology = this.desktopTopologySnapshot();
+    const removalIndex = topology
+      ? createdDesktopReservationIndex(result, topology)
+      : null;
 
-    if (!topology) {
+    if (!topology || removalIndex === null) {
+      this.invalidateCreatedDesktopReservation(result);
       return false;
     }
 
@@ -588,7 +605,8 @@ export class DesktopLifecycle {
 
     if (
       !confirmation ||
-      !creationMatchesTopology(result, confirmation) ||
+      !sameDesktopTopology(confirmation, topology) ||
+      createdDesktopReservationIndex(result, confirmation) !== removalIndex ||
       !confirmationSnapshot ||
       !confirmationSnapshot.removalSafe ||
       confirmationSnapshot.occupiedDesktopIds.has(result.desktopId) ||
@@ -624,16 +642,20 @@ export class DesktopLifecycle {
     const rolledBack = Boolean(
       !callFailed &&
       after &&
-      sameStrings(after.desktopIds, result.beforeDesktopIds) &&
+      desktopWasRemovedExactly(
+        confirmation.desktopIds,
+        after.desktopIds,
+        result.desktopId,
+      ) &&
       sameDesktopObjectsAfterRemoval(
         confirmation.desktops,
         after.desktops,
-        result.position,
+        removalIndex,
       ),
     );
 
     if (!rolledBack) {
-      if (!after || !creationMatchesTopology(result, after)) {
+      if (!after || createdDesktopReservationIndex(result, after) === null) {
         this.invalidateCreatedDesktopReservation(result);
       }
 
@@ -1128,7 +1150,10 @@ export class DesktopLifecycle {
     topology: DesktopTopologySnapshot | null,
   ): void {
     for (const result of this.createdDesktopReservations.values()) {
-      if (!topology || !creationMatchesTopology(result, topology)) {
+      if (
+        !topology ||
+        createdDesktopReservationIndex(result, topology) === null
+      ) {
         this.invalidateCreatedDesktopReservation(result);
       }
     }
@@ -1384,6 +1409,23 @@ function creationMatchesTopology(
     topology.desktopIds[result.position] === result.desktopId &&
     result.desktop.id === result.desktopId
   );
+}
+
+function createdDesktopReservationIndex(
+  result: DesktopCreationResult,
+  topology: DesktopTopologySnapshot,
+): number | null {
+  if (result.desktop.id !== result.desktopId) {
+    return null;
+  }
+
+  const index = topology.desktops.indexOf(result.desktop);
+  return index >= 0 &&
+    topology.desktops.lastIndexOf(result.desktop) === index &&
+    topology.desktopIds[index] === result.desktopId &&
+    topology.desktopIds.lastIndexOf(result.desktopId) === index
+    ? index
+    : null;
 }
 
 function desktopWasRemovedExactly(

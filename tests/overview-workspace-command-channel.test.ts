@@ -316,7 +316,7 @@ describe("overview workspace command channel", () => {
       "readonly property OverviewSpatialDropWriter spatialDropWriter",
     );
     expect(controller).toContain(
-      "function submitSpatialDropCommand(source, target)",
+      "function submitSpatialDropCommand(source, target, basisFingerprint)",
     );
     expect(scriptRoot).toContain(
       "readonly property OverviewSpatialDropReceiver overviewSpatialDropReceiver",

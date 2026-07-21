@@ -24,13 +24,15 @@ QtObject {
         method: "invokeShortcut"
     }
 
-    function submitSpatialDropCommand(source, target) {
+    function submitSpatialDropCommand(source, target, basisFingerprint) {
         try {
             const runtime = OverviewRuntime.DriftileOverview;
             const createdAt = Date.now();
             if (root.runtimeDirectory.length === 0
                     || !runtime
                     || typeof runtime.encodeSpatialDropCommand !== "function"
+                    || typeof basisFingerprint !== "string"
+                    || !/^[0-9a-f]{64}$/.test(basisFingerprint)
                     || !Number.isSafeInteger(createdAt)
                     || createdAt < 0) {
                 return failSubmission();
@@ -41,12 +43,13 @@ QtObject {
                 return failSubmission();
             }
             const document = runtime.encodeSpatialDropCommand({
+                basisFingerprint,
                 createdAt,
                 format: "driftile-spatial-drop",
                 requestId,
                 source,
                 target,
-                version: 3
+                version: 4
             });
             if (typeof document !== "string" || document.length === 0) {
                 return failSubmission();

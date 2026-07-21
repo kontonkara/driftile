@@ -305,6 +305,7 @@ Rectangle {
     property string workspaceGapPreviewWindowId: ""
     property int workspaceGapPreviewIndex: -1
     property var workspaceGapPreviewPlan: null
+    property string workspaceGapPreviewBasisFingerprint: ""
     property bool workspaceRenameEditing: false
     property string workspaceRenameActivityId: ""
     property var workspaceRenameDesktop: null
@@ -1666,6 +1667,7 @@ Rectangle {
                         searchQueryPlan: root.searchQueryPlan
                         searchResultCount: root.searchResultCountForDesktop(desktopCardLoader.modelData)
                         screen: root.targetScreen
+                        spatialDropBasisProvider: root.captureSpatialDropBasisFingerprint
                         spatialDirectDragBlocked: root.spatialDirectDragActive
                         showApplicationIdentity: root.showApplicationIdentity
                         showApplicationIcons: root.showApplicationIcons
@@ -1688,10 +1690,11 @@ Rectangle {
                         onDesktopTapped: (candidate, expectedDesktopId, expectedScreen) => root.selectDesktop(
                                              candidate, expectedDesktopId, expectedScreen)
                         onColumnDropped: (source, expectedTargetDesktop, expectedTargetDesktopId,
-                                          expectedScreen, exactTarget) =>
+                                          expectedScreen, exactTarget, basisFingerprint) =>
                                              root.submitColumnSpatialDrop(source, expectedTargetDesktop,
                                                                           expectedTargetDesktopId,
-                                                                          expectedScreen, exactTarget)
+                                                                          expectedScreen, exactTarget,
+                                                                          basisFingerprint)
                         onColumnSpatialDragStarted: (source, sceneX, sceneY) =>
                                                         root.beginColumnSpatialEdgePan(
                                                             source, desktopCardLoader.modelData, sceneX, sceneY)
@@ -1711,14 +1714,15 @@ Rectangle {
                                                                                       expectedScreen)
                         onWindowDropped: (candidate, expectedWindowId, expectedSourceDesktop,
                                           expectedSourceDesktopId, expectedTargetDesktop,
-                                          expectedTargetDesktopId, expectedScreen, exactTarget) =>
+                                          expectedTargetDesktopId, expectedScreen, exactTarget,
+                                          basisFingerprint) =>
                                              root.submitWindowSpatialDrop(candidate, expectedWindowId,
                                                                           expectedSourceDesktop,
                                                                           expectedSourceDesktopId,
                                                                           expectedTargetDesktop,
                                                                           expectedTargetDesktopId,
                                                                           expectedScreen, expectedScreen,
-                                                                          exactTarget)
+                                                                          exactTarget, basisFingerprint)
                         onWindowSpatialDragStarted: (source, sceneX, sceneY) =>
                                                         root.beginWindowSpatialEdgePan(
                                                             source, desktopCardLoader.modelData, sceneX, sceneY)
@@ -1851,10 +1855,14 @@ Rectangle {
                         }
                     }
                     onDropped: drop => {
-                        const plan = root.planWorkspaceGapDrop(workspaceGapDropArea, drop,
-                                                               workspaceGapDropSlot.index);
+                        const exactPreview = root.workspaceGapPreviewSource === drop.source
+                            && root.workspaceGapPreviewIndex === workspaceGapDropSlot.index
+                            && root.workspaceGapPreviewIsExact();
+                        const plan = exactPreview ? root.workspaceGapPreviewPlan : null;
+                        const basisFingerprint = root.workspaceGapPreviewBasisFingerprint;
                         const accepted = plan !== null
-                            && root.submitWindowWorkspaceGapDrop(drop.source, plan, root.targetScreen);
+                            && root.submitWindowWorkspaceGapDrop(drop.source, plan, root.targetScreen,
+                                                                 basisFingerprint);
                         drop.action = accepted ? Qt.MoveAction : Qt.IgnoreAction;
                         drop.accepted = accepted;
                         root.releaseWorkspaceGapPreview(workspaceGapDropSlot.index);
@@ -1882,10 +1890,14 @@ Rectangle {
                         }
                     }
                     onDropped: drop => {
-                        const plan = root.planColumnWorkspaceGapDrop(workspaceGapColumnDropArea, drop,
-                                                                     workspaceGapDropSlot.index);
+                        const exactPreview = root.workspaceGapPreviewSource === drop.source
+                            && root.workspaceGapPreviewIndex === workspaceGapDropSlot.index
+                            && root.workspaceGapPreviewIsExact();
+                        const plan = exactPreview ? root.workspaceGapPreviewPlan : null;
+                        const basisFingerprint = root.workspaceGapPreviewBasisFingerprint;
                         const accepted = plan !== null
-                            && root.submitColumnWorkspaceGapDrop(drop.source, plan, root.targetScreen);
+                            && root.submitColumnWorkspaceGapDrop(drop.source, plan, root.targetScreen,
+                                                                 basisFingerprint);
                         drop.action = accepted ? Qt.MoveAction : Qt.IgnoreAction;
                         drop.accepted = accepted;
                         root.releaseWorkspaceGapPreview(workspaceGapDropSlot.index);
@@ -9859,7 +9871,9 @@ Rectangle {
     function claimWorkspaceGapPreview(dropArea, drag, expectedGapIndex) {
         const source = drag ? drag.source : null;
         const plan = planWorkspaceGapDrop(dropArea, drag, expectedGapIndex);
-        if (!workspaceGapPreviewContextIsExact(source, plan, expectedGapIndex)) {
+        const basisFingerprint = workspaceGapPreviewContextIsExact(source, plan, expectedGapIndex)
+            ? captureWorkspaceGapBasisFingerprint(source, plan) : null;
+        if (typeof basisFingerprint !== "string" || !/^[0-9a-f]{64}$/.test(basisFingerprint)) {
             releaseWorkspaceGapPreview(expectedGapIndex);
             return false;
         }
@@ -9868,6 +9882,7 @@ Rectangle {
         workspaceGapPreviewWindowId = source.windowId;
         workspaceGapPreviewIndex = expectedGapIndex;
         workspaceGapPreviewPlan = plan;
+        workspaceGapPreviewBasisFingerprint = basisFingerprint;
         return true;
     }
 
@@ -9883,6 +9898,7 @@ Rectangle {
         workspaceGapPreviewWindowId = "";
         workspaceGapPreviewIndex = -1;
         workspaceGapPreviewPlan = null;
+        workspaceGapPreviewBasisFingerprint = "";
     }
 
     function clearInvalidWorkspaceGapPreview() {
@@ -9896,7 +9912,8 @@ Rectangle {
                                                   workspaceGapPreviewPlan,
                                                   workspaceGapPreviewIndex)
             && workspaceGapPreviewSourceId(workspaceGapPreviewSource)
-               === workspaceGapPreviewWindowId;
+               === workspaceGapPreviewWindowId
+            && /^[0-9a-f]{64}$/.test(workspaceGapPreviewBasisFingerprint);
     }
 
     function workspaceGapPreviewContextIsExact(source, plan, expectedGapIndex) {
@@ -10047,7 +10064,9 @@ Rectangle {
     function claimColumnWorkspaceGapPreview(dropArea, drag, expectedGapIndex) {
         const source = drag ? drag.source : null;
         const plan = planColumnWorkspaceGapDrop(dropArea, drag, expectedGapIndex);
-        if (!workspaceGapPreviewContextIsExact(source, plan, expectedGapIndex)) {
+        const basisFingerprint = workspaceGapPreviewContextIsExact(source, plan, expectedGapIndex)
+            ? captureWorkspaceGapBasisFingerprint(source, plan) : null;
+        if (typeof basisFingerprint !== "string" || !/^[0-9a-f]{64}$/.test(basisFingerprint)) {
             releaseWorkspaceGapPreview(expectedGapIndex);
             return false;
         }
@@ -10055,6 +10074,7 @@ Rectangle {
         workspaceGapPreviewWindowId = source.selectedWindowId;
         workspaceGapPreviewIndex = expectedGapIndex;
         workspaceGapPreviewPlan = plan;
+        workspaceGapPreviewBasisFingerprint = basisFingerprint;
         return true;
     }
 
@@ -10102,7 +10122,31 @@ Rectangle {
         }
     }
 
-    function submitWindowWorkspaceGapDrop(source, exactPlan, expectedTargetScreen) {
+    function captureWorkspaceGapBasisFingerprint(source, exactPlan) {
+        try {
+            const sourceSnapshot = source && source.scope === "column"
+                ? source.columnDragSnapshot : source ? source.windowDragSnapshot : null;
+            const target = canonicalWorkspaceGapDropTarget(
+                exactPlan, activeOverviewActivityId, outputId);
+            if (!sourceSnapshot || !target) {
+                return null;
+            }
+            const commandSource = {
+                activityId: sourceSnapshot.activityId,
+                desktopId: sourceSnapshot.desktopId,
+                outputId: sourceSnapshot.outputId,
+                scope: source && source.scope === "column" ? "column" : "window",
+                windowId: source && source.scope === "column"
+                    ? sourceSnapshot.selectedWindowId : sourceSnapshot.windowId
+            };
+            return captureSpatialDropBasisFingerprint(commandSource, target);
+        } catch (error) {
+            return null;
+        }
+    }
+
+    function submitWindowWorkspaceGapDrop(source, exactPlan, expectedTargetScreen,
+                                          basisFingerprint) {
         try {
             const effect = sceneEffect;
             const model = overviewModel;
@@ -10124,6 +10168,8 @@ Rectangle {
             const expectedActivityId = activeOverviewActivityId;
             const target = canonicalWorkspaceGapDropTarget(exactPlan, expectedActivityId, targetOutputId);
             if (!workspaceGapDropSourceIsExact(source) || !target || !anchorDesktop
+                    || typeof basisFingerprint !== "string"
+                    || !/^[0-9a-f]{64}$/.test(basisFingerprint)
                     || !windowSpatialDropSceneIsExact(effect, model, liveSourceScreen, sourceOutput,
                                                       sourceOutputId, liveTargetScreen, targetOutput,
                                                       targetOutputId, liveSourceDesktop,
@@ -10142,13 +10188,14 @@ Rectangle {
                                                        outputId: sourceOutputId,
                                                        scope: "window",
                                                        windowId: expectedWindowId
-                                                   }, target) === true;
+                                                   }, target, basisFingerprint) === true;
         } catch (error) {
             return false;
         }
     }
 
-    function submitColumnWorkspaceGapDrop(source, exactPlan, expectedTargetScreen) {
+    function submitColumnWorkspaceGapDrop(source, exactPlan, expectedTargetScreen,
+                                          basisFingerprint) {
         try {
             const effect = sceneEffect;
             const model = overviewModel;
@@ -10168,6 +10215,8 @@ Rectangle {
             const expectedActivityId = activeOverviewActivityId;
             const target = canonicalWorkspaceGapDropTarget(exactPlan, expectedActivityId, sourceOutputId);
             if (!columnWorkspaceGapDropSourceIsExact(source) || !target || !anchorDesktop
+                    || typeof basisFingerprint !== "string"
+                    || !/^[0-9a-f]{64}$/.test(basisFingerprint)
                     || liveScreen !== liveTargetScreen || liveScreen !== targetScreen
                     || !windowSpatialDropSceneIsExact(effect, model, liveScreen, sourceOutput, sourceOutputId,
                                                       liveTargetScreen, sourceOutput, sourceOutputId,
@@ -10186,7 +10235,7 @@ Rectangle {
                                                        outputId: sourceOutputId,
                                                        scope: "column",
                                                        windowId: expectedWindowId
-                                                   }, target) === true;
+                                                   }, target, basisFingerprint) === true;
         } catch (error) {
             return false;
         }
@@ -10210,27 +10259,39 @@ Rectangle {
 
     function handleCrossOutputWindowDrop(globalPosition, source, expectedTargetScreen) {
         const targetHit = crossOutputDropTargetAt(globalPosition, expectedTargetScreen);
-        if (!targetHit || !source) {
+        const sourceCard = source ? source.sourceCard : null;
+        let exactOwnedSource = false;
+        try {
+            exactOwnedSource = Boolean(sourceCard
+                && typeof sourceCard.crossOutputWindowDropSourceIsExact === "function"
+                && sourceCard.crossOutputWindowDropSourceIsExact(source));
+        } catch (error) {
+            exactOwnedSource = false;
+        }
+        if (!targetHit || !source || !exactOwnedSource) {
             return;
         }
 
         if (targetHit.kind === "workspace-gap") {
-            submitWindowWorkspaceGapDrop(source, targetHit.plan, expectedTargetScreen);
+            const basisFingerprint = captureWorkspaceGapBasisFingerprint(source, targetHit.plan);
+            submitWindowWorkspaceGapDrop(source, targetHit.plan, expectedTargetScreen,
+                                         basisFingerprint);
             return;
         }
 
         const targetCard = targetHit.card;
         const exactTarget = targetCard.planCrossOutputWindowDropTarget(source, targetHit.localPosition);
-        if (exactTarget) {
+        const basisFingerprint = exactTarget
+            && typeof targetCard.captureWindowDropBasisFingerprint === "function"
+            ? targetCard.captureWindowDropBasisFingerprint(source, exactTarget) : null;
+        if (exactTarget && typeof basisFingerprint === "string"
+                && /^[0-9a-f]{64}$/.test(basisFingerprint)) {
             submitWindowSpatialDrop(source.candidate, source.windowId, source.sourceDesktop,
                                     source.sourceDesktopId, targetCard.desktop, targetCard.desktopId,
-                                    source.sourceScreen, targetCard.screen, exactTarget);
+                                    source.sourceScreen, targetCard.screen, exactTarget,
+                                    basisFingerprint);
             return;
         }
-
-        moveWindowAcrossOutputs(source.candidate, source.windowId, source.sourceDesktop,
-                                source.sourceDesktopId, source.sourceScreen, targetCard.desktop,
-                                targetCard.desktopId, targetCard.screen, globalPosition);
     }
 
     function crossOutputDropTargetAt(globalPosition, expectedTargetScreen) {
@@ -10531,7 +10592,8 @@ Rectangle {
     }
 
     function submitColumnSpatialDrop(source, expectedTargetDesktop,
-                                     expectedTargetDesktopId, expectedScreen, exactTarget) {
+                                     expectedTargetDesktopId, expectedScreen, exactTarget,
+                                     basisFingerprint) {
         try {
             const effect = sceneEffect;
             const model = overviewModel;
@@ -10558,6 +10620,8 @@ Rectangle {
                                                       expectedSourceDesktopId, liveTargetDesktop,
                                                       expectedTargetDesktopId)
                     || !target
+                    || typeof basisFingerprint !== "string"
+                    || !/^[0-9a-f]{64}$/.test(basisFingerprint)
                     || !windowDesktopDropCandidateIsExact(candidate, expectedWindowId, liveSourceScreen,
                                                            liveSourceDesktop, expectedSourceDesktopId,
                                                            expectedActivityId)
@@ -10571,7 +10635,7 @@ Rectangle {
                                                        outputId: sourceOutputId,
                                                        scope: "column",
                                                        windowId: expectedWindowId
-                                                   }, target) === true;
+                                                   }, target, basisFingerprint) === true;
         } catch (error) {
             return false;
         }
@@ -10646,7 +10710,7 @@ Rectangle {
     function submitWindowSpatialDrop(candidate, expectedWindowId, expectedSourceDesktop,
                                      expectedSourceDesktopId, expectedTargetDesktop,
                                      expectedTargetDesktopId, expectedSourceScreen,
-                                     expectedTargetScreen, exactTarget) {
+                                     expectedTargetScreen, exactTarget, basisFingerprint) {
         const effect = sceneEffect;
         const model = overviewModel;
         const liveSourceScreen = liveScreenFor(expectedSourceScreen);
@@ -10664,6 +10728,8 @@ Rectangle {
                                            liveTargetScreen, targetOutput, targetOutputId, liveSourceDesktop,
                                            expectedSourceDesktopId, liveTargetDesktop, expectedTargetDesktopId)
                 || !target
+                || typeof basisFingerprint !== "string"
+                || !/^[0-9a-f]{64}$/.test(basisFingerprint)
                 || !windowDesktopDropCandidateIsExact(candidate, expectedWindowId, liveSourceScreen,
                                                        liveSourceDesktop,
                                                        expectedSourceDesktopId, expectedActivityId)
@@ -10677,7 +10743,7 @@ Rectangle {
                                                    outputId: sourceOutputId,
                                                    scope: "window",
                                                    windowId: expectedWindowId
-                                               }, target) === true;
+                                               }, target, basisFingerprint) === true;
     }
 
     function canonicalSpatialDropTarget(exactTarget, expectedActivityId, expectedOutputId,
@@ -11133,6 +11199,16 @@ Rectangle {
             }
         }
         return activityIds.length === 1 ? activityIds[0] : fallbackActivityId;
+    }
+
+    function captureSpatialDropBasisFingerprint(source, target) {
+        try {
+            const effect = sceneEffect;
+            return effect && typeof effect.captureSpatialDropBasisFingerprint === "function"
+                ? effect.captureSpatialDropBasisFingerprint(source, target) : null;
+        } catch (error) {
+            return null;
+        }
     }
 
     function indexedListHasBoundedLength(value, minimumLength, maximumLength) {

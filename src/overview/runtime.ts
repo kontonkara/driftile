@@ -166,6 +166,15 @@ export {
   decodeSpatialDropCommand,
   encodeSpatialDropCommand,
 } from "./spatial-drop-command";
+export {
+  fingerprintOverviewSpatialDropBasis,
+  overviewSpatialDropBasisContextKeys,
+} from "./spatial-drop-basis";
+export type {
+  OverviewSpatialDropBasisInput,
+  OverviewSpatialDropContextGeometry,
+  OverviewSpatialDropContextKey,
+} from "./spatial-drop-basis";
 export type {
   SpatialDropCommand,
   SpatialDropSource,
@@ -186,6 +195,7 @@ export type {
 export {
   buildOverviewSpatialWindowDropPlan,
   hitTestOverviewSpatialWindowDrop,
+  hitTestOverviewSpatialWindowDropWithHysteresis,
 } from "./spatial-window-drop";
 export type {
   OverviewSpatialWindowDropPlan,
