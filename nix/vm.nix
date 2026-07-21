@@ -10467,8 +10467,7 @@ let
         return 1
       }
 
-      request_physical_overview_tab_restore_click() {
-        local attempt
+      overview_first_tab_chip_point() {
         local card_height_milli
         local chip_gap_milli=4000
         local chip_height_milli
@@ -10483,13 +10482,13 @@ let
         local output_width
         local output_x
         local output_y
-        local pointer_x
+        local computed_pointer_x
         local pointer_x_milli
-        local pointer_y
+        local pointer_x_variable=$3
+        local computed_pointer_y
         local pointer_y_milli
+        local pointer_y_variable=$4
         local rail_width_milli
-        local ready_file=/tmp/shared/driftile-overview-tab-restore-ready
-        local sent_file=/tmp/shared/driftile-overview-tab-restore-sent
         local source_bottom_milli
         local source_height_milli
         local source_left_milli
@@ -10501,7 +10500,6 @@ let
         local tabbed_width
         local tabbed_x
         local tabbed_y
-        local temporary_file="$ready_file.tmp"
         local available_height_milli
         local available_top_milli
         local tab_rail_minimum_y_milli=30000
@@ -10600,18 +10598,146 @@ let
           + (output_height * 1000 - card_height_milli) / 2 \
           + available_top_milli + vertical_inset_milli \
           + chip_height_milli / 2))
-        pointer_x=$(((pointer_x_milli + 500) / 1000))
-        pointer_y=$(((pointer_y_milli + 500) / 1000))
-        ((pointer_x >= output_x \
-          && pointer_x < output_x + output_width \
-          && pointer_y >= output_y \
-          && pointer_y < output_y + output_height)) \
+        computed_pointer_x=$(((pointer_x_milli + 500) / 1000))
+        computed_pointer_y=$(((pointer_y_milli + 500) / 1000))
+        ((computed_pointer_x >= output_x \
+          && computed_pointer_x < output_x + output_width \
+          && computed_pointer_y >= output_y \
+          && computed_pointer_y < output_y + output_height)) \
+          || return 1
+
+        [[ "$pointer_x_variable" =~ ^[a-zA-Z_][a-zA-Z0-9_]*$ \
+          && "$pointer_y_variable" =~ ^[a-zA-Z_][a-zA-Z0-9_]*$ ]] \
+          || return 1
+        printf -v "$pointer_x_variable" '%s' "$computed_pointer_x"
+        printf -v "$pointer_y_variable" '%s' "$computed_pointer_y"
+      }
+
+      request_physical_overview_tab_restore_click() {
+        local attempt
+        local extra
+        local output_frame=$2
+        local output_height
+        local output_width
+        local output_x
+        local output_y
+        local pointer_x
+        local pointer_y
+        local ready_file=/tmp/shared/driftile-overview-tab-restore-ready
+        local sent_file=/tmp/shared/driftile-overview-tab-restore-sent
+        local temporary_file="$ready_file.tmp"
+
+        frame_is_valid "$output_frame" || return 1
+        IFS=, read -r \
+          output_x \
+          output_y \
+          output_width \
+          output_height \
+          extra \
+          <<< "$output_frame"
+        [[ -z "''${extra:-}" ]] || return 1
+        overview_first_tab_chip_point \
+          "$1" \
+          "$output_frame" \
+          pointer_x \
+          pointer_y \
           || return 1
 
         rm -f "$ready_file" "$sent_file" "$temporary_file"
         printf '%s %s %s %s %s %s\n' \
           "$pointer_x" \
           "$pointer_y" \
+          "$output_x" \
+          "$output_y" \
+          "$output_width" \
+          "$output_height" \
+          > "$temporary_file"
+        mv "$temporary_file" "$ready_file"
+
+        for ((attempt = 0; attempt < 100; attempt += 1)); do
+          [[ -f "$sent_file" ]] && return 0
+          sleep 0.1
+        done
+
+        return 1
+      }
+
+      request_physical_overview_tab_drag() {
+        local attempt
+        local card_height_milli
+        local destination_x
+        local destination_y
+        local destination_y_milli
+        local edge_margin_milli
+        local extra
+        local output_frame=$2
+        local output_height
+        local output_width
+        local output_x
+        local output_y
+        local ready_file=/tmp/shared/driftile-overview-tab-drag-ready
+        local sent_file=/tmp/shared/driftile-overview-tab-drag-sent
+        local source_x
+        local source_y
+        local tabbed_frame=$1
+        local tabbed_height
+        local tabbed_width
+        local tabbed_x
+        local tabbed_y
+        local temporary_file="$ready_file.tmp"
+        local zoom_milli=${toString overviewZoom.milli}
+
+        frame_is_valid "$tabbed_frame" || return 1
+        frame_is_valid "$output_frame" || return 1
+        IFS=, read -r \
+          tabbed_x \
+          tabbed_y \
+          tabbed_width \
+          tabbed_height \
+          extra \
+          <<< "$tabbed_frame"
+        [[ -z "''${extra:-}" ]] || return 1
+        IFS=, read -r \
+          output_x \
+          output_y \
+          output_width \
+          output_height \
+          extra \
+          <<< "$output_frame"
+        [[ -z "''${extra:-}" ]] || return 1
+        ((zoom_milli > 0 && zoom_milli <= 1000)) || return 1
+        overview_first_tab_chip_point \
+          "$tabbed_frame" \
+          "$output_frame" \
+          source_x \
+          source_y \
+          || return 1
+
+        card_height_milli=$((output_height * zoom_milli))
+        edge_margin_milli=$(((output_height * 1000 - card_height_milli) / 2))
+        destination_y_milli=$((output_y * 1000 + edge_margin_milli \
+          + (tabbed_y - output_y) * zoom_milli \
+          + 3 * tabbed_height * zoom_milli / 4))
+        destination_x=$source_x
+        destination_y=$(((destination_y_milli + 500) / 1000))
+
+        ((source_x >= output_x \
+          && source_x < output_x + output_width \
+          && source_y >= output_y \
+          && source_y < output_y + output_height \
+          && destination_x >= output_x \
+          && destination_x < output_x + output_width \
+          && destination_y >= output_y \
+          && destination_y < output_y + output_height \
+          && destination_y > source_y)) \
+          || return 1
+
+        rm -f "$ready_file" "$sent_file" "$temporary_file"
+        printf '%s %s %s %s %s %s %s %s\n' \
+          "$source_x" \
+          "$source_y" \
+          "$destination_x" \
+          "$destination_y" \
           "$output_x" \
           "$output_y" \
           "$output_width" \
@@ -11914,11 +12040,15 @@ let
         return 1
       }
 
-      verify_physical_overview_minimized_tab_restore() {
+      verify_physical_overview_tab_interactions() {
         local journal_cursor
         local output_frame
         local process_id
         local stack_third_frame=$2
+        local tab_drag_after_request_id
+        local tab_drag_before_request_id
+        local tab_drag_request_document
+        local tab_drag_request_id
         local tabbed_frame=$1
 
         output_frame=$(single_enabled_output_frame 2>/dev/null || true)
@@ -11933,7 +12063,7 @@ let
           || ! wait_for_effect_loaded_state "$overview_plugin_id" false \
           || ! wait_for_shortcut_registration_state "$overview_shortcut" false; then
           record_focus_state \
-            "physical Overview minimized-tab restoration preflight failed"
+            "physical Overview tab interaction preflight failed"
           return 1
         fi
 
@@ -11941,7 +12071,7 @@ let
           || ! wait_for_shortcut_registration_state "$overview_shortcut" true \
           || ! wait_for_effect_active_state "$overview_plugin_id" false; then
           record_focus_state \
-            "physical Overview minimized-tab restoration could not load the effect"
+            "physical Overview tab interactions could not load the effect"
           return 1
         fi
         overview_effect_loaded_once=true
@@ -12019,23 +12149,120 @@ let
           return 1
         fi
 
-        if ! unload_overview_effect \
-          || ! wait_for_shortcut_registration_state "$overview_shortcut" true \
-          || ! activate_window "$title_b" \
+        if ! activate_window "$title_b" \
+          || ! wait_for_active "$title_b" \
+          || ! wait_for_frames \
+            "$tabbed_frame" \
+            "$tabbed_frame" \
+            "$stack_third_frame"; then
+          record_focus_state \
+            "physical Overview visible-tab drag fixture failed"
+          return 1
+        fi
+
+        tab_drag_before_request_id=$(overview_spatial_drop_request_id 2>/dev/null) \
+          || {
+            record_focus_state \
+              "physical Overview visible-tab drag request baseline was unavailable"
+            return 1
+          }
+
+        if ! invoke_shortcut "$overview_shortcut" \
+          || ! wait_for_effect_active_state "$overview_plugin_id" true; then
+          record_focus_state \
+            "physical Overview visible-tab drag did not reopen"
+          return 1
+        fi
+
+        # Match the established physical Overview presentation-settlement bound
+        # before targeting chip zero.
+        sleep 3
+
+        if ! request_physical_overview_tab_drag \
+          "$tabbed_frame" \
+          "$output_frame"; then
+          record_focus_state \
+            "physical Overview visible-tab drag was not delivered"
+          return 1
+        fi
+        tab_drag_request_id=$(
+          wait_for_overview_spatial_drop_request_after \
+            "$tab_drag_before_request_id"
+        ) || {
+          record_focus_state \
+            "physical Overview visible-tab drag did not submit one spatial drop"
+          return 1
+        }
+
+        if ! wait_for_active "$title_a" \
+          || ! wait_for_frames \
+            "$tabbed_frame" \
+            "$tabbed_frame" \
+            "$stack_third_frame" \
+          || ! wait_for_window_desktop "$title_a" "$primary_desktop_id" \
+          || ! wait_for_window_desktop "$title_b" "$primary_desktop_id" \
+          || ! wait_for_window_desktop "$title_c" "$primary_desktop_id" \
+          || ! wait_for_window_minimized_state "$title_a" false \
+          || ! wait_for_window_minimized_state "$title_b" false \
+          || ! wait_for_window_minimized_state "$title_c" false \
+          || [[ "$(effect_active_state "$overview_plugin_id" 2>/dev/null || true)" != true ]] \
+          || ! kwin_process_is_unchanged "$process_id" \
+          || ! overview_component_errors_after "$journal_cursor"; then
+          record_focus_state \
+            "physical Overview visible-tab drag did not place A after B exactly"
+          return 1
+        fi
+
+        tab_drag_after_request_id=$(overview_spatial_drop_request_id 2>/dev/null) \
+          || {
+            record_focus_state \
+              "physical Overview visible-tab drag request identity was unavailable"
+            return 1
+          }
+        tab_drag_request_document=$(
+          overview_spatial_drop_request_document 2>/dev/null
+        ) || {
+          record_focus_state \
+            "physical Overview visible-tab drag request document was unavailable"
+          return 1
+        }
+        if [[ "$tab_drag_after_request_id" != "$tab_drag_request_id" \
+          || -n "$tab_drag_request_document" ]]; then
+          record_focus_state \
+            "physical Overview visible-tab drag replayed or remained pending"
+          return 1
+        fi
+
+        if ! request_physical_shortcut overview-tab-drag-escape \
+          || ! wait_for_effect_active_state "$overview_plugin_id" false \
+          || ! wait_for_active "$title_a" \
+          || ! invoke_shortcut "driftile_focus_window_down" \
+          || ! wait_for_active "$title_a" \
+          || ! invoke_shortcut "driftile_focus_window_up" \
+          || ! wait_for_active "$title_b" \
+          || ! invoke_shortcut "driftile_focus_window_up" \
+          || ! wait_for_active "$title_b" \
+          || ! invoke_shortcut "driftile_focus_window_down" \
+          || ! wait_for_active "$title_a" \
+          || ! invoke_shortcut "driftile_move_window_up" \
+          || ! wait_for_active "$title_a" \
+          || ! invoke_shortcut "driftile_focus_window_down" \
           || ! wait_for_active "$title_b" \
           || ! wait_for_frames \
             "$tabbed_frame" \
             "$tabbed_frame" \
             "$stack_third_frame" \
+          || ! unload_overview_effect \
+          || ! wait_for_shortcut_registration_state "$overview_shortcut" true \
           || ! kwin_process_is_unchanged "$process_id" \
           || ! overview_component_errors_after "$journal_cursor"; then
           record_focus_state \
-            "physical Overview minimized-tab restoration cleanup failed"
+            "physical Overview visible-tab drag order proof or cleanup failed"
           return 1
         fi
 
         record_focus_state \
-          "active Overview reflowed into a minimized tab, and its physical click restored A exactly"
+          "active Overview restored minimized A and physically reordered its visible tab exactly"
       }
 
       verify_physical_height_shortcuts() {
@@ -12122,7 +12349,7 @@ let
         fi
         record_focus_state "tabbed column focus preserved both boundaries"
 
-        if ! verify_physical_overview_minimized_tab_restore \
+        if ! verify_physical_overview_tab_interactions \
           "$tabbed_frame" \
           "$stack_third_frame"; then
           return 1

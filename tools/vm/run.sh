@@ -192,6 +192,9 @@ monitor_guest() {
   local overview_desktop_drag_ready_file="$temporary_directory/xchg/driftile-overview-desktop-drag-ready"
   local overview_desktop_drag_sent=false
   local overview_desktop_drag_sent_file="$temporary_directory/xchg/driftile-overview-desktop-drag-sent"
+  local overview_tab_drag_ready_file="$temporary_directory/xchg/driftile-overview-tab-drag-ready"
+  local overview_tab_drag_sent=false
+  local overview_tab_drag_sent_file="$temporary_directory/xchg/driftile-overview-tab-drag-sent"
   local overview_tab_restore_ready_file="$temporary_directory/xchg/driftile-overview-tab-restore-ready"
   local overview_tab_restore_sent=false
   local overview_tab_restore_sent_file="$temporary_directory/xchg/driftile-overview-tab-restore-sent"
@@ -254,6 +257,7 @@ monitor_guest() {
     [overview-enter-target]=false
     [overview-escape]=false
     [overview-reorder-escape]=false
+    [overview-tab-drag-escape]=false
     [overview-window-drop-escape]=false
     [overview-workspace-begin-rename]=false
     [overview-workspace-close]=false
@@ -322,6 +326,7 @@ monitor_guest() {
       overview-enter-target \
       overview-escape \
       overview-reorder-escape \
+      overview-tab-drag-escape \
       overview-window-drop-escape \
       overview-workspace-select-created \
       overview-workspace-begin-rename \
@@ -436,6 +441,19 @@ monitor_guest() {
       printf 'The VM received the physical overview window drop.\n'
       : > "$overview_window_drop_sent_file"
       overview_window_drop_sent=true
+    fi
+
+    if [[ "$overview_tab_drag_sent" == false \
+      && -f "$overview_tab_drag_ready_file" ]]; then
+      if ! send_plain_pointer_drag "$overview_tab_drag_ready_file"; then
+        printf 'Could not drag the physical Overview tab control.\n' >&2
+        finish_full_vm_monitor || true
+        return 1
+      fi
+
+      printf 'The VM received the physical Overview tab drag.\n'
+      : > "$overview_tab_drag_sent_file"
+      overview_tab_drag_sent=true
     fi
 
     if [[ "$overview_tab_restore_sent" == false \
@@ -558,9 +576,9 @@ monitor_guest() {
       fi
 
       if [[ "$(<"$focus_file")" == true ]]; then
-        printf 'The VM verified physical shortcut and pointer routing, global wheel controls, physical Meta+Q close-window handling, desktop switching and reordering, same-output cross-desktop pointer adoption, minimized-slot navigation, column reordering, horizontal extraction, consume and expel past minimized peers, native fullscreen and maximize, stacked fullscreen and maximize extraction past minimized peers, borderless ownership, numbered dynamic desktops, whole-column desktop transfer past a minimized member, floating desktop transfers, manual-floating pointer retention, output transfers, floating-layer navigation, focus, stack editing, pointer reinsertion and horizontal pointer-resize adoption, live touchpad-navigation settings, physical overview keyboard, minimized-tab restoration, session zoom, and vertical- and horizontal-wheel navigation, advanced column view, column and window sizing, scrolling, mixed Konsole, Firefox, KDE Calculator, XWayland xterm, and fixed-size XWayland fixtures, plus repeated real-application lifecycles.\n'
+        printf 'The VM verified physical shortcut and pointer routing, global wheel controls, physical Meta+Q close-window handling, desktop switching and reordering, same-output cross-desktop pointer adoption, minimized-slot navigation, column reordering, horizontal extraction, consume and expel past minimized peers, native fullscreen and maximize, stacked fullscreen and maximize extraction past minimized peers, borderless ownership, numbered dynamic desktops, whole-column desktop transfer past a minimized member, floating desktop transfers, manual-floating pointer retention, output transfers, floating-layer navigation, focus, stack editing, pointer reinsertion and horizontal pointer-resize adoption, live touchpad-navigation settings, physical overview keyboard, minimized-tab restoration and visible-tab spatial drag, session zoom, and vertical- and horizontal-wheel navigation, advanced column view, column and window sizing, scrolling, mixed Konsole, Firefox, KDE Calculator, XWayland xterm, and fixed-size XWayland fixtures, plus repeated real-application lifecycles.\n'
       else
-        printf 'The VM failed to verify physical shortcut or pointer routing, global wheel controls, physical Meta+Q close-window handling, desktop switching or reordering, same-output cross-desktop pointer adoption, minimized-slot navigation, column reordering, horizontal extraction, consume or expel past minimized peers, native fullscreen or maximize, stacked fullscreen or maximize extraction past minimized peers, borderless ownership, numbered dynamic desktops, whole-column desktop transfer past a minimized member, floating desktop transfers, manual-floating pointer retention, output transfers, floating-layer navigation, focus, stack editing, pointer reinsertion or horizontal pointer-resize adoption, live touchpad-navigation settings, physical overview keyboard, minimized-tab restoration, session zoom, or vertical- and horizontal-wheel navigation, advanced column view, column or window sizing, scrolling, mixed primary application fixtures, or the repeated real-application lifecycle pool.\n' >&2
+        printf 'The VM failed to verify physical shortcut or pointer routing, global wheel controls, physical Meta+Q close-window handling, desktop switching or reordering, same-output cross-desktop pointer adoption, minimized-slot navigation, column reordering, horizontal extraction, consume or expel past minimized peers, native fullscreen or maximize, stacked fullscreen or maximize extraction past minimized peers, borderless ownership, numbered dynamic desktops, whole-column desktop transfer past a minimized member, floating desktop transfers, manual-floating pointer retention, output transfers, floating-layer navigation, focus, stack editing, pointer reinsertion or horizontal pointer-resize adoption, live touchpad-navigation settings, physical overview keyboard, minimized-tab restoration or visible-tab spatial drag, session zoom, or vertical- and horizontal-wheel navigation, advanced column view, column or window sizing, scrolling, mixed primary application fixtures, or the repeated real-application lifecycle pool.\n' >&2
         failed=true
 
         if [[ -f "$diagnostics_file" ]]; then
@@ -2308,7 +2326,7 @@ send_physical_shortcut() {
     overview-up)
       input='{"execute":"input-send-event","arguments":{"events":[{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"up"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"up"}}}]}}'
       ;;
-    overview-escape|overview-reorder-escape|overview-window-drop-escape)
+    overview-escape|overview-reorder-escape|overview-tab-drag-escape|overview-window-drop-escape)
       input='{"execute":"input-send-event","arguments":{"events":[{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"esc"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"esc"}}}]}}'
       ;;
     overview-workspace-select-created)
