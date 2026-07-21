@@ -305,11 +305,14 @@ Events travel from KWin through the bridge into the runtime. Commands and result
   first captured frame until a public signal permits replay; true ineligibility,
   configuration reload, or deletion discards pending work.
 - Records the active window at workspace-effect completion as a handoff anchor,
-  then leases the first different same-context focus target until that exact
-  target is visible or animating. Activation of the visible exact target also
-  settles its lease after any deferred motion is replayed, so later hidden
-  geometry cannot inherit stale continuity. Duplicate anchor activation,
-  transient null focus, and anchor deletion cannot consume the target lease.
+  revalidates an initially current anchor at the next public desktop or activity
+  signal, then leases the first different same-context focus target until that
+  exact target is visible or animating. This continuation can only advance from
+  false to true while the original handoff remains pending. Activation of the
+  visible exact target also settles its lease after any deferred motion is
+  replayed, so later hidden geometry cannot inherit stale continuity. Duplicate
+  anchor activation, transient null focus, and anchor deletion cannot consume
+  the target lease or recreate a settled handoff.
 - Retargets eligible size and one bounded absolute-position/translation pair
   with the configured Plasma-scaled duration, preserving KWin's interpolated
   value through rapid commands and negative-coordinate crossings. Every logical

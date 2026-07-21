@@ -92,14 +92,15 @@ of redirecting it to another context.
 
 When the optional transition effect is enabled, deferred window geometry motion
 resumes after the desktop effect releases presentation. If KWin still reports
-the outgoing window as active at release, the exact incoming replay remains a
-handoff candidate only while its animation is active. Its late activation
-advances that handoff once, allowing one immediate geometry-before-activation
-focus change to retain its baseline. The successor activation consumes the
-handoff, so unrelated later hidden geometry cannot inherit it. Animation end,
-visibility-context or transition-eligibility loss, deletion, configuration
-reload, or another fullscreen effect otherwise discards the one-shot
-continuation.
+the outgoing window as active or current at release, the handoff revalidates
+that exact anchor when the later desktop-context signal arrives. The exact
+incoming replay remains a handoff candidate only while its animation is active.
+Its late activation advances that handoff once, allowing one immediate
+geometry-before-activation focus change to retain its baseline. The successor
+activation consumes the handoff, so duplicate signals or unrelated later hidden
+geometry cannot recreate it. Animation end, visibility-context or
+transition-eligibility loss, deletion, configuration reload, or another
+fullscreen effect otherwise discards the one-shot continuation.
 
 ## Floating windows and native states
 

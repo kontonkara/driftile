@@ -278,8 +278,27 @@ class DriftileTransitionsEffect {
   }
 
   onVisibilityContextChanged() {
+    this.refreshVisibilityHandoffContinuation();
     this.pruneVisibilityLeases();
     this.replayDeferredTransitions();
+  }
+
+  refreshVisibilityHandoffContinuation() {
+    if (
+      !this.visibilityHandoffPending ||
+      this.visibilityHandoffContinuationAvailable ||
+      this.visibilityHandoffTarget !== null
+    ) {
+      return;
+    }
+
+    const visibilityHandoffAnchor = this.visibilityHandoffAnchor;
+    if (
+      !visibilityHandoffAnchor ||
+      !this.isWindowInCurrentVisibilityContext(visibilityHandoffAnchor)
+    ) {
+      this.visibilityHandoffContinuationAvailable = true;
+    }
   }
 
   onWindowActivated(window) {

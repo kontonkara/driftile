@@ -2181,6 +2181,140 @@ describe("transition effect package", () => {
     expect("driftileDeferredTransition" in unrelated).toBe(false);
   });
 
+  it("refreshes focus continuity when desktop visibility settles after release", () => {
+    const harness = createHarness();
+    const destination = createWindow({
+      geometry: { x: 340, y: 30, width: 300, height: 200 },
+      onCurrentDesktop: false,
+      visible: false,
+    });
+    const laterTarget = createWindow({
+      geometry: { x: 660, y: 30, width: 300, height: 200 },
+      visible: false,
+    });
+    harness.effects.windowAdded.emit(destination);
+    harness.effects.windowAdded.emit(laterTarget);
+    harness.effects.activeWindow = harness.window;
+    harness.setFullScreenEffectActive(true);
+
+    changeGeometry(destination, {
+      x: 460,
+      y: 70,
+      width: 500,
+      height: 300,
+    });
+    harness.setFullScreenEffectActive(false);
+
+    expect(harness.animationRequests).toHaveLength(0);
+
+    harness.window.onCurrentDesktop = false;
+    destination.onCurrentDesktop = true;
+    destination.visible = true;
+    harness.effects.desktopChanged.emit(null, null, null, null);
+    harness.effects.activeWindow = destination;
+    harness.effects.windowActivated.emit(destination);
+
+    changeGeometry(laterTarget, {
+      x: 780,
+      y: 70,
+      width: 500,
+      height: 300,
+    });
+    harness.effects.activeWindow = laterTarget;
+    harness.effects.windowActivated.emit(laterTarget);
+
+    expect(harness.animationRequests.map(({ window }) => window)).toEqual([
+      destination,
+      laterTarget,
+    ]);
+    expect(harness.animationRequests[1]).toMatchObject({
+      window: laterTarget,
+      animations: [
+        {
+          type: "size",
+          from: { value1: 300, value2: 200 },
+          to: { value1: 500, value2: 300 },
+        },
+        {
+          type: "position",
+          from: { value1: 810, value2: 130 },
+          to: { value1: 1030, value2: 220 },
+        },
+      ],
+    });
+  });
+
+  it("does not resurrect refreshed continuity after duplicate lifecycle signals", () => {
+    const harness = createHarness();
+    const destination = createWindow({
+      geometry: { x: 340, y: 30, width: 300, height: 200 },
+      onCurrentDesktop: false,
+      visible: false,
+    });
+    const immediateTarget = createWindow({
+      geometry: { x: 660, y: 30, width: 300, height: 200 },
+      visible: false,
+    });
+    const unrelated = createWindow({
+      geometry: { x: 980, y: 30, width: 300, height: 200 },
+      visible: false,
+    });
+    harness.effects.windowAdded.emit(destination);
+    harness.effects.windowAdded.emit(immediateTarget);
+    harness.effects.windowAdded.emit(unrelated);
+    harness.effects.activeWindow = harness.window;
+    harness.setFullScreenEffectActive(true);
+
+    changeGeometry(destination, {
+      x: 460,
+      y: 70,
+      width: 500,
+      height: 300,
+    });
+    harness.setFullScreenEffectActive(false);
+
+    harness.effects.activeWindow = destination;
+    harness.effects.windowActivated.emit(destination);
+    expect(harness.animationRequests).toHaveLength(0);
+
+    harness.window.onCurrentDesktop = false;
+    destination.onCurrentDesktop = true;
+    destination.visible = true;
+    harness.effects.desktopChanged.emit(null, null, null, null);
+    harness.effects.desktopChanged.emit(null, null, null, null);
+    harness.effects.windowActivated.emit(destination);
+    harness.effects.windowActivated.emit(destination);
+
+    changeGeometry(immediateTarget, {
+      x: 780,
+      y: 70,
+      width: 500,
+      height: 300,
+    });
+    harness.effects.activeWindow = immediateTarget;
+    harness.effects.windowActivated.emit(immediateTarget);
+
+    expect(harness.animationRequests.map(({ window }) => window)).toEqual([
+      destination,
+      immediateTarget,
+    ]);
+
+    harness.effects.desktopChanged.emit(null, null, null, null);
+    harness.effects.desktopChanged.emit(null, null, null, null);
+    harness.effects.windowActivated.emit(immediateTarget);
+    changeGeometry(unrelated, {
+      x: 1100,
+      y: 70,
+      width: 500,
+      height: 300,
+    });
+    harness.effects.activeWindow = unrelated;
+    harness.effects.windowActivated.emit(unrelated);
+
+    expect(harness.animationRequests).toHaveLength(2);
+    expect("driftileDeferredTransition" in unrelated).toBe(false);
+  });
+
   it("expires a replay continuation that finishes before activation", () => {
     const harness = createHarness();
     const destination = createWindow({
