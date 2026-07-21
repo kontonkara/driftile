@@ -338,7 +338,12 @@ A visible tiled window can be dragged by its window body to another workspace
 or output, into an exact stack position, or into a separate-column gutter. This
 remains an individual-window operation. Its thumbnail follows the pointer
 across row clipping, and the active zone previews the solved final position and
-size before release. Dropping an eligible tiled window on the insertion line
+size before release. Within a populated target column, the central body routes
+to the nearest visible stack member, whose upper or lower half selects the
+insertion side. Bounded seam and outer-edge zones remain usable as
+separate-column targets even with a zero or tiny layout gap. Target hysteresis
+prevents a pointer resting at a boundary from making the preview alternate
+between placements. Dropping an eligible tiled window on the insertion line
 between two workspace rows creates a desktop at that position and moves the
 window there. Dragging a workspace number marker reorders eligible desktops;
 the protected empty tail cannot be moved.
@@ -370,6 +375,15 @@ cancelled drag, stale source or target, invalid context, or unsupported target
 clears the preview and leaves the layout unchanged. This slice deliberately
 does not offer whole-column placement across outputs; window-body dragging
 retains its existing individual-window cross-output path.
+
+Window and whole-column drops commit the exact cached preview shown for the
+last accepted pointer sample; release never replans against a different hit
+zone. The effect fingerprints the complete relevant layout contexts, output and
+work-area geometry, scale, gap and centering policy, plus desktop order for a
+workspace-gap target. The main script independently reconstructs that basis
+from current public state before focus, selection, topology, or layout writes.
+Any drift rejects the command without substituting another placement or
+partially mutating the session.
 
 Multi-member tabbed columns keep the selected member at its full projected
 size and add a compact tab rail over the column; the controls do not shrink or

@@ -152,6 +152,18 @@ and fail-closed removal for protected, occupied, selected, stale, or malformed
 desktops. Only the main script may call the public desktop mutation APIs after
 those checks; the effect still contains no direct desktop write or private API.
 
+Current spatial-placement coverage exercises stack-center insertion, vertical
+member midpoints, zero- and tiny-gap seam targets, outer-edge targets, bounded
+target hysteresis, exact preview frames, whole-column metadata preservation,
+and local no-ops. Effect contracts require release to submit the cached target
+and preview rather than repeat pointer hit testing. Codec and runtime cases
+cover the layout-basis digest, destructive command consumption, replay
+rejection, current work-area and scale validation, stale-layout cancellation,
+and exact workspace-gap rollback. The existing hidden full-Wayland checkpoint
+routes one physical column-handle drag to a workspace gap and requires exactly
+one command, an empty consumed request document, preserved stack state, and
+exact cleanup without adding another application or backend pool.
+
 The two-output Wayland scenario routes a physical left click through the
 compositor for native Wayland and XWayland passes. It verifies both exact
 current-card focus and per-output desktop selection, then cross-desktop

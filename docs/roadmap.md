@@ -20,6 +20,14 @@ output-local frames. The projection remains session-only: the normal layout
 stays authoritative, and Overview input does not claim layout ownership or
 persist its camera.
 
+Current development extends direct placement from individual windows to whole
+columns and makes the displayed preview the exact pending result. Stack-center,
+column-seam, outer-edge, empty-row, and workspace-gap targets share one solved
+placement model with bounded pointer hysteresis. Release uses the cached target
+instead of replanning, while the main script independently verifies the relevant
+layouts, output geometry, work areas, scale, settings, and desktop order before
+any focus, selection, topology, or layout mutation.
+
 ## Foundation (delivered)
 
 - Build and package a declarative KWin script with a TypeScript runtime.

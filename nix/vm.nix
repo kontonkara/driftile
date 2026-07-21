@@ -1099,17 +1099,41 @@ let
           --default 0
       }
 
+      overview_spatial_drop_request_document() {
+        ${pkgs.kdePackages.kconfig}/bin/kreadconfig6 \
+          --file "''${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/driftile-overview-command.ini" \
+          --group Command \
+          --key request \
+          --default ""
+      }
+
       wait_for_overview_spatial_drop_request_after() {
         local attempt
         local current
+        local expected
         local previous=$1
 
-        [[ "$previous" =~ ^[0-9]+$ ]] || return 1
+        [[ "$previous" =~ ^(0|[1-9][0-9]*)$ ]] \
+          && ((''${#previous} <= 16)) \
+          && ((previous <= 9007199254740991)) \
+          || return 1
+
+        if ((previous == 9007199254740991)); then
+          expected=1
+        else
+          expected=$((previous + 1))
+        fi
 
         for ((attempt = 0; attempt < 50; attempt += 1)); do
           current=$(overview_spatial_drop_request_id 2>/dev/null || true)
-          if [[ "$current" =~ ^[1-9][0-9]*$ ]] && ((current != previous)); then
-            return 0
+          if [[ "$current" =~ ^[1-9][0-9]*$ ]] \
+            && ((''${#current} <= 16)) \
+            && ((current <= 9007199254740991)); then
+            if ((current == expected)); then
+              printf '%s\n' "$expected"
+              return 0
+            fi
+            ((current != previous)) && return 1
           fi
           sleep 0.1
         done
@@ -5265,7 +5289,10 @@ let
         local workspace_gap_before_count
         local workspace_gap_before_request_id
         local workspace_gap_before_sequence
+        local workspace_gap_after_request_id
         local workspace_gap_created_desktop_id=""
+        local workspace_gap_request_document
+        local workspace_gap_request_id
         local workspace_management_before_request_id
         local workspace_management_created_desktop_id=""
         local workspace_management_fixture_sequence
@@ -5892,12 +5919,14 @@ let
             "the physical workspace-gap drag was not delivered"
           return 1
         fi
-        if ! wait_for_overview_spatial_drop_request_after \
-            "$workspace_gap_before_request_id"; then
+        workspace_gap_request_id=$(
+          wait_for_overview_spatial_drop_request_after \
+            "$workspace_gap_before_request_id"
+        ) || {
           overview_checkpoint_failure \
-            "the physical workspace-gap drag did not submit a spatial drop command"
+            "the physical workspace-gap drag did not submit exactly one spatial drop command"
           return 1
-        fi
+        }
         if ! wait_for_single_inserted_desktop_between \
             workspace_gap_created_desktop_id \
             "$primary_desktop_id" \
@@ -5927,6 +5956,26 @@ let
           || ! wait_for_active "$xterm_title"; then
           overview_checkpoint_failure \
             "the whole-column workspace-gap drop changed member order, width, or selection"
+          return 1
+        fi
+        workspace_gap_after_request_id=$(
+          overview_spatial_drop_request_id 2>/dev/null
+        ) || {
+          overview_checkpoint_failure \
+            "the workspace-gap request identity could not be inspected after placement"
+          return 1
+        }
+        workspace_gap_request_document=$(
+          overview_spatial_drop_request_document 2>/dev/null
+        ) || {
+          overview_checkpoint_failure \
+            "the workspace-gap command document could not be inspected after placement"
+          return 1
+        }
+        if [[ "$workspace_gap_after_request_id" != "$workspace_gap_request_id" ]] \
+          || [[ -n "$workspace_gap_request_document" ]]; then
+          overview_checkpoint_failure \
+            "the workspace-gap drop submitted more than once or remained replayable"
           return 1
         fi
         if [[ "$(effect_active_state "$overview_plugin_id" 2>/dev/null || true)" != true ]]; then

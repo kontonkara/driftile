@@ -258,16 +258,35 @@ can transfer it to another desktop or output after the source and destination
 are revalidated. Holding the dragged window over another workspace activates
 that workspace after a bounded dwell while keeping the drag active. A
 scene-level proxy keeps the exact thumbnail under the pointer even while it
-crosses clipped rows. On the same output, releasing over a window half inserts
-into that stack, releasing at a column boundary keeps a separate column, and an
-empty row accepts a new column. The active target preview uses the same solved
-row geometry as the commit, so its highlighted frame represents the resulting
-window position and size rather than only the hit zone. The same exact targets
-work across outputs for tiled windows; floating and non-exact sources retain
-Plasma's native output transfer. A rejected exact placement restores the prior
-output, desktop, focus, and layout state. Dragging the compact workspace number
-marker reorders eligible desktops. The protected final empty desktop is never
-reordered or crossed.
+crosses clipped rows. On the same output, the central area of a populated
+target column resolves to its nearest visible stack member, whose upper or
+lower half selects the insertion side. Releasing at a column boundary keeps a
+separate column, and an empty row accepts a new column. Bounded snap zones at
+column seams and outer edges remain reachable even with a zero or tiny layout
+gap. A small hysteresis margin holds the displayed target while the pointer
+rests near a boundary.
+
+The active target preview uses the same solved row geometry as the commit, so
+its highlighted frames represent the resulting window positions and sizes
+rather than only the hit zone. Release applies that cached preview and never
+performs a second hit test. The command carries a digest of the exact source and
+target layouts, work areas, output geometry and scale, relevant layout settings,
+and desktop order. The main script recomputes that digest from current public
+state before changing focus, desktop selection, topology, or layout. A changed
+scene therefore cancels the drop without applying a different target or leaving
+a partial mutation. The same exact targets work across outputs for tiled
+windows; floating and non-exact sources retain Plasma's native output transfer.
+A rejected exact placement restores the prior output, desktop, focus, and layout
+state. Dragging the compact workspace number marker reorders eligible desktops.
+The protected final empty desktop is never reordered or crossed.
+
+An eligible tiled column exposes a compact top-center handle. Dragging it moves
+the complete column under one single-color proxy rather than extracting the
+selected window. Every affected visible member receives an exact preview.
+Same-output column boundaries, empty rows, and workspace insertion gaps accept
+the group while preserving member order, selection, stacked or tabbed
+presentation, width, and per-member height state. Whole-column cross-output
+placement remains unavailable and fails without changing the layout.
 
 Dropping an eligible tiled window on the insertion line between two workspace
 rows creates one virtual desktop at that exact position and moves the window
