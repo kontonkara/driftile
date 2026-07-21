@@ -403,6 +403,16 @@ from current public state before focus, selection, topology, or layout writes.
 Any drift rejects the command without substituting another placement or
 partially mutating the session.
 
+Stable window presentations reflow with one coordinated motion when an exact
+layout update moves or resizes a column, changes the selected tab, or moves a
+member between thumbnail, tab, and minimized-placeholder presentation. Rapid
+accepted updates retarget from the currently rendered geometry and visual
+state instead of restarting from a stale position. Starting a direct window or
+whole-column drag or activating a window or workspace to leave Overview first
+settles that motion so input and exit capture use exact geometry. A removed
+window disappears immediately; its surviving neighbors animate into their
+updated frames without a retained exit ghost.
+
 Multi-member tabbed columns keep the selected member at its full projected
 size and add a compact tab rail over the column; the controls do not shrink or
 reflow the selected preview. Each tab shows selected, minimized, and attention

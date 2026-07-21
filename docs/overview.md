@@ -125,6 +125,16 @@ panned current row returns to its live camera during the close motion; reopening
 during that motion reverses the same visible session from its current progress
 without discarding the current session zoom.
 
+While Overview remains open, exact layout updates animate surviving windows to
+their new projected positions and sizes. Column movement and resizing, selected
+tab changes, and transitions between thumbnails, tab chips, and minimized
+placeholders share one coordinated reflow. Rapid updates continue from the
+currently rendered state. Starting a window or whole-column drag or leaving
+Overview by activating a window or workspace settles that reflow first so the
+next interaction starts from exact geometry. Closing a window removes its
+representation immediately; the remaining windows still animate into their
+new frames.
+
 Discrete vertical navigation moves a bounded camera smoothly between workspace
 rows. Precise wheel or touchpad input moves the camera directly, without being
 converted into delayed steps. Precise horizontal input similarly pans only the
