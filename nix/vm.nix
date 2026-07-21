@@ -6005,7 +6005,8 @@ let
             "the exact workspace-management fixture could not open in Overview"
           return 1
         fi
-        sleep 0.5
+        # Workspace commands remain fail-closed until the opening presentation settles.
+        sleep 3
 
         if ! request_physical_shortcut overview-workspace-select-first; then
           overview_checkpoint_failure \
@@ -6043,7 +6044,8 @@ let
             "workspace creation changed Overview, restarted KWin, or lost the exact request"
           return 1
         fi
-        sleep 0.5
+        # Let the exact topology refresh repopulate navigation targets before selecting the new row.
+        sleep 1
 
         if ! request_physical_shortcut overview-workspace-select-created; then
           overview_checkpoint_failure \
