@@ -86,8 +86,9 @@ describe("overview activation controller", () => {
     );
     expect(acceptance).not.toContain("storeActivationCache(");
     expect(refresh).toMatch(
-      /result\.ok !== true \|\| !result\.value[\s\S]*storeActivationCache\(document, snapshot, result\.value\)/u,
+      /result\.ok !== true \|\| !result\.value[\s\S]*overviewModel = result\.value;[\s\S]*scheduleActivationCacheStore\(sessionId, document, snapshot,[\s\S]*result\.value\)/u,
     );
+    expect(refresh).not.toContain("storeActivationCache(");
     expect(deferredStore).toMatch(
       /activeSessionId !== sessionId[\s\S]*overviewModel !== model[\s\S]*Qt\.callLater\(function\(\) \{[\s\S]*controller\.activeSessionId !== sessionId[\s\S]*controller\.overviewModel !== model[\s\S]*controller\.storeActivationCache\(document, snapshot, model\)/u,
     );

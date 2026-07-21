@@ -1436,14 +1436,23 @@ describe("spatial overview column drag lifecycle", () => {
       "onWidthChanged",
       "onHeightChanged",
       "onDesktopsChanged",
-      "onCurrentActivityChanged",
-      "onActivitiesChanged",
-      "onScreensChanged",
     ]) {
       const start = overviewScene.indexOf(change);
       expect(start).toBeGreaterThanOrEqual(0);
       expect(overviewScene.slice(start, start + 260)).toContain(
         "cancelActiveColumnSpatialDrag()",
+      );
+    }
+    for (const change of [
+      "onCurrentActivityChanged",
+      "onActivitiesChanged",
+      "onScreensChanged",
+      "onVirtualScreenGeometryChanged",
+    ]) {
+      const start = overviewScene.indexOf(change);
+      expect(start).toBeGreaterThanOrEqual(0);
+      expect(overviewScene.slice(start, start + 320)).toContain(
+        "beginOverviewContextRefreshBarrier()",
       );
     }
     expect(

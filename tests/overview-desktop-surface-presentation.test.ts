@@ -46,16 +46,29 @@ describe("overview desktop surface presentation", () => {
   it("presents only a ready surface in the exact active context", () => {
     expect(surfaceLoader).toContain("asynchronous: true");
     expect(surfaceLoader).toMatch(
-      /active: card\.desktopSurfaceEnabled && card\.desktopSurfaceContextExact\s*&& card\.desktopSurfaceReady/u,
+      /active: card\.desktopSurfaceEnabled && card\.desktopSurfaceContextExact\s*&& card\.desktopSurfaceReloadContextExact && card\.desktopSurfaceReady\s*&& card\.desktopSurfaceReadyToken === card\.desktopSurfaceReloadToken/u,
     );
     expect(surfaceLoader).toMatch(
-      /readonly property bool desktopSurfacePresented: desktopSurfaceLoader\.active\s*&& desktopSurfaceLoader\.status === Loader\.Ready\s*&& card\.desktopSurfaceEnabled && card\.desktopSurfaceContextExact\s*&& card\.desktopSurfaceReady/u,
+      /readonly property bool desktopSurfacePresented: desktopSurfaceLoader\.active\s*&& desktopSurfaceLoader\.status === Loader\.Ready\s*&& card\.desktopSurfaceEnabled && card\.desktopSurfaceContextExact\s*&& card\.desktopSurfaceReloadContextExact && card\.desktopSurfaceReady/u,
+    );
+    expect(surfaceLoader).toContain(
+      "card.desktopSurfaceLoadedToken === card.desktopSurfaceReloadToken",
+    );
+    expect(surfaceLoader).toContain(
+      "card.desktopSurfaceLoadedItemIsExact(desktopSurfaceLoader.item)",
     );
     expect(surfaceLoader).toContain("opacity: 0");
-    expect(surfaceLoader).toContain("output: card.screen");
-    expect(surfaceLoader).toContain("desktop: card.desktop");
-    expect(surfaceLoader).toContain(
-      "activity: card.desktopSurfaceActivityBindingId",
+    expect(surfaceLoader).toContain("output: driftileScreen");
+    expect(surfaceLoader).toContain("desktop: driftileDesktop");
+    expect(surfaceLoader).toContain("activity: driftileActivityId");
+    expect(surfaceLoader).toMatch(
+      /property bool driftileContextCaptured: false[\s\S]*property int driftileContextGeneration: 0[\s\S]*property int driftileReloadToken: 0[\s\S]*property string driftileActivityId: ""[\s\S]*property var driftileDesktop: null[\s\S]*property string driftileDesktopId: ""[\s\S]*property var driftileScreen: null[\s\S]*property string driftileScreenName: ""[\s\S]*property string driftileOutputId: ""/u,
+    );
+    expect(surfaceLoader).toMatch(
+      /KWin\.DesktopBackground \{[\s\S]*Component\.onCompleted: \{[\s\S]*if \(driftileContextCaptured\)[\s\S]*driftileContextGeneration = card\.desktopSurfaceReloadGeneration;[\s\S]*driftileReloadToken = card\.desktopSurfaceReadyToken;[\s\S]*driftileActivityId = card\.desktopSurfaceReloadActivityId;[\s\S]*driftileDesktop = card\.desktopSurfaceReloadDesktop;[\s\S]*driftileDesktopId = card\.desktopSurfaceReloadDesktopId;[\s\S]*driftileScreen = card\.desktopSurfaceReloadScreen;[\s\S]*driftileScreenName = card\.desktopSurfaceReloadScreenName;[\s\S]*driftileOutputId = card\.desktopSurfaceReloadOutputId;[\s\S]*driftileContextCaptured = true;/u,
+    );
+    expect(surfaceLoader).not.toMatch(
+      /readonly property (?:int|string|var) driftile[A-Za-z]+:\s*card\./u,
     );
   });
 
@@ -65,14 +78,18 @@ describe("overview desktop surface presentation", () => {
     expect(surfaceLoader).toMatch(
       /property bool desktopSurfaceComponentComplete: false[\s\S]*Component\.onCompleted:[\s\S]*desktopSurfaceComponentComplete = true;[\s\S]*synchronizeDesktopSurfacePresentation\(\);/u,
     );
-    for (const handler of [
-      "onActiveChanged: synchronizeDesktopSurfacePresentation()",
+    expect(surfaceLoader).toContain(
       "onDesktopSurfacePresentedChanged: synchronizeDesktopSurfacePresentation()",
-      "onLoaded: synchronizeDesktopSurfacePresentation()",
-      "onStatusChanged: synchronizeDesktopSurfacePresentation()",
-    ]) {
-      expect(surfaceLoader).toContain(handler);
-    }
+    );
+    expect(surfaceLoader).toMatch(
+      /onActiveChanged: \{[\s\S]*if \(!active\) \{[\s\S]*card\.rejectDesktopSurfaceLoad\(\);[\s\S]*synchronizeDesktopSurfacePresentation\(\);/u,
+    );
+    expect(surfaceLoader).toMatch(
+      /onLoaded: \{[\s\S]*card\.acceptDesktopSurfaceLoad\(desktopSurfaceLoader\.item\);[\s\S]*synchronizeDesktopSurfacePresentation\(\);/u,
+    );
+    expect(surfaceLoader).toMatch(
+      /onStatusChanged: \{[\s\S]*status !== Loader\.Ready[\s\S]*card\.rejectDesktopSurfaceLoad\(\);[\s\S]*synchronizeDesktopSurfacePresentation\(\);/u,
+    );
     expect(surfaceLoader).toMatch(
       /NumberAnimation \{[\s\S]*id: desktopSurfaceFadeIn[\s\S]*target: desktopSurfaceLoader[\s\S]*property: "opacity"[\s\S]*from: 0[\s\S]*to: 1/u,
     );
@@ -117,10 +134,77 @@ describe("overview desktop surface presentation", () => {
       /if \(plan\.targeted !== true\) \{\s*return false;/u,
     );
     expect(reload).toMatch(
-      /desktopSurfaceReady = false;\s*Qt\.callLater\(card\.completeDesktopSurfaceReload,/u,
+      /desktopSurfaceReady = false;[\s\S]*desktopSurfaceReadyToken = 0;[\s\S]*desktopSurfaceLoadedToken = 0;[\s\S]*applyDesktopSurfaceReloadExpectation\(expectation\);[\s\S]*Qt\.callLater\(card\.completeDesktopSurfaceReload,/u,
     );
     expect(reload).toMatch(
-      /function completeDesktopSurfaceReload[\s\S]*desktopSurfaceReady = true;/u,
+      /function completeDesktopSurfaceReload[\s\S]*token !== desktopSurfaceReloadToken[\s\S]*!desktopSurfaceReloadContextExact[\s\S]*desktopSurfaceReadyToken = token;[\s\S]*desktopSurfaceReady = true;/u,
+    );
+  });
+
+  it("recreates surfaces behind an exact generation and context token", () => {
+    const contextReload = sourceBetween(
+      "function scheduleDesktopSurfaceContextReload()",
+      "function desktopSurfaceReloadExpectation()",
+    );
+    const expectation = sourceBetween(
+      "function desktopSurfaceReloadExpectation()",
+      "function applyDesktopSurfaceReloadExpectation(",
+    );
+    const exactContext = sourceBetween(
+      "function desktopSurfaceReloadContextIsExact()",
+      "function desktopSurfaceLoadedItemIsExact(",
+    );
+    const loadedItem = sourceBetween(
+      "function desktopSurfaceLoadedItemIsExact(",
+      "function desktopSurfaceLifecycleEventRevision(",
+    );
+
+    expect(desktopCard).toContain(
+      "required property int overviewContextGeneration",
+    );
+    expect(desktopCard).toContain("property bool desktopSurfaceReady: false");
+    for (const handler of [
+      "onDesktopChanged:",
+      "onDesktopIdChanged:",
+      "onDesktopSurfaceActivityIdChanged: card.scheduleDesktopSurfaceContextReload()",
+      "onDesktopSurfaceEnabledChanged: card.scheduleDesktopSurfaceContextReload()",
+      "onScreenChanged:",
+      "onOutputIdChanged:",
+      "onOverviewActivityIdChanged:",
+      "onOverviewContextGenerationChanged: card.scheduleDesktopSurfaceContextReload()",
+      "Component.onCompleted: card.scheduleDesktopSurfaceContextReload()",
+    ]) {
+      expect(desktopCard).toContain(handler);
+    }
+    expect(contextReload).toMatch(
+      /desktopSurfaceReloadToken = desktopSurfaceReloadToken >= 2147483647\s*\? 1 : desktopSurfaceReloadToken \+ 1;[\s\S]*desktopSurfaceReady = false;[\s\S]*desktopSurfaceReadyToken = 0;[\s\S]*desktopSurfaceLoadedToken = 0;/u,
+    );
+    expect(contextReload).toMatch(
+      /desktopSurfaceReloadExpectation\(\)[\s\S]*expectation === null[\s\S]*return false;[\s\S]*applyDesktopSurfaceReloadExpectation\(expectation\);[\s\S]*Qt\.callLater\(card\.completeDesktopSurfaceReload, token, reloadRevision\);/u,
+    );
+    expect(expectation).toMatch(
+      /!desktopSurfaceContextExact[\s\S]*!Number\.isSafeInteger\(overviewContextGeneration\)[\s\S]*overviewContextGeneration <= 0[\s\S]*return null;/u,
+    );
+    expect(expectation).toMatch(
+      /Object\.freeze\(\{[\s\S]*generation: overviewContextGeneration,[\s\S]*activityId: desktopSurfaceActivityId,[\s\S]*desktop,[\s\S]*desktopId,[\s\S]*screen,[\s\S]*screenName: String\(screen\.name\),[\s\S]*outputId/u,
+    );
+    for (const comparison of [
+      "desktopSurfaceReloadGeneration === overviewContextGeneration",
+      "desktopSurfaceReloadActivityId === desktopSurfaceActivityId",
+      "desktopSurfaceReloadActivityId === overviewActivityId",
+      "desktopSurfaceReloadDesktop === desktop",
+      "desktopSurfaceReloadDesktopId === desktopId",
+      "desktopSurfaceReloadScreen === screen",
+      "desktopSurfaceReloadScreenName === String(screen.name)",
+      "desktopSurfaceReloadOutputId === outputId",
+    ]) {
+      expect(exactContext).toContain(comparison);
+    }
+    expect(loadedItem).toMatch(
+      /function desktopSurfaceLoadedItemIsExact[\s\S]*candidate\.driftileContextCaptured === true[\s\S]*candidate\.driftileReloadToken === desktopSurfaceReloadToken[\s\S]*candidate\.driftileContextGeneration === desktopSurfaceReloadGeneration[\s\S]*desktopSurfaceReloadContextExact/u,
+    );
+    expect(loadedItem).toMatch(
+      /function acceptDesktopSurfaceLoad[\s\S]*desktopSurfaceReadyToken !== desktopSurfaceReloadToken[\s\S]*!desktopSurfaceLoadedItemIsExact\(candidate\)[\s\S]*desktopSurfaceLoadedToken = 0;[\s\S]*desktopSurfaceLoadedToken = desktopSurfaceReloadToken;/u,
     );
   });
 

@@ -300,13 +300,13 @@ describe("spatial overview navigation geometry", () => {
     expect(presentationEligibility).toMatch(
       /readonly property bool spatialPresentationSettled:[\s\S]*spatialPresentationPhase === "open"[\s\S]*spatialPresentationProgress >= 1/u,
     );
-    expect(presentationEligibility).toContain(
-      "readonly property bool spatialKeyboardInputEligible: spatialPresentationInteractive",
+    expect(presentationEligibility).toMatch(
+      /readonly property bool spatialKeyboardInputEligible:\s*spatialPresentationVisible && !spatialExitHandoffActive[\s\S]*spatialPresentationPhase === "opening" \|\| spatialPresentationPhase === "open"/u,
     );
     expect(presentationEligibility).toMatch(
       /readonly property bool spatialPointerInputEligible:[\s\S]*spatialPresentationInteractive && !keyboardHelpVisible/u,
     );
-    expect(scene).toContain("enabled: spatialPresentationInteractive");
+    expect(scene).toContain("enabled: spatialPresentationVisible");
     expect(scene).toContain("focus: spatialKeyboardInputEligible");
     expect(scene).toMatch(
       /onSpatialKeyboardInputEligibleChanged:[\s\S]*if \(spatialKeyboardInputEligible\) \{\s*forceActiveFocus\(\);/u,

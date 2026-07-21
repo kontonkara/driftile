@@ -202,13 +202,15 @@ opening after the effect has fully closed starts from the configured scale.
 Each instantiated visible-range row renders KWin's public Desktop surface for
 its exact output, virtual desktop, and current activity behind windows and input
 layers. An unavailable or inexact surface keeps a solid dark fallback. A surface
-is shown only at `Loader.Ready`, then fades in over 90 ms; context loss
-unloads it immediately. The last exact surface range survives transient invalid
-geometry. Panning, animated camera movement, zoom, and live reflow preload
-destination rows before releasing their sources when the combined span stays
-bounded; a distant jump prioritizes its destination. This per-session, output,
-activity, and topology range is contiguous and limited to 12 rows, including
-any bounded current-row pin.
+captures its exact context generation, activity, desktop, screen, and output. It
+is shown only at `Loader.Ready` while that complete token is still newest and
+exact, then fades in over 90 ms; context loss unloads it immediately and leaves
+the solid fallback through replacement. The last exact surface range survives
+transient invalid geometry. Panning, animated camera movement, zoom, and live
+reflow preload destination rows before releasing their sources when the
+combined span stays bounded; a distant jump prioritizes its destination. This
+per-session, output, activity, and topology range is contiguous and limited to
+12 rows, including any bounded current-row pin.
 Search or drag may retain an off-screen card without creating its Desktop
 surface. Surface residency never writes layout or persistence.
 
@@ -366,9 +368,22 @@ window only while the same exact close checks still pass. Stale column
 membership, geometry, output, desktop, activity, or window identity disables
 the control instead of falling through to another action.
 
-Window and desktop changes refresh the active scene. Activity or
-output-topology changes close a stale scene so later input cannot target an
-outdated layout.
+Window and desktop changes refresh the active scene. Changing the current
+activity, the activity set, or output topology and geometry also refreshes the
+open scene in place. Search, the keyboard reference, settled session zoom, the
+vertical viewport, and per-desktop horizontal cameras remain in the same
+session. A refresh cancels transient window or column dragging, workspace
+reordering and hover, wheel and boundary navigation, panning, and any unfinished
+zoom preview; a cancelled zoom returns to its exact transaction origin.
+
+The existing plane remains visible while its generation-bound replacement is
+pending, but stale pointer actions and action or navigation keys are blocked.
+`Escape` and the global close or toggle action remain available. Admission
+revalidates the refresh attempt, active session, prior model, and newest
+topology generation before replacing the model and releasing input. Stale
+callbacks fail closed. Resident Desktop surfaces return to the solid fallback
+for their changed context and fade in only when the newest exact surface is
+ready.
 
 The Overview is an optional preview under active development. Its search,
 labels, help, and appearance controls support the spatial interaction but do

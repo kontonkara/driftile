@@ -27,8 +27,11 @@ Each instantiated visible-range row shows KWin's public Desktop surface for its
 exact output, virtual desktop, and current activity inside the projected output
 area. The surface stays behind window thumbnails and every input layer. Missing
 or inexact identity, or an unavailable surface, leaves a solid dark fallback
-visible. Surface construction is asynchronous. A ready surface fades in over
-90 ms above that fallback; losing its exact context unloads it immediately.
+visible. Surface construction is asynchronous. Each load captures the exact
+context generation, activity, desktop, screen, and output. Only the newest
+matching surface may fade in over 90 ms after it becomes ready; losing that
+exact context unloads it immediately, and a late ready callback leaves the
+fallback visible.
 Surface admission is independent from card admission, so a search- or
 drag-retained off-screen card does not create a Desktop surface. KWin's Desktop
 selection excludes panels, docks, and notifications.
@@ -88,6 +91,24 @@ the active scene becomes available before its guarded deep cache copy runs on a
 later event-loop turn. A changed layout or live projection identity takes the
 existing validation path of two matching reads 120 ms apart, while malformed
 state fails closed and is never replaced with a stale projection.
+
+Changing the current activity, the available activity set, or the output
+topology and geometry refreshes an open Overview in place. The search query,
+keyboard reference, settled session zoom, vertical viewport, and per-desktop
+horizontal cameras remain in the same session. The refresh adopts the current
+visual camera position and cancels transient window or column dragging,
+workspace reordering and hover, wheel and boundary navigation, panning, and any
+unfinished zoom preview. While the exact replacement model is pending, the old
+plane remains visible but pointer input and action or navigation keys are
+blocked. `Escape` and the registered global close or toggle action remain
+available.
+
+The replacement must still match the active session, prior model, refresh
+attempt, and newest topology generation. It becomes visible before the barrier
+is released; the projection then reflows without an extra transition, Desktop
+surface residency restarts, and keyboard selection is repaired. A late or
+otherwise stale callback cannot replace the model or release input, and the
+activation cache is copied only afterward on a deferred event-loop turn.
 
 Ordinary opening animates from the current full-size row into the spatial plane.
 The projected canvas fades with presentation progress, so neither asynchronous
@@ -241,8 +262,9 @@ Overview open after success, and removes the newly created desktop again if the
 transfer is rejected while the captured state is still safe to restore.
 
 Adding, removing, or reordering virtual desktops refreshes an active Overview
-in place. Activity and output topology changes still close a stale scene
-instead of applying input to uncertain targets.
+in place. Activity and output topology changes use a generation-bound in-place
+refresh barrier, so uncertain targets never become actionable during
+replacement.
 
 ## Search
 
@@ -325,9 +347,11 @@ activity, outputs, desktops, and windows. Missing, future, malformed, changing,
 or stale state keeps it closed.
 
 Every focus, close, desktop selection, reorder, and transfer revalidates its
-live target before using a public KWin API. Invalid targets fail safely, and a
-stale effect closes without taking layout ownership. Disabling or uninstalling
-the effect leaves the main extension and Plasma's built-in Overview unchanged.
+live target before using a public KWin API. Invalid targets fail safely. An
+inexact context replacement keeps the visible scene behind its input barrier,
+and stale asynchronous callbacks cannot unlock it. The user can still close the
+effect without taking layout ownership. Disabling or uninstalling the effect
+leaves the main extension and Plasma's built-in Overview unchanged.
 
 See [Compatibility](compatibility.md) for backend limits and
 [Architecture](architecture.md) for the validation boundary.

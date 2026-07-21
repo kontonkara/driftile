@@ -21,6 +21,8 @@ QtObject {
     property var overviewExitHandoffState: null
     property var overviewExitHandoffWindow: null
     property int overviewExitHandoffLastToken: 0
+    property int overviewContextRefreshGeneration: 0
+    property bool overviewContextRefreshPending: false
     property int overviewTopologyGeneration: 1
     property int lastActivationAttemptId: 0
     property int lastLiveRefreshAttemptId: 0
@@ -32,6 +34,7 @@ QtObject {
     property var pendingLiveRefreshModel: null
     property int pendingLiveRefreshRetryCount: 0
     property int pendingLiveRefreshSessionId: 0
+    property int pendingLiveRefreshTopologyGeneration: 0
     property bool pendingPostTransitionLiveRefresh: false
     property int pendingPresentationTransitionSessionId: 0
     property int pendingPresentationTransitionToken: 0
@@ -223,24 +226,28 @@ QtObject {
 
         function onCurrentActivityChanged() {
             controller.advanceOverviewTopologyGeneration();
+            controller.requestOverviewContextRefresh();
             controller.invalidateOverviewExitHandoff("topology");
             controller.invalidateOverviewZoomGestureContext();
         }
 
         function onActivitiesChanged() {
             controller.advanceOverviewTopologyGeneration();
+            controller.requestOverviewContextRefresh();
             controller.invalidateOverviewExitHandoff("topology");
             controller.invalidateOverviewZoomGestureContext();
         }
 
         function onScreensChanged() {
             controller.advanceOverviewTopologyGeneration();
+            controller.requestOverviewContextRefresh();
             controller.invalidateOverviewExitHandoff("topology");
             controller.invalidateOverviewZoomGestureContext();
         }
 
         function onVirtualScreenGeometryChanged() {
             controller.advanceOverviewTopologyGeneration();
+            controller.requestOverviewContextRefresh();
             controller.invalidateOverviewExitHandoff("topology");
             controller.invalidateOverviewZoomGestureContext();
         }
@@ -1362,6 +1369,7 @@ QtObject {
         lastActivationAttemptId = attemptId;
         pendingActivationAttemptId = attemptId;
         activeSessionId = 0;
+        clearOverviewContextRefresh();
         clearPendingLiveModelRefresh();
         invalidatePresentationTransition();
         pendingPostTransitionLiveRefresh = false;
@@ -1397,6 +1405,7 @@ QtObject {
         }
 
         invalidateOverviewZoomInputStates();
+        clearOverviewContextRefresh();
         if (pendingLiveRefreshAttemptId > 0) {
             pendingPostTransitionLiveRefresh = true;
         }
@@ -1415,6 +1424,7 @@ QtObject {
         clearOverviewExitHandoff();
         invalidatePresentationTransition();
         pendingActivationAttemptId = 0;
+        clearOverviewContextRefresh();
         clearPendingLiveModelRefresh();
         layoutStateReader.cancel();
         active = false;
@@ -1910,6 +1920,35 @@ QtObject {
         return overviewTopologyGeneration;
     }
 
+    function requestOverviewContextRefresh() {
+        if (!active || loading || activeSessionId <= 0 || !overviewModel) {
+            return false;
+        }
+
+        overviewContextRefreshGeneration = overviewTopologyGeneration;
+        overviewContextRefreshPending = true;
+        requestLiveModelRefresh();
+        return true;
+    }
+
+    function completeOverviewContextRefresh(topologyGeneration) {
+        if (!overviewContextRefreshPending
+                || !Number.isInteger(topologyGeneration) || topologyGeneration <= 0
+                || topologyGeneration !== overviewContextRefreshGeneration
+                || topologyGeneration !== overviewTopologyGeneration) {
+            return false;
+        }
+
+        overviewContextRefreshPending = false;
+        overviewContextRefreshGeneration = 0;
+        return true;
+    }
+
+    function clearOverviewContextRefresh() {
+        overviewContextRefreshPending = false;
+        overviewContextRefreshGeneration = 0;
+    }
+
     function nextOverviewExitHandoffToken() {
         const token = overviewExitHandoffLastToken >= 2147483647
             ? 1 : overviewExitHandoffLastToken + 1;
@@ -1978,6 +2017,7 @@ QtObject {
 
         const sessionId = activeSessionId;
         const expectedModel = overviewModel;
+        const topologyGeneration = overviewTopologyGeneration;
         overviewZoomLiveRefreshDeferred = false;
         layoutStateReader.cancel();
         clearPendingLiveModelRefresh();
@@ -1989,6 +2029,7 @@ QtObject {
         pendingLiveRefreshModel = expectedModel;
         pendingLiveRefreshRetryCount = retryCount;
         pendingLiveRefreshSessionId = sessionId;
+        pendingLiveRefreshTopologyGeneration = topologyGeneration;
         pendingLiveRefreshAttemptId = attemptId;
         layoutStateReader.sample(attemptId);
         return true;
@@ -1997,7 +2038,9 @@ QtObject {
     function acceptLiveModelRefresh(attemptId, document) {
         const sessionId = pendingLiveRefreshSessionId;
         const expectedModel = pendingLiveRefreshModel;
-        if (!liveModelRefreshIsExact(attemptId, sessionId, expectedModel)) {
+        const topologyGeneration = pendingLiveRefreshTopologyGeneration;
+        if (!liveModelRefreshIsExact(attemptId, sessionId, expectedModel,
+                                     topologyGeneration)) {
             return;
         }
         if (overviewZoomModelReplacementIsBlocked()) {
@@ -2018,7 +2061,8 @@ QtObject {
                 controller.rejectLiveModelRefresh(attemptId);
                 return;
             }
-            if (!liveModelRefreshIsExact(attemptId, sessionId, expectedModel)) {
+            if (!liveModelRefreshIsExact(attemptId, sessionId, expectedModel,
+                                         topologyGeneration)) {
                 return;
             }
             if (overviewZoomModelReplacementIsBlocked()) {
@@ -2027,10 +2071,12 @@ QtObject {
             }
 
             rollbackActiveOverviewLocalZoom();
+            overviewModel = result.value;
             clearPendingLiveModelRefresh();
+            completeOverviewContextRefresh(topologyGeneration);
             overviewZoomLiveRefreshDeferred = false;
-            const model = storeActivationCache(document, snapshot, result.value);
-            overviewModel = model ? model : result.value;
+            scheduleActivationCacheStore(sessionId, document, snapshot,
+                                         result.value);
         } catch (error) {
             controller.rejectLiveModelRefresh(attemptId);
         }
@@ -2039,7 +2085,9 @@ QtObject {
     function rejectLiveModelRefresh(attemptId) {
         const sessionId = pendingLiveRefreshSessionId;
         const expectedModel = pendingLiveRefreshModel;
-        if (!liveModelRefreshIsExact(attemptId, sessionId, expectedModel)) {
+        const topologyGeneration = pendingLiveRefreshTopologyGeneration;
+        if (!liveModelRefreshIsExact(attemptId, sessionId, expectedModel,
+                                     topologyGeneration)) {
             return;
         }
 
@@ -2056,7 +2104,8 @@ QtObject {
         startLiveModelRefresh(retryCount + 1);
     }
 
-    function liveModelRefreshIsExact(attemptId, sessionId, expectedModel) {
+    function liveModelRefreshIsExact(attemptId, sessionId, expectedModel,
+                                     topologyGeneration) {
         return Number.isInteger(attemptId) && attemptId > 0
             && attemptId === pendingLiveRefreshAttemptId
             && Number.isInteger(sessionId) && sessionId > 0
@@ -2066,7 +2115,10 @@ QtObject {
             && activeSessionId === sessionId
             && overviewModel === expectedModel
             && expectedModel !== null
-            && pendingLiveRefreshModel === expectedModel;
+            && pendingLiveRefreshModel === expectedModel
+            && Number.isInteger(topologyGeneration) && topologyGeneration > 0
+            && topologyGeneration === pendingLiveRefreshTopologyGeneration
+            && topologyGeneration === overviewTopologyGeneration;
     }
 
     function clearPendingLiveModelRefresh() {
@@ -2074,6 +2126,7 @@ QtObject {
         pendingLiveRefreshModel = null;
         pendingLiveRefreshRetryCount = 0;
         pendingLiveRefreshSessionId = 0;
+        pendingLiveRefreshTopologyGeneration = 0;
     }
 
     function overviewZoomModelReplacementIsBlocked() {
@@ -2082,9 +2135,12 @@ QtObject {
             return true;
         }
 
+        const exactContextRefresh = overviewContextRefreshPending
+            && overviewContextRefreshGeneration === overviewTopologyGeneration;
         for (const state of overviewZoomInputStates) {
             if (state && state.sessionId === activeSessionId
-                    && state.model === overviewModel && state.eligible === false) {
+                    && state.model === overviewModel && state.eligible === false
+                    && !exactContextRefresh) {
                 return true;
             }
         }

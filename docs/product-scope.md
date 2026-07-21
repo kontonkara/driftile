@@ -447,8 +447,11 @@ The ownership rule is strict:
   the compatible fallback behavior.
 - Logical persistence moves to v4 and migrates valid v1 or v3 input. The bounded
   topology catalog remains v2.
-- The optional companion projects the current activity only and closes when the
-  activity selection or activity set changes.
+- The optional companion projects the current activity only. Activity and output
+  topology changes refresh an open Overview in place while preserving its
+  session search, help, settled zoom, viewport, and cameras. Transient input is
+  cancelled, and stale pointer or action input stays blocked until an exact
+  generation-bound replacement is visible; explicit close remains available.
 
 ## 1.67 focus and desktop-send slice
 
@@ -527,8 +530,14 @@ Driftile must integrate with, not duplicate:
   Empty desktop or activity membership means all in that dimension. Incomplete,
   ambiguous, or over-budget identity safely triggers one global resident refresh;
   unrelated exact and nonresident off-screen surfaces remain untouched. A
-  per-card revision guard prevents an unrelated later event from leaving a
-  surface on fallback.
+  per-card generation, context, revision, and load-token guard presents only the
+  newest exact ready surface above the solid fallback.
+- An activity or output context refresh keeps an open Overview visible but
+  noninteractive until the current generation's exact replacement model is
+  published. Search, help, settled session zoom, viewport, and cameras remain;
+  transient drag, reorder, hover, wheel, pan, boundary, and zoom ownership is
+  cancelled. `Escape` and global close remain available, while stale callbacks
+  cannot replace the model or release the input barrier.
 - Overview keyboard navigation selects only actionable targets with a visible
   intersection and never wraps. If the current desktop has no actionable
   window, its marker precedes unrelated visual targets. Keyboard and short

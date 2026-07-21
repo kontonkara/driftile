@@ -7,7 +7,7 @@ Rectangle {
 
     color: "transparent"
     clip: true
-    enabled: spatialPresentationInteractive
+    enabled: spatialPresentationVisible
     focus: spatialKeyboardInputEligible
 
     readonly property var sceneEffect: KWin.SceneView.effect
@@ -67,6 +67,13 @@ Rectangle {
     readonly property int activeOverviewSessionId: sceneEffect
         && Number.isInteger(sceneEffect.activeSessionId) ? sceneEffect.activeSessionId : 0
     readonly property string activeOverviewActivityId: canonicalOverviewActivityId()
+    readonly property int overviewContextGeneration: sceneEffect
+        && Number.isInteger(sceneEffect.overviewTopologyGeneration)
+        && sceneEffect.overviewTopologyGeneration > 0
+        ? sceneEffect.overviewTopologyGeneration : 0
+    readonly property bool overviewContextRefreshPending: sceneEffect
+        && sceneEffect.overviewContextRefreshPending === true
+    readonly property bool overviewContextModelExact: contextModelIsExact()
     readonly property var desktopIds: outputId.length > 0
         ? orderedDesktopIds(desktopTopologyRevision) : []
     readonly property int currentWorkspaceIndex: currentDesktop && currentDesktop.id !== undefined
@@ -180,11 +187,14 @@ Rectangle {
     readonly property bool spatialPresentationInteractive:
         spatialPresentationVisible
         && !spatialExitHandoffActive
+        && !overviewContextRefreshPending && overviewContextModelExact
         && (spatialPresentationPhase === "opening" || spatialPresentationPhase === "open")
     readonly property bool spatialPresentationSettled:
         spatialPresentationInteractive && spatialPresentationPhase === "open"
         && spatialPresentationProgress >= 1
-    readonly property bool spatialKeyboardInputEligible: spatialPresentationInteractive
+    readonly property bool spatialKeyboardInputEligible:
+        spatialPresentationVisible && !spatialExitHandoffActive
+        && (spatialPresentationPhase === "opening" || spatialPresentationPhase === "open")
     readonly property bool spatialPointerInputEligible:
         spatialPresentationInteractive && !keyboardHelpVisible
         && spatialZoomOwner.length === 0 && spatialExternalZoomTransaction === null
@@ -329,8 +339,21 @@ Rectangle {
             forceActiveFocus();
         }
     }
+    onOverviewContextRefreshPendingChanged: {
+        if (overviewContextRefreshPending) {
+            root.beginOverviewContextRefreshBarrier();
+        } else if (overviewContextModelExact) {
+            root.finishOverviewContextRefreshBarrier();
+        }
+    }
     onActiveOverviewSessionIdChanged: root.restartDesktopSurfaceResidency()
-    onActiveOverviewActivityIdChanged: root.restartDesktopSurfaceResidency()
+    onActiveOverviewActivityIdChanged: {
+        if (overviewContextRefreshPending || !overviewContextModelExact) {
+            root.beginOverviewContextRefreshBarrier();
+        } else {
+            root.restartDesktopSurfaceResidency();
+        }
+    }
     onCurrentWorkspaceIndexChanged: root.updateDesktopSurfaceResidency()
     onOverviewSpatialVisibleRangePlanChanged: root.updateDesktopSurfaceResidency()
     onSpatialExternalZoomActiveChanged: root.finishDesktopSurfaceResidencyBridge()
@@ -390,6 +413,7 @@ Rectangle {
         root.cancelSpatialZoomTransaction();
         root.discardSpatialZoomTransaction();
         root.refreshOverviewSpatialSession(true);
+        root.restartDesktopSurfaceResidency();
         root.synchronizeSpatialZoomInputState();
     }
     onOverviewAlwaysCenterSingleColumnChanged: root.refreshOverviewSpatialSession(true)
@@ -470,6 +494,14 @@ Rectangle {
             || modifiers === (Qt.ControlModifier | Qt.ShiftModifier);
         const unmodified = modifiers === Qt.NoModifier;
         const searchTextModifier = unmodified || modifiers === Qt.ShiftModifier;
+        if (!spatialPresentationInteractive) {
+            if (!event.isAutoRepeat && unmodified && event.key === Qt.Key_Escape
+                    && sceneEffect) {
+                sceneEffect.deactivate();
+            }
+            event.accepted = true;
+            return;
+        }
         if (keyboardHelpVisible) {
             if (!event.isAutoRepeat
                     && ((unmodified && event.key === Qt.Key_F1)
@@ -609,33 +641,38 @@ Rectangle {
         }
 
         function onCurrentActivityChanged() {
-            root.cancelActiveColumnSpatialDrag();
+            root.beginOverviewContextRefreshBarrier();
             if (root.spatialExitHandoffActive) {
                 root.invalidateSpatialExitHandoff("topology");
                 root.sceneEffect.deactivate();
                 return;
             }
-            root.closeStaleOverview();
         }
 
         function onActivitiesChanged() {
-            root.cancelActiveColumnSpatialDrag();
+            root.beginOverviewContextRefreshBarrier();
             if (root.spatialExitHandoffActive) {
                 root.invalidateSpatialExitHandoff("topology");
                 root.sceneEffect.deactivate();
                 return;
             }
-            root.closeStaleOverview();
         }
 
         function onScreensChanged() {
-            root.cancelActiveColumnSpatialDrag();
+            root.beginOverviewContextRefreshBarrier();
             if (root.spatialExitHandoffActive) {
                 root.invalidateSpatialExitHandoff("topology");
                 root.sceneEffect.deactivate();
                 return;
             }
-            root.closeStaleOverview();
+        }
+
+        function onVirtualScreenGeometryChanged() {
+            root.beginOverviewContextRefreshBarrier();
+            if (root.spatialExitHandoffActive) {
+                root.invalidateSpatialExitHandoff("topology");
+                root.sceneEffect.deactivate();
+            }
         }
 
         function onWindowActivated() {
@@ -1354,6 +1391,7 @@ Rectangle {
                         liveGeometryEnabled: current && !root.spatialLiveGeometryIsManuallyDetached(
                                                  root.outputId, desktopCardLoader.modelData)
                         overviewAlwaysCenterSingleColumn: root.overviewAlwaysCenterSingleColumn
+                        overviewContextGeneration: root.overviewContextGeneration
                         overviewGap: root.overviewGap
                         overviewActivityId: root.activeOverviewActivityId
                         outputId: root.outputId
@@ -2450,7 +2488,8 @@ Rectangle {
 
     function desktopCardInteractionEligible(index, expectedDesktopId) {
         if (!Number.isInteger(index) || index < 0 || index >= desktopIds.length
-                || typeof expectedDesktopId !== "string" || desktopIds[index] !== expectedDesktopId) {
+                || typeof expectedDesktopId !== "string" || desktopIds[index] !== expectedDesktopId
+                || !spatialPresentationInteractive) {
             return false;
         }
         if (searchQuery.length > 0
@@ -3159,6 +3198,40 @@ Rectangle {
         spatialViewportSnapshot = null;
         refreshOverviewSpatialSession(false);
         restartDesktopSurfaceResidency();
+        return true;
+    }
+
+    function beginOverviewContextRefreshBarrier() {
+        cancelActiveColumnSpatialDrag();
+        cancelSpatialZoomTransaction();
+        discardSpatialZoomTransaction();
+        invalidateDesktopTopologyRefresh();
+        cancelKeyboardBoundaryNavigation();
+        resetOverviewWheelState();
+        resetDesktopReorder();
+        resetSpatialEdgePanTracking();
+        clearSpatialTouchPan();
+        clearSpatialHorizontalViewportDrag();
+        spatialViewportInput.panLayout = null;
+        spatialViewportInput.panStartContentY = 0;
+        keyboardSelectionViewportTarget = null;
+        if (!adoptSpatialVisualContentY()) {
+            spatialVerticalCameraAnimation.stop();
+        }
+        synchronizeSpatialZoomInputState();
+        return true;
+    }
+
+    function finishOverviewContextRefreshBarrier() {
+        if (!overviewContextModelExact || overviewContextRefreshPending
+                || !sceneEffect || sceneEffect.active !== true) {
+            return false;
+        }
+        synchronizeSpatialZoomInputState();
+        if (spatialKeyboardInputEligible) {
+            forceActiveFocus();
+        }
+        Qt.callLater(root.repairKeyboardSelection);
         return true;
     }
 
@@ -9537,6 +9610,20 @@ Rectangle {
         resetOverviewSession();
         if (sceneEffect && typeof sceneEffect.deactivateImmediately === "function") {
             sceneEffect.deactivateImmediately();
+        }
+    }
+
+    function contextModelIsExact() {
+        try {
+            const model = overviewModel;
+            const screen = targetScreen;
+            return overviewContextGeneration > 0 && model
+                && typeof model.currentActivityId === "string"
+                && model.currentActivityId === activeOverviewActivityId
+                && screen && liveScreenFor(screen) === screen
+                && projectedOutput(model, screen) !== null;
+        } catch (error) {
+            return false;
         }
     }
 

@@ -98,8 +98,14 @@ Events travel from KWin through the bridge into the runtime. Commands and result
   members as targets, and uses only the selected non-minimized member as the
   large thumbnail.
 - Uses only public KWin QML types to enrich live thumbnails and screen context.
-- Closes without an action when the current activity or available activity set
-  changes, so delegates never outlive their projected activity topology.
+- Treats current-activity, activity-set, output-list, and virtual-screen geometry
+  changes as generation-bound context refreshes. An open scene remains visible
+  while the controller samples and projects its exact replacement instead of
+  letting delegates act on the prior context.
+- Binds every live refresh to its attempt, active session, prior model, and
+  topology generation. The controller publishes the replacement model before
+  clearing the context barrier and defers the activation-cache copy; stale
+  callbacks cannot replace the model or release the barrier.
 - Keeps each rendered thumbnail's direct live window object in its QML delegate;
   the object does not enter projected or persisted state.
 - Snapshots a public Desktop-window lifecycle identity synchronously while the
@@ -108,10 +114,11 @@ Events travel from KWin through the bridge into the runtime. Commands and result
   desktop or activity membership means all; incomplete, ambiguous, or
   over-budget identity becomes one global resident-surface refresh.
 - Reloads only instantiated Desktop surfaces selected by that immutable
-  generation. Each card owns its reload revision and token, so an unrelated
-  later event cannot strand a targeted card on its solid fallback. A surface is
-  constructed asynchronously, presented only at `Loader.Ready`, and faded in
-  over 90 ms above the solid fallback. Context loss unloads it immediately.
+  generation. Each card captures its exact context generation, activity,
+  desktop object and ID, screen object and name, and projected output ID before
+  construction. The solid fallback remains visible until `Loader.Ready` for the
+  newest matching reload token, then that exact surface fades in over 90 ms.
+  Context loss and stale load callbacks reject presentation immediately.
 - Commits one contiguous Desktop-surface residency range per exact session,
   output, activity, and desktop topology. The last exact range survives
   transient invalid scene geometry. Panning, animated camera movement, zoom,
@@ -132,6 +139,17 @@ Events travel from KWin through the bridge into the runtime. Commands and result
   reflow, then clamps each retained offset against its newly computed row
   bounds. Desktop surfaces outside the bounded source-to-destination residency
   range remain lazy while scale changes the visible range.
+- Keeps search, keyboard-help state, settled session zoom, the vertical
+  viewport, and per-desktop horizontal cameras across a context refresh. The
+  barrier adopts the current visual camera and cancels transient window or
+  column dragging, desktop reorder and hover, wheel and boundary navigation,
+  panning, and zoom ownership. It blocks pointer and action or navigation keys
+  until the replacement model exactly matches the current activity and live
+  projected screen; `Escape` and controller-owned global close remain usable.
+- After exact replacement, performs one nonanimated spatial refresh with
+  viewport preservation, restarts Desktop-surface residency, restores zoom
+  registration, and repairs keyboard selection. It does not reset the session
+  wrapper or replay the opening transition.
 - Normalizes `Ctrl` plus wheel against KWin's system-inversion flag so physical
   up zooms in and physical down zooms out. Pixel deltas preview continuously,
   angle deltas advance by bounded steps, and `Ctrl++`, `Ctrl+-`, and `Ctrl+0`

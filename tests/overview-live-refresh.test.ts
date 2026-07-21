@@ -2,6 +2,10 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 const effectRoot = new URL("../packaging/kwin-effect/", import.meta.url);
+const entrypoint = readFileSync(
+  new URL("contents/ui/main.qml", effectRoot),
+  "utf8",
+);
 const controller = readFileSync(
   new URL("contents/runtime/ui/main.qml", effectRoot),
   "utf8",
@@ -25,6 +29,10 @@ describe("overview live model refresh", () => {
       controller.indexOf("function requestLiveModelRefresh("),
       controller.indexOf("function acceptLiveModelRefresh("),
     );
+    const contextRequest = controller.slice(
+      controller.indexOf("function requestOverviewContextRefresh("),
+      controller.indexOf("function completeOverviewContextRefresh("),
+    );
 
     expect(lifecycle).toContain("target: KWin.Workspace");
     expect(lifecycle).toMatch(
@@ -36,6 +44,22 @@ describe("overview live model refresh", () => {
     expect(lifecycle).toMatch(
       /function onDesktopsChanged\(\) \{\s*controller\.advanceOverviewTopologyGeneration\(\);\s*controller\.invalidateOverviewExitHandoff\("topology"\);\s*controller\.invalidateOverviewZoomGestureContext\(\);\s*controller\.requestLiveModelRefresh\(\);/u,
     );
+    for (const signal of [
+      "onCurrentActivityChanged",
+      "onActivitiesChanged",
+      "onScreensChanged",
+      "onVirtualScreenGeometryChanged",
+    ]) {
+      expect(lifecycle).toMatch(
+        new RegExp(
+          `function ${signal}\\(\\) \\{\\s*controller\\.advanceOverviewTopologyGeneration\\(\\);\\s*controller\\.requestOverviewContextRefresh\\(\\);`,
+          "u",
+        ),
+      );
+    }
+    expect(contextRequest).toMatch(
+      /overviewContextRefreshGeneration = overviewTopologyGeneration;\s*overviewContextRefreshPending = true;\s*requestLiveModelRefresh\(\);/u,
+    );
     expect(request).toMatch(
       /if \(!active \|\| loading \|\| activeSessionId <= 0 \|\| !overviewModel\) \{\s*return;/u,
     );
@@ -43,6 +67,9 @@ describe("overview live model refresh", () => {
     expect(request).toContain("clearPendingLiveModelRefresh();");
     expect(request).toContain("pendingLiveRefreshModel = expectedModel;");
     expect(request).toContain("pendingLiveRefreshSessionId = sessionId;");
+    expect(request).toContain(
+      "pendingLiveRefreshTopologyGeneration = topologyGeneration;",
+    );
     expect(request).toContain("pendingLiveRefreshAttemptId = attemptId;");
     expect(request).toContain("layoutStateReader.sample(attemptId);");
     expect(request.indexOf("layoutStateReader.cancel();")).toBeLessThan(
@@ -50,6 +77,15 @@ describe("overview live model refresh", () => {
     );
     expect(request).not.toMatch(
       /overviewModel = null|active = false|loading = true|\bTimer\s*\{|setInterval|setTimeout/u,
+    );
+    expect(contextRequest).not.toMatch(
+      /overviewModel = null|active = false|loading = true/u,
+    );
+    expect(entrypoint).toContain(
+      "readonly property bool overviewContextRefreshPending: controller",
+    );
+    expect(entrypoint).toContain(
+      "readonly property int overviewTopologyGeneration: controller",
     );
 
     expect(reader).toContain("readonly property int sampleInterval: 120");
@@ -388,11 +424,18 @@ describe("overview live model refresh", () => {
     expect(accept.match(/liveModelRefreshIsExact\(/gu)).toHaveLength(2);
     expect(accept).toContain("runtime.loadOverviewModel(document, snapshot)");
     expect(accept).toContain("controller.rejectLiveModelRefresh(attemptId)");
-    expect(accept.indexOf("clearPendingLiveModelRefresh();")).toBeLessThan(
-      accept.indexOf("overviewModel = model ? model : result.value;"),
+    expect(accept.indexOf("overviewModel = result.value;")).toBeLessThan(
+      accept.indexOf("clearPendingLiveModelRefresh();"),
     );
+    expect(accept.indexOf("overviewModel = result.value;")).toBeLessThan(
+      accept.indexOf("completeOverviewContextRefresh(topologyGeneration);"),
+    );
+    expect(accept).toContain(
+      "scheduleActivationCacheStore(sessionId, document, snapshot,",
+    );
+    expect(accept).not.toContain("storeActivationCache(");
     expect(exact).toMatch(
-      /attemptId === pendingLiveRefreshAttemptId[\s\S]*sessionId === pendingLiveRefreshSessionId[\s\S]*activeSessionId === sessionId[\s\S]*overviewModel === expectedModel[\s\S]*pendingLiveRefreshModel === expectedModel/u,
+      /attemptId === pendingLiveRefreshAttemptId[\s\S]*sessionId === pendingLiveRefreshSessionId[\s\S]*activeSessionId === sessionId[\s\S]*overviewModel === expectedModel[\s\S]*pendingLiveRefreshModel === expectedModel[\s\S]*topologyGeneration === pendingLiveRefreshTopologyGeneration[\s\S]*topologyGeneration === overviewTopologyGeneration/u,
     );
     expect(reject).toContain(
       "const retryCount = pendingLiveRefreshRetryCount;",
@@ -400,10 +443,53 @@ describe("overview live model refresh", () => {
     expect(reject).toMatch(/if \(retryCount >= 1\) \{\s*return;/u);
     expect(reject).toContain("startLiveModelRefresh(retryCount + 1);");
     expect(deactivate).toContain("clearPendingLiveModelRefresh();");
+    expect(deactivate).toContain("clearOverviewContextRefresh();");
     expect(deactivate).toContain("layoutStateReader.cancel();");
     expect(deactivate).toContain("activeSessionId = 0;");
     expect(`${accept}\n${reject}\n${exact}`).not.toMatch(
       /rejectionOsdCall|console\.|\bTimer\s*\{|repeat:\s*true|org\.kde\.kwin\.private|\.setValue\s*\(/u,
+    );
+  });
+
+  it("keeps the context barrier until the generation-bound model is visible", () => {
+    const start = controller.slice(
+      controller.indexOf("function startLiveModelRefresh("),
+      controller.indexOf("function acceptLiveModelRefresh("),
+    );
+    const accept = controller.slice(
+      controller.indexOf("function acceptLiveModelRefresh("),
+      controller.indexOf("function rejectLiveModelRefresh("),
+    );
+    const completion = controller.slice(
+      controller.indexOf("function completeOverviewContextRefresh("),
+      controller.indexOf("function clearOverviewContextRefresh("),
+    );
+    const clear = controller.slice(
+      controller.indexOf("function clearOverviewContextRefresh("),
+      controller.indexOf("function nextOverviewExitHandoffToken("),
+    );
+
+    expect(controller).toContain(
+      "property bool overviewContextRefreshPending: false",
+    );
+    expect(controller).toContain(
+      "property int overviewContextRefreshGeneration: 0",
+    );
+    expect(start).toMatch(
+      /const topologyGeneration = overviewTopologyGeneration;[\s\S]*pendingLiveRefreshTopologyGeneration = topologyGeneration;[\s\S]*layoutStateReader\.sample\(attemptId\);/u,
+    );
+    expect(accept.match(/topologyGeneration\)/gu)).toHaveLength(3);
+    expect(accept.indexOf("overviewModel = result.value;")).toBeLessThan(
+      accept.indexOf("completeOverviewContextRefresh(topologyGeneration);"),
+    );
+    expect(completion).toMatch(
+      /overviewContextRefreshPending[\s\S]*topologyGeneration !== overviewContextRefreshGeneration[\s\S]*topologyGeneration !== overviewTopologyGeneration[\s\S]*overviewContextRefreshPending = false;[\s\S]*overviewContextRefreshGeneration = 0;/u,
+    );
+    expect(clear).toMatch(
+      /overviewContextRefreshPending = false;\s*overviewContextRefreshGeneration = 0;/u,
+    );
+    expect(controller).toMatch(
+      /function deactivateImmediately\(\)[\s\S]*clearOverviewContextRefresh\(\);[\s\S]*activeSessionId = 0;/u,
     );
   });
 
@@ -476,18 +562,41 @@ describe("overview live model refresh", () => {
     expect(workspaceLifecycle).toMatch(
       /function onDesktopsChanged\(\) \{\s*root\.cancelActiveColumnSpatialDrag\(\);\s*if \(root\.spatialExitHandoffActive\) \{[\s\S]*root\.handleDesktopTopologyChanged\(\);/u,
     );
-    for (const signal of [
-      "onCurrentActivityChanged",
-      "onActivitiesChanged",
-      "onScreensChanged",
+    for (const [signal, nextSignal] of [
+      ["onCurrentActivityChanged", "onActivitiesChanged"],
+      ["onActivitiesChanged", "onScreensChanged"],
+      ["onScreensChanged", "onVirtualScreenGeometryChanged"],
+      ["onVirtualScreenGeometryChanged", "onWindowActivated"],
     ]) {
-      expect(workspaceLifecycle).toMatch(
-        new RegExp(
-          `function ${signal}\\(\\) \\{[\\s\\S]*?root\\.closeStaleOverview\\(\\);`,
-          "u",
-        ),
+      const handler = workspaceLifecycle.slice(
+        workspaceLifecycle.indexOf(`function ${signal}()`),
+        workspaceLifecycle.indexOf(`function ${nextSignal}()`),
       );
+      expect(handler).toContain("root.beginOverviewContextRefreshBarrier();");
+      expect(handler).not.toContain("closeStaleOverview");
+      expect(handler).not.toContain("resetOverviewSession");
     }
+    expect(scene).toContain(
+      "readonly property bool overviewContextRefreshPending: sceneEffect",
+    );
+    expect(scene).toContain(
+      "readonly property bool overviewContextModelExact: contextModelIsExact()",
+    );
+    expect(scene).toMatch(
+      /readonly property bool spatialPresentationInteractive:[\s\S]*!overviewContextRefreshPending && overviewContextModelExact/u,
+    );
+    expect(scene).toMatch(
+      /onOverviewContextRefreshPendingChanged:[\s\S]*beginOverviewContextRefreshBarrier\(\)[\s\S]*overviewContextModelExact[\s\S]*finishOverviewContextRefreshBarrier\(\)/u,
+    );
+    expect(scene).toMatch(
+      /function beginOverviewContextRefreshBarrier\(\)[\s\S]*cancelActiveColumnSpatialDrag\(\);[\s\S]*cancelSpatialZoomTransaction\(\);[\s\S]*cancelKeyboardBoundaryNavigation\(\);[\s\S]*resetOverviewWheelState\(\);[\s\S]*resetDesktopReorder\(\);[\s\S]*clearSpatialTouchPan\(\);/u,
+    );
+    expect(scene).toMatch(
+      /function finishOverviewContextRefreshBarrier\(\)[\s\S]*overviewContextRefreshPending[\s\S]*synchronizeSpatialZoomInputState\(\);[\s\S]*Qt\.callLater\(root\.repairKeyboardSelection\);/u,
+    );
+    expect(scene).toMatch(
+      /function contextModelIsExact\(\)[\s\S]*model\.currentActivityId === activeOverviewActivityId[\s\S]*liveScreenFor\(screen\) === screen[\s\S]*projectedOutput\(model, screen\) !== null/u,
+    );
     expect(resetSession).toContain("invalidateDesktopTopologyRefresh();");
     expect(scene).toContain("property int desktopTopologyRevision: 0");
     expect(scene).toMatch(
@@ -517,7 +626,7 @@ describe("overview live model refresh", () => {
       /function onWindowRemoved\(window\)[\s\S]*requestLiveModelRefresh|function onWindowRemoved\(window\)[\s\S]*closeStaleOverview/u,
     );
     expect(scene).toMatch(
-      /onOverviewModelChanged: \{\s*root\.cancelActiveColumnSpatialDrag\(\);\s*if \(spatialExitHandoffActive\) \{\s*root\.invalidateSpatialExitHandoff\("stale"\);\s*return;\s*\}\s*root\.cancelSpatialZoomTransaction\(\);\s*root\.discardSpatialZoomTransaction\(\);\s*root\.refreshOverviewSpatialSession\(true\);\s*root\.synchronizeSpatialZoomInputState\(\);\s*\}/u,
+      /onOverviewModelChanged: \{\s*root\.cancelActiveColumnSpatialDrag\(\);\s*if \(spatialExitHandoffActive\) \{\s*root\.invalidateSpatialExitHandoff\("stale"\);\s*return;\s*\}\s*root\.cancelSpatialZoomTransaction\(\);\s*root\.discardSpatialZoomTransaction\(\);\s*root\.refreshOverviewSpatialSession\(true\);\s*root\.restartDesktopSurfaceResidency\(\);\s*root\.synchronizeSpatialZoomInputState\(\);\s*\}/u,
     );
     expect(scene).toMatch(
       /function refreshOverviewSpatialSession\(preserveViewport, animateViewport = false\)[\s\S]*Qt\.callLater\(root\.repairKeyboardSelection\);/u,

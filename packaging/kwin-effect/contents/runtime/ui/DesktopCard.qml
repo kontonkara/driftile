@@ -17,6 +17,7 @@ Item {
     required property bool interactionEligible
     required property bool liveGeometryEnabled
     required property bool overviewAlwaysCenterSingleColumn
+    required property int overviewContextGeneration
     required property real overviewGap
     required property string overviewActivityId
     required property string outputId
@@ -78,9 +79,19 @@ Item {
     readonly property string desktopSurfaceActivityBindingId: desktopSurfaceActivityId.length > 0
         ? desktopSurfaceActivityId : "driftile-unavailable-activity"
     readonly property bool desktopSurfaceContextExact: desktopSurfaceContextIsExact()
-    property bool desktopSurfaceReady: true
+    readonly property bool desktopSurfaceReloadContextExact: desktopSurfaceReloadContextIsExact()
+    property bool desktopSurfaceReady: false
+    property int desktopSurfaceReadyToken: 0
+    property int desktopSurfaceLoadedToken: 0
     property int desktopSurfaceReloadRevision: 0
     property int desktopSurfaceReloadToken: 0
+    property int desktopSurfaceReloadGeneration: 0
+    property string desktopSurfaceReloadActivityId: ""
+    property var desktopSurfaceReloadDesktop: null
+    property string desktopSurfaceReloadDesktopId: ""
+    property var desktopSurfaceReloadScreen: null
+    property string desktopSurfaceReloadScreenName: ""
+    property string desktopSurfaceReloadOutputId: ""
     readonly property real contentLeft: 0
     readonly property real contentTop: 0
     readonly property real contentWidth: Math.max(1, width)
@@ -335,11 +346,15 @@ Item {
                 readonly property bool desktopSurfacePresented: desktopSurfaceLoader.active
                     && desktopSurfaceLoader.status === Loader.Ready
                     && card.desktopSurfaceEnabled && card.desktopSurfaceContextExact
-                    && card.desktopSurfaceReady
+                    && card.desktopSurfaceReloadContextExact && card.desktopSurfaceReady
+                    && card.desktopSurfaceReadyToken === card.desktopSurfaceReloadToken
+                    && card.desktopSurfaceLoadedToken === card.desktopSurfaceReloadToken
+                    && card.desktopSurfaceLoadedItemIsExact(desktopSurfaceLoader.item)
 
                 anchors.fill: parent
                 active: card.desktopSurfaceEnabled && card.desktopSurfaceContextExact
-                    && card.desktopSurfaceReady
+                    && card.desktopSurfaceReloadContextExact && card.desktopSurfaceReady
+                    && card.desktopSurfaceReadyToken === card.desktopSurfaceReloadToken
                 asynchronous: true
                 enabled: false
                 opacity: 0
@@ -349,10 +364,23 @@ Item {
                     desktopSurfaceComponentComplete = true;
                     synchronizeDesktopSurfacePresentation();
                 }
-                onActiveChanged: synchronizeDesktopSurfacePresentation()
+                onActiveChanged: {
+                    if (!active) {
+                        card.rejectDesktopSurfaceLoad();
+                    }
+                    synchronizeDesktopSurfacePresentation();
+                }
                 onDesktopSurfacePresentedChanged: synchronizeDesktopSurfacePresentation()
-                onLoaded: synchronizeDesktopSurfacePresentation()
-                onStatusChanged: synchronizeDesktopSurfacePresentation()
+                onLoaded: {
+                    card.acceptDesktopSurfaceLoad(desktopSurfaceLoader.item);
+                    synchronizeDesktopSurfacePresentation();
+                }
+                onStatusChanged: {
+                    if (status !== Loader.Ready) {
+                        card.rejectDesktopSurfaceLoad();
+                    }
+                    synchronizeDesktopSurfacePresentation();
+                }
 
                 NumberAnimation {
                     id: desktopSurfaceFadeIn
@@ -382,11 +410,37 @@ Item {
 
                 sourceComponent: Component {
                     KWin.DesktopBackground {
+                        property bool driftileContextCaptured: false
+                        property int driftileContextGeneration: 0
+                        property int driftileReloadToken: 0
+                        property string driftileActivityId: ""
+                        property var driftileDesktop: null
+                        property string driftileDesktopId: ""
+                        property var driftileScreen: null
+                        property string driftileScreenName: ""
+                        property string driftileOutputId: ""
+
                         anchors.fill: parent
-                        output: card.screen
-                        desktop: card.desktop
-                        activity: card.desktopSurfaceActivityBindingId
+                        output: driftileScreen
+                        desktop: driftileDesktop
+                        activity: driftileActivityId
                         enabled: false
+
+                        Component.onCompleted: {
+                            if (driftileContextCaptured) {
+                                return;
+                            }
+
+                            driftileContextGeneration = card.desktopSurfaceReloadGeneration;
+                            driftileReloadToken = card.desktopSurfaceReadyToken;
+                            driftileActivityId = card.desktopSurfaceReloadActivityId;
+                            driftileDesktop = card.desktopSurfaceReloadDesktop;
+                            driftileDesktopId = card.desktopSurfaceReloadDesktopId;
+                            driftileScreen = card.desktopSurfaceReloadScreen;
+                            driftileScreenName = card.desktopSurfaceReloadScreenName;
+                            driftileOutputId = card.desktopSurfaceReloadOutputId;
+                            driftileContextCaptured = true;
+                        }
                     }
                 }
             }
@@ -1992,17 +2046,21 @@ Item {
         card.cancelInvalidActiveColumnSpatialDrag();
     }
     onDesktopChanged: {
+        card.scheduleDesktopSurfaceContextReload();
         card.scheduleColumnDragEligibilityRefresh();
         card.clearWindowDropHover();
         card.clearColumnDropHover();
         card.cancelActiveColumnSpatialDrag();
     }
     onDesktopIdChanged: {
+        card.scheduleDesktopSurfaceContextReload();
         card.scheduleColumnDragEligibilityRefresh();
         card.clearWindowDropHover();
         card.clearColumnDropHover();
         card.cancelActiveColumnSpatialDrag();
     }
+    onDesktopSurfaceActivityIdChanged: card.scheduleDesktopSurfaceContextReload()
+    onDesktopSurfaceEnabledChanged: card.scheduleDesktopSurfaceContextReload()
     onDesktopSurfaceLifecycleEventChanged: card.scheduleDesktopSurfaceReload()
     onEnabledChanged: {
         card.scheduleColumnDragEligibilityRefresh();
@@ -2013,12 +2071,14 @@ Item {
         }
     }
     onScreenChanged: {
+        card.scheduleDesktopSurfaceContextReload();
         card.scheduleColumnDragEligibilityRefresh();
         card.clearWindowDropHover();
         card.clearColumnDropHover();
         card.cancelActiveColumnSpatialDrag();
     }
     onOutputIdChanged: {
+        card.scheduleDesktopSurfaceContextReload();
         card.scheduleColumnDragEligibilityRefresh();
         card.clearInvalidWindowDropHover();
         card.clearInvalidColumnDropHover();
@@ -2067,9 +2127,16 @@ Item {
     }
     onColumnsChanged: card.scheduleColumnDragEligibilityRefresh()
     onInteractionEligibleChanged: card.scheduleColumnDragEligibilityRefresh()
-    onOverviewActivityIdChanged: card.scheduleColumnDragEligibilityRefresh()
+    onOverviewActivityIdChanged: {
+        card.scheduleDesktopSurfaceContextReload();
+        card.scheduleColumnDragEligibilityRefresh();
+    }
+    onOverviewContextGenerationChanged: card.scheduleDesktopSurfaceContextReload()
+
+    Component.onCompleted: card.scheduleDesktopSurfaceContextReload()
 
     Component.onDestruction: {
+        card.rejectDesktopSurfaceLoad();
         card.clearWindowDropHover();
         card.clearColumnDropHover();
         card.cancelActiveColumnSpatialDrag();
@@ -2087,23 +2154,138 @@ Item {
             return false;
         }
 
+        const expectation = desktopSurfaceReloadExpectation();
+        if (expectation === null) {
+            return false;
+        }
+
         desktopSurfaceReloadToken = desktopSurfaceReloadToken >= 2147483647
             ? 1 : desktopSurfaceReloadToken + 1;
         const token = desktopSurfaceReloadToken;
         desktopSurfaceReloadRevision = plan.revision;
         const reloadRevision = desktopSurfaceReloadRevision;
         desktopSurfaceReady = false;
+        desktopSurfaceReadyToken = 0;
+        desktopSurfaceLoadedToken = 0;
+        applyDesktopSurfaceReloadExpectation(expectation);
         Qt.callLater(card.completeDesktopSurfaceReload, token, reloadRevision);
         return true;
     }
 
     function completeDesktopSurfaceReload(token, reloadRevision) {
         if (token !== desktopSurfaceReloadToken
-                || reloadRevision !== desktopSurfaceReloadRevision) {
+                || reloadRevision !== desktopSurfaceReloadRevision
+                || !desktopSurfaceReloadContextExact) {
             return false;
         }
 
+        desktopSurfaceReadyToken = token;
         desktopSurfaceReady = true;
+        return true;
+    }
+
+    function scheduleDesktopSurfaceContextReload() {
+        desktopSurfaceReloadToken = desktopSurfaceReloadToken >= 2147483647
+            ? 1 : desktopSurfaceReloadToken + 1;
+        const token = desktopSurfaceReloadToken;
+        const reloadRevision = desktopSurfaceReloadRevision;
+        desktopSurfaceReady = false;
+        desktopSurfaceReadyToken = 0;
+        desktopSurfaceLoadedToken = 0;
+
+        const expectation = desktopSurfaceReloadExpectation();
+        if (expectation === null) {
+            return false;
+        }
+
+        applyDesktopSurfaceReloadExpectation(expectation);
+        Qt.callLater(card.completeDesktopSurfaceReload, token, reloadRevision);
+        return true;
+    }
+
+    function desktopSurfaceReloadExpectation() {
+        try {
+            if (!desktopSurfaceContextExact || !Number.isSafeInteger(overviewContextGeneration)
+                    || overviewContextGeneration <= 0 || overviewContextGeneration > 2147483647
+                    || !desktop || !screen || screen.name === undefined || screen.name === null) {
+                return null;
+            }
+
+            return Object.freeze({
+                generation: overviewContextGeneration,
+                activityId: desktopSurfaceActivityId,
+                desktop,
+                desktopId,
+                screen,
+                screenName: String(screen.name),
+                outputId
+            });
+        } catch (error) {
+            return null;
+        }
+    }
+
+    function applyDesktopSurfaceReloadExpectation(expectation) {
+        if (!expectation || !Object.isFrozen(expectation)) {
+            return false;
+        }
+
+        desktopSurfaceReloadGeneration = expectation.generation;
+        desktopSurfaceReloadActivityId = expectation.activityId;
+        desktopSurfaceReloadDesktop = expectation.desktop;
+        desktopSurfaceReloadDesktopId = expectation.desktopId;
+        desktopSurfaceReloadScreen = expectation.screen;
+        desktopSurfaceReloadScreenName = expectation.screenName;
+        desktopSurfaceReloadOutputId = expectation.outputId;
+        return true;
+    }
+
+    function desktopSurfaceReloadContextIsExact() {
+        try {
+            return desktopSurfaceContextExact && desktopSurfaceReloadGeneration > 0
+                && desktopSurfaceReloadGeneration === overviewContextGeneration
+                && desktopSurfaceReloadActivityId === desktopSurfaceActivityId
+                && desktopSurfaceReloadActivityId === overviewActivityId
+                && desktopSurfaceReloadDesktop === desktop
+                && desktopSurfaceReloadDesktopId === desktopId
+                && desktopSurfaceReloadScreen === screen
+                && desktopSurfaceReloadScreenName === String(screen.name)
+                && desktopSurfaceReloadOutputId === outputId;
+        } catch (error) {
+            return false;
+        }
+    }
+
+    function desktopSurfaceLoadedItemIsExact(candidate) {
+        try {
+            return candidate && candidate.driftileContextCaptured === true
+                && candidate.driftileReloadToken === desktopSurfaceReloadToken
+                && candidate.driftileContextGeneration === desktopSurfaceReloadGeneration
+                && candidate.driftileActivityId === desktopSurfaceReloadActivityId
+                && candidate.driftileDesktop === desktopSurfaceReloadDesktop
+                && candidate.driftileDesktopId === desktopSurfaceReloadDesktopId
+                && candidate.driftileScreen === desktopSurfaceReloadScreen
+                && candidate.driftileScreenName === desktopSurfaceReloadScreenName
+                && candidate.driftileOutputId === desktopSurfaceReloadOutputId
+                && desktopSurfaceReloadContextExact;
+        } catch (error) {
+            return false;
+        }
+    }
+
+    function acceptDesktopSurfaceLoad(candidate) {
+        if (!desktopSurfaceReady || desktopSurfaceReadyToken !== desktopSurfaceReloadToken
+                || !desktopSurfaceLoadedItemIsExact(candidate)) {
+            desktopSurfaceLoadedToken = 0;
+            return false;
+        }
+
+        desktopSurfaceLoadedToken = desktopSurfaceReloadToken;
+        return true;
+    }
+
+    function rejectDesktopSurfaceLoad() {
+        desktopSurfaceLoadedToken = 0;
         return true;
     }
 
@@ -2155,7 +2337,11 @@ Item {
                     || String(desktop.id) !== desktopId || !screen
                     || screen.name === undefined || screen.name === null
                     || String(screen.name).length === 0 || outputId.length === 0
-                    || desktopSurfaceActivityId.length === 0) {
+                    || desktopSurfaceActivityId.length === 0
+                    || overviewActivityId.length === 0
+                    || overviewActivityId !== desktopSurfaceActivityId
+                    || !Number.isSafeInteger(overviewContextGeneration)
+                    || overviewContextGeneration <= 0 || overviewContextGeneration > 2147483647) {
                 return false;
             }
 

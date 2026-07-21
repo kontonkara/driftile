@@ -523,7 +523,7 @@ describe("overview effect package", () => {
 
   it("keeps a fixed scene-effect proxy over the cache-busted controller", () => {
     expect(createHash("sha256").update(main, "utf8").digest("hex")).toBe(
-      "fcd875de3dabddfcd905728b027e935980feef4f326c2089aeb9ccc9e4f09154",
+      "8a0e4f923ef9b0ee37b57f5ada0d8192c7446c0f5f584a4c29ed202124e165bf",
     );
     expect(main).toContain("KWin.SceneEffect {");
     expect(main).toContain("Date.now().toString(36)");
@@ -887,6 +887,9 @@ describe("overview effect package", () => {
     expect(desktopCard).toContain(
       "required property var desktopSurfaceLifecycleEvent",
     );
+    expect(desktopCard).toContain(
+      "required property int overviewContextGeneration",
+    );
     expect(desktopCard).toContain("property bool desktopSurfaceReady:");
     expect(desktopCard).toContain(
       "property int desktopSurfaceReloadRevision: 0",
@@ -904,15 +907,22 @@ describe("overview effect package", () => {
     expect(desktopCard).toContain(
       "readonly property bool desktopSurfaceContextExact: desktopSurfaceContextIsExact()",
     );
+    expect(desktopCard).toContain(
+      "readonly property bool desktopSurfaceReloadContextExact: desktopSurfaceReloadContextIsExact()",
+    );
     expect(surfaceLoader).toMatch(
-      /active: card\.desktopSurfaceEnabled && card\.desktopSurfaceContextExact\s*&& card\.desktopSurfaceReady/u,
+      /active: card\.desktopSurfaceEnabled && card\.desktopSurfaceContextExact\s*&& card\.desktopSurfaceReloadContextExact && card\.desktopSurfaceReady\s*&& card\.desktopSurfaceReadyToken === card\.desktopSurfaceReloadToken/u,
     );
     expect(surfaceLoader).toContain("KWin.DesktopBackground {");
     expect(surfaceLoader).toContain("anchors.fill: parent");
-    expect(surfaceLoader).toContain("output: card.screen");
-    expect(surfaceLoader).toContain("desktop: card.desktop");
+    expect(surfaceLoader).toContain("output: driftileScreen");
+    expect(surfaceLoader).toContain("desktop: driftileDesktop");
+    expect(surfaceLoader).toContain("activity: driftileActivityId");
     expect(surfaceLoader).toContain(
-      "activity: card.desktopSurfaceActivityBindingId",
+      "property bool driftileContextCaptured: false",
+    );
+    expect(surfaceLoader).toMatch(
+      /Component\.onCompleted:[\s\S]*driftileContextGeneration = card\.desktopSurfaceReloadGeneration;[\s\S]*driftileReloadToken = card\.desktopSurfaceReadyToken;[\s\S]*driftileContextCaptured = true;/u,
     );
     expect(surfaceLoader).toContain("enabled: false");
     expect(surfaceLoader).toContain("z: 0");
@@ -2122,7 +2132,7 @@ describe("overview effect package", () => {
     expect(scene).toMatch(
       /readonly property string spatialPresentationPhase:[\s\S]*sceneEffect\.presentationPhase[\s\S]*: "open"/u,
     );
-    expect(scene).toContain("enabled: spatialPresentationInteractive");
+    expect(scene).toContain("enabled: spatialPresentationVisible");
     expect(scene).toContain(
       "property int spatialPresentationWorkspaceIndex: -1",
     );

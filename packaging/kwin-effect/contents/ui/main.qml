@@ -49,6 +49,15 @@ KWin.SceneEffect {
         && controller.activeSessionId > 0 ? controller.activeSessionId : 0
     readonly property bool loading: controller ? controller.loading : false
     readonly property var overviewModel: controller ? controller.overviewModel : null
+    readonly property bool overviewContextRefreshPending: controller
+        && typeof controller.overviewContextRefreshPending === "boolean"
+        ? controller.overviewContextRefreshPending
+        : false
+    readonly property int overviewTopologyGeneration: controller
+        && Number.isInteger(controller.overviewTopologyGeneration)
+        && controller.overviewTopologyGeneration > 0
+        ? controller.overviewTopologyGeneration
+        : 0
     readonly property var overviewExitHandoffPromotion: controller
         ? controller.overviewExitHandoffPromotion : null
     readonly property var overviewExitHandoffState: controller
