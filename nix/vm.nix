@@ -939,6 +939,45 @@ let
             '.data | sort_by(.[0]) | map(.[1]) | join(" ")'
       }
 
+      virtual_desktop_name() {
+        local desktop_id=$1
+
+        busctl --user --json=short get-property \
+          org.kde.KWin \
+          /VirtualDesktopManager \
+          org.kde.KWin.VirtualDesktopManager \
+          desktops 2>/dev/null \
+          | jq --exit-status --raw-output \
+            --arg desktop_id "$desktop_id" \
+            '.data
+              | map(select(.[1] == $desktop_id))
+              | select(length == 1)
+              | .[0][2]'
+      }
+
+      wait_for_virtual_desktop_name() {
+        local attempt
+        local desktop_id=$1
+        local expected=$2
+        local stable_samples=0
+
+        for ((attempt = 0; attempt < 100; attempt += 1)); do
+          if [[ "$(virtual_desktop_name "$desktop_id" 2>/dev/null || true)" == "$expected" ]]; then
+            stable_samples=$((stable_samples + 1))
+
+            if ((stable_samples >= 2)); then
+              return 0
+            fi
+          else
+            stable_samples=0
+          fi
+
+          sleep 0.1
+        done
+
+        return 1
+      }
+
       wait_for_desktop_sequence() {
         local attempt
         local expected="$*"
@@ -1069,6 +1108,32 @@ let
 
         for ((attempt = 0; attempt < 50; attempt += 1)); do
           current=$(overview_spatial_drop_request_id 2>/dev/null || true)
+          if [[ "$current" =~ ^[1-9][0-9]*$ ]] && ((current != previous)); then
+            return 0
+          fi
+          sleep 0.1
+        done
+
+        return 1
+      }
+
+      overview_workspace_command_request_id() {
+        ${pkgs.kdePackages.kconfig}/bin/kreadconfig6 \
+          --file "''${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/driftile-overview-workspace-command.ini" \
+          --group Command \
+          --key last-request-id \
+          --default 0
+      }
+
+      wait_for_overview_workspace_command_request_after() {
+        local attempt
+        local current
+        local previous=$1
+
+        [[ "$previous" =~ ^[0-9]+$ ]] || return 1
+
+        for ((attempt = 0; attempt < 50; attempt += 1)); do
+          current=$(overview_workspace_command_request_id 2>/dev/null || true)
           if [[ "$current" =~ ^[1-9][0-9]*$ ]] && ((current != previous)); then
             return 0
           fi
@@ -5180,6 +5245,7 @@ let
         local kwin_live_camera_process_id
         local kwin_search_process_id
         local kwin_spatial_drop_process_id
+        local kwin_workspace_management_process_id
         local live_camera_initial_width
         local live_refresh_base_title="Driftile VM Overview Live Refresh"
         local live_refresh_pid=""
@@ -5200,6 +5266,9 @@ let
         local workspace_gap_before_request_id
         local workspace_gap_before_sequence
         local workspace_gap_created_desktop_id=""
+        local workspace_management_before_request_id
+        local workspace_management_created_desktop_id=""
+        local workspace_management_fixture_sequence
         local xterm_title=$5
 
         if [[ "$overview_effect_loaded_once" == true ]]; then
@@ -5921,6 +5990,147 @@ let
 
         record_focus_state \
           "a physical Overview column-handle gap drop created one workspace, moved the whole stack, and cleaned up exactly"
+
+        workspace_management_fixture_sequence=$(virtual_desktop_sequence 2>/dev/null || true)
+        workspace_management_before_request_id=$(
+          overview_workspace_command_request_id 2>/dev/null || true
+        )
+        if [[ "$workspace_management_fixture_sequence" \
+          != "$primary_desktop_id $secondary_desktop_id" ]] \
+          || [[ ! "$workspace_management_before_request_id" =~ ^[0-9]+$ ]] \
+          || ! invoke_shortcut "$overview_shortcut" \
+          || ! wait_for_effect_active_state "$overview_plugin_id" true \
+          || ! kwin_workspace_management_process_id=$(kwin_process_id); then
+          overview_checkpoint_failure \
+            "the exact workspace-management fixture could not open in Overview"
+          return 1
+        fi
+        sleep 0.5
+
+        if ! request_physical_shortcut overview-workspace-select-first; then
+          overview_checkpoint_failure \
+            "physical Home did not select the first workspace marker"
+          return 1
+        fi
+        sleep 0.3
+        if [[ "$(effect_active_state "$overview_plugin_id" 2>/dev/null || true)" != true ]] \
+          || ! kwin_process_is_unchanged "$kwin_workspace_management_process_id" \
+          || ! overview_component_errors_after "$journal_cursor"; then
+          overview_checkpoint_failure \
+            "selecting the first workspace marker changed Overview or restarted KWin"
+          return 1
+        fi
+
+        if ! request_physical_shortcut overview-workspace-create \
+          || ! wait_for_overview_workspace_command_request_after \
+            "$workspace_management_before_request_id" \
+          || ! wait_for_single_inserted_desktop_between \
+            workspace_management_created_desktop_id \
+            "$primary_desktop_id" \
+            "$secondary_desktop_id"; then
+          overview_checkpoint_failure \
+            "physical Insert did not create one exact workspace after the selected marker"
+          return 1
+        fi
+        workspace_management_before_request_id=$(
+          overview_workspace_command_request_id 2>/dev/null || true
+        )
+        if [[ ! "$workspace_management_before_request_id" =~ ^[1-9][0-9]*$ ]] \
+          || [[ "$(effect_active_state "$overview_plugin_id" 2>/dev/null || true)" != true ]] \
+          || ! kwin_process_is_unchanged "$kwin_workspace_management_process_id" \
+          || ! overview_component_errors_after "$journal_cursor"; then
+          overview_checkpoint_failure \
+            "workspace creation changed Overview, restarted KWin, or lost the exact request"
+          return 1
+        fi
+        sleep 0.5
+
+        if ! request_physical_shortcut overview-workspace-select-created; then
+          overview_checkpoint_failure \
+            "physical Down did not select the newly created workspace marker"
+          return 1
+        fi
+        sleep 0.3
+        if ! request_physical_shortcut overview-workspace-begin-rename; then
+          overview_checkpoint_failure \
+            "physical F2 did not begin the exact workspace rename"
+          return 1
+        fi
+        sleep 0.3
+        if [[ "$(effect_active_state "$overview_plugin_id" 2>/dev/null || true)" != true ]] \
+          || ! kwin_process_is_unchanged "$kwin_workspace_management_process_id" \
+          || ! overview_component_errors_after "$journal_cursor"; then
+          overview_checkpoint_failure \
+            "the inline workspace editor changed Overview or restarted KWin"
+          return 1
+        fi
+
+        if ! request_physical_shortcut overview-workspace-submit-rename \
+          || ! wait_for_overview_workspace_command_request_after \
+            "$workspace_management_before_request_id" \
+          || ! wait_for_virtual_desktop_name \
+            "$workspace_management_created_desktop_id" \
+            managed-vm \
+          || ! wait_for_desktop_sequence \
+            "$primary_desktop_id" \
+            "$workspace_management_created_desktop_id" \
+            "$secondary_desktop_id"; then
+          overview_checkpoint_failure \
+            "the inline editor did not rename the exact created workspace"
+          return 1
+        fi
+        workspace_management_before_request_id=$(
+          overview_workspace_command_request_id 2>/dev/null || true
+        )
+        if [[ ! "$workspace_management_before_request_id" =~ ^[1-9][0-9]*$ ]] \
+          || [[ "$(effect_active_state "$overview_plugin_id" 2>/dev/null || true)" != true ]] \
+          || ! kwin_process_is_unchanged "$kwin_workspace_management_process_id" \
+          || ! overview_component_errors_after "$journal_cursor"; then
+          overview_checkpoint_failure \
+            "workspace rename changed Overview, restarted KWin, or lost the exact request"
+          return 1
+        fi
+
+        if ! request_physical_shortcut overview-workspace-remove \
+          || ! wait_for_overview_workspace_command_request_after \
+            "$workspace_management_before_request_id" \
+          || ! wait_for_desktop_sequence \
+            "$primary_desktop_id" \
+            "$secondary_desktop_id"; then
+          overview_checkpoint_failure \
+            "physical Delete did not remove the selected empty workspace exactly"
+          return 1
+        fi
+        if [[ "$(effect_active_state "$overview_plugin_id" 2>/dev/null || true)" != true ]] \
+          || ! kwin_process_is_unchanged "$kwin_workspace_management_process_id" \
+          || ! overview_component_errors_after "$journal_cursor"; then
+          overview_checkpoint_failure \
+            "workspace removal changed Overview or restarted KWin"
+          return 1
+        fi
+
+        if ! request_physical_shortcut overview-workspace-close \
+          || ! wait_for_effect_active_state "$overview_plugin_id" false \
+          || ! kwin_process_is_unchanged "$kwin_workspace_management_process_id" \
+          || ! wait_for_active "$xterm_title"; then
+          overview_checkpoint_failure \
+            "physical Escape did not close the workspace-management checkpoint cleanly"
+          return 1
+        fi
+        after_checkpoint=$(capture_overview_checkpoint "$@") || {
+          overview_checkpoint_failure \
+            "the workspace-management checkpoint did not stabilize after cleanup"
+          return 1
+        }
+        if [[ "$after_checkpoint" != "$spatial_drop_checkpoint" ]] \
+          || ! overview_component_errors_after "$journal_cursor"; then
+          overview_checkpoint_failure \
+            "workspace management did not restore the exact desktop and layout checkpoint"
+          return 1
+        fi
+
+        record_focus_state \
+          "physical Overview controls created, renamed, and removed one exact empty workspace"
 
         if ! unload_overview_effect \
           || ! wait_for_shortcut_registration_state "$overview_shortcut" true; then

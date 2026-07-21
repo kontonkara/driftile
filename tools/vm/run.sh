@@ -252,6 +252,13 @@ monitor_guest() {
     [overview-escape]=false
     [overview-reorder-escape]=false
     [overview-window-drop-escape]=false
+    [overview-workspace-begin-rename]=false
+    [overview-workspace-close]=false
+    [overview-workspace-create]=false
+    [overview-workspace-remove]=false
+    [overview-workspace-select-created]=false
+    [overview-workspace-select-first]=false
+    [overview-workspace-submit-rename]=false
     [overview-open]=false
     [overview-search-close]=false
     [overview-search-edit]=false
@@ -315,6 +322,13 @@ monitor_guest() {
       overview-escape \
       overview-reorder-escape \
       overview-window-drop-escape \
+      overview-workspace-select-first \
+      overview-workspace-create \
+      overview-workspace-select-created \
+      overview-workspace-begin-rename \
+      overview-workspace-submit-rename \
+      overview-workspace-remove \
+      overview-workspace-close \
       equal \
       shift-minus \
       shift-equal \
@@ -2045,6 +2059,27 @@ send_physical_shortcut() {
       input='{"execute":"input-send-event","arguments":{"events":[{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"up"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"up"}}}]}}'
       ;;
     overview-escape|overview-reorder-escape|overview-window-drop-escape)
+      input='{"execute":"input-send-event","arguments":{"events":[{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"esc"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"esc"}}}]}}'
+      ;;
+    overview-workspace-select-first)
+      input='{"execute":"input-send-event","arguments":{"events":[{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"home"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"home"}}}]}}'
+      ;;
+    overview-workspace-create)
+      input='{"execute":"input-send-event","arguments":{"events":[{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"insert"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"insert"}}}]}}'
+      ;;
+    overview-workspace-select-created)
+      input='{"execute":"input-send-event","arguments":{"events":[{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"down"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"down"}}}]}}'
+      ;;
+    overview-workspace-begin-rename)
+      input='{"execute":"input-send-event","arguments":{"events":[{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"f2"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"f2"}}}]}}'
+      ;;
+    overview-workspace-submit-rename)
+      input='{"execute":"input-send-event","arguments":{"events":[{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"ctrl"}}},{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"a"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"a"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"ctrl"}}},{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"m"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"m"}}},{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"a"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"a"}}},{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"n"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"n"}}},{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"a"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"a"}}},{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"g"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"g"}}},{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"e"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"e"}}},{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"d"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"d"}}},{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"minus"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"minus"}}},{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"v"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"v"}}},{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"m"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"m"}}},{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"ret"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"ret"}}}]}}'
+      ;;
+    overview-workspace-remove)
+      input='{"execute":"input-send-event","arguments":{"events":[{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"delete"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"delete"}}}]}}'
+      ;;
+    overview-workspace-close)
       input='{"execute":"input-send-event","arguments":{"events":[{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"esc"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"esc"}}}]}}'
       ;;
     desktop-1)
