@@ -2734,9 +2734,7 @@ describe("overview effect package", () => {
       presentation.indexOf(
         "readonly property bool minimizedActivationEligible:",
       ),
-      presentation.indexOf(
-        "readonly property var minimizedPlaceholderFrame:",
-      ),
+      presentation.indexOf("readonly property var minimizedPlaceholderFrame:"),
     );
     const placeholder = desktopCard.slice(
       desktopCard.indexOf("id: minimizedPlaceholderShell"),
