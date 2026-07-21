@@ -5876,6 +5876,7 @@ describe("overview effect package", () => {
     );
     expect(pressedChanged).not.toContain("point.state");
 
+    expect(dispatch).toContain("activationCanceledSerial === serial");
     expect(dispatch.indexOf("activationConsumedSerial = serial;")).toBeLessThan(
       dispatch.indexOf("card.windowTapped("),
     );

@@ -1169,6 +1169,7 @@ Item {
 
                     function dispatchExactActivation(serial, snapshot) {
                         if (serial !== activationGestureSerial
+                                || activationCanceledSerial === serial
                                 || activationConsumedSerial === serial
                                 || (snapshot && !activationSnapshotMatchesCurrent(snapshot))
                                 || !tabShell.activationIsExact()) {

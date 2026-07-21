@@ -317,6 +317,7 @@ describe("spatial overview navigation geometry", () => {
     expect(tabShell.indexOf("activationConsumedSerial = serial;")).toBeLessThan(
       tabShell.indexOf("card.windowTapped("),
     );
+    expect(tabShell).toContain("activationCanceledSerial === serial");
   });
 
   it("pans a spatial row with the right mouse button without widening left-button grabs", () => {
