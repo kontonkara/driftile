@@ -1704,6 +1704,64 @@ set_physical_left_button_state() {
   send_qmp_commands "$capabilities" "$input"
 }
 
+send_physical_left_button_click() {
+  local capabilities='{"execute":"qmp_capabilities"}'
+  local down_input='{"execute":"input-send-event","arguments":{"events":[{"type":"btn","data":{"down":true,"button":"left"}}]}}'
+  local qmp_pid
+  local qmp_read_descriptor
+  local qmp_write_descriptor
+  local release_required=false
+  local result=0
+  local up_input='{"execute":"input-send-event","arguments":{"events":[{"type":"btn","data":{"down":false,"button":"left"}}]}}'
+
+  [[ -S "$qmp_socket" && -x "$overview_zoom_socat_executable" ]] || return 1
+  if ! coproc POINTER_CLICK_QMP {
+    "$overview_zoom_socat_executable" \
+      -t 2 \
+      - \
+      "UNIX-CONNECT:$qmp_socket"
+  }; then
+    return 1
+  fi
+  qmp_pid=$POINTER_CLICK_QMP_PID
+  qmp_read_descriptor=${POINTER_CLICK_QMP[0]}
+  qmp_write_descriptor=${POINTER_CLICK_QMP[1]}
+
+  IFS= read -r -t 2 -u "$qmp_read_descriptor" _ || result=1
+  if ((result == 0)); then
+    printf '%s\n' "$capabilities" >&"$qmp_write_descriptor" || result=1
+  fi
+  if ((result == 0)); then
+    read_qmp_command_return "$qmp_read_descriptor" || result=1
+  fi
+  if ((result == 0)); then
+    printf '%s\n' "$down_input" >&"$qmp_write_descriptor" || result=1
+  fi
+  if ((result == 0)); then
+    read_qmp_command_return "$qmp_read_descriptor" || result=1
+    release_required=true
+  fi
+  if ((result == 0)); then
+    sleep 0.075
+    if printf '%s\n' "$up_input" >&"$qmp_write_descriptor"; then
+      release_required=false
+    else
+      result=1
+    fi
+  fi
+  if ((result == 0)); then
+    read_qmp_command_return "$qmp_read_descriptor" || result=1
+  elif [[ "$release_required" == true ]]; then
+    printf '%s\n' "$up_input" >&"$qmp_write_descriptor" || true
+    read_qmp_command_return "$qmp_read_descriptor" >/dev/null 2>&1 || true
+  fi
+
+  exec {qmp_write_descriptor}>&- || true
+  exec {qmp_read_descriptor}<&- || true
+  wait "$qmp_pid" || result=1
+  ((result == 0))
+}
+
 set_pointer_drag_button_state() {
   local down=$1
   local plain=$2
@@ -1858,11 +1916,10 @@ send_plain_pointer_click() {
   send_absolute_pointer_position "$absolute_x" "$absolute_y" || result=1
   sleep 0.1
 
-  if ((result == 0)) && ! set_physical_left_button_state true; then
+  if ((result == 0)) && ! send_physical_left_button_click; then
     result=1
   fi
   sleep 0.1
-  set_physical_left_button_state false || result=1
   return "$result"
 }
 
