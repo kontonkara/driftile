@@ -13731,6 +13731,76 @@ let
         cleanup_activity_fixture || true
       }
 
+      cleanup_activity_overview_refresh_effect() {
+        if [[ "$(effect_active_state "$overview_plugin_id" 2>/dev/null || true)" == true ]]; then
+          invoke_shortcut "$overview_shortcut" >/dev/null 2>&1 || true
+          wait_for_effect_active_state "$overview_plugin_id" false \
+            >/dev/null 2>&1 || true
+        fi
+
+        if [[ "$(effect_loaded_state "$overview_plugin_id" 2>/dev/null || true)" == true ]]; then
+          unload_overview_effect >/dev/null 2>&1 || true
+        fi
+      }
+
+      fail_activity_overview_refresh_verification() {
+        local expected_firefox_frame=$6
+        local expected_primary_first_frame=$3
+        local expected_primary_second_frame=$4
+        local expected_primary_third_frame=$5
+        local expected_process_id=$2
+        local expected_xterm_frame=$7
+        local label=$1
+
+        record_focus_state "$label"
+        {
+          printf '\n[Overview activity refresh checkpoint failed]\n'
+          printf 'current activity: %s\n' \
+            "$(current_activity_id 2>/dev/null || printf unavailable)"
+          printf 'primary activity: %s\n' \
+            "''${activity_primary_id:-unavailable}"
+          printf 'secondary activity: %s\n' \
+            "''${activity_secondary_id:-unavailable}"
+          printf 'active caption: %s\n' \
+            "$(active_window_caption 2>/dev/null || printf unavailable)"
+          printf 'Overview loaded: %s\n' \
+            "$(effect_loaded_state "$overview_plugin_id" 2>/dev/null || printf unavailable)"
+          printf 'Overview active: %s\n' \
+            "$(effect_active_state "$overview_plugin_id" 2>/dev/null || printf unavailable)"
+          printf 'expected KWin process: %s\n' "$expected_process_id"
+          printf 'current KWin process: %s\n' \
+            "$(kwin_process_id 2>/dev/null || printf unavailable)"
+          printf 'primary frames expected: %s | %s | %s\n' \
+            "$expected_primary_first_frame" \
+            "$expected_primary_second_frame" \
+            "$expected_primary_third_frame"
+          printf 'primary frames observed: %s | %s | %s\n' \
+            "$(window_frame "$title_a" 2>/dev/null || printf unavailable)" \
+            "$(window_frame "$title_b" 2>/dev/null || printf unavailable)" \
+            "$(window_frame "$title_c" 2>/dev/null || printf unavailable)"
+          printf 'secondary frames expected: %s | %s\n' \
+            "$expected_firefox_frame" "$expected_xterm_frame"
+          printf 'secondary frames observed: %s | %s\n' \
+            "$(window_frame "$activity_firefox_title" 2>/dev/null || printf unavailable)" \
+            "$(window_frame "$activity_xterm_title" 2>/dev/null || printf unavailable)"
+          printf 'primary member activity exact: %s\n' \
+            "$(window_has_exact_activity \
+              "$primary_first_id" "$activity_primary_id" \
+              >/dev/null 2>&1 && printf true || printf false)"
+          printf 'secondary Firefox activity exact: %s\n' \
+            "$(window_has_exact_activity \
+              "$activity_firefox_id" "$activity_secondary_id" \
+              >/dev/null 2>&1 && printf true || printf false)"
+          printf 'secondary XWayland activity exact: %s\n' \
+            "$(window_has_exact_activity \
+              "$activity_xterm_id" "$activity_secondary_id" \
+              >/dev/null 2>&1 && printf true || printf false)"
+        } >> /tmp/shared/driftile-focus-diagnostics
+
+        cleanup_activity_overview_refresh_effect
+        cleanup_activity_fixture || true
+      }
+
       verify_activity_layout_ownership() {
         local activity_count
         local attempt
@@ -13738,8 +13808,11 @@ let
         local firefox_initial_frame
         local firefox_initial_width
         local firefox_x
+        local journal_cursor
+        local kwin_activity_overview_process_id
         local move_relation
         local move_shortcut
+        local overview_refresh_checkpoint
         local primary_first_frame
         local primary_first_id
         local primary_second_frame
@@ -13879,6 +13952,153 @@ let
           fail_activity_layout_verification "the secondary layout was not restored"
           return 1
         fi
+
+        journal_cursor=$(capture_journal_cursor 2>/dev/null || true)
+        kwin_activity_overview_process_id=$(kwin_process_id 2>/dev/null || true)
+        if [[ -z "$journal_cursor" ]] \
+          || [[ ! "$kwin_activity_overview_process_id" =~ ^[1-9][0-9]*$ ]] \
+          || ! effect_is_available "$overview_plugin_id" \
+          || ! wait_for_effect_loaded_state "$overview_plugin_id" false \
+          || ! load_overview_effect \
+          || ! wait_for_shortcut_registration_state "$overview_shortcut" true \
+          || ! invoke_shortcut "$overview_shortcut" \
+          || ! wait_for_effect_active_state "$overview_plugin_id" true; then
+          fail_activity_overview_refresh_verification \
+            "the Overview activity refresh preflight failed" \
+            "$kwin_activity_overview_process_id" \
+            "$primary_first_frame" \
+            "$primary_second_frame" \
+            "$primary_third_frame" \
+            "$firefox_frame" \
+            "$xterm_frame"
+          return 1
+        fi
+        overview_effect_loaded_once=true
+
+        # A stable checkpoint outlasts the effect's bounded two-sample context
+        # refresh and proves that the original secondary presentation remained
+        # exact before activity switching begins.
+        overview_refresh_checkpoint=$(capture_overview_checkpoint \
+          "$activity_firefox_title" \
+          "$activity_xterm_title" 2>/dev/null || true)
+        if [[ -z "$overview_refresh_checkpoint" ]] \
+          || ! wait_for_named_frames \
+            "$activity_firefox_title" "$firefox_frame" \
+            "$activity_xterm_title" "$xterm_frame" \
+          || ! wait_for_current_activity "$activity_secondary_id" \
+          || ! wait_for_active "$activity_firefox_title" \
+          || ! window_has_exact_activity \
+            "$activity_firefox_id" "$activity_secondary_id" \
+          || ! window_has_exact_activity \
+            "$activity_xterm_id" "$activity_secondary_id" \
+          || [[ "$(effect_active_state "$overview_plugin_id" 2>/dev/null || true)" != true ]] \
+          || ! kwin_process_is_unchanged "$kwin_activity_overview_process_id" \
+          || ! overview_component_errors_after "$journal_cursor"; then
+          fail_activity_overview_refresh_verification \
+            "the active Overview did not retain the exact secondary activity presentation" \
+            "$kwin_activity_overview_process_id" \
+            "$primary_first_frame" \
+            "$primary_second_frame" \
+            "$primary_third_frame" \
+            "$firefox_frame" \
+            "$xterm_frame"
+          return 1
+        fi
+
+        if ! set_current_activity "$activity_primary_id"; then
+          fail_activity_overview_refresh_verification \
+            "the active Overview could not switch to the primary activity" \
+            "$kwin_activity_overview_process_id" \
+            "$primary_first_frame" \
+            "$primary_second_frame" \
+            "$primary_third_frame" \
+            "$firefox_frame" \
+            "$xterm_frame"
+          return 1
+        fi
+        overview_refresh_checkpoint=$(capture_overview_checkpoint \
+          "$title_a" "$title_b" "$title_c" 2>/dev/null || true)
+        if [[ -z "$overview_refresh_checkpoint" ]] \
+          || ! wait_for_current_activity "$activity_primary_id" \
+          || ! wait_for_active "$title_c" \
+          || ! wait_for_named_frames \
+            "$title_a" "$primary_first_frame" \
+            "$title_b" "$primary_second_frame" \
+            "$title_c" "$primary_third_frame" \
+          || ! window_has_exact_activity \
+            "$primary_first_id" "$activity_primary_id" \
+          || [[ "$(effect_active_state "$overview_plugin_id" 2>/dev/null || true)" != true ]] \
+          || ! kwin_process_is_unchanged "$kwin_activity_overview_process_id" \
+          || ! overview_component_errors_after "$journal_cursor"; then
+          fail_activity_overview_refresh_verification \
+            "the active Overview did not refresh to the exact primary activity presentation" \
+            "$kwin_activity_overview_process_id" \
+            "$primary_first_frame" \
+            "$primary_second_frame" \
+            "$primary_third_frame" \
+            "$firefox_frame" \
+            "$xterm_frame"
+          return 1
+        fi
+
+        if ! set_current_activity "$activity_secondary_id"; then
+          fail_activity_overview_refresh_verification \
+            "the active Overview could not return to the secondary activity" \
+            "$kwin_activity_overview_process_id" \
+            "$primary_first_frame" \
+            "$primary_second_frame" \
+            "$primary_third_frame" \
+            "$firefox_frame" \
+            "$xterm_frame"
+          return 1
+        fi
+        overview_refresh_checkpoint=$(capture_overview_checkpoint \
+          "$activity_firefox_title" \
+          "$activity_xterm_title" 2>/dev/null || true)
+        if [[ -z "$overview_refresh_checkpoint" ]] \
+          || ! wait_for_current_activity "$activity_secondary_id" \
+          || ! wait_for_active "$activity_firefox_title" \
+          || ! wait_for_named_frames \
+            "$activity_firefox_title" "$firefox_frame" \
+            "$activity_xterm_title" "$xterm_frame" \
+          || ! window_has_exact_activity \
+            "$activity_firefox_id" "$activity_secondary_id" \
+          || ! window_has_exact_activity \
+            "$activity_xterm_id" "$activity_secondary_id" \
+          || [[ "$(effect_active_state "$overview_plugin_id" 2>/dev/null || true)" != true ]] \
+          || ! kwin_process_is_unchanged "$kwin_activity_overview_process_id" \
+          || ! overview_component_errors_after "$journal_cursor"; then
+          fail_activity_overview_refresh_verification \
+            "the active Overview did not restore the exact secondary activity presentation" \
+            "$kwin_activity_overview_process_id" \
+            "$primary_first_frame" \
+            "$primary_second_frame" \
+            "$primary_third_frame" \
+            "$firefox_frame" \
+            "$xterm_frame"
+          return 1
+        fi
+
+        if ! invoke_shortcut "$overview_shortcut" \
+          || ! wait_for_effect_active_state "$overview_plugin_id" false \
+          || ! wait_for_active "$activity_firefox_title" \
+          || ! unload_overview_effect \
+          || ! wait_for_shortcut_registration_state "$overview_shortcut" true \
+          || ! kwin_process_is_unchanged "$kwin_activity_overview_process_id" \
+          || ! overview_component_errors_after "$journal_cursor"; then
+          fail_activity_overview_refresh_verification \
+            "the activity-refreshed Overview did not close and unload cleanly" \
+            "$kwin_activity_overview_process_id" \
+            "$primary_first_frame" \
+            "$primary_second_frame" \
+            "$primary_third_frame" \
+            "$firefox_frame" \
+            "$xterm_frame"
+          return 1
+        fi
+
+        record_focus_state \
+          "the active Overview refreshed across activity changes without restarting KWin"
 
         if ! cleanup_activity_fixture \
           || ! activate_window "$title_c" \
