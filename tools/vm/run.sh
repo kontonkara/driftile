@@ -1508,19 +1508,16 @@ send_physical_overview_wheel_controls() {
 
 send_physical_overview_zoom_phase() {
   local capabilities='{"execute":"qmp_capabilities"}'
-  local control_down_input='{"execute":"input-send-event","arguments":{"events":[{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"ctrl"}}}]}}'
-  local control_up_input='{"execute":"input-send-event","arguments":{"events":[{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"ctrl"}}}]}}'
   local image_file=$2
   local input
-  local input_sent=false
   local phase=$1
 
   case "$phase" in
     wheel-in|anchor-wheel-in)
-      input='{"execute":"input-send-event","arguments":{"events":[{"type":"btn","data":{"down":true,"button":"wheel-up"}},{"type":"btn","data":{"down":false,"button":"wheel-up"}}]}}'
+      input='{"execute":"input-send-event","arguments":{"events":[{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"ctrl"}}},{"type":"btn","data":{"down":true,"button":"wheel-up"}},{"type":"btn","data":{"down":false,"button":"wheel-up"}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"ctrl"}}}]}}'
       ;;
     wheel-reset|anchor-wheel-reset)
-      input='{"execute":"input-send-event","arguments":{"events":[{"type":"btn","data":{"down":true,"button":"wheel-down"}},{"type":"btn","data":{"down":false,"button":"wheel-down"}}]}}'
+      input='{"execute":"input-send-event","arguments":{"events":[{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"ctrl"}}},{"type":"btn","data":{"down":true,"button":"wheel-down"}},{"type":"btn","data":{"down":false,"button":"wheel-down"}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"ctrl"}}}]}}'
       ;;
     key-in|continuity-seed|fresh-seed)
       input='{"execute":"input-send-event","arguments":{"events":[{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"ctrl"}}},{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"shift"}}},{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"equal"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"equal"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"shift"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"ctrl"}}}]}}'
@@ -1539,28 +1536,7 @@ send_physical_overview_zoom_phase() {
       ;;
   esac
 
-  if [[ "$phase" == wheel-in \
-    || "$phase" == wheel-reset \
-    || "$phase" == anchor-wheel-in \
-    || "$phase" == anchor-wheel-reset ]]; then
-    send_qmp_commands "$capabilities" "$control_down_input" || return 1
-    sleep 0.05
-    if ! send_qmp_commands "$capabilities" "$input"; then
-      send_qmp_commands "$capabilities" "$control_up_input" \
-        >/dev/null 2>&1 || true
-      return 1
-    fi
-    sleep 0.05
-    if ! send_qmp_commands "$capabilities" "$control_up_input"; then
-      send_qmp_commands "$capabilities" "$control_up_input" \
-        >/dev/null 2>&1 || true
-      return 1
-    fi
-    input_sent=true
-  fi
-  if [[ "$input_sent" == false ]]; then
-    send_qmp_commands "$capabilities" "$input" || return 1
-  fi
+  send_qmp_commands "$capabilities" "$input" || return 1
   verify_physical_overview_zoom_phase "$phase" "$image_file"
 }
 
