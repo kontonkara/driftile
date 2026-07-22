@@ -316,6 +316,23 @@ Rectangle {
     readonly property var spatialPresentationSceneToken: ({})
     readonly property var spatialPresentationReadinessContext: sceneReadinessContext()
     readonly property var spatialSceneRetirementFrameContext: sceneRetirementFrameContext()
+    property int spatialPresentationReadinessFrameCount: 0
+    property var spatialPresentationReadinessTrackedDesktop: null
+    property var spatialPresentationReadinessTrackedDesktopCard: null
+    property int spatialPresentationReadinessTrackedDesktopCardEpoch: 0
+    property string spatialPresentationReadinessTrackedDesktopSurfaceDisposition: ""
+    property int spatialPresentationReadinessTrackedDesktopSurfaceToken: 0
+    property int spatialPresentationReadinessTrackedEpoch: 0
+    property real spatialPresentationReadinessTrackedHeight: 0
+    property int spatialPresentationReadinessTrackedHorizontalViewportRevision: -1
+    property var spatialPresentationReadinessTrackedLayout: null
+    property var spatialPresentationReadinessTrackedModel: null
+    property string spatialPresentationReadinessTrackedOutputId: ""
+    property int spatialPresentationReadinessTrackedSessionId: 0
+    property int spatialPresentationReadinessTrackedTopologyGeneration: 0
+    property var spatialPresentationReadinessTrackedViewportSnapshot: null
+    property real spatialPresentationReadinessTrackedWidth: 0
+    property int spatialPresentationReadinessTrackedWorkspaceIndex: -1
     property int spatialPresentationRegisteredEpoch: 0
     property int spatialPresentationRegisteredSessionId: 0
     property var spatialPresentationRegisteredModel: null
@@ -1676,8 +1693,10 @@ Rectangle {
         height: Math.max(0, root.desktopIds.length * (root.cardHeight + root.cardGap) - root.cardGap)
         opacity: root.spatialExitHandoffActive
             ? overviewExitHandoffOverlay.surfaceOpacity
-            : root.spatialPresentationPhase === "closing" ? 1
-                                                         : root.spatialPresentationProgress
+            : root.spatialPresentationPhase === "preparing"
+              || root.spatialPresentationPhase === "opening"
+              || root.spatialPresentationPhase === "closing" ? 1
+                                                             : root.spatialPresentationProgress
         transform: Scale {
             origin.x: spatialCanvas.width / 2
             origin.y: spatialCanvas.presentationWorkspaceIndex * (root.cardHeight + root.cardGap)
@@ -1740,6 +1759,10 @@ Rectangle {
                                                    desktopCardLoader.index,
                                                    desktopCardLoader.modelData,
                                                    desktopCardLoader.desktopObject)
+                        desktopSurfaceOpeningCritical: root.desktopSurfaceOpeningCritical(
+                                                           desktopCardLoader.index,
+                                                           desktopCardLoader.modelData,
+                                                           desktopCardLoader.desktopObject)
                         desktopSurfaceLifecycleEvent: root.desktopSurfaceLifecycleEvent
                         floatingWindows: root.floatingFor(desktopCardLoader.modelData)
                         interactionEligible: root.desktopCardInteractionEligible(
@@ -2167,6 +2190,14 @@ Rectangle {
         capturedOutput: root.overviewExitHandoffCapture
             ? root.overviewExitHandoffCapture.targetOutputId : ""
         z: 24000
+    }
+
+    FrameAnimation {
+        id: spatialPresentationReadinessFrameAnimation
+
+        running: root.spatialPresentationReadinessContext !== null
+            && root.spatialPresentationRegisteredEpoch <= 0
+        onTriggered: root.advancePresentationReadinessFrame()
     }
 
     FrameAnimation {
@@ -2938,6 +2969,10 @@ Rectangle {
                 || typeof expectedDesktopId !== "string" || desktopIds[index] !== expectedDesktopId) {
             return false;
         }
+        if (desktopSurfaceOpeningCritical(index, expectedDesktopId,
+                                          desktopForId(expectedDesktopId))) {
+            return true;
+        }
         if (desktopCardInteractionEligible(index, expectedDesktopId)) {
             return true;
         }
@@ -2972,9 +3007,7 @@ Rectangle {
     function desktopSurfaceShouldLoad(index, expectedDesktopId, expectedDesktop) {
         if (!Number.isInteger(index) || index < 0 || index >= desktopIds.length
                 || typeof expectedDesktopId !== "string" || desktopIds[index] !== expectedDesktopId
-                || outputId.length === 0 || !targetScreen
-                || !desktopSurfaceResidencyContextMatchesCurrent()
-                || !spatialVisibleRangeIsValid(desktopSurfaceResidencyRange)) {
+                || outputId.length === 0 || !targetScreen) {
             return false;
         }
 
@@ -2987,8 +3020,39 @@ Rectangle {
             return false;
         }
 
+        if (desktopSurfaceOpeningCritical(index, expectedDesktopId, expectedDesktop)) {
+            return true;
+        }
+        if (!desktopSurfaceResidencyContextMatchesCurrent()
+                || !spatialVisibleRangeIsValid(desktopSurfaceResidencyRange)) {
+            return false;
+        }
         return index >= desktopSurfaceResidencyRange.firstIndex
             && index <= desktopSurfaceResidencyRange.lastIndex;
+    }
+
+    function desktopSurfaceOpeningCritical(index, expectedDesktopId, expectedDesktop) {
+        try {
+            return Number.isInteger(index) && index >= 0 && index < desktopIds.length
+                && typeof expectedDesktopId === "string" && expectedDesktopId.length > 0
+                && desktopIds[index] === expectedDesktopId && index === currentWorkspaceIndex
+                && spatialPresentationPhase === "preparing"
+                && Math.abs(spatialPresentationProgress) <= 0.000001
+                && sceneEffect && sceneEffect.active === true
+                && sceneEffect.sceneVisible === true && activeOverviewSessionId > 0
+                && presentationReadinessEpoch > 0 && overviewContextGeneration > 0
+                && overviewModel && sceneEffect.overviewModel === overviewModel
+                && !overviewContextRefreshPending && overviewContextModelExact
+                && outputId.length > 0 && targetScreen
+                && liveScreenFor(targetScreen) === targetScreen
+                && currentDesktop && currentDesktop.id !== undefined
+                && currentDesktop.id !== null
+                && String(currentDesktop.id) === expectedDesktopId
+                && liveDesktopFor(currentDesktop, expectedDesktopId) === currentDesktop
+                && expectedDesktop && expectedDesktop === currentDesktop;
+        } catch (error) {
+            return false;
+        }
     }
 
     function desktopCardAt(index) {
@@ -11901,6 +11965,10 @@ Rectangle {
                     || !spatialLayoutIsValid(overviewSpatialLayout)
                     || !spatialViewportSnapshot
                     || !sameStringList(spatialViewportSnapshot.desktopIds, desktopIds)
+                    || !desktopSurfaceResidencyContextMatchesCurrent()
+                    || !spatialVisibleRangeIsValid(desktopSurfaceResidencyRange)
+                    || currentWorkspaceIndex < desktopSurfaceResidencyRange.firstIndex
+                    || currentWorkspaceIndex > desktopSurfaceResidencyRange.lastIndex
                     || !sameStringList(spatialHorizontalDesktopIds, desktopIds)
                     || spatialHorizontalGeometryPlans.length !== desktopIds.length
                     || spatialHorizontalViewportOffsets.length !== desktopIds.length
@@ -11930,16 +11998,19 @@ Rectangle {
                     || currentCard.overviewContextGeneration !== topologyGeneration
                     || currentCard.overviewActivityId !== activeOverviewActivityId
                     || currentCard.outputId !== expectedOutputId
-                    || currentCard.screen !== screen) {
+                    || currentCard.screen !== screen
+                    || currentCard.desktopSurfaceOpeningCritical !== true) {
                 return null;
             }
             const desktopSurfaceOpeningDisposition =
                 currentCard.desktopSurfaceOpeningDisposition;
+            const desktopSurfaceToken = currentCard.desktopSurfaceReloadToken;
             if (desktopSurfaceOpeningDisposition === "pending") {
                 return null;
             }
-            if (desktopSurfaceOpeningDisposition !== "ready"
-                    && desktopSurfaceOpeningDisposition !== "fallback") {
+            if ((desktopSurfaceOpeningDisposition !== "ready"
+                    && desktopSurfaceOpeningDisposition !== "fallback")
+                    || !Number.isInteger(desktopSurfaceToken) || desktopSurfaceToken <= 0) {
                 return null;
             }
 
@@ -11956,11 +12027,22 @@ Rectangle {
             }
 
             return {
+                desktop: currentDesktop,
+                desktopCard: currentCard,
+                desktopCardEpoch,
+                desktopSurfaceDisposition: desktopSurfaceOpeningDisposition,
+                desktopSurfaceToken,
                 epoch,
+                height,
+                horizontalViewportRevision: spatialHorizontalViewportRevision,
+                layout: overviewSpatialLayout,
                 model,
                 outputId: expectedOutputId,
                 sessionId,
-                topologyGeneration
+                topologyGeneration,
+                viewportSnapshot: spatialViewportSnapshot,
+                width,
+                workspaceIndex: currentWorkspaceIndex
             };
         } catch (error) {
             return null;
@@ -12150,6 +12232,48 @@ Rectangle {
         spatialPresentationRegisteredOutputId = "";
     }
 
+    function resetPresentationReadinessFrameTracking() {
+        spatialPresentationReadinessFrameCount = 0;
+        spatialPresentationReadinessTrackedDesktop = null;
+        spatialPresentationReadinessTrackedDesktopCard = null;
+        spatialPresentationReadinessTrackedDesktopCardEpoch = 0;
+        spatialPresentationReadinessTrackedDesktopSurfaceDisposition = "";
+        spatialPresentationReadinessTrackedDesktopSurfaceToken = 0;
+        spatialPresentationReadinessTrackedEpoch = 0;
+        spatialPresentationReadinessTrackedHeight = 0;
+        spatialPresentationReadinessTrackedHorizontalViewportRevision = -1;
+        spatialPresentationReadinessTrackedLayout = null;
+        spatialPresentationReadinessTrackedModel = null;
+        spatialPresentationReadinessTrackedOutputId = "";
+        spatialPresentationReadinessTrackedSessionId = 0;
+        spatialPresentationReadinessTrackedTopologyGeneration = 0;
+        spatialPresentationReadinessTrackedViewportSnapshot = null;
+        spatialPresentationReadinessTrackedWidth = 0;
+        spatialPresentationReadinessTrackedWorkspaceIndex = -1;
+    }
+
+    function presentationReadinessFrameTrackingMatches(context) {
+        return context && spatialPresentationReadinessTrackedDesktop === context.desktop
+            && spatialPresentationReadinessTrackedDesktopCard === context.desktopCard
+            && spatialPresentationReadinessTrackedDesktopCardEpoch === context.desktopCardEpoch
+            && spatialPresentationReadinessTrackedDesktopSurfaceDisposition
+                === context.desktopSurfaceDisposition
+            && spatialPresentationReadinessTrackedDesktopSurfaceToken
+                === context.desktopSurfaceToken
+            && spatialPresentationReadinessTrackedEpoch === context.epoch
+            && spatialPresentationReadinessTrackedHeight === context.height
+            && spatialPresentationReadinessTrackedHorizontalViewportRevision
+                === context.horizontalViewportRevision
+            && spatialPresentationReadinessTrackedLayout === context.layout
+            && spatialPresentationReadinessTrackedSessionId === context.sessionId
+            && spatialPresentationReadinessTrackedModel === context.model
+            && spatialPresentationReadinessTrackedTopologyGeneration === context.topologyGeneration
+            && spatialPresentationReadinessTrackedOutputId === context.outputId
+            && spatialPresentationReadinessTrackedViewportSnapshot === context.viewportSnapshot
+            && spatialPresentationReadinessTrackedWidth === context.width
+            && spatialPresentationReadinessTrackedWorkspaceIndex === context.workspaceIndex;
+    }
+
     function unregisterPresentationReadiness(fatal) {
         const effect = sceneEffect;
         const epoch = spatialPresentationRegisteredEpoch;
@@ -12159,10 +12283,12 @@ Rectangle {
         const expectedOutputId = spatialPresentationRegisteredOutputId;
         if (epoch <= 0) {
             resetPresentationReadinessRegistration();
+            resetPresentationReadinessFrameTracking();
             return false;
         }
 
         resetPresentationReadinessRegistration();
+        resetPresentationReadinessFrameTracking();
         try {
             return effect && typeof effect.unregisterOverviewSceneReady === "function"
                 && effect.unregisterOverviewSceneReady(epoch, sessionId, model,
@@ -12175,23 +12301,69 @@ Rectangle {
     }
 
     function synchronizePresentationReadiness() {
-        const context = spatialPresentationReadinessContext;
+        let context = spatialPresentationReadinessContext;
         const registered = spatialPresentationRegisteredEpoch > 0;
         const registrationMatches = registered && context
             && spatialPresentationRegisteredEpoch === context.epoch
             && spatialPresentationRegisteredSessionId === context.sessionId
             && spatialPresentationRegisteredModel === context.model
             && spatialPresentationRegisteredTopologyGeneration === context.topologyGeneration
-            && spatialPresentationRegisteredOutputId === context.outputId;
+            && spatialPresentationRegisteredOutputId === context.outputId
+            && presentationReadinessFrameTrackingMatches(context);
         if (registered && !registrationMatches) {
             unregisterPresentationReadiness(false);
+            context = spatialPresentationReadinessContext;
         }
-        if (!context || registrationMatches) {
-            return registrationMatches === true;
+        if (!context) {
+            resetPresentationReadinessFrameTracking();
+            return false;
+        }
+        if (registrationMatches) {
+            return true;
+        }
+
+        if (!presentationReadinessFrameTrackingMatches(context)) {
+            resetPresentationReadinessFrameTracking();
+            spatialPresentationReadinessTrackedDesktop = context.desktop;
+            spatialPresentationReadinessTrackedDesktopCard = context.desktopCard;
+            spatialPresentationReadinessTrackedDesktopCardEpoch = context.desktopCardEpoch;
+            spatialPresentationReadinessTrackedDesktopSurfaceDisposition =
+                context.desktopSurfaceDisposition;
+            spatialPresentationReadinessTrackedDesktopSurfaceToken = context.desktopSurfaceToken;
+            spatialPresentationReadinessTrackedEpoch = context.epoch;
+            spatialPresentationReadinessTrackedHeight = context.height;
+            spatialPresentationReadinessTrackedHorizontalViewportRevision =
+                context.horizontalViewportRevision;
+            spatialPresentationReadinessTrackedLayout = context.layout;
+            spatialPresentationReadinessTrackedSessionId = context.sessionId;
+            spatialPresentationReadinessTrackedModel = context.model;
+            spatialPresentationReadinessTrackedTopologyGeneration = context.topologyGeneration;
+            spatialPresentationReadinessTrackedOutputId = context.outputId;
+            spatialPresentationReadinessTrackedViewportSnapshot = context.viewportSnapshot;
+            spatialPresentationReadinessTrackedWidth = context.width;
+            spatialPresentationReadinessTrackedWorkspaceIndex = context.workspaceIndex;
+        }
+        return true;
+    }
+
+    function advancePresentationReadinessFrame() {
+        if (!synchronizePresentationReadiness()) {
+            return false;
+        }
+        const context = spatialPresentationReadinessContext;
+        if (!presentationReadinessFrameTrackingMatches(context)
+                || spatialPresentationRegisteredEpoch > 0) {
+            return false;
+        }
+
+        spatialPresentationReadinessFrameCount += 1;
+        if (spatialPresentationReadinessFrameCount !== 2) {
+            return true;
         }
 
         const effect = sceneEffect;
         if (!effect || typeof effect.registerOverviewSceneReady !== "function") {
+            resetPresentationReadinessFrameTracking();
             return false;
         }
 
@@ -12209,9 +12381,18 @@ Rectangle {
         } catch (error) {
             accepted = false;
         }
-        if (!accepted || spatialPresentationPhase !== "preparing"
-                || presentationReadinessEpoch !== context.epoch) {
+        if (!accepted) {
             resetPresentationReadinessRegistration();
+            resetPresentationReadinessFrameTracking();
+            return false;
+        }
+
+        const currentContext = spatialPresentationReadinessContext;
+        const stillPreparing = spatialPresentationPhase === "preparing"
+            && presentationReadinessEpoch === context.epoch
+            && presentationReadinessFrameTrackingMatches(currentContext);
+        if (!stillPreparing) {
+            unregisterPresentationReadiness(false);
         }
         return accepted;
     }

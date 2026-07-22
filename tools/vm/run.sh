@@ -1007,6 +1007,153 @@ capture_overview_window_exit_burst() {
   done
 }
 
+capture_overview_entry_burst() {
+  local capabilities='{"execute":"qmp_capabilities"}'
+  local candidate_image
+  local entry_input='{"execute":"input-send-event","arguments":{"events":[{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"meta_l"}}},{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"o"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"o"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"meta_l"}}}]}}'
+  local frame_attempt
+  local frame_count=0
+  local frame_file
+  local frame_manifest=$3
+  local frame_suffix
+  local last_frame=""
+  local marker_prefix
+  local maximum_frame_attempts=192
+  local maximum_unique_frames=64
+  local observed_file
+  local qmp_pid
+  local qmp_read_descriptor
+  local qmp_write_descriptor
+  local result=0
+  local screendump
+  local sent_file
+  local terminal_duplicate_image=$2
+  local terminal_image=$1
+  local verified_file
+
+  [[ "$terminal_image" == "$temporary_directory"/* \
+    && "$terminal_image" =~ ^[-./_[:alnum:]]+$ \
+    && "$terminal_duplicate_image" == "$temporary_directory"/* \
+    && "$terminal_duplicate_image" =~ ^[-./_[:alnum:]]+$ \
+    && "$frame_manifest" == "$temporary_directory"/* \
+    && "$frame_manifest" =~ ^[-./_[:alnum:]]+$ \
+    && -x "$overview_zoom_socat_executable" ]] || return 1
+
+  marker_prefix="$(dirname -- "$terminal_image")/driftile-overview-zoom"
+  sent_file="$marker_prefix-fresh-open-sent"
+  verified_file="$marker_prefix-fresh-open-verified"
+  observed_file="$marker_prefix-fresh-open-observed"
+  candidate_image="$(dirname -- "$terminal_image")/driftile-overview-entry-candidate.ppm"
+  rm -f -- \
+    "$candidate_image" \
+    "$frame_manifest" \
+    "$observed_file" \
+    "$sent_file" \
+    "$terminal_duplicate_image" \
+    "$terminal_image" \
+    "$verified_file"
+
+  if ! coproc OVERVIEW_ENTRY_QMP {
+    "$overview_zoom_socat_executable" \
+      -t 2 \
+      - \
+      "UNIX-CONNECT:$qmp_socket"
+  }; then
+    return 1
+  fi
+  qmp_pid=$OVERVIEW_ENTRY_QMP_PID
+  qmp_read_descriptor=${OVERVIEW_ENTRY_QMP[0]}
+  qmp_write_descriptor=${OVERVIEW_ENTRY_QMP[1]}
+
+  IFS= read -r -t 2 -u "$qmp_read_descriptor" _ || result=1
+  if ((result == 0)); then
+    printf '%s\n' "$capabilities" >&"$qmp_write_descriptor" \
+      || result=1
+  fi
+  if ((result == 0)); then
+    read_qmp_command_return "$qmp_read_descriptor" || result=1
+  fi
+  if ((result == 0)); then
+    printf '%s\n' "$entry_input" >&"$qmp_write_descriptor" \
+      || result=1
+  fi
+  if ((result == 0)); then
+    read_qmp_command_return "$qmp_read_descriptor" || result=1
+  fi
+  if ((result == 0)); then
+    : > "$sent_file" || result=1
+  fi
+
+  for ((frame_attempt = 1; \
+        result == 0 && frame_attempt <= maximum_frame_attempts; \
+        frame_attempt += 1)); do
+    rm -f -- "$candidate_image"
+    screendump="{\"execute\":\"screendump\",\"arguments\":{\"filename\":\"$candidate_image\"}}"
+    printf '%s\n' "$screendump" >&"$qmp_write_descriptor" \
+      || result=1
+    if ((result == 0)); then
+      read_qmp_command_return "$qmp_read_descriptor" || result=1
+    fi
+    if ((result == 0)) && [[ ! -s "$candidate_image" ]]; then
+      result=1
+    fi
+    if ((result == 0)) && { [[ -z "$last_frame" ]] \
+      || ! cmp -s -- "$last_frame" "$candidate_image"; }; then
+      frame_count=$((frame_count + 1))
+      if ((frame_count > maximum_unique_frames)); then
+        printf 'Overview entry produced more than %d distinct captured frames.\n' \
+          "$maximum_unique_frames" >&2
+        result=1
+      else
+        printf -v frame_suffix '%03d' "$frame_count"
+        frame_file="$(dirname -- "$terminal_image")/driftile-overview-entry-frame-$frame_suffix.ppm"
+        mv -- "$candidate_image" "$frame_file" || result=1
+        if ((result == 0)); then
+          printf '%s\n' "$frame_file" >> "$frame_manifest" || result=1
+          last_frame=$frame_file
+        fi
+      fi
+    fi
+    if ((result == 0)) && [[ -f "$verified_file" ]]; then
+      break
+    fi
+  done
+
+  if ((result == 0)) && [[ ! -f "$verified_file" ]]; then
+    if [[ -f "$observed_file" ]]; then
+      printf 'The guest rejected the physical Overview entry probe: %s\n' \
+        "$(<"$observed_file")" >&2
+    else
+      printf 'The guest did not verify the physical Overview entry probe.\n' >&2
+    fi
+    result=1
+  fi
+  if ((result == 0 && frame_count < 2)); then
+    printf 'Overview entry did not expose enough distinct captured frames.\n' >&2
+    result=1
+  fi
+
+  for frame_file in "$terminal_image" "$terminal_duplicate_image"; do
+    ((result == 0)) || break
+    rm -f -- "$frame_file"
+    screendump="{\"execute\":\"screendump\",\"arguments\":{\"filename\":\"$frame_file\"}}"
+    printf '%s\n' "$screendump" >&"$qmp_write_descriptor" \
+      || result=1
+    if ((result == 0)); then
+      read_qmp_command_return "$qmp_read_descriptor" || result=1
+    fi
+    if ((result == 0)) && [[ ! -s "$frame_file" ]]; then
+      result=1
+    fi
+  done
+
+  rm -f -- "$candidate_image"
+  exec {qmp_write_descriptor}>&- || true
+  exec {qmp_read_descriptor}<&- || true
+  wait "$qmp_pid" || result=1
+  ((result == 0)) && [[ -s "$frame_manifest" ]]
+}
+
 wait_for_guest_exchange_file() {
   local attempt
   local path=$1
@@ -1138,6 +1285,7 @@ send_physical_overview_wheel_controls() {
   local continuity_seed_image
   local coordinate_file=$1
   local desktop_surface_image
+  local entry_probe_report
   local exchange_directory
   local exit_frame_index
   local exit_frame_suffix
@@ -1146,6 +1294,7 @@ send_physical_overview_wheel_controls() {
   local key_in_image
   local key_reset_image
   local marker_prefix
+  local overview_entry_frame_manifest
   local off_center_absolute_y
   local off_center_y
   local output_height
@@ -1158,6 +1307,7 @@ send_physical_overview_wheel_controls() {
   local shifted_wheel_input='{"execute":"input-send-event","arguments":{"events":[{"type":"btn","data":{"down":true,"button":"wheel-down"}},{"type":"btn","data":{"down":false,"button":"wheel-down"}}]}}'
   local settle_seconds=0.05
   local fresh_close_image
+  local fresh_open_duplicate_image
   local fresh_open_image
   local fresh_seed_image
   local vertical_wheel_down_input='{"execute":"input-send-event","arguments":{"events":[{"type":"btn","data":{"down":true,"button":"wheel-down"}},{"type":"btn","data":{"down":false,"button":"wheel-down"}}]}}'
@@ -1206,6 +1356,8 @@ send_physical_overview_wheel_controls() {
   fresh_seed_image="$exchange_directory/driftile-overview-zoom-fresh-seed.ppm"
   fresh_close_image="$exchange_directory/driftile-overview-zoom-fresh-close.ppm"
   fresh_open_image="$exchange_directory/driftile-overview-zoom-fresh-open.ppm"
+  fresh_open_duplicate_image="$exchange_directory/driftile-overview-entry-terminal-duplicate.ppm"
+  overview_entry_frame_manifest="$exchange_directory/driftile-overview-entry-frames.list"
   desktop_surface_image="$exchange_directory/driftile-overview-desktop-surface.ppm"
   for ((exit_frame_index = 1; exit_frame_index <= 16; exit_frame_index += 1)); do
     printf -v exit_frame_suffix '%02d' "$exit_frame_index"
@@ -1253,7 +1405,23 @@ send_physical_overview_wheel_controls() {
   verify_physical_overview_zoom_phase \
     fresh-close \
     "$fresh_close_image" || return 1
-  send_physical_overview_zoom_phase fresh-open "$fresh_open_image" || return 1
+  capture_overview_entry_burst \
+    "$fresh_open_image" \
+    "$fresh_open_duplicate_image" \
+    "$overview_entry_frame_manifest" || return 1
+
+  [[ -x "$overview_zoom_node_executable" ]] || return 1
+  if ! entry_probe_report=$("$overview_zoom_node_executable" \
+    "$root_directory/tools/vm/overview-entry-visual-probe.mjs" \
+    "$fresh_close_image" \
+    "$fresh_open_image" \
+    "$fresh_open_duplicate_image" \
+    "$overview_entry_frame_manifest"); then
+    printf 'Overview entry visual probe metrics: %s\n' \
+      "${entry_probe_report:-unavailable}" >&2
+    return 1
+  fi
+  printf 'Overview entry visual probe: %s\n' "$entry_probe_report"
 
   marker_prefix="$exchange_directory/driftile-overview-vertical-wheel"
 

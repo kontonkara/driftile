@@ -11,6 +11,7 @@ Item {
     required property bool desktopReorderEnabled
     required property bool desktopReorderSource
     required property bool desktopSurfaceEnabled
+    required property bool desktopSurfaceOpeningCritical
     required property var desktopSurfaceLifecycleEvent
     required property string desktopId
     required property var floatingWindows
@@ -401,7 +402,7 @@ Item {
                 active: card.desktopSurfaceEnabled && card.desktopSurfaceContextExact
                     && card.desktopSurfaceReloadContextExact && card.desktopSurfaceReady
                     && card.desktopSurfaceReadyToken === card.desktopSurfaceReloadToken
-                asynchronous: true
+                asynchronous: !card.desktopSurfaceOpeningCritical
                 enabled: false
                 opacity: 0
                 z: 0
@@ -441,6 +442,11 @@ Item {
                         desktopSurfaceFadeIn.stop();
                         opacity = 0;
                         return false;
+                    }
+                    if (card.desktopSurfaceOpeningCritical) {
+                        desktopSurfaceFadeIn.stop();
+                        opacity = 1;
+                        return true;
                     }
                     if (desktopSurfaceFadeIn.running || opacity >= 1) {
                         return true;
@@ -2910,6 +2916,10 @@ Item {
     onDesktopSurfaceActivityIdChanged: card.synchronizeDesktopSurfaceContext()
     onDesktopSurfaceContextExactChanged: card.synchronizeDesktopSurfaceContext()
     onDesktopSurfaceEnabledChanged: card.synchronizeDesktopSurfaceContext()
+    onDesktopSurfaceOpeningCriticalChanged: {
+        card.synchronizeDesktopSurfaceContext();
+        desktopSurfaceLoader.synchronizeDesktopSurfacePresentation();
+    }
     onDesktopSurfaceLifecycleEventChanged: card.scheduleDesktopSurfaceReload()
     onEnabledChanged: {
         card.scheduleColumnDragEligibilityRefresh();
@@ -4172,6 +4182,9 @@ Item {
             return false;
         }
 
+        if (desktopSurfaceOpeningCritical) {
+            return completeDesktopSurfaceReload(token, reloadRevision);
+        }
         Qt.callLater(card.completeDesktopSurfaceReload, token, reloadRevision);
         return true;
     }
@@ -4182,6 +4195,12 @@ Item {
         }
         if (!desktopSurfaceContextInvalidated && desktopSurfaceReloadToken > 0
                 && desktopSurfaceReloadContextExact) {
+            if (desktopSurfaceOpeningCritical
+                    && (!desktopSurfaceReady
+                        || desktopSurfaceReadyToken !== desktopSurfaceReloadToken)) {
+                return completeDesktopSurfaceReload(desktopSurfaceReloadToken,
+                                                    desktopSurfaceReloadRevision);
+            }
             return true;
         }
 

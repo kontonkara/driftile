@@ -463,7 +463,7 @@ describe("spatial overview window drag lifecycle", () => {
 
   it("retains terminal canvas coverage outside an exact exit bridge", () => {
     expect(spatialCanvas).toMatch(
-      /opacity: root\.spatialExitHandoffActive\s*\? overviewExitHandoffOverlay\.surfaceOpacity\s*:\s*root\.spatialPresentationPhase === "closing" \? 1\s*:\s*root\.spatialPresentationProgress/u,
+      /opacity: root\.spatialExitHandoffActive\s*\? overviewExitHandoffOverlay\.surfaceOpacity\s*:\s*root\.spatialPresentationPhase === "preparing"[\s\S]*\|\| root\.spatialPresentationPhase === "opening"[\s\S]*\|\| root\.spatialPresentationPhase === "closing" \? 1\s*:\s*root\.spatialPresentationProgress/u,
     );
     expect(spatialCanvas).not.toMatch(
       /overviewExitHandoffOverlay\.surfaceOpacity\s*:\s*1/u,

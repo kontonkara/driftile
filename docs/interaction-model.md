@@ -205,16 +205,18 @@ its exact output, virtual desktop, and current activity behind windows and input
 layers. After Overview has opened, an unavailable or inexact surface keeps a
 solid dark fallback. A surface captures its exact Overview session, context
 generation, activity, desktop, screen, and output. It is shown only at
-`Loader.Ready` while that complete token is still newest and exact, then fades
-in over 90 ms; context loss unloads it immediately and leaves the solid fallback
-through replacement. A later `invalid` to exact public membership transition
-schedules its own replacement, while stale completion cannot clear a newer
-accepted token. The last exact surface range survives transient invalid
-geometry. Panning, animated camera movement, zoom, and live reflow preload
-destination rows before releasing their sources when the combined span stays
-bounded; a distant jump prioritizes its destination. This
-per-session, output, activity, and topology range is contiguous and limited to
-12 rows, including any bounded current-row pin.
+`Loader.Ready` while that complete token is still newest and exact. During
+preparation, exact residency owns the current row immediately and bootstraps its
+opening-critical surface synchronously. Ordinary resident surfaces remain
+asynchronous and fade in over 90 ms; context loss unloads them immediately and
+leaves the solid fallback through replacement. A later `invalid` to exact public
+membership transition schedules its own replacement, while stale completion
+cannot clear a newer accepted token. The last exact surface range survives
+transient invalid geometry. Panning, animated camera movement, zoom, and live
+reflow preload destination rows before releasing their sources when the combined
+span stays bounded; a distant jump prioritizes its destination. This per-session,
+output, activity, and topology range is contiguous and limited to 12 rows,
+including any bounded current-row pin.
 Search or drag may retain an off-screen card without creating its Desktop
 surface. Surface residency never writes layout or persistence.
 
@@ -253,18 +255,21 @@ help panel; a context change cancels an active transaction. Search remains
 usable with zoom. A passive, non-interactive percentage indicator is visible
 while zoom changes or differs from the configured session start.
 
-Ordinary preparation remains transparent over the native desktop until the
-current row's newest exact asynchronous Desktop surface reaches `Loader.Ready`.
-Only an exact terminal `Loader.Error` may admit the solid fallback and release
-opening; `Loader.Null`, `Loader.Loading`, and stale or inexact contexts cannot
-release readiness. Overview then animates from the current full-size row into
-the spatial plane while the canvas fades with presentation progress. Closing
-uses the same bounded motion in reverse, but never fades its last complete
-canvas before replacement coverage exists. The controller applies easing once
-and the scene consumes that progress directly. Exact public exit thumbnail and
-Desktop surface bridges preload in the captured output's render path. Two
-matching frames latch each ready bridge; otherwise the spatial canvas remains
-opaque.
+Preparation builds an opaque full-size current-row canvas from the synchronous
+opening-critical Desktop surface. Only `Loader.Ready` for the exact residency
+owner, or its exact terminal `Loader.Error` fallback, may release the surface
+barrier; `Loader.Null`, `Loader.Loading`, and stale or inexact contexts cannot.
+Two compositor-frame callbacks must then observe the same session, output,
+topology, card, card epoch, and surface context before readiness is published;
+context drift resets the frame barrier. No time delay participates. Overview
+therefore starts with a complete first visible frame and moves continuously from
+the native desktop into the spatial plane while its canvas stays opaque through
+opening. Closing uses the same bounded motion in reverse, but never fades its
+last complete canvas before replacement coverage exists. The controller applies
+easing once and the scene consumes that progress directly. Exact public exit
+thumbnail and Desktop surface bridges preload in the captured output's render
+path. Two matching frames latch each ready bridge; otherwise the spatial canvas
+remains opaque.
 Two bounded promoted frames still choose the thumbnail or desktop-only path
 once, and that window mode can only downgrade. An unavailable or late thumbnail
 does not draw a synthetic window rectangle. The Desktop bridge tracks the exact

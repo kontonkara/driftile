@@ -44,7 +44,9 @@ describe("overview desktop surface presentation", () => {
   });
 
   it("presents only a ready surface in the exact active context", () => {
-    expect(surfaceLoader).toContain("asynchronous: true");
+    expect(surfaceLoader).toContain(
+      "asynchronous: !card.desktopSurfaceOpeningCritical",
+    );
     expect(surfaceLoader).toMatch(
       /active: card\.desktopSurfaceEnabled && card\.desktopSurfaceContextExact\s*&& card\.desktopSurfaceReloadContextExact && card\.desktopSurfaceReady\s*&& card\.desktopSurfaceReadyToken === card\.desktopSurfaceReloadToken/u,
     );

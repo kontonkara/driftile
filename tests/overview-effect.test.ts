@@ -890,7 +890,7 @@ describe("overview effect package", () => {
     );
     const surfaceLoadPolicy = scene.slice(
       scene.indexOf("function desktopSurfaceShouldLoad("),
-      scene.indexOf("function desktopCardAt("),
+      scene.indexOf("function desktopSurfaceOpeningCritical("),
     );
 
     expect(projectedSurfaceStart).toBeGreaterThan(0);
