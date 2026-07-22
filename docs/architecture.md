@@ -114,11 +114,16 @@ Events travel from KWin through the bridge into the runtime. Commands and result
   desktop or activity membership means all; incomplete, ambiguous, or
   over-budget identity becomes one global resident-surface refresh.
 - Reloads only instantiated Desktop surfaces selected by that immutable
-  generation. Each card captures its exact context generation, activity,
-  desktop object and ID, screen object and name, and projected output ID before
-  construction. The solid fallback remains visible until `Loader.Ready` for the
-  newest matching reload token, then that exact surface fades in over 90 ms.
-  Context loss and stale load callbacks reject presentation immediately.
+  generation. Each card captures its exact Overview session, context generation,
+  activity, desktop object and ID, screen object and name, and projected output
+  ID before construction. During ordinary preparation the effect remains
+  transparent over the native desktop until the current row's newest exact load
+  reaches `Loader.Ready`. Only a terminal `Loader.Error` from that same exact
+  load may admit the solid fallback and release opening; `Loader.Null`,
+  `Loader.Loading`, and stale or inexact contexts retain the barrier. After
+  opening, the solid fallback remains visible through reload until the newest
+  matching surface is ready and fades in over 90 ms. Context loss and stale load
+  callbacks reject presentation immediately.
 - Commits one contiguous Desktop-surface residency range per exact session,
   output, activity, and desktop topology. The last exact range survives
   transient invalid scene geometry. Panning, animated camera movement, zoom,
@@ -231,12 +236,13 @@ Events travel from KWin through the bridge into the runtime. Commands and result
   and camera context; horizontal updates also retain the exact row and desktop
   context. A mismatch cancels without a layout or persistence write. The
   gesture adds no polling or private API.
-- Settles ordinary opening immediately, keeps interactive presentation progress
-  gesture-driven, and retains the animated close path. Discrete vertical wheel
-  input normalizes KWin's system-inversion flag so physical down maps to the
-  next workspace row and physical up maps to the previous row. Precise vertical,
-  native horizontal, and `Shift`-remapped pixel input applies the same physical
-  normalization while remaining continuous.
+- Starts ordinary opening only after its exact Desktop-surface preparation
+  barrier releases, keeps interactive presentation progress gesture-driven, and
+  retains the animated close path. Discrete vertical wheel input normalizes
+  KWin's system-inversion flag so physical down maps to the next workspace row
+  and physical up maps to the previous row. Precise vertical, native horizontal,
+  and `Shift`-remapped pixel input applies the same physical normalization while
+  remaining continuous.
 - Re-reads the public desktop order synchronously when KWin reports a changed
   desktop list, then coalesces the persisted-model refresh without exposing
   stale workspace order to later pointer or gesture input.

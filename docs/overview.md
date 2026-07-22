@@ -27,12 +27,13 @@ Each instantiated visible-range row shows KWin's public Desktop surface for its
 exact output, virtual desktop, and current activity inside the projected output
 area. The surface stays behind window thumbnails and every input layer. Missing
 or inexact identity, or an unavailable surface, leaves a solid dark fallback
-visible. Surface construction is asynchronous. Each load captures the exact
-context generation, activity, desktop, screen, and output. Only the newest
-matching surface may fade in over 90 ms after it becomes ready; losing that
-exact context unloads it immediately. When late public membership makes the
-same row exact again, it starts a new load without waiting for another topology
-event, and a stale callback cannot clear a newer accepted surface.
+visible after Overview has opened. Surface construction is asynchronous. Each
+load captures the exact Overview session, context generation, activity, desktop,
+screen, and output. Only the newest matching surface may fade in over 90 ms
+after it becomes ready; losing that exact context unloads it immediately. When
+late public membership makes the same row exact again, it starts a new load
+without waiting for another topology event, and a stale callback cannot clear a
+newer accepted surface.
 Surface admission is independent from card admission, so a search- or
 drag-retained off-screen card does not create a Desktop surface. KWin's Desktop
 selection excludes panels, docks, and notifications.
@@ -121,16 +122,20 @@ surface residency restarts, and keyboard selection is repaired. A late or
 otherwise stale callback cannot replace the model or release input, and the
 activation cache is copied only afterward on a deferred event-loop turn.
 
-Ordinary opening animates from the current full-size row into the spatial plane.
-The projected canvas fades with presentation progress, so neither asynchronous
-Desktop surfaces nor window thumbnails can expose a full-size intermediate
-flash. The controller eases presentation progress once, and the scene consumes
-that bounded progress directly. Interactive gestures continue to drive progress
-and settle on completion. Closing uses the same motion in reverse while retaining
-an opaque canvas until an exact desktop bridge has rendered twice. A manually
-panned current row returns to its live camera during the close motion; reopening
-during that motion reverses the same visible session from its current progress
-without discarding the current session zoom.
+Ordinary preparation stays transparent over the native desktop until the
+current row's newest exact asynchronous Desktop surface reaches `Loader.Ready`.
+Only an exact terminal `Loader.Error` may admit the solid fallback and start the
+opening; `Loader.Null`, `Loader.Loading`, and stale or inexact contexts keep the
+preparation barrier closed. Opening then animates from the current full-size row
+into the spatial plane. The projected canvas fades with presentation progress,
+so neither asynchronous Desktop surfaces nor window thumbnails can expose a
+full-size intermediate flash. The controller eases presentation progress once,
+and the scene consumes that bounded progress directly. Interactive gestures
+continue to drive progress and settle on completion. Closing uses the same
+motion in reverse while retaining an opaque canvas until an exact desktop bridge
+has rendered twice. A manually panned current row returns to its live camera
+during the close motion; reopening during that motion reverses the same visible
+session from its current progress without discarding the current session zoom.
 
 While Overview remains open, exact layout updates animate surviving windows to
 their new projected positions and sizes. Column movement and resizing, selected

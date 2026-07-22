@@ -84,6 +84,12 @@ Item {
         ? desktopSurfaceActivityId : "driftile-unavailable-activity"
     readonly property bool desktopSurfaceContextExact: desktopSurfaceContextIsExact()
     readonly property bool desktopSurfaceReloadContextExact: desktopSurfaceReloadContextIsExact()
+    readonly property bool desktopSurfacePresented: desktopSurfaceLoader.desktopSurfacePresented
+        && desktopSurfaceLoader.opacity >= 1
+    readonly property bool desktopSurfaceFallbackTerminal:
+        desktopSurfaceLoader.desktopSurfaceFallbackTerminal
+    readonly property string desktopSurfaceOpeningDisposition: desktopSurfacePresented
+        ? "ready" : desktopSurfaceFallbackTerminal ? "fallback" : "pending"
     property bool desktopSurfaceContextInvalidated: false
     property bool desktopSurfaceReady: false
     property int desktopSurfaceReadyToken: 0
@@ -91,6 +97,7 @@ Item {
     property int desktopSurfaceReloadRevision: 0
     property int desktopSurfaceReloadToken: 0
     property int desktopSurfaceReloadGeneration: 0
+    property int desktopSurfaceReloadSessionId: 0
     property string desktopSurfaceReloadActivityId: ""
     property var desktopSurfaceReloadDesktop: null
     property string desktopSurfaceReloadDesktopId: ""
@@ -384,6 +391,11 @@ Item {
                     && card.desktopSurfaceReadyToken === card.desktopSurfaceReloadToken
                     && card.desktopSurfaceLoadedToken === card.desktopSurfaceReloadToken
                     && card.desktopSurfaceLoadedItemIsExact(desktopSurfaceLoader.item)
+                readonly property bool desktopSurfaceFallbackTerminal:
+                    desktopSurfaceLoader.active && desktopSurfaceLoader.status === Loader.Error
+                    && card.desktopSurfaceEnabled && card.desktopSurfaceContextExact
+                    && card.desktopSurfaceReloadContextExact && card.desktopSurfaceReady
+                    && card.desktopSurfaceReadyToken === card.desktopSurfaceReloadToken
 
                 anchors.fill: parent
                 active: card.desktopSurfaceEnabled && card.desktopSurfaceContextExact
@@ -451,6 +463,7 @@ Item {
 
                         property bool driftileContextCaptured: false
                         property int driftileContextGeneration: 0
+                        property int driftileSessionId: 0
                         property int driftileReloadToken: 0
                         property string driftileActivityId: ""
                         property var driftileDesktop: null
@@ -471,6 +484,7 @@ Item {
                             }
 
                             driftileContextGeneration = card.desktopSurfaceReloadGeneration;
+                            driftileSessionId = card.desktopSurfaceReloadSessionId;
                             driftileReloadToken = card.desktopSurfaceReadyToken;
                             driftileActivityId = card.desktopSurfaceReloadActivityId;
                             driftileDesktop = card.desktopSurfaceReloadDesktop;
@@ -2956,7 +2970,10 @@ Item {
         card.synchronizeDesktopSurfaceContext();
         card.cancelActiveWindowSpatialDrag();
     }
-    onOverviewSessionIdChanged: card.resetPresentationMotionAfterDrift()
+    onOverviewSessionIdChanged: {
+        card.resetPresentationMotionAfterDrift();
+        card.synchronizeDesktopSurfaceContext();
+    }
     onPreviewViewportOffsetChanged: card.resetPresentationMotionAfterDrift()
     onSpatialDirectDragBlockedChanged: {
         if (spatialDirectDragBlocked) {
@@ -4140,12 +4157,15 @@ Item {
         try {
             if (!desktopSurfaceContextExact || !Number.isSafeInteger(overviewContextGeneration)
                     || overviewContextGeneration <= 0 || overviewContextGeneration > 2147483647
+                    || !Number.isSafeInteger(overviewSessionId) || overviewSessionId <= 0
+                    || overviewSessionId > 2147483647
                     || !desktop || !screen || screen.name === undefined || screen.name === null) {
                 return null;
             }
 
             return Object.freeze({
                 generation: overviewContextGeneration,
+                sessionId: overviewSessionId,
                 activityId: desktopSurfaceActivityId,
                 desktop,
                 desktopId,
@@ -4164,6 +4184,7 @@ Item {
         }
 
         desktopSurfaceReloadGeneration = expectation.generation;
+        desktopSurfaceReloadSessionId = expectation.sessionId;
         desktopSurfaceReloadActivityId = expectation.activityId;
         desktopSurfaceReloadDesktop = expectation.desktop;
         desktopSurfaceReloadDesktopId = expectation.desktopId;
@@ -4177,6 +4198,7 @@ Item {
         try {
             return desktopSurfaceContextExact && desktopSurfaceReloadGeneration > 0
                 && desktopSurfaceReloadGeneration === overviewContextGeneration
+                && desktopSurfaceReloadSessionId === overviewSessionId
                 && desktopSurfaceReloadActivityId === desktopSurfaceActivityId
                 && desktopSurfaceReloadActivityId === overviewActivityId
                 && desktopSurfaceReloadDesktop === desktop
@@ -4194,6 +4216,7 @@ Item {
             return candidate && candidate.driftileContextCaptured === true
                 && candidate.driftileReloadToken === desktopSurfaceReloadToken
                 && candidate.driftileContextGeneration === desktopSurfaceReloadGeneration
+                && candidate.driftileSessionId === desktopSurfaceReloadSessionId
                 && candidate.driftileActivityId === desktopSurfaceReloadActivityId
                 && candidate.driftileDesktop === desktopSurfaceReloadDesktop
                 && candidate.driftileDesktopId === desktopSurfaceReloadDesktopId
@@ -4272,6 +4295,8 @@ Item {
                     || desktopSurfaceActivityId.length === 0
                     || overviewActivityId.length === 0
                     || overviewActivityId !== desktopSurfaceActivityId
+                    || !Number.isSafeInteger(overviewSessionId) || overviewSessionId <= 0
+                    || overviewSessionId > 2147483647
                     || !Number.isSafeInteger(overviewContextGeneration)
                     || overviewContextGeneration <= 0 || overviewContextGeneration > 2147483647) {
                 return false;

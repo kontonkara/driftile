@@ -202,16 +202,17 @@ opening after the effect has fully closed starts from the configured scale.
 
 Each instantiated visible-range row renders KWin's public Desktop surface for
 its exact output, virtual desktop, and current activity behind windows and input
-layers. An unavailable or inexact surface keeps a solid dark fallback. A surface
-captures its exact context generation, activity, desktop, screen, and output. It
-is shown only at `Loader.Ready` while that complete token is still newest and
-exact, then fades in over 90 ms; context loss unloads it immediately and leaves
-the solid fallback through replacement. A later `invalid` to exact public
-membership transition schedules its own replacement, while stale completion
-cannot clear a newer accepted token. The last exact surface range survives
-transient invalid geometry. Panning, animated camera movement, zoom, and live
-reflow preload destination rows before releasing their sources when the
-combined span stays bounded; a distant jump prioritizes its destination. This
+layers. After Overview has opened, an unavailable or inexact surface keeps a
+solid dark fallback. A surface captures its exact Overview session, context
+generation, activity, desktop, screen, and output. It is shown only at
+`Loader.Ready` while that complete token is still newest and exact, then fades
+in over 90 ms; context loss unloads it immediately and leaves the solid fallback
+through replacement. A later `invalid` to exact public membership transition
+schedules its own replacement, while stale completion cannot clear a newer
+accepted token. The last exact surface range survives transient invalid
+geometry. Panning, animated camera movement, zoom, and live reflow preload
+destination rows before releasing their sources when the combined span stays
+bounded; a distant jump prioritizes its destination. This
 per-session, output, activity, and topology range is contiguous and limited to
 12 rows, including any bounded current-row pin.
 Search or drag may retain an off-screen card without creating its Desktop
@@ -252,13 +253,18 @@ help panel; a context change cancels an active transaction. Search remains
 usable with zoom. A passive, non-interactive percentage indicator is visible
 while zoom changes or differs from the configured session start.
 
-Ordinary Overview opening animates from the current full-size row into the
-spatial plane while the canvas fades with presentation progress. Closing uses
-the same bounded motion in reverse, but never fades its last complete canvas
-before replacement coverage exists. The controller applies easing once and the
-scene consumes that progress directly. Exact public exit thumbnail and Desktop
-surface bridges preload in the captured output's render path. Two matching
-frames latch each ready bridge; otherwise the spatial canvas remains opaque.
+Ordinary preparation remains transparent over the native desktop until the
+current row's newest exact asynchronous Desktop surface reaches `Loader.Ready`.
+Only an exact terminal `Loader.Error` may admit the solid fallback and release
+opening; `Loader.Null`, `Loader.Loading`, and stale or inexact contexts cannot
+release readiness. Overview then animates from the current full-size row into
+the spatial plane while the canvas fades with presentation progress. Closing
+uses the same bounded motion in reverse, but never fades its last complete
+canvas before replacement coverage exists. The controller applies easing once
+and the scene consumes that progress directly. Exact public exit thumbnail and
+Desktop surface bridges preload in the captured output's render path. Two
+matching frames latch each ready bridge; otherwise the spatial canvas remains
+opaque.
 Two bounded promoted frames still choose the thumbnail or desktop-only path
 once, and that window mode can only downgrade. An unavailable or late thumbnail
 does not draw a synthetic window rectangle. The Desktop bridge tracks the exact

@@ -11868,6 +11868,7 @@ Rectangle {
             const screen = targetScreen;
             const sessionId = activeOverviewSessionId;
             const epoch = presentationReadinessEpoch;
+            const desktopCardEpoch = overviewDesktopCardEpoch;
             const topologyGeneration = overviewContextGeneration;
             if (!effect || effect.active !== true || effect.sceneVisible !== true
                     || spatialPresentationPhase !== "preparing"
@@ -11898,6 +11899,7 @@ Rectangle {
                     || !sameStringList(spatialHorizontalDesktopIds, desktopIds)
                     || spatialHorizontalGeometryPlans.length !== desktopIds.length
                     || spatialHorizontalViewportOffsets.length !== desktopIds.length
+                    || !Number.isInteger(desktopCardEpoch) || desktopCardEpoch < 0
                     || contextsByDesktopId === null) {
                 return null;
             }
@@ -11909,6 +11911,30 @@ Rectangle {
                 }
             }
             if (outputMatches !== 1) {
+                return null;
+            }
+
+            const currentCardLoader = desktopRepeater.itemAt(currentWorkspaceIndex);
+            const currentCard = currentCardLoader ? currentCardLoader.item : null;
+            if (!currentCardLoader || currentCardLoader.active !== true
+                    || currentCardLoader.index !== currentWorkspaceIndex
+                    || currentCardLoader.modelData !== desktopIds[currentWorkspaceIndex]
+                    || !currentCard || currentCard.desktop !== currentDesktop
+                    || currentCard.desktopId !== desktopIds[currentWorkspaceIndex]
+                    || currentCard.overviewSessionId !== sessionId
+                    || currentCard.overviewContextGeneration !== topologyGeneration
+                    || currentCard.overviewActivityId !== activeOverviewActivityId
+                    || currentCard.outputId !== expectedOutputId
+                    || currentCard.screen !== screen) {
+                return null;
+            }
+            const desktopSurfaceOpeningDisposition =
+                currentCard.desktopSurfaceOpeningDisposition;
+            if (desktopSurfaceOpeningDisposition === "pending") {
+                return null;
+            }
+            if (desktopSurfaceOpeningDisposition !== "ready"
+                    && desktopSurfaceOpeningDisposition !== "fallback") {
                 return null;
             }
 
