@@ -74,7 +74,12 @@ function runFixture(anchorShift: number): {
     try {
       const stdout = execFileSync(
         process.execPath,
-        [probePath, ...imageNames.map((name) => paths[name])],
+        [
+          probePath,
+          ...imageNames.map((name) =>
+            requiredRecordValue(paths, name, "fixture path"),
+          ),
+        ],
         { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] },
       );
       return { status: 0, stderr: "", stdout };
@@ -149,10 +154,25 @@ function writeFixture(
   return Object.fromEntries(
     imageNames.map((name) => {
       const path = join(directory, `${name}.ppm`);
-      writeFileSync(path, portablePixmap(images[name]));
+      writeFileSync(
+        path,
+        portablePixmap(requiredRecordValue(images, name, "fixture image")),
+      );
       return [name, path];
     }),
   );
+}
+
+function requiredRecordValue<T>(
+  record: Readonly<Record<string, T>>,
+  name: string,
+  description: string,
+): T {
+  const value = record[name];
+  if (value === undefined) {
+    throw new Error(`Missing ${description} for ${name}`);
+  }
+  return value;
 }
 
 function makeImage(
@@ -211,9 +231,16 @@ function blend(
   right: Uint8Array,
   amount: number,
 ): Uint8Array {
-  return left.map((channel, index) =>
-    Math.round(channel * (1 - amount) + right[index] * amount),
-  );
+  if (left.length !== right.length) {
+    throw new Error("Cannot blend images with different raster lengths");
+  }
+  return left.map((channel, index) => {
+    const rightChannel = right[index];
+    if (rightChannel === undefined) {
+      throw new Error(`Missing right blend channel at index ${String(index)}`);
+    }
+    return Math.round(channel * (1 - amount) + rightChannel * amount);
+  });
 }
 
 function portablePixmap(bytes: Uint8Array): Buffer {
