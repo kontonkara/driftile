@@ -211,9 +211,14 @@ bounds after each scale change.
 Zoom preview is transactional. Cancellation restores the exact scale and
 camera position from the start of the gesture. A changed session, model,
 output, workspace order, viewport size, or topology cancels stale input instead
-of applying it to a new context. Zoom does not take input ownership during a
-window drag, desktop reorder, viewport pan, close transition, topology refresh,
-or open `F1` help panel. Search remains compatible with the zoom controls.
+of applying it to a new context. An eligibility change emitted while an exact
+preview is being applied does not interrupt that application halfway through.
+Overview revalidates the exact context immediately afterward; if the plan is
+genuinely stale, the transaction cancels and restores its starting scale and
+camera instead of leaving a partial zoom. Zoom does not take input ownership
+during a window drag, desktop reorder, viewport pan, close transition, topology
+refresh, or open `F1` help panel. Search remains compatible with the zoom
+controls.
 
 A passive percentage indicator appears while zoom is being changed or differs
 from the configured starting scale. It accepts no input and adds no timer.

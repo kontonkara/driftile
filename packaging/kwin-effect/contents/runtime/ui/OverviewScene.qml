@@ -611,7 +611,7 @@ Rectangle {
         root.cancelActiveWindowSpatialDrag();
     }
     onSpatialZoomInputEligibleChanged: {
-        if (!spatialZoomInputEligible) {
+        if (!spatialZoomInputEligible && !spatialZoomApplying) {
             root.cancelSpatialZoomTransaction();
         }
         root.synchronizeSpatialZoomInputState();
@@ -4245,6 +4245,11 @@ Rectangle {
                 }
             }
             spatialZoomApplying = false;
+        }
+        if (applied && plan.transaction
+                && (!spatialZoomInputEligible || !spatialZoomContextIsExact())) {
+            root.cancelSpatialZoomTransaction();
+            applied = false;
         }
         return applied;
     }

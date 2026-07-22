@@ -168,6 +168,62 @@ describe("overview session zoom scene", () => {
     expect(preview).not.toContain("spatialZoomTransaction = plan.transaction;");
   });
 
+  it("defers synchronous preview invalidation until zoom apply settles", () => {
+    const eligibilityChanged = sourceBetween(
+      "onSpatialZoomInputEligibleChanged: {",
+      "onSpatialZoomSceneRegistrationEligibleChanged:",
+    );
+    const layoutChanged = sourceBetween(
+      "onOverviewSpatialLayoutChanged: {",
+      "onOverviewZoomGestureDirectionChanged:",
+    );
+    const applyPlan = sourceBetween(
+      "function applySpatialZoomPlan(plan)",
+      "function previewSpatialZoomTransaction(scale)",
+    );
+
+    const normalizedEligibilityChanged = eligibilityChanged.replace(
+      /\s+/gu,
+      " ",
+    );
+    expect
+      .soft(normalizedEligibilityChanged)
+      .toContain(
+        "if (!spatialZoomInputEligible && !spatialZoomApplying) { root.cancelSpatialZoomTransaction(); }",
+      );
+    expect(layoutChanged).toContain(
+      "spatialZoomTransaction !== null && !spatialZoomApplying",
+    );
+    const applySettled = applyPlan.lastIndexOf("spatialZoomApplying = false;");
+    const postApply = applyPlan.slice(applySettled);
+    const previewPlanGuard = postApply.indexOf("plan.transaction");
+    const eligibilityGuard = postApply.indexOf("!spatialZoomInputEligible");
+    const exactContextGuard = postApply.indexOf("!spatialZoomContextIsExact()");
+    const cancellation = postApply.indexOf(
+      "root.cancelSpatialZoomTransaction();",
+    );
+    const rejection = postApply.indexOf("applied = false;");
+
+    expect
+      .soft({
+        cancelsAfterGuards:
+          cancellation > Math.max(eligibilityGuard, exactContextGuard),
+        checksEligibilityAfterApply: eligibilityGuard > previewPlanGuard,
+        checksExactContextAfterApply: exactContextGuard > previewPlanGuard,
+        rejectsInvalidPreview: rejection > cancellation,
+        settlesApplying: applySettled >= 0,
+        validatesPreviewPlans: previewPlanGuard >= 0,
+      })
+      .toEqual({
+        cancelsAfterGuards: true,
+        checksEligibilityAfterApply: true,
+        checksExactContextAfterApply: true,
+        rejectsInvalidPreview: true,
+        settlesApplying: true,
+        validatesPreviewPlans: true,
+      });
+  });
+
   it("arbitrates scene ownership and exposes passive touch feedback", () => {
     expect(scene).toContain("readonly property bool spatialZoomInputEligible:");
     expect(scene).toContain(
