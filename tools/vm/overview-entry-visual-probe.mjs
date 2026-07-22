@@ -4,6 +4,10 @@ import { readFileSync } from "node:fs";
 
 const maximumPixelCount = 16 * 1024 * 1024;
 const maximumFrameCount = 64;
+const fallbackColor = [23, 30, 42];
+const fallbackChannelDistanceLimit = 18;
+const fallbackPixelFractionLimit = 0.55;
+const lowVarianceStandardDeviationLimit = 12;
 
 if (process.argv.length !== 6) {
   process.stderr.write(
@@ -47,8 +51,15 @@ const endpointModalFraction = Math.max(
   quantizedModalFraction(overview),
 );
 const modalFractionLimit = Math.max(0.88, endpointModalFraction + 0.12);
-const frameMetrics = frames.map((frame) => ({
-  ...entryContinuityMetrics(desktop, overview, frame, darkDeficitThreshold),
+const frameMetrics = frames.map((frame, index) => ({
+  ...entryContinuityMetrics(
+    desktop,
+    overview,
+    index === 0 ? desktop : frames[index - 1],
+    frame,
+    index === frames.length - 1 ? overview : frames[index + 1],
+    darkDeficitThreshold,
+  ),
   modalFraction: quantizedModalFraction(frame),
 }));
 const firstMaterialFrameIndex = frameMetrics.findIndex(
@@ -65,6 +76,18 @@ const maximumWholeFrameUnderflow = Math.max(
 const maximumWideDarkAreaFraction = Math.max(
   ...frameMetrics.map((metrics) => metrics.wideDarkAreaFraction),
 );
+const wideDarkCulpritIndex = frameMetrics.findIndex(
+  (metrics) =>
+    metrics.wideDarkAreaFraction === maximumWideDarkAreaFraction &&
+    metrics.wideDarkRectangle !== null,
+);
+const wideDarkCulprit =
+  wideDarkCulpritIndex >= 0
+    ? {
+        frameIndex: wideDarkCulpritIndex + 1,
+        ...frameMetrics[wideDarkCulpritIndex].wideDarkRectangle,
+      }
+    : null;
 const maximumModalFraction = Math.max(
   ...frameMetrics.map((metrics) => metrics.modalFraction),
 );
@@ -97,6 +120,7 @@ const report = {
   sameStateNoiseLimit: roundMetric(sameStateNoiseLimit),
   terminalFrameDistance: roundMetric(terminalFrameDistance),
   wholeFrameUnderflowLimit: roundMetric(wholeFrameUnderflowLimit),
+  wideDarkCulprit: roundWideDarkRectangle(wideDarkCulprit),
 };
 
 process.stdout.write(`${JSON.stringify(report)}\n`);
@@ -117,7 +141,9 @@ if (maximumWholeFrameUnderflow > wholeFrameUnderflowLimit) {
   fail("an entry frame became materially darker than both stable endpoints");
 }
 if (maximumWideDarkAreaFraction >= 0.08) {
-  fail("an entry frame exposed a wide dark rectangular region");
+  fail(
+    `an entry frame exposed a wide dark rectangular region${wideDarkCulpritDiagnostic(wideDarkCulprit)}`,
+  );
 }
 if (maximumModalFraction > modalFractionLimit) {
   fail("an entry frame collapsed into a fullscreen modal color");
@@ -140,7 +166,14 @@ function readFrameManifest(path) {
   return paths;
 }
 
-function entryContinuityMetrics(desktop, overview, frame, deficitThreshold) {
+function entryContinuityMetrics(
+  desktop,
+  overview,
+  previousFrame,
+  frame,
+  nextFrame,
+  deficitThreshold,
+) {
   const gridColumns = 16;
   const gridRows = 12;
   const darkCells = Array.from({ length: gridRows }, () =>
@@ -161,25 +194,38 @@ function entryContinuityMetrics(desktop, overview, frame, deficitThreshold) {
       let cellPixels = 0;
       let darkPixels = 0;
       let eligiblePixels = 0;
+      let fallbackPixels = 0;
+      const channelSums = [0, 0, 0];
+      const channelSquareSums = [0, 0, 0];
 
       for (let y = yStart; y < yEnd; y += 2) {
         for (let x = xStart; x < xEnd; x += 2) {
           const offset = (y * frame.width + x) * 3;
           const desktopValue = pixelLuminance(desktop.bytes, offset);
           const overviewValue = pixelLuminance(overview.bytes, offset);
+          const previousValue = pixelLuminance(previousFrame.bytes, offset);
           const frameValue = pixelLuminance(frame.bytes, offset);
-          const endpointFloor = Math.min(desktopValue, overviewValue);
+          const nextValue = pixelLuminance(nextFrame.bytes, offset);
+          const neighborFloor = Math.min(previousValue, nextValue);
           desktopLuminance += desktopValue;
           overviewLuminance += overviewValue;
           frameLuminance += frameValue;
           sampledPixels += 1;
           cellPixels += 1;
+          for (let channel = 0; channel < 3; channel += 1) {
+            const value = frame.bytes[offset + channel];
+            channelSums[channel] += value;
+            channelSquareSums[channel] += value * value;
+          }
+          if (pixelMatchesFallback(frame.bytes, offset)) {
+            fallbackPixels += 1;
+          }
 
-          if (endpointFloor < 24) {
+          if (neighborFloor < 24) {
             continue;
           }
           eligiblePixels += 1;
-          const deficit = endpointFloor - frameValue;
+          const deficit = neighborFloor - frameValue;
           if (deficit >= deficitThreshold) {
             darkPixels += 1;
             cellDeficit += deficit;
@@ -187,13 +233,31 @@ function entryContinuityMetrics(desktop, overview, frame, deficitThreshold) {
         }
       }
 
+      const maximumChannelStandardDeviation = Math.max(
+        ...channelSums.map((sum, channel) =>
+          standardDeviation(sum, channelSquareSums[channel], cellPixels),
+        ),
+      );
+      const coherentDarkEvidence =
+        maximumChannelStandardDeviation <= lowVarianceStandardDeviationLimit ||
+        fallbackPixels >= cellPixels * fallbackPixelFractionLimit;
       darkCells[gridY][gridX] =
         eligiblePixels >= cellPixels * 0.25 &&
         darkPixels >= eligiblePixels * 0.6 &&
-        cellDeficit >= darkPixels * deficitThreshold * 1.15;
+        cellDeficit >= darkPixels * deficitThreshold * 1.15 &&
+        coherentDarkEvidence;
     }
   }
 
+  const wideDarkGridRectangle = largestWideRectangle(darkCells, 0.5);
+  const wideDarkRectangle = wideDarkGridRectangle
+    ? describeWideDarkRectangle(
+        frame,
+        wideDarkGridRectangle,
+        gridColumns,
+        gridRows,
+      )
+    : null;
   const desktopMean = desktopLuminance / (sampledPixels * 255);
   const overviewMean = overviewLuminance / (sampledPixels * 255);
   const frameMean = frameLuminance / (sampledPixels * 255);
@@ -205,15 +269,19 @@ function entryContinuityMetrics(desktop, overview, frame, deficitThreshold) {
       0,
       Math.min(desktopMean, overviewMean) - frameMean,
     ),
-    wideDarkAreaFraction: largestWideRectangleFraction(darkCells, 0.5),
+    wideDarkAreaFraction:
+      wideDarkGridRectangle === null
+        ? 0
+        : wideDarkGridRectangle.area / (gridColumns * gridRows),
+    wideDarkRectangle,
   };
 }
 
-function largestWideRectangleFraction(cells, minimumWidthFraction) {
+function largestWideRectangle(cells, minimumWidthFraction) {
   const rows = cells.length;
   const columns = cells[0]?.length ?? 0;
   const heights = Array.from({ length: columns }, () => 0);
-  let maximumArea = 0;
+  let largestRectangle = null;
 
   for (let row = 0; row < rows; row += 1) {
     for (let column = 0; column < columns; column += 1) {
@@ -227,12 +295,86 @@ function largestWideRectangleFraction(cells, minimumWidthFraction) {
         if (height <= 0 || width / columns < minimumWidthFraction) {
           continue;
         }
-        maximumArea = Math.max(maximumArea, width * height);
+        const area = width * height;
+        if (largestRectangle === null || area > largestRectangle.area) {
+          largestRectangle = {
+            area,
+            bottom: row,
+            left,
+            right,
+            top: row - height + 1,
+          };
+        }
       }
     }
   }
 
-  return rows > 0 && columns > 0 ? maximumArea / (rows * columns) : 0;
+  return rows > 0 && columns > 0 ? largestRectangle : null;
+}
+
+function describeWideDarkRectangle(
+  frame,
+  gridRectangle,
+  gridColumns,
+  gridRows,
+) {
+  const x = Math.floor((gridRectangle.left * frame.width) / gridColumns);
+  const y = Math.floor((gridRectangle.top * frame.height) / gridRows);
+  const right = Math.floor(
+    ((gridRectangle.right + 1) * frame.width) / gridColumns,
+  );
+  const bottom = Math.floor(
+    ((gridRectangle.bottom + 1) * frame.height) / gridRows,
+  );
+  const width = right - x;
+  const height = bottom - y;
+  let fallbackPixels = 0;
+  const channelSums = [0, 0, 0];
+  const channelSquareSums = [0, 0, 0];
+  let pixels = 0;
+
+  for (let pixelY = y; pixelY < bottom; pixelY += 1) {
+    for (let pixelX = x; pixelX < right; pixelX += 1) {
+      const offset = (pixelY * frame.width + pixelX) * 3;
+      for (let channel = 0; channel < 3; channel += 1) {
+        const value = frame.bytes[offset + channel];
+        channelSums[channel] += value;
+        channelSquareSums[channel] += value * value;
+      }
+      if (pixelMatchesFallback(frame.bytes, offset)) {
+        fallbackPixels += 1;
+      }
+      pixels += 1;
+    }
+  }
+
+  return {
+    fallbackPixelFraction: pixels > 0 ? fallbackPixels / pixels : 0,
+    height,
+    maximumChannelStandardDeviation: Math.max(
+      ...channelSums.map((sum, channel) =>
+        standardDeviation(sum, channelSquareSums[channel], pixels),
+      ),
+    ),
+    width,
+    x,
+    y,
+  };
+}
+
+function pixelMatchesFallback(bytes, offset) {
+  return fallbackColor.every(
+    (channel, index) =>
+      Math.abs(bytes[offset + index] - channel) <= fallbackChannelDistanceLimit,
+  );
+}
+
+function standardDeviation(sum, squareSum, count) {
+  if (count <= 0) {
+    return Number.POSITIVE_INFINITY;
+  }
+  const mean = sum / count;
+  return Math.sqrt(Math.max(0, squareSum / count - mean * mean));
 }
 
 function quantizedModalFraction(image) {
@@ -361,8 +503,31 @@ function roundMetric(value) {
 
 function roundMetrics(metrics) {
   return Object.fromEntries(
-    Object.entries(metrics).map(([name, value]) => [name, roundMetric(value)]),
+    Object.entries(metrics).map(([name, value]) => [
+      name,
+      typeof value === "number" ? roundMetric(value) : value,
+    ]),
   );
+}
+
+function roundWideDarkRectangle(rectangle) {
+  if (rectangle === null) {
+    return null;
+  }
+  return {
+    ...rectangle,
+    fallbackPixelFraction: roundMetric(rectangle.fallbackPixelFraction),
+    maximumChannelStandardDeviation: roundMetric(
+      rectangle.maximumChannelStandardDeviation,
+    ),
+  };
+}
+
+function wideDarkCulpritDiagnostic(culprit) {
+  if (culprit === null) {
+    return "";
+  }
+  return ` at frame ${culprit.frameIndex} (x=${culprit.x}, y=${culprit.y}, width=${culprit.width}, height=${culprit.height})`;
 }
 
 function fail(message) {
