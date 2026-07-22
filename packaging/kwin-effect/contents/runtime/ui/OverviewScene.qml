@@ -537,9 +537,11 @@ Rectangle {
                 root.recoverExternalSpatialZoomContext();
             }
         } else if (spatialZoomTransaction !== null && !spatialZoomApplying) {
-            if (!root.applyControllerSpatialZoomRollback()) {
-                root.cancelSpatialZoomTransaction();
-                root.refreshOverviewSpatialSession(true);
+            if (!root.spatialZoomContextIsExact()) {
+                if (!root.applyControllerSpatialZoomRollback()) {
+                    root.cancelSpatialZoomTransaction();
+                    root.refreshOverviewSpatialSession(true);
+                }
             }
         } else if (!spatialZoomApplying && !spatialExitRestoringCamera
                    && !spatialExitHandoffActive) {
@@ -4219,6 +4221,9 @@ Rectangle {
             if (!refreshSpatialHorizontalViewports(true)) {
                 return false;
             }
+            if (plan.transaction) {
+                spatialZoomTransaction = plan.transaction;
+            }
             captureSpatialViewportSnapshot();
             applied = true;
         } catch (error) {
@@ -4265,7 +4270,6 @@ Rectangle {
         if (!plan || !plan.transaction || !applySpatialZoomPlan(plan)) {
             return false;
         }
-        spatialZoomTransaction = plan.transaction;
         return true;
     }
 

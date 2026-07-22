@@ -139,6 +139,35 @@ describe("overview session zoom scene", () => {
     expect(scene).toContain("spatialZoomRegistrationSuppressed = true;");
   });
 
+  it("preserves an exact local preview through delayed layout notification", () => {
+    const layoutChanged = sourceBetween(
+      "onOverviewSpatialLayoutChanged: {",
+      "onOverviewZoomGestureDirectionChanged:",
+    );
+    const applyPlan = sourceBetween(
+      "function applySpatialZoomPlan(plan)",
+      "function previewSpatialZoomTransaction(scale)",
+    );
+    const preview = sourceBetween(
+      "function previewSpatialZoomTransaction(scale)",
+      "function applyControllerSpatialZoomRollback()",
+    );
+
+    expect(layoutChanged).toMatch(
+      /else if \(spatialZoomTransaction !== null && !spatialZoomApplying\) \{\s*if \(!root\.spatialZoomContextIsExact\(\)\) \{\s*if \(!root\.applyControllerSpatialZoomRollback\(\)\) \{\s*root\.cancelSpatialZoomTransaction\(\);\s*root\.refreshOverviewSpatialSession\(true\);\s*\}\s*\}/u,
+    );
+    const transactionAssignment = applyPlan.indexOf(
+      "spatialZoomTransaction = plan.transaction;",
+    );
+    expect(transactionAssignment).toBeGreaterThan(
+      applyPlan.indexOf("spatialZoomApplying = true;"),
+    );
+    expect(transactionAssignment).toBeLessThan(
+      applyPlan.lastIndexOf("spatialZoomApplying = false;"),
+    );
+    expect(preview).not.toContain("spatialZoomTransaction = plan.transaction;");
+  });
+
   it("arbitrates scene ownership and exposes passive touch feedback", () => {
     expect(scene).toContain("readonly property bool spatialZoomInputEligible:");
     expect(scene).toContain(

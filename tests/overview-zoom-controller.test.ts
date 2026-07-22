@@ -132,6 +132,51 @@ describe("overview session zoom controller", () => {
     );
   });
 
+  it("commits settled local previews while invalidation still rolls them back", () => {
+    const applyInputState = controller.slice(
+      controller.indexOf("function applyOverviewZoomInputState("),
+      controller.indexOf("function clearOverviewZoomInputState("),
+    );
+    const clearInputState = controller.slice(
+      controller.indexOf("function clearOverviewZoomInputState("),
+      controller.indexOf("function invalidateOverviewZoomInputStates("),
+    );
+    const invalidateInputStates = controller.slice(
+      controller.indexOf("function invalidateOverviewZoomInputStates("),
+      controller.indexOf("function reconcileOverviewZoomInputStatesForModel("),
+    );
+    const clearLocalOwner = controller.slice(
+      controller.indexOf("function clearOverviewZoomLocalOwner("),
+      controller.indexOf("function rollbackActiveOverviewLocalZoom("),
+    );
+    const rollbackLocalZoom = controller.slice(
+      controller.indexOf("function rollbackActiveOverviewLocalZoom("),
+      controller.indexOf("function beginOverviewZoomGesture("),
+    );
+
+    expect(applyInputState).toMatch(
+      /if \(eligible && overviewZoomLocalOwnerIsExact\([\s\S]*clearOverviewZoomLocalOwner\(\);/u,
+    );
+    expect(applyInputState).not.toContain("rollbackActiveOverviewLocalZoom");
+    expect(clearLocalOwner).not.toContain("assignOverviewSessionZoom");
+    expect(clearLocalOwner).toContain(
+      "overviewZoomLocalOwnerInitialZoom = overviewSessionZoom;",
+    );
+
+    expect(clearInputState).toContain("rollbackActiveOverviewLocalZoom();");
+    expect(invalidateInputStates).toContain(
+      "rollbackActiveOverviewLocalZoom();",
+    );
+    expect(rollbackLocalZoom.indexOf("const initialZoom =")).toBeLessThan(
+      rollbackLocalZoom.indexOf("clearOverviewZoomLocalOwner();"),
+    );
+    expect(
+      rollbackLocalZoom.indexOf("clearOverviewZoomLocalOwner();"),
+    ).toBeLessThan(
+      rollbackLocalZoom.indexOf("assignOverviewSessionZoom(initialZoom);"),
+    );
+  });
+
   it("rolls cancelled global previews back in the exact session", () => {
     expect(controller).toMatch(
       /function overviewZoomGlobalGestureCanBegin\(sessionId\)[\s\S]*overviewZoomInputStatesAreEligible\(\)/u,
