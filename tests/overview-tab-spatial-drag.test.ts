@@ -105,6 +105,11 @@ const dragExactness = section(
   "function ownedWindowDragSnapshotIsExact(",
   "function beginWindowSpatialDrag(",
 );
+const dragSemantics = section(
+  desktopCard,
+  "function windowDragSourceSemanticsAreExact(",
+  "function ownedWindowDragSnapshotIsExact(",
+);
 const tiledSourceExactness = section(
   desktopCard,
   "function ownedWindowDropTiledPresentationIsExact(",
@@ -122,7 +127,10 @@ describe("overview visible tab spatial drag", () => {
       /function captureWindowDragSnapshot\(source,\s*surfaceKind,\s*surfaceTarget\)/u,
     );
     expect(dragCapture).toContain("return Object.freeze({");
-    expect(dragCapture).toMatch(/surfaceFrame:\s*expectedSurfaceFrame/u);
+    expect(dragCapture).toContain(
+      "sourceFrameHeight: expectedSourceFrameHeight",
+    );
+    expect(dragCapture).toContain("sourceFrameWidth: expectedSourceFrameWidth");
     expect(dragCapture).toMatch(
       /return Object\.freeze\(\{[\s\S]*surfaceKind,[\s\S]*surfaceTarget,/u,
     );
@@ -147,11 +155,17 @@ describe("overview visible tab spatial drag", () => {
     expect(dragSurfaceExactness).toContain(
       "surfaceTarget === source.tabTarget",
     );
-    expect(dragExactness).toMatch(
+    expect(dragSemantics).toMatch(
       /windowDragSurfaceIsExact\(source, snapshot\.surfaceKind,[\s\S]*snapshot\.surfaceTarget\)/u,
     );
-    expect(dragExactness).toMatch(
-      /snapshot\.surfaceKind === "thumbnail"\s*\? frame !== null && frame\.floating === false\s*&& frame === snapshot\.surfaceFrame\s*: snapshot\.surfaceKind === "tab" && frame === null\s*&& source\.tabFrame === snapshot\.surfaceFrame/u,
+    expect(dragSemantics).toMatch(
+      /sourceFrame\.width === snapshot\.sourceFrameWidth[\s\S]*sourceFrame\.height === snapshot\.sourceFrameHeight/u,
+    );
+    expect(dragSemantics).not.toMatch(
+      /(?:frame|source\.tabFrame) === snapshot\.surfaceFrame/u,
+    );
+    expect(dragSemantics).toMatch(
+      /tabRailPlan\.anchorIndex === snapshot\.tabRailAnchorIndex[\s\S]*tabRailPlan\.firstVisibleIndex === snapshot\.tabRailFirstVisibleIndex[\s\S]*tabRailPlan\.lastVisibleIndex === snapshot\.tabRailLastVisibleIndex/u,
     );
     expect(tiledSourceExactness).toContain(
       "windowDragSurfaceIsExact(source, surfaceKind, surfaceTarget)",
@@ -301,8 +315,8 @@ describe("overview visible tab spatial drag", () => {
     expect(presentation).toMatch(
       /onTabFrameChanged:[\s\S]*(?:scheduleWindowSpatialDragValidation|cancelInvalidWindowSpatialDragSource)\(windowPresentation\)/u,
     );
-    expect(dragExactness).toMatch(
-      /windowDragSurfaceIsExact\(source, snapshot\.surfaceKind,[\s\S]*snapshot\.surfaceTarget\)[\s\S]*snapshot\.surfaceKind === "thumbnail"[\s\S]*source\.tabFrame === snapshot\.surfaceFrame/u,
+    expect(dragExactness).toContain(
+      "windowDragSourceSemanticsAreExact(source, snapshot)",
     );
     expect(dragSurfaceExactness).toContain(
       'source.primaryVisualKind === "tab"',

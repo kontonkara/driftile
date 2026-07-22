@@ -1554,7 +1554,7 @@ describe("overview effect package", () => {
       "Component.onCompleted: refreshActionSnapshot()",
     );
     expect(presentation).toMatch(
-      /onCandidateChanged: \{\s*card\.schedulePresentationMotion\(\);\s*card\.cancelInvalidWindowSpatialDragSource\(windowPresentation\);\s*refreshActionSnapshot\(\);\s*card\.attentionRevision \+= 1;\s*\}/u,
+      /onCandidateChanged: \{\s*card\.advanceWindowDragSourceRevision\(windowPresentation\);\s*card\.schedulePresentationMotion\(\);\s*card\.cancelInvalidWindowSpatialDragSource\(windowPresentation\);\s*refreshActionSnapshot\(\);\s*card\.attentionRevision \+= 1;\s*\}/u,
     );
     for (const signal of [
       "Closeable",
@@ -3876,7 +3876,7 @@ describe("overview effect package", () => {
       "readonly property bool attentionRequested: card.windowDemandsAttention(candidate)",
     );
     expect(windowPresentation).toMatch(
-      /onCandidateChanged: \{\s*card\.schedulePresentationMotion\(\);\s*card\.cancelInvalidWindowSpatialDragSource\(windowPresentation\);\s*refreshActionSnapshot\(\);\s*card\.attentionRevision \+= 1;\s*\}/u,
+      /onCandidateChanged: \{\s*card\.advanceWindowDragSourceRevision\(windowPresentation\);\s*card\.schedulePresentationMotion\(\);\s*card\.cancelInvalidWindowSpatialDragSource\(windowPresentation\);\s*refreshActionSnapshot\(\);\s*card\.attentionRevision \+= 1;\s*\}/u,
     );
     expect(windowPresentation).toContain(
       "onAttentionRequestedChanged: card.attentionRevision += 1",

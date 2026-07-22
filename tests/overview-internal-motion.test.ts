@@ -193,8 +193,8 @@ describe("overview internal presentation motion contracts", () => {
     expect(motionSnapshots).toContain(
       "runtime.sampleOverviewSpatialPresentationMotion(track, progress)",
     );
-    expect(windowPresentation).toContain(
-      "onFrameChanged: card.scheduleWindowSpatialDragValidation(windowPresentation)",
+    expect(windowPresentation).toMatch(
+      /onFrameChanged: \{\s*card\.advanceWindowDragSourceRevision\(windowPresentation\);\s*card\.scheduleWindowSpatialDragValidation\(windowPresentation\);\s*\}/u,
     );
     expect(candidateGeometryConnection).toContain(
       "card.navigationTargetsChanged();",

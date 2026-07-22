@@ -170,9 +170,13 @@ tab remains draggable only through its full preview, while its chip stays an
 activation and close control. Minimized chips remain restore-only rather than
 drag sources, and an overflow member without a rendered chip has no drag hit
 area. Pressing a close control never begins a drag. A change to selection,
-minimization, the captured rail frame or visibility, topology, activity,
-output, or Overview context cancels a stale chip drag without substituting
-another source.
+minimization or presentation mode, rendered chip or rail visibility, captured
+source dimensions or native frame geometry, topology, activity, output, or
+Overview context cancels a stale chip drag before either a local or cross-output
+submission and without substituting another source. Camera translation on
+either axis and workspace hover do not change the source identity, so they may
+continue while the exact chip drag is active. Cancellation clears the scene
+proxy, drop preview, and edge-pan state together.
 
 Discrete vertical navigation moves a bounded camera smoothly between workspace
 rows. Precise wheel or touchpad input moves the camera directly, without being

@@ -24,6 +24,21 @@ function section(source: string, start: string, end: string): string {
   return source.slice(startIndex, endIndex);
 }
 
+function qmlHandler(source: string, name: string): string {
+  const token = `${name}:`;
+  const startIndex = source.indexOf(token);
+  expect(startIndex).toBeGreaterThanOrEqual(0);
+  const lineStart = source.lastIndexOf("\n", startIndex) + 1;
+  const indentation = source.slice(lineStart, startIndex);
+  const nextHandler = new RegExp(
+    `\\n${indentation}(?:on[A-Z][A-Za-z0-9]*:|Component\\.)`,
+    "gu",
+  );
+  nextHandler.lastIndex = startIndex + token.length;
+  const match = nextHandler.exec(source);
+  return source.slice(startIndex, match ? match.index : source.length);
+}
+
 const presentation = section(
   desktopCard,
   "id: windowPresentation",
@@ -45,15 +60,35 @@ const tabPointerHandler = section(
   "id: tabDragHandler",
   "acceptedButtons: Qt.MiddleButton",
 );
+const tabRelease = section(
+  tabShell,
+  "function releaseSpatialDrag(",
+  "function handleActivationGrabChanged(",
+);
+const tabSurfaceLifecycle = section(
+  tabShell,
+  "id: tabShell",
+  "function nextActivationGestureSerial(",
+);
 const thumbnailTouchHandler = section(
   desktopCard,
   "id: thumbnailTouchDragHandler",
   "id: thumbnailDragHandler",
 );
+const thumbnailTouchRelease = section(
+  thumbnailTouchHandler,
+  "function releaseSpatialDrag(",
+  "onActiveTranslationChanged:",
+);
 const thumbnailPointerHandler = section(
   desktopCard,
   "id: thumbnailDragHandler",
   "id: minimizedPlaceholderShell",
+);
+const thumbnailSurfaceLifecycle = section(
+  desktopCard,
+  "id: thumbnailShell",
+  "function storeSpatialDragHotSpot(",
 );
 const dragHandlerOwnership = section(
   desktopCard,
@@ -68,6 +103,11 @@ const dragSurfaceExactness = section(
 const dragCapture = section(
   desktopCard,
   "function captureWindowDragSnapshot(",
+  "function ownedWindowDragSnapshotIsExact(",
+);
+const dragSemantics = section(
+  desktopCard,
+  "function windowDragSourceSemanticsAreExact(",
   "function ownedWindowDragSnapshotIsExact(",
 );
 const dragExactness = section(
@@ -95,6 +135,31 @@ const sceneVisual = section(
   "function captureSpatialWindowDragVisual(",
   "function captureSpatialColumnDragVisual(",
 );
+const cardReactiveLifecycle = section(
+  desktopCard,
+  "onCurrentChanged:",
+  "Component.onCompleted:",
+);
+const cameraTranslationLifecycle = section(
+  overviewScene,
+  "onSpatialContentYChanged:",
+  "onSearchQueryChanged:",
+);
+const workspaceHoverLifecycle = section(
+  overviewScene,
+  "function beginWindowWorkspaceHover(",
+  "function windowWorkspaceHoverContextIsExact(",
+);
+const sceneDragCleanup = section(
+  overviewScene,
+  "function resetSpatialEdgePanTracking(",
+  "function handleSpatialPresentationPhaseChanged(",
+);
+const crossOutputRequest = section(
+  desktopCard,
+  "function requestCrossOutputWindowDrop(",
+  "function selectedWindowIdForColumn(",
+);
 
 describe("overview window drag ownership lifecycle", () => {
   it("freezes the exact source surface before publishing the owned lifecycle", () => {
@@ -118,7 +183,10 @@ describe("overview window drag ownership lifecycle", () => {
     expect(dragCapture).toContain("desktopId: expectedDesktopId");
     expect(dragCapture).toContain("outputId: expectedOutputId");
     expect(dragCapture).toContain("screen: expectedScreen");
-    expect(dragCapture).toContain("surfaceFrame: expectedSurfaceFrame");
+    expect(dragCapture).toContain(
+      "sourceFrameHeight: expectedSourceFrameHeight",
+    );
+    expect(dragCapture).toContain("sourceFrameWidth: expectedSourceFrameWidth");
     expect(dragCapture).toContain("surfaceHeight: expectedSurfaceHeight");
     expect(dragCapture).toContain("surfaceKind,");
     expect(dragCapture).toContain("surfaceTarget,");
@@ -190,20 +258,114 @@ describe("overview window drag ownership lifecycle", () => {
       "onDragEligibleChanged: card.scheduleWindowSpatialDragValidation(windowPresentation)",
     );
     expect(presentation).toMatch(
-      /onTiledPresentationChanged: \{\s*card\.scheduleWindowSpatialDragValidation\(windowPresentation\);\s*card\.schedulePresentationMotion\(\);\s*\}/u,
+      /onTiledPresentationChanged: \{[\s\S]*card\.scheduleWindowSpatialDragValidation\(windowPresentation\);[\s\S]*card\.schedulePresentationMotion\(\);[\s\S]*\}/u,
     );
     expect(desktopCard).toMatch(
       /onTiledPresentationsChanged:[\s\S]*card\.scheduleWindowSpatialDragValidation\(card\.windowDragActiveSource\);/u,
     );
-    expect(presentation).toContain(
-      "onActionSnapshotChanged: card.cancelInvalidWindowSpatialDragSource(windowPresentation)",
+    expect(qmlHandler(presentation, "onActionSnapshotChanged")).toContain(
+      "card.cancelInvalidWindowSpatialDragSource(windowPresentation)",
     );
-    expect(dragExactness).toContain(
+    expect(dragSemantics).toContain(
       "windowDragActionSnapshotIsExact(source.actionSnapshot, snapshot)",
     );
     expect(dragExactness).not.toContain("source.dragEligible === true");
     expect(dragLifecycle).toMatch(
       /function scheduleWindowSpatialDragValidation\([\s\S]*ownedWindowDragSnapshotIsExact\(source\)[\s\S]*advanceWindowDragValidationRevision\(\);[\s\S]*Qt\.callLater\([\s\S]*requestId === card\.windowDragValidationRevision[\s\S]*cancelInvalidWindowSpatialDragSource/u,
+    );
+  });
+
+  it("captures a monotonic source invalidation revision in the owned snapshot", () => {
+    expect(presentation).toMatch(/property int windowDragSourceRevision:\s*0/u);
+    expect(desktopCard).toMatch(
+      /function advanceWindowDragSourceRevision\(source\)[\s\S]*source\.windowDragSourceRevision[\s\S]*source\.windowDragSourceRevision \+ 1/u,
+    );
+    expect(dragCapture).toMatch(
+      /const expectedSourceRevision = source\.windowDragSourceRevision;/u,
+    );
+    expect(dragCapture).toMatch(
+      /Number\.isInteger\(expectedSourceRevision\)[\s\S]*expectedSourceRevision >= 0/u,
+    );
+    expect(dragCapture).toContain("sourceRevision: expectedSourceRevision");
+    expect(dragExactness).toMatch(
+      /Number\.isInteger\(snapshot\.sourceRevision\)[\s\S]*source\.windowDragSourceRevision === snapshot\.sourceRevision/u,
+    );
+  });
+
+  it("invalidates selection, presentation, rail, geometry, and topology drift", () => {
+    const sourceRevisionInvalidation =
+      /card\.\w*WindowDragSourceRevision\w*\(windowPresentation\)/u;
+
+    for (const signal of [
+      "onActionSnapshotChanged",
+      "onFrameChanged",
+      "onMinimizedWindowChanged",
+      "onPrimaryVisualKindChanged",
+      "onSelectedThumbnailChanged",
+      "onSourceDesktopChanged",
+      "onSourceDesktopIdChanged",
+      "onSourceScreenChanged",
+      "onTabFrameChanged",
+      "onTiledPresentationChanged",
+      "onWindowIdChanged",
+    ]) {
+      expect(qmlHandler(presentation, signal)).toMatch(
+        sourceRevisionInvalidation,
+      );
+    }
+
+    expect(presentation).toMatch(
+      /function onFrameGeometryChanged\(\) \{[\s\S]*card\.invalidateWindowDragSourceGeometry\(windowPresentation\)/u,
+    );
+    expect(qmlHandler(cardReactiveLifecycle, "onContextChanged")).toContain(
+      "card.advanceWindowDragSourceRevision(card.windowDragActiveSource)",
+    );
+    expect(qmlHandler(cardReactiveLifecycle, "onColumnsChanged")).toContain(
+      "card.advanceWindowDragSourceRevision(card.windowDragActiveSource)",
+    );
+
+    for (const surface of [tabSurfaceLifecycle, thumbnailSurfaceLifecycle]) {
+      for (const signal of [
+        "onVisibleChanged",
+        "onWidthChanged",
+        "onHeightChanged",
+      ]) {
+        expect(qmlHandler(surface, signal)).toMatch(sourceRevisionInvalidation);
+      }
+    }
+  });
+
+  it("preserves the drag revision through camera translation and workspace hover", () => {
+    const horizontalCameraLifecycle = section(
+      cardReactiveLifecycle,
+      "onPreviewViewportOffsetChanged:",
+      "onSpatialDirectDragBlockedChanged:",
+    );
+
+    for (const lifecycle of [
+      horizontalCameraLifecycle,
+      cameraTranslationLifecycle,
+      workspaceHoverLifecycle,
+    ]) {
+      expect(lifecycle).not.toMatch(/WindowDragSourceRevision/u);
+    }
+    expect(tabSurfaceLifecycle).not.toMatch(
+      /onXChanged:[^\n]*WindowDragSourceRevision/u,
+    );
+    expect(tabSurfaceLifecycle).not.toMatch(
+      /onYChanged:[^\n]*WindowDragSourceRevision/u,
+    );
+    expect(thumbnailSurfaceLifecycle).not.toMatch(
+      /onXChanged:[^\n]*WindowDragSourceRevision/u,
+    );
+    expect(thumbnailSurfaceLifecycle).not.toMatch(
+      /onYChanged:[^\n]*WindowDragSourceRevision/u,
+    );
+    expect(cameraTranslationLifecycle).not.toContain(
+      "cancelActiveWindowSpatialDrag",
+    );
+    expect(workspaceHoverLifecycle).not.toContain(
+      "cancelActiveWindowSpatialDrag",
     );
   });
 
@@ -214,8 +376,8 @@ describe("overview window drag ownership lifecycle", () => {
     expect(presentation).toMatch(
       /onTabFrameChanged: \{[\s\S]*scheduleWindowSpatialDragValidation\(windowPresentation\)/u,
     );
-    expect(presentation).toContain(
-      "onFrameChanged: card.scheduleWindowSpatialDragValidation(windowPresentation)",
+    expect(qmlHandler(presentation, "onFrameChanged")).toContain(
+      "card.scheduleWindowSpatialDragValidation(windowPresentation)",
     );
     expect(desktopCard).toMatch(
       /onTiledPresentationsChanged:[\s\S]*scheduleWindowSpatialDragValidation\(card\.windowDragActiveSource\)/u,
@@ -223,17 +385,23 @@ describe("overview window drag ownership lifecycle", () => {
     expect(desktopCard).toMatch(
       /onTabRailPlansChanged:[\s\S]*scheduleWindowSpatialDragValidation\(card\.windowDragActiveSource\)/u,
     );
-    expect(dragExactness).toMatch(
+    expect(dragSemantics).toMatch(
       /windowDragSurfaceIsExact\(source, snapshot\.surfaceKind,[\s\S]*snapshot\.surfaceTarget\)/u,
     );
-    expect(dragExactness).toMatch(
-      /snapshot\.surfaceKind === "thumbnail"[\s\S]*frame !== null && frame\.floating === false[\s\S]*frame === snapshot\.surfaceFrame[\s\S]*snapshot\.surfaceKind === "tab" && frame === null[\s\S]*source\.tabFrame === snapshot\.surfaceFrame/u,
+    expect(dragSemantics).toMatch(
+      /sourceFrame\.width === snapshot\.sourceFrameWidth[\s\S]*sourceFrame\.height === snapshot\.sourceFrameHeight/u,
     );
-    expect(dragExactness).toContain(
+    expect(dragSemantics).not.toMatch(
+      /(?:frame|source\.tabFrame) === snapshot\.surfaceFrame/u,
+    );
+    expect(dragSemantics).toContain(
       "snapshot.surfaceTarget.width === snapshot.surfaceWidth",
     );
-    expect(dragExactness).toContain(
+    expect(dragSemantics).toContain(
       "snapshot.surfaceTarget.height === snapshot.surfaceHeight",
+    );
+    expect(dragSemantics).toMatch(
+      /tabRailPlan\.anchorIndex === snapshot\.tabRailAnchorIndex[\s\S]*tabRailPlan\.firstVisibleIndex === snapshot\.tabRailFirstVisibleIndex[\s\S]*tabRailPlan\.lastVisibleIndex === snapshot\.tabRailLastVisibleIndex[\s\S]*tabRailPlan\.visibleCapacity === snapshot\.tabRailVisibleCapacity/u,
     );
   });
 
@@ -241,8 +409,8 @@ describe("overview window drag ownership lifecycle", () => {
     expect(presentation).toMatch(
       /onCandidateChanged:[\s\S]*card\.cancelInvalidWindowSpatialDragSource\(windowPresentation\);/u,
     );
-    expect(presentation).toMatch(
-      /onMinimizedWindowChanged: \{\s*card\.cancelInvalidWindowSpatialDragSource\(windowPresentation\);\s*card\.schedulePresentationMotion\(\);\s*\}/u,
+    expect(qmlHandler(presentation, "onMinimizedWindowChanged")).toMatch(
+      /card\.cancelInvalidWindowSpatialDragSource\(windowPresentation\);[\s\S]*card\.schedulePresentationMotion\(\);/u,
     );
     expect(presentation).toContain(
       "Component.onDestruction: card.cancelWindowSpatialDragSource(windowPresentation)",
@@ -317,6 +485,60 @@ describe("overview window drag ownership lifecycle", () => {
     );
     expect(overviewScene).toMatch(
       /event\.key === Qt\.Key_Escape && spatialWindowDragSource !== null\)[\s\S]*root\.cancelActiveWindowSpatialDrag\(\);[\s\S]*event\.accepted = true;[\s\S]*return;/u,
+    );
+  });
+
+  it("rejects an invalid release before local or cross-output submission", () => {
+    for (const release of [tabRelease, thumbnailTouchRelease]) {
+      const guardIndex = release.indexOf(
+        "if (!card.ownedWindowDragSnapshotIsExact(source))",
+      );
+      const localDropIndex = release.indexOf("Drag.drop()");
+      const crossOutputIndex = release.indexOf(
+        "card.requestCrossOutputWindowDrop(source, globalPosition)",
+      );
+      expect(guardIndex).toBeGreaterThanOrEqual(0);
+      expect(localDropIndex).toBeGreaterThan(guardIndex);
+      expect(crossOutputIndex).toBeGreaterThan(localDropIndex);
+      expect(release.slice(guardIndex, localDropIndex)).toMatch(
+        /if \(!card\.ownedWindowDragSnapshotIsExact\(source\)\)[\s\S]*cancelSpatialDrag\(\);[\s\S]*return/u,
+      );
+    }
+
+    const pointerRelease = section(
+      thumbnailPointerHandler,
+      "PointerDevice.UngrabExclusive",
+      "PointerDevice.CancelGrabExclusive",
+    );
+    const guardIndex = pointerRelease.indexOf(
+      "if (!card.ownedWindowDragSnapshotIsExact(source))",
+    );
+    const localDropIndex = pointerRelease.indexOf("Drag.drop()");
+    const crossOutputIndex = pointerRelease.indexOf(
+      "card.requestCrossOutputWindowDrop(source, globalPosition)",
+    );
+    expect(guardIndex).toBeGreaterThanOrEqual(0);
+    expect(localDropIndex).toBeGreaterThan(guardIndex);
+    expect(crossOutputIndex).toBeGreaterThan(localDropIndex);
+    expect(pointerRelease.slice(guardIndex, localDropIndex)).toMatch(
+      /if \(!card\.ownedWindowDragSnapshotIsExact\(source\)\)[\s\S]*(?:cancelWindowSpatialDragSource|Drag\.cancel)[\s\S]*return/u,
+    );
+    expect(crossOutputRequest).toMatch(
+      /!ownedWindowDragSnapshotIsExact\(source\)[\s\S]*checkItemDroppedOutOfScreen\(globalPosition, source\)/u,
+    );
+  });
+
+  it("clears the drag proxy, drop preview, and edge-pan owner on cancellation", () => {
+    expect(sceneDragCleanup).toContain("resetWindowWorkspaceHover();");
+    expect(sceneDragCleanup).toContain("clearWorkspaceGapPreview();");
+    expect(sceneDragCleanup).toContain("clearSpatialWindowDragVisual();");
+    expect(sceneDragCleanup).toContain("spatialWindowDragSource = null;");
+    expect(sceneDragCleanup).toContain("clearSpatialEdgePanScenePoint();");
+    expect(overviewScene).toMatch(
+      /function clearSpatialEdgePanScenePoint\(\)[\s\S]*spatialEdgePanTimer\.stop\(\);/u,
+    );
+    expect(sceneEdgePan).toMatch(
+      /function finishWindowSpatialEdgePan\([\s\S]*resetSpatialEdgePanTracking\(\);/u,
     );
   });
 });
