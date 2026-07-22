@@ -57,7 +57,7 @@ describe("overview desktop surface opening readiness", () => {
     "id: desktopRepeater",
   );
 
-  it("holds the native desktop until the exact current surface is ready", () => {
+  it("holds the native desktop until the exact opening range is ready", () => {
     expect(surfaceLoader).toMatch(
       /asynchronous:\s*!card\.desktopSurfaceOpeningCritical/u,
     );
@@ -68,40 +68,45 @@ describe("overview desktop surface opening readiness", () => {
       /readonly property string desktopSurfaceOpeningDisposition:\s*desktopSurfacePresented\s*\? "ready"\s*:\s*desktopSurfaceFallbackTerminal\s*\? "fallback"\s*:\s*"pending"/u,
     );
     expect(openingReadiness).toContain(
-      "desktopRepeater.itemAt(currentWorkspaceIndex)",
+      "for (let index = desktopSurfaceResidencyRange.firstIndex;",
+    );
+    expect(openingReadiness).toContain(
+      "index <= desktopSurfaceResidencyRange.lastIndex",
     );
     expect(openingReadiness).toContain(
       "const desktopCardEpoch = overviewDesktopCardEpoch",
     );
-    expect(openingReadiness).toContain("currentCardLoader.active !== true");
+    expect(openingReadiness).toContain("cardLoader.active !== true");
+    expect(openingReadiness).toContain("card.overviewSessionId !== sessionId");
     expect(openingReadiness).toContain(
-      "currentCard.overviewSessionId !== sessionId",
+      "card.overviewContextGeneration !== topologyGeneration",
     );
     expect(openingReadiness).toContain(
-      "currentCard.overviewContextGeneration !== topologyGeneration",
+      "card.overviewActivityId !== activeOverviewActivityId",
+    );
+    expect(openingReadiness).toContain("card.outputId !== expectedOutputId");
+    expect(openingReadiness).toContain(
+      "card.desktopSurfaceOpeningCritical !== true",
     );
     expect(openingReadiness).toContain(
-      "currentCard.overviewActivityId !== activeOverviewActivityId",
-    );
-    expect(openingReadiness).toContain(
-      "currentCard.outputId !== expectedOutputId",
-    );
-    expect(openingReadiness).toContain(
-      "currentCard.desktopSurfaceOpeningCritical !== true",
-    );
-    expect(openingReadiness).toContain("desktopSurfaceOpeningDisposition");
-    expect(openingReadiness).toMatch(
-      /desktopSurfaceOpeningDisposition[\s\S]*"pending"[\s\S]*return null;/u,
+      "const disposition = card.desktopSurfaceOpeningDisposition",
     );
     expect(openingReadiness).toMatch(
-      /const desktopSurfaceToken = currentCard\.desktopSurfaceReloadToken;[\s\S]*!Number\.isInteger\(desktopSurfaceToken\) \|\| desktopSurfaceToken <= 0[\s\S]*return null;/u,
+      /disposition !== "ready" && disposition !== "fallback"[\s\S]*return null;/u,
+    );
+    expect(openingReadiness).toMatch(
+      /const token = card\.desktopSurfaceReloadToken;[\s\S]*!Number\.isInteger\(token\) \|\| token <= 0[\s\S]*return null;/u,
+    );
+    expect(openingReadiness).toContain("desktopSurfaces.push(Object.freeze({");
+    expect(openingReadiness).toContain(
+      "desktopSurfaces: Object.freeze(desktopSurfaces)",
     );
     expect(presentationCanvas).toMatch(
       /opacity:[\s\S]*root\.spatialPresentationPhase === "preparing"[\s\S]*\|\|\s*root\.spatialPresentationPhase === "opening"[\s\S]*\|\|\s*root\.spatialPresentationPhase === "closing"\s*\? 1\s*:\s*root\.spatialPresentationProgress/u,
     );
   });
 
-  it("bootstraps the exact preparing row before deferred residency settles", () => {
+  it("bootstraps every exact preparing surface in the opening range", () => {
     const openingCritical = functionSource(
       scene,
       "desktopSurfaceOpeningCritical",
@@ -115,7 +120,21 @@ describe("overview desktop surface opening readiness", () => {
     expect(openingCritical).toContain("spatialPresentationProgress");
     expect(openingCritical).toContain("activeOverviewSessionId");
     expect(openingCritical).toContain("overviewContextModelExact");
-    expect(openingCritical).toContain("currentWorkspaceIndex");
+    expect(openingCritical).toContain("currentSurfaceIsExact");
+    expect(openingCritical).toContain("index === currentWorkspaceIndex");
+    expect(openingCritical).toContain("expectedDesktop === currentDesktop");
+    expect(openingCritical).toContain(
+      "residentRangeIsExact = desktopSurfaceResidencyContextMatchesCurrent()",
+    );
+    expect(openingCritical).toContain(
+      "desktopSurfaceResidencyPlanIsValid(desktopSurfaceResidencyRange)",
+    );
+    expect(openingCritical).toContain(
+      "index >= desktopSurfaceResidencyRange.firstIndex",
+    );
+    expect(openingCritical).toContain(
+      "index <= desktopSurfaceResidencyRange.lastIndex",
+    );
     expect(openingCritical).toContain("desktopIds[index]");
     expect(openingCritical).toContain("currentDesktop");
     expect(openingCritical).toContain("expectedDesktop");
@@ -139,21 +158,24 @@ describe("overview desktop surface opening readiness", () => {
     );
   });
 
-  it("fences publication to the exact resident current row", () => {
+  it("fences publication to every exact resident opening row", () => {
     const residencyGuard = openingReadiness.match(
-      /!desktopSurfaceResidencyContextMatchesCurrent\(\)[\s\S]*!spatialVisibleRangeIsValid\(desktopSurfaceResidencyRange\)[\s\S]*currentWorkspaceIndex < desktopSurfaceResidencyRange\.firstIndex[\s\S]*currentWorkspaceIndex > desktopSurfaceResidencyRange\.lastIndex/u,
+      /!desktopSurfaceResidencyContextMatchesCurrent\(\)[\s\S]*!desktopSurfaceResidencyPlanIsValid\(desktopSurfaceResidencyRange\)[\s\S]*currentWorkspaceIndex < desktopSurfaceResidencyRange\.firstIndex[\s\S]*currentWorkspaceIndex > desktopSurfaceResidencyRange\.lastIndex/u,
     );
     const residencyGuardIndex = residencyGuard?.index ?? -1;
-    const currentCardFenceIndex = openingReadiness.indexOf(
-      "desktopRepeater.itemAt(currentWorkspaceIndex)",
+    const openingRangeFenceIndex = openingReadiness.indexOf(
+      "for (let index = desktopSurfaceResidencyRange.firstIndex;",
     );
 
     expect(residencyGuard).not.toBeNull();
     expect(residencyGuardIndex).toBeGreaterThanOrEqual(0);
-    expect(currentCardFenceIndex).toBeGreaterThan(residencyGuardIndex);
+    expect(openingRangeFenceIndex).toBeGreaterThan(residencyGuardIndex);
+    expect(openingReadiness).toMatch(
+      /for \(let index = desktopSurfaceResidencyRange\.firstIndex;[\s\S]*cardLoader\.active !== true[\s\S]*card\.desktopSurfaceEnabled !== true[\s\S]*card\.desktopSurfaceOpeningCritical !== true[\s\S]*disposition !== "ready" && disposition !== "fallback"[\s\S]*desktopSurfaces\.push\(Object\.freeze\(/u,
+    );
   });
 
-  it("presents only the critical opening surface synchronously", () => {
+  it("presents each critical opening surface synchronously", () => {
     const presentation = functionSource(
       desktopCard,
       "synchronizeDesktopSurfacePresentation",
@@ -341,8 +363,7 @@ describe("overview desktop surface opening readiness", () => {
     expect(readinessResult).toBeDefined();
     for (const field of [
       "desktopCardEpoch",
-      "desktopSurfaceDisposition",
-      "desktopSurfaceToken",
+      "desktopSurfaces",
       "epoch",
       "model",
       "outputId",
@@ -355,37 +376,41 @@ describe("overview desktop surface opening readiness", () => {
       /property int spatialPresentationReadinessTrackedDesktopCardEpoch:\s*(?:-1|0)/u,
     );
     expect(scene).toContain(
-      'property string spatialPresentationReadinessTrackedDesktopSurfaceDisposition: ""',
-    );
-    expect(scene).toContain(
-      "property int spatialPresentationReadinessTrackedDesktopSurfaceToken: 0",
+      "property var spatialPresentationReadinessTrackedDesktopSurfaces: []",
     );
     expect(resetTracking).toMatch(
       /spatialPresentationReadinessTrackedDesktopCardEpoch\s*=\s*(?:-1|0)/u,
     );
     expect(resetTracking).toContain(
-      'spatialPresentationReadinessTrackedDesktopSurfaceDisposition = ""',
-    );
-    expect(resetTracking).toContain(
-      "spatialPresentationReadinessTrackedDesktopSurfaceToken = 0",
+      "spatialPresentationReadinessTrackedDesktopSurfaces = []",
     );
     expect(trackingMatches).toContain(
       "spatialPresentationReadinessTrackedDesktopCardEpoch === context.desktopCardEpoch",
     );
     expect(trackingMatches).toMatch(
-      /spatialPresentationReadinessTrackedDesktopSurfaceDisposition\s*=== context\.desktopSurfaceDisposition/u,
+      /sameOpeningDesktopSurfaces\(spatialPresentationReadinessTrackedDesktopSurfaces,\s*context\.desktopSurfaces\)/u,
     );
-    expect(trackingMatches).toMatch(
-      /spatialPresentationReadinessTrackedDesktopSurfaceToken\s*=== context\.desktopSurfaceToken/u,
-    );
+    const surfaceTracking = functionSource(scene, "sameOpeningDesktopSurfaces");
+    expect(surfaceTracking).toContain("Object.isFrozen(first)");
+    expect(surfaceTracking).toContain("Object.isFrozen(second)");
+    expect(surfaceTracking).toContain("desktopSurfaceMaximumResidentRows");
+    expect(surfaceTracking).toContain("Object.isFrozen(left)");
+    expect(surfaceTracking).toContain("Object.isFrozen(right)");
+    for (const field of [
+      "card",
+      "desktop",
+      "desktopId",
+      "disposition",
+      "index",
+      "token",
+    ]) {
+      expect(surfaceTracking).toContain(`left.${field} !== right.${field}`);
+    }
     expect(driftBranch).toBeGreaterThanOrEqual(0);
     expect(driftReset).toBeGreaterThan(driftBranch);
     expect(retrackEpoch).toBeGreaterThan(driftReset);
     expect(synchronize).toMatch(
-      /spatialPresentationReadinessTrackedDesktopSurfaceDisposition\s*=\s*context\.desktopSurfaceDisposition;/u,
-    );
-    expect(synchronize).toMatch(
-      /spatialPresentationReadinessTrackedDesktopSurfaceToken\s*=\s*context\.desktopSurfaceToken;/u,
+      /spatialPresentationReadinessTrackedDesktopSurfaces\s*=\s*context\.desktopSurfaces;/u,
     );
     expect(registrationIdentity).toContain(
       "presentationReadinessFrameTrackingMatches(context)",

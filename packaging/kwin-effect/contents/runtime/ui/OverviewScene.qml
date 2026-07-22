@@ -316,11 +316,8 @@ Rectangle {
     readonly property var spatialPresentationReadinessContext: sceneReadinessContext()
     readonly property var spatialSceneRetirementFrameContext: sceneRetirementFrameContext()
     property int spatialPresentationReadinessFrameCount: 0
-    property var spatialPresentationReadinessTrackedDesktop: null
-    property var spatialPresentationReadinessTrackedDesktopCard: null
     property int spatialPresentationReadinessTrackedDesktopCardEpoch: 0
-    property string spatialPresentationReadinessTrackedDesktopSurfaceDisposition: ""
-    property int spatialPresentationReadinessTrackedDesktopSurfaceToken: 0
+    property var spatialPresentationReadinessTrackedDesktopSurfaces: []
     property int spatialPresentationReadinessTrackedEpoch: 0
     property real spatialPresentationReadinessTrackedHeight: 0
     property int spatialPresentationReadinessTrackedHorizontalViewportRevision: -1
@@ -3031,9 +3028,20 @@ Rectangle {
 
     function desktopSurfaceOpeningCritical(index, expectedDesktopId, expectedDesktop) {
         try {
+            const currentSurfaceIsExact = index === currentWorkspaceIndex
+                && currentDesktop && currentDesktop.id !== undefined
+                && currentDesktop.id !== null
+                && String(currentDesktop.id) === expectedDesktopId
+                && expectedDesktop === currentDesktop
+                && liveDesktopFor(currentDesktop, expectedDesktopId) === currentDesktop;
+            const residentRangeIsExact = desktopSurfaceResidencyContextMatchesCurrent()
+                && desktopSurfaceResidencyPlanIsValid(desktopSurfaceResidencyRange);
+            const openingRangeContainsSurface = residentRangeIsExact
+                && index >= desktopSurfaceResidencyRange.firstIndex
+                && index <= desktopSurfaceResidencyRange.lastIndex;
             return Number.isInteger(index) && index >= 0 && index < desktopIds.length
                 && typeof expectedDesktopId === "string" && expectedDesktopId.length > 0
-                && desktopIds[index] === expectedDesktopId && index === currentWorkspaceIndex
+                && desktopIds[index] === expectedDesktopId
                 && spatialPresentationPhase === "preparing"
                 && Math.abs(spatialPresentationProgress) <= 0.000001
                 && sceneEffect && sceneEffect.active === true
@@ -3043,11 +3051,11 @@ Rectangle {
                 && !overviewContextRefreshPending && overviewContextModelExact
                 && outputId.length > 0 && targetScreen
                 && liveScreenFor(targetScreen) === targetScreen
-                && currentDesktop && currentDesktop.id !== undefined
-                && currentDesktop.id !== null
-                && String(currentDesktop.id) === expectedDesktopId
-                && liveDesktopFor(currentDesktop, expectedDesktopId) === currentDesktop
-                && expectedDesktop && expectedDesktop === currentDesktop;
+                && (currentSurfaceIsExact || openingRangeContainsSurface)
+                && expectedDesktop && expectedDesktop.id !== undefined
+                && expectedDesktop.id !== null
+                && String(expectedDesktop.id) === expectedDesktopId
+                && liveDesktopFor(expectedDesktop, expectedDesktopId) === expectedDesktop;
         } catch (error) {
             return false;
         }
@@ -11981,7 +11989,7 @@ Rectangle {
                     || !spatialViewportSnapshot
                     || !sameStringList(spatialViewportSnapshot.desktopIds, desktopIds)
                     || !desktopSurfaceResidencyContextMatchesCurrent()
-                    || !spatialVisibleRangeIsValid(desktopSurfaceResidencyRange)
+                    || !desktopSurfaceResidencyPlanIsValid(desktopSurfaceResidencyRange)
                     || currentWorkspaceIndex < desktopSurfaceResidencyRange.firstIndex
                     || currentWorkspaceIndex > desktopSurfaceResidencyRange.lastIndex
                     || !sameStringList(spatialHorizontalDesktopIds, desktopIds)
@@ -12002,31 +12010,41 @@ Rectangle {
                 return null;
             }
 
-            const currentCardLoader = desktopRepeater.itemAt(currentWorkspaceIndex);
-            const currentCard = currentCardLoader ? currentCardLoader.item : null;
-            if (!currentCardLoader || currentCardLoader.active !== true
-                    || currentCardLoader.index !== currentWorkspaceIndex
-                    || currentCardLoader.modelData !== desktopIds[currentWorkspaceIndex]
-                    || !currentCard || currentCard.desktop !== currentDesktop
-                    || currentCard.desktopId !== desktopIds[currentWorkspaceIndex]
-                    || currentCard.overviewSessionId !== sessionId
-                    || currentCard.overviewContextGeneration !== topologyGeneration
-                    || currentCard.overviewActivityId !== activeOverviewActivityId
-                    || currentCard.outputId !== expectedOutputId
-                    || currentCard.screen !== screen
-                    || currentCard.desktopSurfaceOpeningCritical !== true) {
-                return null;
-            }
-            const desktopSurfaceOpeningDisposition =
-                currentCard.desktopSurfaceOpeningDisposition;
-            const desktopSurfaceToken = currentCard.desktopSurfaceReloadToken;
-            if (desktopSurfaceOpeningDisposition === "pending") {
-                return null;
-            }
-            if ((desktopSurfaceOpeningDisposition !== "ready"
-                    && desktopSurfaceOpeningDisposition !== "fallback")
-                    || !Number.isInteger(desktopSurfaceToken) || desktopSurfaceToken <= 0) {
-                return null;
+            const desktopSurfaces = [];
+            for (let index = desktopSurfaceResidencyRange.firstIndex;
+                 index <= desktopSurfaceResidencyRange.lastIndex; index += 1) {
+                const desktopId = desktopIds[index];
+                const desktop = desktopForId(desktopId);
+                const cardLoader = desktopRepeater.itemAt(index);
+                const card = cardLoader ? cardLoader.item : null;
+                if (!desktop || liveDesktopFor(desktop, desktopId) !== desktop
+                        || !cardLoader || cardLoader.active !== true
+                        || cardLoader.index !== index || cardLoader.modelData !== desktopId
+                        || cardLoader.desktopObject !== desktop
+                        || !card || card.desktop !== desktop || card.desktopId !== desktopId
+                        || card.overviewSessionId !== sessionId
+                        || card.overviewContextGeneration !== topologyGeneration
+                        || card.overviewActivityId !== activeOverviewActivityId
+                        || card.outputId !== expectedOutputId || card.screen !== screen
+                        || card.desktopSurfaceEnabled !== true
+                        || card.desktopSurfaceOpeningCritical !== true) {
+                    return null;
+                }
+
+                const disposition = card.desktopSurfaceOpeningDisposition;
+                const token = card.desktopSurfaceReloadToken;
+                if ((disposition !== "ready" && disposition !== "fallback")
+                        || !Number.isInteger(token) || token <= 0) {
+                    return null;
+                }
+                desktopSurfaces.push(Object.freeze({
+                    card,
+                    desktop,
+                    desktopId,
+                    disposition,
+                    index,
+                    token
+                }));
             }
 
             for (let index = 0; index < desktopIds.length; index += 1) {
@@ -12042,11 +12060,8 @@ Rectangle {
             }
 
             return {
-                desktop: currentDesktop,
-                desktopCard: currentCard,
                 desktopCardEpoch,
-                desktopSurfaceDisposition: desktopSurfaceOpeningDisposition,
-                desktopSurfaceToken,
+                desktopSurfaces: Object.freeze(desktopSurfaces),
                 epoch,
                 height,
                 horizontalViewportRevision: spatialHorizontalViewportRevision,
@@ -12249,11 +12264,8 @@ Rectangle {
 
     function resetPresentationReadinessFrameTracking() {
         spatialPresentationReadinessFrameCount = 0;
-        spatialPresentationReadinessTrackedDesktop = null;
-        spatialPresentationReadinessTrackedDesktopCard = null;
         spatialPresentationReadinessTrackedDesktopCardEpoch = 0;
-        spatialPresentationReadinessTrackedDesktopSurfaceDisposition = "";
-        spatialPresentationReadinessTrackedDesktopSurfaceToken = 0;
+        spatialPresentationReadinessTrackedDesktopSurfaces = [];
         spatialPresentationReadinessTrackedEpoch = 0;
         spatialPresentationReadinessTrackedHeight = 0;
         spatialPresentationReadinessTrackedHorizontalViewportRevision = -1;
@@ -12267,14 +12279,34 @@ Rectangle {
         spatialPresentationReadinessTrackedWorkspaceIndex = -1;
     }
 
+    function sameOpeningDesktopSurfaces(first, second) {
+        if (!first || !second || !Object.isFrozen(first) || !Object.isFrozen(second)
+                || !Number.isInteger(first.length)
+                || !Number.isInteger(second.length) || first.length < 1
+                || desktopSurfaceMaximumResidentRows < 1
+                || first.length > desktopSurfaceMaximumResidentRows
+                || first.length !== second.length) {
+            return false;
+        }
+        for (let index = 0; index < first.length; index += 1) {
+            const left = first[index];
+            const right = second[index];
+            if (!left || !right || !Object.isFrozen(left) || !Object.isFrozen(right)
+                    || left.card !== right.card || left.desktop !== right.desktop
+                    || left.desktopId !== right.desktopId
+                    || left.disposition !== right.disposition || left.index !== right.index
+                    || left.token !== right.token) {
+                return false;
+            }
+        }
+        return true;
+    }
+
     function presentationReadinessFrameTrackingMatches(context) {
-        return context && spatialPresentationReadinessTrackedDesktop === context.desktop
-            && spatialPresentationReadinessTrackedDesktopCard === context.desktopCard
+        return context
             && spatialPresentationReadinessTrackedDesktopCardEpoch === context.desktopCardEpoch
-            && spatialPresentationReadinessTrackedDesktopSurfaceDisposition
-                === context.desktopSurfaceDisposition
-            && spatialPresentationReadinessTrackedDesktopSurfaceToken
-                === context.desktopSurfaceToken
+            && sameOpeningDesktopSurfaces(spatialPresentationReadinessTrackedDesktopSurfaces,
+                                          context.desktopSurfaces)
             && spatialPresentationReadinessTrackedEpoch === context.epoch
             && spatialPresentationReadinessTrackedHeight === context.height
             && spatialPresentationReadinessTrackedHorizontalViewportRevision
@@ -12339,12 +12371,8 @@ Rectangle {
 
         if (!presentationReadinessFrameTrackingMatches(context)) {
             resetPresentationReadinessFrameTracking();
-            spatialPresentationReadinessTrackedDesktop = context.desktop;
-            spatialPresentationReadinessTrackedDesktopCard = context.desktopCard;
             spatialPresentationReadinessTrackedDesktopCardEpoch = context.desktopCardEpoch;
-            spatialPresentationReadinessTrackedDesktopSurfaceDisposition =
-                context.desktopSurfaceDisposition;
-            spatialPresentationReadinessTrackedDesktopSurfaceToken = context.desktopSurfaceToken;
+            spatialPresentationReadinessTrackedDesktopSurfaces = context.desktopSurfaces;
             spatialPresentationReadinessTrackedEpoch = context.epoch;
             spatialPresentationReadinessTrackedHeight = context.height;
             spatialPresentationReadinessTrackedHorizontalViewportRevision =

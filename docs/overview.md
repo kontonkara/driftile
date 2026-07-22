@@ -27,10 +27,12 @@ Each instantiated visible-range row shows KWin's public Desktop surface for its
 exact output, virtual desktop, and current activity inside the projected output
 area. The surface stays behind window thumbnails and every input layer. Missing
 or inexact identity, or an unavailable surface, leaves a solid dark fallback
-visible after Overview has opened. During preparation, exact residency owns the
-current row immediately and bootstraps its opening-critical Desktop surface
-synchronously. Ordinary resident surfaces remain asynchronous and only the
-newest exact load may fade in over 90 ms after it becomes ready. Every load
+visible after Overview has opened. During preparation, the exact current row
+bootstraps synchronously before residency settles. Once exact residency exists,
+every surface in the complete bounded range that opening can reveal becomes
+synchronous. Resident surfaces outside that opening-critical range remain
+asynchronous, and only the newest exact load may fade in over 90 ms after it
+becomes ready. Every load
 captures the exact Overview session, context generation, activity, desktop,
 screen, and output; losing that context unloads it immediately. When late public
 membership makes the same row exact again, it starts a new load without waiting
@@ -124,18 +126,19 @@ surface residency restarts, and keyboard selection is repaired. A late or
 otherwise stale callback cannot replace the model or release input, and the
 activation cache is copied only afterward on a deferred event-loop turn.
 
-Preparation builds an opaque full-size current-row canvas from the synchronous
-opening-critical Desktop surface. Only `Loader.Ready` for the exact residency
-owner, or its exact terminal `Loader.Error` fallback, can advance the barrier;
-`Loader.Null`, `Loader.Loading`, and stale or inexact contexts cannot. Two
-compositor-frame callbacks must then observe the same session, output, topology,
-card, card epoch, and surface context before the effect publishes readiness. Any
-drift resets that frame barrier. This is render-driven and has no time delay, so
-the first visible Overview frame is complete and the transition from the native
-desktop into the spatial plane remains continuous. The canvas stays opaque
-through opening while the controller eases presentation progress once and the
-scene consumes that bounded progress directly. Interactive gestures continue to
-drive progress and settle on completion. Closing uses the same motion in reverse
+Preparation builds an opaque full-size current-row canvas while synchronously
+composing every Desktop surface in the bounded range that the opening motion can
+reveal. Every member must reach `Loader.Ready` for its exact residency owner or
+its exact terminal `Loader.Error` fallback; `Loader.Null`, `Loader.Loading`, and
+stale or inexact contexts cannot advance the barrier. Two compositor-frame
+callbacks must then observe the same session, output, topology, card epoch, and
+complete ordered surface-token set before the effect publishes readiness. Any
+member drift resets that frame barrier. This is render-driven and has no time
+delay, so the first visible Overview frame is complete and the transition from
+the native desktop into the spatial plane remains continuous. The canvas stays
+opaque through opening while the controller eases presentation progress once
+and the scene consumes that bounded progress directly. Interactive gestures
+continue to drive progress and settle on completion. Closing uses the same motion in reverse
 while retaining an opaque canvas until an exact desktop bridge has rendered
 twice. A manually panned current row returns to its live camera during the close
 motion; reopening during that motion reverses the same visible session from its

@@ -206,9 +206,11 @@ layers. After Overview has opened, an unavailable or inexact surface keeps a
 solid dark fallback. A surface captures its exact Overview session, context
 generation, activity, desktop, screen, and output. It is shown only at
 `Loader.Ready` while that complete token is still newest and exact. During
-preparation, exact residency owns the current row immediately and bootstraps its
-opening-critical surface synchronously. Ordinary resident surfaces remain
-asynchronous and fade in over 90 ms; context loss unloads them immediately and
+preparation, the exact current row bootstraps synchronously before residency
+settles. Once exact residency exists, every surface in the complete bounded
+range that opening can reveal becomes synchronous. Resident surfaces outside
+that opening-critical range remain asynchronous and fade in over 90 ms; context
+loss unloads them immediately and
 leaves the solid fallback through replacement. A later `invalid` to exact public
 membership transition schedules its own replacement, while stale completion
 cannot clear a newer accepted token. The last exact surface range survives
@@ -255,13 +257,14 @@ help panel; a context change cancels an active transaction. Search remains
 usable with zoom. A passive, non-interactive percentage indicator is visible
 while zoom changes or differs from the configured session start.
 
-Preparation builds an opaque full-size current-row canvas from the synchronous
-opening-critical Desktop surface. Only `Loader.Ready` for the exact residency
-owner, or its exact terminal `Loader.Error` fallback, may release the surface
-barrier; `Loader.Null`, `Loader.Loading`, and stale or inexact contexts cannot.
-Two compositor-frame callbacks must then observe the same session, output,
-topology, card, card epoch, and surface context before readiness is published;
-context drift resets the frame barrier. No time delay participates. Overview
+Preparation builds an opaque full-size current-row canvas while synchronously
+composing every Desktop surface in the bounded range that opening can reveal.
+Every member must reach `Loader.Ready` for its exact residency owner or its exact
+terminal `Loader.Error` fallback before the surface barrier may release;
+`Loader.Null`, `Loader.Loading`, and stale or inexact contexts cannot. Two
+compositor-frame callbacks must then observe the same session, output, topology,
+card epoch, and complete ordered surface-token set before readiness is published;
+member drift resets the frame barrier. No time delay participates. Overview
 therefore starts with a complete first visible frame and moves continuously from
 the native desktop into the spatial plane while its canvas stays opaque through
 opening. Closing uses the same bounded motion in reverse, but never fades its
