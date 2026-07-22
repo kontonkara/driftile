@@ -6,6 +6,7 @@ const maximumPixelCount = 16 * 1024 * 1024;
 const configuredZoom = 0.43;
 const steppedZoom = 0.48;
 const anchorFraction = 0.75;
+const minimumAnchorSalienceEnergy = 2400;
 const maximumCardGap = 48;
 const exitFrameNames = Array.from(
   { length: 16 },
@@ -191,18 +192,22 @@ const maximumAnchorSearchShift = Math.max(
   8,
   Math.ceil(expectedAnchorShift * 2),
 );
+const anchorZoomDistance = normalizedMeanAbsoluteError(
+  images.anchorBaseline,
+  images.anchorWheelIn,
+);
 const anchorRegistration = bestVerticalShift(
   images.wheelIn,
   images.anchorWheelIn,
   images.anchorBaseline,
   maximumAnchorSearchShift,
 );
+const minimumAnchorSampledPixels = Math.max(
+  24,
+  Math.ceil(maximumAnchorSearchShift / 2),
+);
 const anchorShiftTolerance = Math.max(2, expectedAnchorShift * 0.1);
 const anchorMinimumImprovement = Math.max(0.0015, sameStateNoise * 4 + 0.0005);
-const anchorZoomDistance = normalizedMeanAbsoluteError(
-  images.anchorBaseline,
-  images.anchorWheelIn,
-);
 
 const report = {
   anchor: {
@@ -211,6 +216,10 @@ const report = {
     expectedShift: roundMetric(expectedAnchorShift),
     improvement: roundMetric(anchorRegistration.improvement),
     minimumImprovement: roundMetric(anchorMinimumImprovement),
+    minimumSalienceEnergy: minimumAnchorSalienceEnergy,
+    minimumSampledPixels: minimumAnchorSampledPixels,
+    salienceEnergy: anchorRegistration.salienceEnergy,
+    sampledPixels: anchorRegistration.sampledPixels,
     shiftTolerance: roundMetric(anchorShiftTolerance),
     zeroShiftScore: roundMetric(anchorRegistration.zeroShiftScore),
     zoomDistance: roundMetric(anchorZoomDistance),
@@ -277,6 +286,14 @@ if (anchorZoomDistance < 0.01) {
   fail("off-centre physical wheel-up did not change zoom materially");
 }
 if (
+  anchorRegistration.sampledPixels < minimumAnchorSampledPixels ||
+  anchorRegistration.salienceEnergy < minimumAnchorSalienceEnergy
+) {
+  fail(
+    `anchor registration found ${anchorRegistration.sampledPixels} zoom-sensitive pixels with ${anchorRegistration.salienceEnergy} salience; expected at least ${minimumAnchorSampledPixels} pixels and ${minimumAnchorSalienceEnergy} salience`,
+  );
+}
+if (
   Math.abs(anchorRegistration.bestShift - expectedAnchorShift) >
   anchorShiftTolerance
 ) {
@@ -320,16 +337,23 @@ function spatialStride(sceneHeight, zoom) {
 function bestVerticalShift(reference, moved, movedBaseline, maximumShift) {
   let bestScore = Number.POSITIVE_INFINITY;
   let bestShift = 0;
+  let salienceEnergy = 0;
+  let sampledPixels = 0;
   let zeroShiftScore = Number.POSITIVE_INFINITY;
 
   for (let shift = -maximumShift; shift <= maximumShift; shift += 1) {
-    const score = shiftedRegionMeanAbsoluteError(
+    const evidence = shiftedRegionMeanAbsoluteError(
       reference,
       moved,
       movedBaseline,
       shift,
       maximumShift,
     );
+    const score = evidence.score;
+    if (shift === -maximumShift) {
+      salienceEnergy = evidence.salienceEnergy;
+      sampledPixels = evidence.sampledPixels;
+    }
     if (shift === 0) {
       zeroShiftScore = score;
     }
@@ -343,6 +367,8 @@ function bestVerticalShift(reference, moved, movedBaseline, maximumShift) {
     bestScore,
     bestShift,
     improvement: zeroShiftScore - bestScore,
+    salienceEnergy,
+    sampledPixels,
     zeroShiftScore,
   };
 }
@@ -363,7 +389,8 @@ function shiftedRegionMeanAbsoluteError(
   }
 
   let difference = 0;
-  let sampledChannels = 0;
+  let salienceEnergy = 0;
+  let sampledPixels = 0;
   for (let y = yStart; y < yEnd; y += 2) {
     const referenceY = y + shift;
     for (let x = xStart; x < xEnd; x += 3) {
@@ -380,6 +407,7 @@ function shiftedRegionMeanAbsoluteError(
       if (salience < 24) {
         continue;
       }
+      salienceEnergy += salience;
       difference += Math.abs(
         reference.bytes[referenceOffset] - moved.bytes[movedOffset],
       );
@@ -389,14 +417,18 @@ function shiftedRegionMeanAbsoluteError(
       difference += Math.abs(
         reference.bytes[referenceOffset + 2] - moved.bytes[movedOffset + 2],
       );
-      sampledChannels += 3;
+      sampledPixels += 1;
     }
   }
 
-  if (sampledChannels < 300) {
-    fail("anchor registration did not find enough zoom-sensitive pixels");
-  }
-  return difference / (sampledChannels * 255);
+  return {
+    salienceEnergy,
+    sampledPixels,
+    score:
+      sampledPixels > 0
+        ? difference / (sampledPixels * 3 * 255)
+        : Number.POSITIVE_INFINITY,
+  };
 }
 
 function exitContinuityMetrics(seed, desktop, frame, deficitThreshold) {
