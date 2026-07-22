@@ -260,7 +260,6 @@ Rectangle {
         spatialZoomContextEligible && spatialZoomCompetingInputEligible
     readonly property bool spatialZoomSceneRegistrationEligible:
         spatialZoomInputEligible && spatialZoomOwner.length === 0
-        && !spatialZoomWheelHandler.active
     readonly property bool spatialExternalZoomActive:
         overviewZoomGestureDirection === "in" || overviewZoomGestureDirection === "out"
     readonly property bool spatialZoomHudShown:
@@ -1422,12 +1421,11 @@ Rectangle {
                  && root.spatialExternalZoomTransaction === null
                  && (root.spatialZoomOwner.length === 0 || root.spatialZoomOwner === "wheel")
         acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
-        acceptedModifiers: Qt.ControlModifier
-        blocking: true
+        acceptedModifiers: Qt.KeyboardModifierMask
+        blocking: false
         orientation: Qt.Vertical
 
         onActiveChanged: {
-            root.synchronizeSpatialZoomInputState();
             if (!active) {
                 root.finishSpatialZoomWheelGesture();
             }
@@ -4525,8 +4523,21 @@ Rectangle {
     }
 
     function handleSpatialZoomWheel(event, point) {
-        if (!event || !point || !spatialZoomInputEligible
-                || event.modifiers !== Qt.ControlModifier || !event.pixelDelta || !event.angleDelta
+        if (!event) {
+            return false;
+        }
+
+        const wheelOwnsGesture = spatialZoomOwner === "wheel";
+        const controlHeld = (event.modifiers & Qt.ControlModifier) === Qt.ControlModifier;
+        if (!controlHeld) {
+            if (wheelOwnsGesture) {
+                event.accepted = true;
+                return true;
+            }
+            return false;
+        }
+        if (!point || (!spatialZoomInputEligible && !wheelOwnsGesture)
+                || !event.pixelDelta || !event.angleDelta
                 || !Number.isFinite(point.y) || !Number.isFinite(event.pixelDelta.y)
                 || !Number.isFinite(event.angleDelta.y)) {
             return false;
@@ -4545,6 +4556,10 @@ Rectangle {
         const mode = Number.isFinite(pixelDelta) && pixelDelta !== 0
             ? "pixel" : angleDelta !== 0 ? "angle" : "";
         if (mode.length === 0 || !Number.isSafeInteger(angleDelta)) {
+            if (wheelOwnsGesture) {
+                event.accepted = true;
+                return true;
+            }
             return false;
         }
 

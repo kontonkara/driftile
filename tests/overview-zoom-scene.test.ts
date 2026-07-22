@@ -28,9 +28,31 @@ describe("overview session zoom scene", () => {
       "function finishSpatialZoomWheelGesture()",
     );
 
-    expect(handler).toContain("acceptedModifiers: Qt.ControlModifier");
-    expect(handler).toContain("blocking: true");
+    expect(handler).toContain("acceptedModifiers: Qt.KeyboardModifierMask");
+    expect(handler).toContain("blocking: false");
     expect(handler).toContain('root.spatialZoomOwner === "wheel"');
+    expect(handler).not.toContain("synchronizeSpatialZoomInputState()");
+    expect(handler).toMatch(
+      /onActiveChanged:[\s\S]*if \(!active\) \{\s*root\.finishSpatialZoomWheelGesture\(\);/u,
+    );
+    expect(scene).toContain(
+      "spatialZoomInputEligible && spatialZoomOwner.length === 0",
+    );
+    expect(scene).not.toContain(
+      "spatialZoomOwner.length === 0\n        && !spatialZoomWheelHandler.active",
+    );
+    expect(route).toContain(
+      'const wheelOwnsGesture = spatialZoomOwner === "wheel";',
+    );
+    expect(route).toContain(
+      "const controlHeld = (event.modifiers & Qt.ControlModifier) === Qt.ControlModifier;",
+    );
+    expect(route).toMatch(
+      /if \(!controlHeld\) \{\s*if \(wheelOwnsGesture\) \{\s*event\.accepted = true;\s*return true;\s*\}\s*return false;/u,
+    );
+    expect(route).toMatch(
+      /if \(mode\.length === 0 \|\| !Number\.isSafeInteger\(angleDelta\)\) \{\s*if \(wheelOwnsGesture\) \{\s*event\.accepted = true;\s*return true;/u,
+    );
     expect(route).toContain(
       "runtime.normalizeOverviewPhysicalWheelAngleDelta(",
     );
