@@ -4579,12 +4579,13 @@ Rectangle {
             finishSpatialZoomWheelGesture();
         }
         spatialZoomWheelMode = mode;
+        if (spatialZoomOwner.length === 0
+                && !beginSpatialZoomTransaction("wheel", point.y)) {
+            spatialZoomWheelMode = "";
+            return false;
+        }
 
         if (mode === "pixel") {
-            if (spatialZoomOwner.length === 0
-                    && !beginSpatialZoomTransaction("wheel", point.y)) {
-                return false;
-            }
             const maximumPixelTotal = Math.log(16) * 1200;
             spatialZoomWheelPixelTotal = Math.max(-maximumPixelTotal,
                 Math.min(maximumPixelTotal, spatialZoomWheelPixelTotal + pixelDelta));
@@ -4606,32 +4607,10 @@ Rectangle {
                 ? angleDelta : spatialZoomWheelRemainder + angleDelta;
             const stepCount = Math.min(4, Math.floor(Math.abs(combined) / 120));
             spatialZoomWheelRemainder = Math.sign(combined) * (Math.abs(combined) % 120);
-            if (stepCount > 0) {
-                if (spatialZoomOwner.length === 0
-                        && !beginSpatialZoomTransaction("wheel", point.y)) {
-                    return false;
-                }
-                let levelPlan = null;
-                if (runtime && typeof runtime.planOverviewSpatialZoomLevel === "function") {
-                    try {
-                        levelPlan = runtime.planOverviewSpatialZoomLevel({
-                                                                            currentZoom: overviewZoom,
-                                                                            direction: combined < 0 ? "in" : "out",
-                                                                            intent: "step",
-                                                                            steps: stepCount
-                                                                        });
-                    } catch (error) {
-                        levelPlan = null;
-                    }
-                }
-                const originZoom = spatialZoomTransaction
-                    ? spatialZoomTransaction.originZoom : Number.NaN;
-                const scale = levelPlan && Number.isFinite(originZoom) && originZoom > 0
-                    ? levelPlan.zoom / originZoom : Number.NaN;
-                if (!previewSpatialZoomTransaction(scale)) {
-                    cancelSpatialZoomTransaction();
-                    return false;
-                }
+            if (stepCount > 0
+                    && !previewSpatialZoomWheelAngleSteps(combined, stepCount)) {
+                cancelSpatialZoomTransaction();
+                return false;
             }
         }
 
@@ -4639,12 +4618,49 @@ Rectangle {
         return true;
     }
 
+    function previewSpatialZoomWheelAngleSteps(angleDelta, stepCount) {
+        if (spatialZoomOwner !== "wheel" || !Number.isSafeInteger(angleDelta)
+                || angleDelta === 0 || !Number.isSafeInteger(stepCount)
+                || stepCount < 1 || stepCount > 4) {
+            return false;
+        }
+
+        const runtime = OverviewRuntime.DriftileOverview;
+        let levelPlan = null;
+        if (runtime && typeof runtime.planOverviewSpatialZoomLevel === "function") {
+            try {
+                levelPlan = runtime.planOverviewSpatialZoomLevel({
+                                                                    currentZoom: overviewZoom,
+                                                                    direction: angleDelta < 0 ? "in" : "out",
+                                                                    intent: "step",
+                                                                    steps: stepCount
+                                                                });
+            } catch (error) {
+                levelPlan = null;
+            }
+        }
+        const originZoom = spatialZoomTransaction
+            ? spatialZoomTransaction.originZoom : Number.NaN;
+        const scale = levelPlan && Number.isFinite(originZoom) && originZoom > 0
+            ? levelPlan.zoom / originZoom : Number.NaN;
+        return previewSpatialZoomTransaction(scale);
+    }
+
     function finishSpatialZoomWheelGesture() {
         const owned = spatialZoomOwner === "wheel";
+        if (owned && spatialZoomWheelMode === "angle"
+                && spatialZoomWheelRemainder !== 0
+                && !previewSpatialZoomWheelAngleSteps(spatialZoomWheelRemainder, 1)) {
+            cancelSpatialZoomTransaction();
+            return false;
+        }
+        if (owned) {
+            return finishSpatialZoomTransaction("commit");
+        }
         spatialZoomWheelPixelTotal = 0;
         spatialZoomWheelRemainder = 0;
         spatialZoomWheelMode = "";
-        return owned ? finishSpatialZoomTransaction("commit") : false;
+        return false;
     }
 
     function commitSpatialTouchscreenZoom(scale) {

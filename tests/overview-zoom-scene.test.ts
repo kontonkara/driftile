@@ -18,19 +18,37 @@ function sourceBetween(start: string, end: string): string {
 }
 
 describe("overview session zoom scene", () => {
-  it("owns Ctrl+wheel and preserves physical direction", () => {
+  it("claims physical Ctrl+wheel through owned modifier drift", () => {
     const handler = sourceBetween(
       "id: spatialZoomWheelHandler",
       "id: spatialVerticalWheelHandler",
     );
+    const navigationHandlers = sourceBetween(
+      "id: spatialVerticalWheelHandler",
+      "id: spatialTouchPanDragHandler",
+    );
     const route = sourceBetween(
       "function handleSpatialZoomWheel(event, point)",
+      "function previewSpatialZoomWheelAngleSteps(angleDelta, stepCount)",
+    );
+    const anglePreview = sourceBetween(
+      "function previewSpatialZoomWheelAngleSteps(angleDelta, stepCount)",
       "function finishSpatialZoomWheelGesture()",
     );
+    const finish = sourceBetween(
+      "function finishSpatialZoomWheelGesture()",
+      "function commitSpatialTouchscreenZoom(scale)",
+    );
 
+    expect(scene.indexOf("id: spatialZoomWheelHandler")).toBeLessThan(
+      scene.indexOf("id: spatialVerticalWheelHandler"),
+    );
     expect(handler).toContain("acceptedModifiers: Qt.KeyboardModifierMask");
     expect(handler).toContain("blocking: false");
     expect(handler).toContain('root.spatialZoomOwner === "wheel"');
+    expect(handler).toContain(
+      "onWheel: event => root.handleSpatialZoomWheel(event, point.position)",
+    );
     expect(handler).not.toContain("synchronizeSpatialZoomInputState()");
     expect(handler).toMatch(
       /onActiveChanged:[\s\S]*if \(!active\) \{\s*root\.finishSpatialZoomWheelGesture\(\);/u,
@@ -53,13 +71,24 @@ describe("overview session zoom scene", () => {
     expect(route).toMatch(
       /if \(mode\.length === 0 \|\| !Number\.isSafeInteger\(angleDelta\)\) \{\s*if \(wheelOwnsGesture\) \{\s*event\.accepted = true;\s*return true;/u,
     );
+    expect(route).toContain('beginSpatialZoomTransaction("wheel", point.y)');
+    expect(
+      route.indexOf('beginSpatialZoomTransaction("wheel", point.y)'),
+    ).toBeLessThan(route.indexOf("const stepCount = Math.min(4,"));
+    expect(route).toMatch(/event\.accepted = true;\s*return true;\s*\}\s*$/u);
+    expect(route).not.toMatch(
+      /\b(?:routeOverviewWheel|routeOverviewShiftHorizontalWheel|handleOverviewWheel|handleOverviewHorizontalWheelInput)\s*\(/u,
+    );
+    expect(navigationHandlers).toMatch(
+      /id: spatialVerticalWheelHandler[\s\S]*acceptedModifiers: Qt\.NoModifier[\s\S]*id: spatialHorizontalWheelHandler[\s\S]*acceptedModifiers: Qt\.NoModifier[\s\S]*id: spatialShiftHorizontalWheelHandler[\s\S]*acceptedModifiers: Qt\.ShiftModifier/u,
+    );
     expect(route).toContain(
       "runtime.normalizeOverviewPhysicalWheelAngleDelta(",
     );
     expect(route).toContain(
       "runtime.normalizeOverviewPhysicalWheelPixelDelta(",
     );
-    expect(route).toContain('direction: combined < 0 ? "in" : "out"');
+    expect(anglePreview).toContain('direction: angleDelta < 0 ? "in" : "out"');
     expect(route).toContain(
       "Math.sign(spatialZoomWheelRemainder) !== Math.sign(angleDelta)",
     );
@@ -67,6 +96,16 @@ describe("overview session zoom scene", () => {
     expect(route).toContain("Math.abs(combined) % 120");
     expect(route).toContain("Math.exp(-spatialZoomWheelPixelTotal / 1200)");
     expect(route).toContain("transaction.previewZoom / transaction.originZoom");
+    expect(anglePreview).toContain("levelPlan.zoom / originZoom");
+    expect(finish).toMatch(
+      /spatialZoomWheelMode === "angle"[\s\S]*spatialZoomWheelRemainder !== 0[\s\S]*previewSpatialZoomWheelAngleSteps\(spatialZoomWheelRemainder, 1\)[\s\S]*finishSpatialZoomTransaction\("commit"\)/u,
+    );
+    expect(finish).toMatch(
+      /!previewSpatialZoomWheelAngleSteps\(spatialZoomWheelRemainder, 1\)\) \{\s*cancelSpatialZoomTransaction\(\);\s*return false;\s*\}/u,
+    );
+    expect(finish.indexOf("previewSpatialZoomWheelAngleSteps")).toBeLessThan(
+      finish.indexOf("spatialZoomWheelRemainder = 0;"),
+    );
   });
 
   it("routes keyboard steps and reset before generic modifier rejection", () => {
